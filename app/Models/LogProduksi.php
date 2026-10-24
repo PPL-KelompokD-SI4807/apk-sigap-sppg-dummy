@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LogProduksi extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'log_produksis';
 

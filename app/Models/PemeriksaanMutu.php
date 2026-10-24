@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PemeriksaanMutu extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'pemeriksaan_mutus';
 
@@ -27,6 +27,9 @@ class PemeriksaanMutu extends Model
         'suhu_makanan_c',
         'kebersihan_dapur',
         'kebersihan_petugas',
+        'rasa_baik',
+        'aroma_baik',
+        'tampilan_baik',
         'organoleptik_baik',
         'catatan_organoleptik',
         'sampel_disimpan',
@@ -46,6 +49,9 @@ class PemeriksaanMutu extends Model
             'suhu_makanan_c' => 'decimal:1',
             'kebersihan_dapur' => 'boolean',
             'kebersihan_petugas' => 'boolean',
+            'rasa_baik' => 'boolean',
+            'aroma_baik' => 'boolean',
+            'tampilan_baik' => 'boolean',
             'organoleptik_baik' => 'boolean',
             'sampel_disimpan' => 'boolean',
             'hasil' => HasilMutu::class,

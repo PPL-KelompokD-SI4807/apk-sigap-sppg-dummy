@@ -23,7 +23,7 @@ class DomainEventNotifications
     public const EVENTS = [
         'StokMenipis', 'BahanAkanKedaluwarsa', 'KekuranganBahan', 'MutuTidakLayak', 'KeluhanKritis',
         'PerjalananDimulai', 'PerjalananTiba', 'PerjalananTerlambat', 'RekapHarianDibuat',
-        'BuktiDistribusiDicatat', 'DistribusiTerlambat',
+        'BuktiDistribusiDicatat', 'DistribusiTerlambat', 'BuktiDistribusiBelumMasuk',
         'AnggaranMencapai80', 'AnggaranMencapai100', 'AnggaranMelampaui',
     ];
 
@@ -40,6 +40,7 @@ class DomainEventNotifications
         'RekapHarianDibuat' => [Role::KepalaSppg, Role::AhliGizi, Role::Akuntan],
         'BuktiDistribusiDicatat' => [Role::KepalaSppg],
         'DistribusiTerlambat' => [Role::KepalaSppg],
+        'BuktiDistribusiBelumMasuk' => [Role::KepalaSppg],
         'AnggaranMencapai80' => [Role::Akuntan, Role::KepalaSppg],
         'AnggaranMencapai100' => [Role::Akuntan, Role::KepalaSppg],
         'AnggaranMelampaui' => [Role::Akuntan, Role::KepalaSppg],
@@ -82,6 +83,7 @@ class DomainEventNotifications
             'RekapHarianDibuat' => $this->rekap($name, $sppgId, $p),
             'BuktiDistribusiDicatat' => $this->buktiDistribusi($name, $sppgId, $p),
             'DistribusiTerlambat' => $this->distribusiTerlambat($name, $sppgId, $p),
+            'BuktiDistribusiBelumMasuk' => $this->buktiBelumMasuk($name, $sppgId, $p),
             default => $this->anggaran($name, $sppgId, $p),
         };
     }
@@ -296,6 +298,33 @@ class DomainEventNotifications
         );
 
         $key = "distribusi_terlambat:{$sppgId}:".$this->int($p, 'jadwalDistribusiId', 'jadwal_distribusi_id', 'id');
+
+        return $this->message($name, $sppgId, $key, $html, 'Buka Bukti Distribusi', '/bukti-distribusi');
+    }
+
+    /**
+     * Bukti belum masuk N menit setelah jam rencana tiba (event dari agen lain; dibaca defensif).
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function buktiBelumMasuk(string $name, int $sppgId, array $p): NotificationMessage
+    {
+        $rencana = $this->str($p, 'jamRencanaTiba', 'jam_rencana_tiba', 'acuanTiba', 'acuan_tiba');
+        $menit = $this->int($p, 'menitSejakRencana', 'menit_sejak_rencana', 'menitKeterlambatan', 'menit_keterlambatan');
+        $titik = $this->str($p, 'titikLayananNama', 'titik_layanan_nama');
+
+        if ($titik === '' && is_array($p['titikLayanan'] ?? $p['titik_layanan'] ?? null)) {
+            $titik = (string) (($p['titikLayanan'] ?? $p['titik_layanan'])['nama'] ?? '');
+        }
+
+        $html = sprintf(
+            "<b>Bukti distribusi belum masuk</b>\nJadwal distribusi ke %s belum memiliki bukti serah terima%s%s.",
+            $this->e($titik !== '' ? $titik : 'titik layanan'),
+            $rencana !== '' ? ' (rencana tiba '.$this->e(strlen($rencana) > 8 ? $this->time($rencana) : mb_substr($rencana, 0, 5)).' WIB)' : '',
+            $menit ? ", lewat {$menit} menit" : '',
+        );
+
+        $key = "bukti_belum_masuk:{$sppgId}:".$this->int($p, 'jadwalDistribusiId', 'jadwal_distribusi_id', 'id');
 
         return $this->message($name, $sppgId, $key, $html, 'Buka Bukti Distribusi', '/bukti-distribusi');
     }

@@ -8,6 +8,7 @@ use App\Http\Resources\LogProduksi\LogProduksiResource;
 use App\Models\LogProduksi;
 use App\Services\Ai\AiDraftConfirmer;
 use App\Services\Produksi\LogProduksiService;
+use App\Services\Storage\PengikatLampiran;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -19,11 +20,12 @@ class LogProduksiController extends ApiController
 {
     private const MODULE = 'log-produksi';
 
-    private const RELASI = ['jadwalProduksi:id,menu_id,tanggal_produksi,target_porsi,status', 'jadwalProduksi.menu:id,nama_menu', 'pencatat:id,name'];
+    private const RELASI = ['jadwalProduksi:id,menu_id,tanggal_produksi,target_porsi,status', 'jadwalProduksi.menu:id,nama_menu', 'pencatat:id,name', 'lampirans'];
 
     public function __construct(
         private readonly LogProduksiService $service,
         private readonly AiDraftConfirmer $draf,
+        private readonly PengikatLampiran $lampiran,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -64,6 +66,7 @@ class LogProduksiController extends ApiController
 
         $log = DB::transaction(function () use ($request, $data): LogProduksi {
             $log = $this->service->catat($request->user(), $data);
+            $this->lampiran->ikat($data['lampiran_ids'] ?? [], $log, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE);
 
             return $log;
@@ -86,6 +89,7 @@ class LogProduksiController extends ApiController
 
         $log = DB::transaction(function () use ($request, $logProduksi, $data): LogProduksi {
             $log = $this->service->perbarui($logProduksi, $data);
+            $this->lampiran->ikat($data['lampiran_ids'] ?? [], $log, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $log->id);
 
             return $log;

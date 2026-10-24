@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class FeedbackKeluhan extends Model
 {
-    use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'feedback_keluhans';
 

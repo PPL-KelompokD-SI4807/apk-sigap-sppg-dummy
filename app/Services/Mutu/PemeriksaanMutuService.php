@@ -22,9 +22,13 @@ use Illuminate\Validation\ValidationException;
 class PemeriksaanMutuService
 {
     private const KOLOM = [
-        'waktu_pemeriksaan', 'suhu_makanan_c', 'kebersihan_dapur', 'kebersihan_petugas', 'organoleptik_baik',
-        'catatan_organoleptik', 'sampel_disimpan', 'hasil', 'tindakan_korektif', 'foto_path',
+        'waktu_pemeriksaan', 'suhu_makanan_c', 'kebersihan_dapur', 'kebersihan_petugas',
+        'rasa_baik', 'aroma_baik', 'tampilan_baik', 'organoleptik_baik',
+        'catatan_organoleptik', 'sampel_disimpan', 'hasil', 'tindakan_korektif',
     ];
+
+    /** Butir checklist organoleptik; organoleptik_baik = turunan (semua true). */
+    private const BUTIR_ORGANOLEPTIK = ['rasa_baik', 'aroma_baik', 'tampilan_baik'];
 
     /**
      * @param  array<string, mixed>  $data
@@ -47,7 +51,7 @@ class PemeriksaanMutuService
                 throw ValidationException::withMessages(['jadwal_produksi_id' => ['Jadwal produksi belum dimulai (tanggal produksi di masa depan).']]);
             }
 
-            $atribut = array_intersect_key($data, array_flip(self::KOLOM));
+            $atribut = $this->normalisasiOrganoleptik(array_intersect_key($data, array_flip(self::KOLOM)), null);
             $atribut['waktu_pemeriksaan'] ??= now();
             $atribut['sampel_disimpan'] = (bool) ($atribut['sampel_disimpan'] ?? false);
             $this->pastikanKonsisten($atribut);
@@ -80,13 +84,14 @@ class PemeriksaanMutuService
 
         $diubah = DB::transaction(function () use ($pemeriksaan, $pengguna, $data): PemeriksaanMutu {
             $terkunci = PemeriksaanMutu::withoutGlobalScope(SppgScope::class)->whereKey($pemeriksaan->getKey())->lockForUpdate()->firstOrFail();
-            $atribut = array_intersect_key($data, array_flip(self::KOLOM));
+            $atribut = $this->normalisasiOrganoleptik(array_intersect_key($data, array_flip(self::KOLOM)), $terkunci);
 
             $final = array_merge($terkunci->only(self::KOLOM), $atribut);
             $final['hasil'] = $final['hasil'] instanceof HasilMutu ? $final['hasil']->value : $final['hasil'];
             $this->pastikanKonsisten($final);
 
-            $perluKoreksi = $this->memengaruhiDistribusi($terkunci);
+            // Perubahan data wajib berupa koreksi; menambah lampiran saja (atribut kosong) tidak.
+            $perluKoreksi = $atribut !== [] && $this->memengaruhiDistribusi($terkunci);
             $catatan = isset($data['catatan_koreksi']) ? trim((string) $data['catatan_koreksi']) : '';
 
             if ($perluKoreksi && $catatan === '') {
@@ -162,7 +167,13 @@ class PemeriksaanMutuService
     {
         $hasil = $a['hasil'] ?? null;
         $hasil = $hasil instanceof HasilMutu ? $hasil->value : $hasil;
-        $butir = ['kebersihan_dapur' => 'Kebersihan dapur', 'kebersihan_petugas' => 'Kebersihan petugas', 'organoleptik_baik' => 'Organoleptik (rasa/aroma/tampilan)'];
+        $butir = [
+            'kebersihan_dapur' => 'Kebersihan dapur',
+            'kebersihan_petugas' => 'Kebersihan petugas',
+            'rasa_baik' => 'Rasa',
+            'aroma_baik' => 'Aroma',
+            'tampilan_baik' => 'Tampilan',
+        ];
 
         if ($hasil === HasilMutu::Layak->value) {
             $gagal = array_keys(array_filter($butir, fn ($label, $k) => ! filter_var($a[$k] ?? false, FILTER_VALIDATE_BOOLEAN), ARRAY_FILTER_USE_BOTH));
@@ -186,9 +197,54 @@ class PemeriksaanMutuService
             throw ValidationException::withMessages(['tindakan_korektif' => ['Tindakan korektif wajib diisi untuk hasil Tidak Layak.']]);
         }
 
-        if (! filter_var($a['organoleptik_baik'] ?? true, FILTER_VALIDATE_BOOLEAN) && trim((string) ($a['catatan_organoleptik'] ?? '')) === '') {
+        $organoleptikBaik = true;
+
+        foreach (self::BUTIR_ORGANOLEPTIK as $k) {
+            $organoleptikBaik = $organoleptikBaik && filter_var($a[$k] ?? true, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (! $organoleptikBaik && trim((string) ($a['catatan_organoleptik'] ?? '')) === '') {
             throw ValidationException::withMessages(['catatan_organoleptik' => ['Catatan organoleptik wajib diisi bila rasa/aroma/tampilan tidak baik.']]);
         }
+    }
+
+    /**
+     * Samakan tiga butir organoleptik dengan nilai turunan organoleptik_baik.
+     *  - Butir yang dikirim dipakai apa adanya; butir yang tidak dikirim diisi dari organoleptik_baik
+     *    kiriman klien lama, atau dari nilai tersimpan ($ada), atau true (data baru).
+     *  - organoleptik_baik selalu dihitung ulang (true bila ketiganya true); kiriman klien diabaikan
+     *    bila bertentangan dengan ketiga butir.
+     *  - Tanpa butir maupun organoleptik_baik pada $atribut dan ada record lama -> tidak diubah.
+     *
+     * @param  array<string, mixed>  $atribut
+     * @return array<string, mixed>
+     */
+    private function normalisasiOrganoleptik(array $atribut, ?PemeriksaanMutu $ada): array
+    {
+        $kirimButir = array_intersect_key($atribut, array_flip(self::BUTIR_ORGANOLEPTIK));
+
+        if ($kirimButir === [] && ! array_key_exists('organoleptik_baik', $atribut)) {
+            return $atribut;
+        }
+
+        $warisan = array_key_exists('organoleptik_baik', $atribut)
+            ? filter_var($atribut['organoleptik_baik'], FILTER_VALIDATE_BOOLEAN)
+            : null;
+
+        $semua = true;
+
+        foreach (self::BUTIR_ORGANOLEPTIK as $k) {
+            $nilai = array_key_exists($k, $atribut)
+                ? filter_var($atribut[$k], FILTER_VALIDATE_BOOLEAN)
+                : ($warisan ?? ($ada?->{$k} ?? true));
+
+            $atribut[$k] = $nilai;
+            $semua = $semua && $nilai;
+        }
+
+        $atribut['organoleptik_baik'] = $semua;
+
+        return $atribut;
     }
 
     private function umumkanBilaTidakLayak(PemeriksaanMutu $pemeriksaan): void

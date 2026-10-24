@@ -124,7 +124,7 @@ class ToolRegistry
             return;
         }
 
-        if (isset($this->tools[$name]) && $this->tools[$name]::class !== $tool::class) {
+        if (isset($this->tools[$name]) && $tool::class !== $this->tools[$name]::class) {
             throw new LogicException("Nama tool AI ganda: {$name}");
         }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\LogProduksi;
 
+use App\Http\Resources\LampiranResource;
 use App\Models\LogProduksi;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -45,7 +46,7 @@ class LogProduksiResource extends JsonResource
             'waktu_mulai' => $l->waktu_mulai === null ? null : substr((string) $l->waktu_mulai, 0, 5),
             'jam_selesai' => $l->jam_selesai === null ? null : substr((string) $l->jam_selesai, 0, 5),
             'kendala' => $l->kendala,
-            'foto_path' => $l->foto_path,
+            'lampiran' => LampiranResource::collection($this->whenLoaded('lampirans', fn () => $l->lampirans, [])),
             'dicatat_oleh' => $l->dicatat_oleh,
             'pencatat' => $this->whenLoaded('pencatat', fn () => $l->pencatat?->name),
             'created_at' => $l->created_at?->toIso8601String(),

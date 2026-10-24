@@ -9,6 +9,7 @@ use App\Http\Resources\Mutu\PemeriksaanMutuResource;
 use App\Models\PemeriksaanMutu;
 use App\Services\Ai\AiDraftConfirmer;
 use App\Services\Mutu\PemeriksaanMutuService;
+use App\Services\Storage\PengikatLampiran;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -20,11 +21,12 @@ class PemeriksaanMutuController extends ApiController
 {
     private const MODULE = 'mutu';
 
-    private const RELASI = ['jadwalProduksi:id,menu_id,tanggal_produksi,status', 'jadwalProduksi.menu:id,nama_menu', 'pemeriksa:id,name'];
+    private const RELASI = ['jadwalProduksi:id,menu_id,tanggal_produksi,status', 'jadwalProduksi.menu:id,nama_menu', 'pemeriksa:id,name', 'lampirans'];
 
     public function __construct(
         private readonly PemeriksaanMutuService $service,
         private readonly AiDraftConfirmer $draf,
+        private readonly PengikatLampiran $lampiran,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -59,6 +61,7 @@ class PemeriksaanMutuController extends ApiController
 
         $pemeriksaan = DB::transaction(function () use ($request, $data): PemeriksaanMutu {
             $pemeriksaan = $this->service->catat($request->user(), $data);
+            $this->lampiran->ikat($data['lampiran_ids'] ?? [], $pemeriksaan, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE);
 
             return $pemeriksaan;
@@ -81,6 +84,7 @@ class PemeriksaanMutuController extends ApiController
 
         $diubah = DB::transaction(function () use ($request, $pemeriksaanMutu, $data): PemeriksaanMutu {
             $diubah = $this->service->perbarui($pemeriksaanMutu, $request->user(), $data);
+            $this->lampiran->ikat($data['lampiran_ids'] ?? [], $diubah, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id);
 
             return $diubah;

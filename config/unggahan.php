@@ -50,16 +50,23 @@ return [
 
     /*
      | Modul induk lampiran (allowlist polimorfik). Kunci = slug pada POST /lampiran dan segmen
-     | {modul} jalur penyimpanan. 'ability' = hak Policy induk yang dibutuhkan untuk menambah
-     | lampiran (penyajian selalu memakai 'view').
+     | {modul} jalur penyimpanan.
+     |  - 'ability'  : hak Policy induk yang dibutuhkan untuk menambah lampiran ke record yang ADA
+     |                 (penyajian selalu memakai 'view').
+     |  - 'tertunda' : true = klien boleh mengunggah SEBELUM record induk dibuat (POST /lampiran tanpa
+     |                 lampiranable_id), lalu mengirim `lampiran_ids` pada store/update modul
+     |                 (PengikatLampiran). Hak unggah tertunda = hak C atau U modul 'rbac' (Tabel 5).
+     |  - 'rbac'     : slug modul pada config/rbac.php untuk hak unggah tertunda.
+     |  - 'kategori' : daftar kategori yang diizinkan (kategori kosong -> kategori pertama).
+     |  - 'maks'     : jumlah maksimum lampiran per record (default 5).
      */
     'modul' => [
         'bukti-distribusi' => ['model' => BuktiDistribusi::class, 'ability' => 'update'],
         'keuangan-pencairan' => ['model' => PencairanDana::class, 'ability' => 'update'],
         'keuangan-pengeluaran' => ['model' => Pengeluaran::class, 'ability' => 'update'],
-        'keluhan' => ['model' => FeedbackKeluhan::class, 'ability' => 'update'],
-        'mutu' => ['model' => PemeriksaanMutu::class, 'ability' => 'update'],
-        'log-produksi' => ['model' => LogProduksi::class, 'ability' => 'update'],
+        'keluhan' => ['model' => FeedbackKeluhan::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'keluhan', 'kategori' => ['foto'], 'maks' => 5],
+        'mutu' => ['model' => PemeriksaanMutu::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'mutu', 'kategori' => ['foto'], 'maks' => 5],
+        'log-produksi' => ['model' => LogProduksi::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'log-produksi', 'kategori' => ['foto'], 'maks' => 5],
     ],
 
 ];

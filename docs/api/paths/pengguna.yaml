@@ -164,7 +164,7 @@
       Kepala SPPG hak undang). Dua mode: (a) `user_id` = akun yang sudah dibuat dan belum bertaut
       Telegram; (b) `role` (+ `unit` untuk relawan, + `sppg_id` untuk non-admin) bila akun dibuat
       otomatis saat tautan dipakai. Undangan aktif sebelumnya untuk akun yang sama dicabut.
-      Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 48 jam, sekali pakai.
+      Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 72 jam, sekali pakai.
       `token` dan `deep_link` hanya ada pada respons ini; simpan/kirimkan segera.
     requestBody:
       required: true

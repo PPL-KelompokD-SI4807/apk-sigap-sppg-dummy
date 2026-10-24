@@ -879,6 +879,38 @@ paths:
                 message: 'Data yang dikirim tidak valid.'
                 errors:
                   target_porsi: ['Total jadwal tanggal 2026-11-02 menjadi 3500 porsi (2000 sudah terjadwal + 1500 baru), melebihi kapasitas harian 3000 porsi. Sisa kapasitas 1000 porsi.']
+  /jadwal/produksi-ringkas:
+    get:
+      tags: [Jadwal]
+      summary: Ringkasan jadwal produksi per tanggal (untuk pilihan di form distribusi)
+      description: |
+        Daftar ringkas tanpa data sensitif (id, tanggal, nama menu, target porsi, status) agar form jadwal
+        distribusi/bukti dapat memilih jadwal produksi. Dibuka untuk SEMUA peran yang punya hak R modul
+        jadwal, termasuk relawan unit distribusi yang tidak boleh membaca jadwal produksi penuh
+        (`GET /jadwal`): admin, kepala_sppg, ahli_gizi, staf_gudang, relawan (unit dapur/distribusi).
+        Akuntan dan relawan tanpa unit mendapat 403. Dibatasi SPPG pengguna (Admin: opsional `sppg_id`).
+        Jadwal terhapus lunak tidak disertakan; status `dibatalkan` tetap disertakan (klien menyaring).
+        Tanpa paginasi, maks 200 baris, urut jam mulai masak.
+      parameters:
+        - { name: tanggal, in: query, description: 'YYYY-MM-DD; default hari ini (WIB)', schema: { type: string, format: date } }
+        - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/JadwalProduksiRingkas' }
+              example:
+                data:
+                  - { id: 12, tanggal_produksi: '2026-11-02', nama_menu: 'Nasi, ayam suwir, sayur bayam', target_porsi: 2500, status: direncanakan, status_label: Direncanakan }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /jadwal/distribusi:
     get:
       tags: [Jadwal]
@@ -2758,7 +2790,7 @@ paths:
         Kepala SPPG hak undang). Dua mode: (a) `user_id` = akun yang sudah dibuat dan belum bertaut
         Telegram; (b) `role` (+ `unit` untuk relawan, + `sppg_id` untuk non-admin) bila akun dibuat
         otomatis saat tautan dipakai. Undangan aktif sebelumnya untuk akun yang sama dicabut.
-        Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 48 jam, sekali pakai.
+        Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 72 jam, sekali pakai.
         `token` dan `deep_link` hanya ada pada respons ini; simpan/kirimkan segera.
       requestBody:
         required: true
@@ -3263,7 +3295,7 @@ paths:
         Admin atau Kepala SPPG (hak ubah titik layanan, SPPG sendiri). Tanpa body. PIC membuka tautan
         di Telegram; bot menautkan chat PIC ke titik layanan (`pic_telegram_chat_id`) agar menerima
         Notifikasi Perjalanan Mobil. Undangan PIC aktif sebelumnya untuk titik yang sama dicabut.
-        Token 32 byte acak, hanya hash disimpan, berlaku 48 jam, sekali pakai; `token` dan
+        Token 32 byte acak, hanya hash disimpan, berlaku 72 jam, sekali pakai; `token` dan
         `deep_link` hanya tampil pada respons ini.
       responses:
         '201':
@@ -3688,6 +3720,16 @@ components:
         layak_distribusi: { type: boolean, description: 'true bila pemeriksaan mutu terbaru Layak' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    JadwalProduksiRingkas:
+      type: object
+      description: Ringkasan jadwal produksi tanpa data sensitif (pilihan pada form distribusi)
+      properties:
+        id: { type: integer }
+        tanggal_produksi: { type: string, format: date }
+        nama_menu: { type: [string, 'null'] }
+        target_porsi: { type: integer }
+        status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
+        status_label: { type: string }
     JadwalProduksiInput:
       type: object
       required: [menu_id, tanggal_produksi, target_porsi]
@@ -4470,7 +4512,7 @@ components:
         user_id: 12
         titik_layanan_id: null
         created_by: 1
-        expires_at: '2026-10-28T08:00:00+07:00'
+        expires_at: '2026-10-29T08:00:00+07:00'
         used_at: null
         revoked_at: null
         created_at: '2026-10-26T08:00:00+07:00'

@@ -31,6 +31,7 @@ class KeluhanResource extends JsonResource
             'status_label' => $this->status->label(),
             'deskripsi' => $this->deskripsi,
             'tindak_lanjut' => $this->tindak_lanjut,
+            'lampiran' => LampiranResource::collection($this->whenLoaded('lampirans', fn () => $this->lampirans, [])),
             'dicatat_oleh' => $orang($this->pencatat),
             'ditangani_oleh' => $orang($this->penangan),
             'dieskalasi_pada' => $this->wib($this->dieskalasi_pada),

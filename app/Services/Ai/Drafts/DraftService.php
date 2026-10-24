@@ -7,6 +7,7 @@ use App\Enums\StatusAiDraft;
 use App\Models\AiDraft;
 use App\Models\Scopes\SppgScope;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
@@ -117,7 +118,7 @@ class DraftService
         return $query->sudahKedaluwarsa()->update(['status' => StatusAiDraft::Expired->value, 'updated_at' => now()]);
     }
 
-    /** @return \Illuminate\Database\Eloquent\Builder<AiDraft> */
+    /** @return Builder<AiDraft> */
     private function ownQuery(User $user)
     {
         return AiDraft::query()

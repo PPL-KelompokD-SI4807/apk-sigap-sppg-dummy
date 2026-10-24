@@ -34,7 +34,8 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
       ctl = { get: c.get, set: c.set || (() => {}), hasValue: c.hasValue, setError: c.setError || null, focusEl: c.focusEl || null };
       wrap.append(label, c.el);
     } else if (type === 'photo') {
-      const up = createPhotoUpload({ name: f.name, existingUrl: typeof initial === 'string' && initial ? initial : null, onChange: clearFlag });
+      // Nilai awal foto: url string atau objek BerkasRingkas {lampiran_id,url} (dimuat lewat token). f.label dipakai sebagai nama foto.
+      const up = createPhotoUpload({ name: f.name, existing: initial && typeof initial === 'object' ? initial : null, existingUrl: typeof initial === 'string' && initial ? initial : null, label: f.photoLabel || 'foto', camera: f.camera !== false, onChange: clearFlag });
       ctl = { get: () => up.getFile(), set: () => {}, hasValue: up.hasValue, setError: up.setError, focusEl: null };
       wrap.append(label, up.el);
     } else {

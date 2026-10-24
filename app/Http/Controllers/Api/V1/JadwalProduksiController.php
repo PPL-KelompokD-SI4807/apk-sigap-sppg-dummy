@@ -12,6 +12,7 @@ use App\Services\Ai\AiDraftConfirmer;
 use App\Services\Jadwal\ProductionPlanningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -61,6 +62,41 @@ class JadwalProduksiController extends ApiController
         return JadwalProduksiResource::collection(
             $this->paginate($query->orderByDesc('tanggal_produksi')->orderBy('jam_mulai_masak')->orderByDesc('id'), $request)
         );
+    }
+
+    /** Ringkasan jadwal produksi per tanggal untuk form distribusi (hak R jadwal, tanpa batasan unit). */
+    public function ringkas(Request $request): JsonResponse
+    {
+        $this->authorize('viewRingkas', JadwalProduksi::class);
+
+        $request->validate([
+            'tanggal' => ['nullable', 'date_format:Y-m-d'],
+            'sppg_id' => ['nullable', 'integer'],
+        ]);
+
+        $tanggal = $request->filled('tanggal')
+            ? (string) $request->query('tanggal')
+            : Carbon::now(config('operasional.timezone'))->toDateString();
+
+        $query = JadwalProduksi::query()
+            ->with('menu:id,nama_menu')
+            ->tanggal($tanggal);
+
+        if ($request->user()->isAdmin() && $request->filled('sppg_id')) {
+            $query->where('sppg_id', (int) $request->query('sppg_id'));
+        }
+
+        $data = $query->orderBy('jam_mulai_masak')->orderBy('id')->limit(200)->get()
+            ->map(fn (JadwalProduksi $j) => [
+                'id' => $j->id,
+                'tanggal_produksi' => $j->tanggal_produksi?->toDateString(),
+                'nama_menu' => $j->menu?->nama_menu,
+                'target_porsi' => $j->target_porsi,
+                'status' => $j->status->value,
+                'status_label' => $j->status->label(),
+            ])->values();
+
+        return response()->json(['data' => $data]);
     }
 
     public function store(StoreJadwalProduksiRequest $request): JsonResponse

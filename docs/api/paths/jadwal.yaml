@@ -67,6 +67,38 @@
               message: 'Data yang dikirim tidak valid.'
               errors:
                 target_porsi: ['Total jadwal tanggal 2026-11-02 menjadi 3500 porsi (2000 sudah terjadwal + 1500 baru), melebihi kapasitas harian 3000 porsi. Sisa kapasitas 1000 porsi.']
+/jadwal/produksi-ringkas:
+  get:
+    tags: [Jadwal]
+    summary: Ringkasan jadwal produksi per tanggal (untuk pilihan di form distribusi)
+    description: |
+      Daftar ringkas tanpa data sensitif (id, tanggal, nama menu, target porsi, status) agar form jadwal
+      distribusi/bukti dapat memilih jadwal produksi. Dibuka untuk SEMUA peran yang punya hak R modul
+      jadwal, termasuk relawan unit distribusi yang tidak boleh membaca jadwal produksi penuh
+      (`GET /jadwal`): admin, kepala_sppg, ahli_gizi, staf_gudang, relawan (unit dapur/distribusi).
+      Akuntan dan relawan tanpa unit mendapat 403. Dibatasi SPPG pengguna (Admin: opsional `sppg_id`).
+      Jadwal terhapus lunak tidak disertakan; status `dibatalkan` tetap disertakan (klien menyaring).
+      Tanpa paginasi, maks 200 baris, urut jam mulai masak.
+    parameters:
+      - { name: tanggal, in: query, description: 'YYYY-MM-DD; default hari ini (WIB)', schema: { type: string, format: date } }
+      - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: array
+                  items: { $ref: '#/components/schemas/JadwalProduksiRingkas' }
+            example:
+              data:
+                - { id: 12, tanggal_produksi: '2026-11-02', nama_menu: 'Nasi, ayam suwir, sayur bayam', target_porsi: 2500, status: direncanakan, status_label: Direncanakan }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
 /jadwal/distribusi:
   get:
     tags: [Jadwal]

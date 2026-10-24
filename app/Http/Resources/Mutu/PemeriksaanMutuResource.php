@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Mutu;
 
+use App\Http\Resources\LampiranResource;
 use App\Models\PemeriksaanMutu;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -34,13 +35,17 @@ class PemeriksaanMutuResource extends JsonResource
             'suhu_makanan_c' => $m->suhu_makanan_c === null ? null : (float) $m->suhu_makanan_c,
             'kebersihan_dapur' => $m->kebersihan_dapur,
             'kebersihan_petugas' => $m->kebersihan_petugas,
+            'rasa_baik' => $m->rasa_baik,
+            'aroma_baik' => $m->aroma_baik,
+            'tampilan_baik' => $m->tampilan_baik,
+            // Turunan: true bila rasa, aroma, dan tampilan semuanya baik (kompatibilitas klien lama).
             'organoleptik_baik' => $m->organoleptik_baik,
             'catatan_organoleptik' => $m->catatan_organoleptik,
             'sampel_disimpan' => $m->sampel_disimpan,
             'hasil' => $m->hasil?->value,
             'hasil_label' => $m->hasil?->label(),
             'tindakan_korektif' => $m->tindakan_korektif,
-            'foto_path' => $m->foto_path,
+            'lampiran' => LampiranResource::collection($this->whenLoaded('lampirans', fn () => $m->lampirans, [])),
             'catatan_koreksi' => $m->catatan_koreksi,
             'dikoreksi_pada' => $m->dikoreksi_pada?->toIso8601String(),
             'dikoreksi_oleh' => $m->dikoreksi_oleh,

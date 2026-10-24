@@ -21,12 +21,26 @@ export function mapValidationErrors(errors) {
   return out;
 }
 
+export const PESAN_413 = 'Berkas terlalu besar. Maksimal 5 MB per foto.';
+export const PESAN_429 = 'Terlalu banyak permintaan (unggahan maks 20 per menit). Tunggu sebentar lalu coba lagi.';
+export const PESAN_409 = 'Permintaan yang sama masih diproses. Coba lagi sebentar lagi.';
+
+/** Pesan bawaan bila server tidak memberi pesan JSON (mis. 413 dari nginx) atau memberi pesan berbahasa Inggris (429). */
+export function statusMessage(status, serverMessage = '') {
+  if (status === 413) return PESAN_413;
+  if (status === 429) return PESAN_429;
+  return serverMessage || `Permintaan gagal (${status}).`;
+}
+
 /** Pesan ramah untuk toast dari ApiError (status, message, errors). */
 export function errorMessage(e, fallback = 'Terjadi kesalahan.') {
   if (!e) return fallback;
   if (e.status === 0) return 'Tidak ada koneksi internet.';
   if (e.status === 403) return 'Anda tidak punya hak akses.';
   if (e.status === 404) return 'Data tidak ditemukan atau sudah dihapus.';
+  if (e.status === 413) return PESAN_413;
+  if (e.status === 429) return PESAN_429;
+  if (e.status === 409) return PESAN_409;
   if (e.status === 422) return firstError(e.errors) || e.message || 'Data tidak valid.';
   if (e.status >= 500) return 'Terjadi gangguan pada server. Coba lagi nanti.';
   return e.message || fallback;

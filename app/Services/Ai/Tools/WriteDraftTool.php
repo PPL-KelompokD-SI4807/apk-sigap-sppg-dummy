@@ -9,6 +9,7 @@ use App\Services\Ai\Drafts\DraftService;
 use App\Services\Ai\Drafts\DraftValidationResult;
 use App\Services\Ai\Drafts\DraftValidator;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * Tool tulis (buat_..., ubah_..., hapus_...): TIDAK PERNAH menulis data modul. Alurnya:
@@ -32,7 +33,7 @@ abstract class WriteDraftTool extends BaseAiTool
         return true;
     }
 
-    /** @return class-string<\Illuminate\Foundation\Http\FormRequest>|null */
+    /** @return class-string<FormRequest>|null */
     abstract protected function formRequest(): ?string;
 
     /**

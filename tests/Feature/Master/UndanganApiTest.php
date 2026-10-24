@@ -38,8 +38,8 @@ class UndanganApiTest extends MasterApiTestCase
         $row = Invitation::query()->findOrFail($res->json('data.id'));
         $this->assertSame(hash('sha256', $token), $row->token_hash);
         $this->assertDatabaseMissing('invitations', ['token_hash' => $token]);
-        // Kedaluwarsa 48 jam.
-        $this->assertEqualsWithDelta(48 * 3600, now()->diffInSeconds($row->expires_at, true), 5);
+        // Kedaluwarsa 72 jam.
+        $this->assertEqualsWithDelta(72 * 3600, now()->diffInSeconds($row->expires_at, true), 5);
         $this->assertSame($this->admin->id, $row->created_by);
     }
 

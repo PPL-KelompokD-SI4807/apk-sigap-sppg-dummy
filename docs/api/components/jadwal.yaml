@@ -31,6 +31,16 @@ schemas:
       layak_distribusi: { type: boolean, description: 'true bila pemeriksaan mutu terbaru Layak' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
+  JadwalProduksiRingkas:
+    type: object
+    description: Ringkasan jadwal produksi tanpa data sensitif (pilihan pada form distribusi)
+    properties:
+      id: { type: integer }
+      tanggal_produksi: { type: string, format: date }
+      nama_menu: { type: [string, 'null'] }
+      target_porsi: { type: integer }
+      status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
+      status_label: { type: string }
   JadwalProduksiInput:
     type: object
     required: [menu_id, tanggal_produksi, target_porsi]

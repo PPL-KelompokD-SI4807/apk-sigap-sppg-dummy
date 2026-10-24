@@ -12,6 +12,7 @@ use App\Http\Resources\KeluhanResource;
 use App\Models\FeedbackKeluhan;
 use App\Services\Ai\AiDraftConfirmer;
 use App\Services\Keluhan\KeluhanService;
+use App\Services\Storage\PengikatLampiran;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,9 +23,12 @@ use Illuminate\Validation\Rule;
 
 class KeluhanController extends ApiController
 {
-    private const RELASI = ['titikLayanan', 'jadwalProduksi', 'pencatat', 'penangan'];
+    private const RELASI = ['titikLayanan', 'jadwalProduksi', 'pencatat', 'penangan', 'lampirans'];
 
-    public function __construct(private readonly KeluhanService $service) {}
+    public function __construct(
+        private readonly KeluhanService $service,
+        private readonly PengikatLampiran $lampiran,
+    ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -70,6 +74,7 @@ class KeluhanController extends ApiController
 
         $keluhan = DB::transaction(function () use ($user, $sppgId, $data, $confirmer) {
             $baru = $this->service->buat($user, $sppgId, $data);
+            $this->lampiran->ikat($data['lampiran_ids'] ?? [], $baru, 'keluhan', $user);
             $confirmer->confirm($data['ai_draft_id'] ?? null, $user, 'keluhan');
 
             return $baru;
@@ -91,6 +96,7 @@ class KeluhanController extends ApiController
 
         $diperbarui = DB::transaction(function () use ($request, $keluhan, $data, $confirmer) {
             $hasil = $this->service->perbarui($request->user(), $keluhan, $data);
+            $this->lampiran->ikat($data['lampiran_ids'] ?? [], $hasil, 'keluhan', $request->user());
             $confirmer->confirm($data['ai_draft_id'] ?? null, $request->user(), 'keluhan', (int) $hasil->id);
 
             return $hasil;

@@ -120,6 +120,53 @@ class SecureUploadService
                 'lampiranable_type' => $pemilik->getMorphClass(),
                 'lampiranable_id' => $pemilik->getKey(),
                 'uploaded_by' => $pengunggah?->getKey(),
+                'modul' => $modul,
+                'kategori' => $kategori,
+                'path' => $path,
+                'mime' => $gambar->mime,
+                'ukuran' => $gambar->ukuran,
+                'sha256' => $gambar->sha256,
+            ])->save();
+        } catch (\Throwable $e) {
+            $this->hapusBerkas($path);
+
+            throw $e;
+        }
+
+        return $lampiran;
+    }
+
+    /**
+     * Simpan unggahan "tertunda" (belum terikat ke record induk): klien lalu mengirim lampiran_ids
+     * pada store/update modul (lihat PengikatLampiran). lampiranable_type/id NULL sampai terikat.
+     *
+     * @param  string  $modul  slug modul tujuan dari KODE/allowlist config('unggahan.modul')
+     */
+    public function simpanTertunda(GambarSiap $gambar, int $sppgId, string $modul, User $pengunggah, ?string $kategori = null): Lampiran
+    {
+        if (preg_match('/^[a-z0-9][a-z0-9-]{0,39}$/', $modul) !== 1) {
+            throw new InvalidArgumentException('Slug modul unggahan tidak valid.');
+        }
+
+        if ($kategori !== null && preg_match('/^[a-z0-9_]{1,30}$/', $kategori) !== 1) {
+            throw new InvalidArgumentException('Kategori lampiran tidak valid.');
+        }
+
+        if ($sppgId < 1) {
+            throw new InvalidArgumentException('SPPG unggahan tidak valid.');
+        }
+
+        $path = sprintf('uploads/%d/%s/%s.%s', $sppgId, $modul, (string) Str::uuid(), $gambar->ekstensi);
+        $this->disk()->put($path, $gambar->isi);
+
+        try {
+            $lampiran = new Lampiran;
+            $lampiran->forceFill([
+                'sppg_id' => $sppgId,
+                'lampiranable_type' => null,
+                'lampiranable_id' => null,
+                'uploaded_by' => $pengunggah->getKey(),
+                'modul' => $modul,
                 'kategori' => $kategori,
                 'path' => $path,
                 'mime' => $gambar->mime,
@@ -180,6 +227,10 @@ class SecureUploadService
      */
     public function induk(Lampiran $lampiran): ?Model
     {
+        if ($lampiran->lampiranable_type === null || $lampiran->lampiranable_id === null) {
+            return null;
+        }
+
         $kelas = $this->kelasModul($lampiran->lampiranable_type);
 
         if ($kelas === null) {

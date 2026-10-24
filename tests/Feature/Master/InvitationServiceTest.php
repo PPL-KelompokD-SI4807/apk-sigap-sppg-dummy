@@ -61,7 +61,7 @@ class InvitationServiceTest extends MasterApiTestCase
             $tokens[] = $token;
             $this->assertSame(hash('sha256', $token), $inv->token_hash);
             $this->assertNotSame($token, $inv->token_hash);
-            $this->assertEquals(48, round(now()->diffInHours($inv->expires_at, true)));
+            $this->assertEquals(72, round(now()->diffInHours($inv->expires_at, true)));
         }
 
         $this->assertCount(20, array_unique($tokens));
@@ -148,22 +148,22 @@ class InvitationServiceTest extends MasterApiTestCase
         $this->assertNull($inv->fresh()->used_at);
     }
 
-    public function test_kedaluwarsa_setelah_48_jam(): void
+    public function test_kedaluwarsa_setelah_72_jam(): void
     {
         [$token] = $this->issueForNewAccount();
 
-        $this->travel(48)->hours();
+        $this->travel(72)->hours();
         $this->travel(1)->minutes();
 
         $this->assertReason(InvalidInvitationException::KEDALUWARSA, fn () => $this->service->consume($token, $this->tg()));
         $this->assertDatabaseCount('users', 7);
     }
 
-    public function test_masih_berlaku_sebelum_48_jam(): void
+    public function test_masih_berlaku_sebelum_72_jam(): void
     {
         [$token] = $this->issueForNewAccount();
 
-        $this->travel(47)->hours();
+        $this->travel(71)->hours();
 
         $this->assertSame(7_000_000_001, $this->service->consume($token, $this->tg())->telegram_id);
     }

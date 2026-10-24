@@ -27,10 +27,30 @@ final class ArgumentValidator
      */
     public function validate(array $schema, mixed $value): array
     {
+        if (self::depthOf($value) > self::MAX_DEPTH) {
+            return ['argumen: struktur terlalu dalam.'];
+        }
+
         $errors = [];
         $this->check($schema, $value, '', 0, $errors);
 
         return $errors;
+    }
+
+    /** Kedalaman struktur array (skalar = 0), berhenti lebih awal di atas MAX_DEPTH. */
+    private static function depthOf(mixed $value, int $level = 0): int
+    {
+        if (! is_array($value) || $level > self::MAX_DEPTH) {
+            return $level;
+        }
+
+        $max = $level + 1;
+
+        foreach ($value as $item) {
+            $max = max($max, self::depthOf($item, $level + 1));
+        }
+
+        return $max;
     }
 
     /**

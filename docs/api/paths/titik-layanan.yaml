@@ -129,7 +129,7 @@
       Admin atau Kepala SPPG (hak ubah titik layanan, SPPG sendiri). Tanpa body. PIC membuka tautan
       di Telegram; bot menautkan chat PIC ke titik layanan (`pic_telegram_chat_id`) agar menerima
       Notifikasi Perjalanan Mobil. Undangan PIC aktif sebelumnya untuk titik yang sama dicabut.
-      Token 32 byte acak, hanya hash disimpan, berlaku 48 jam, sekali pakai; `token` dan
+      Token 32 byte acak, hanya hash disimpan, berlaku 72 jam, sekali pakai; `token` dan
       `deep_link` hanya tampil pada respons ini.
     responses:
       '201':

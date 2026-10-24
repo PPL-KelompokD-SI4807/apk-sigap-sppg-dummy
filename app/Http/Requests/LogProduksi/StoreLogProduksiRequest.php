@@ -2,12 +2,15 @@
 
 namespace App\Http\Requests\LogProduksi;
 
+use App\Http\Requests\Lampiran\AturanLampiranIds;
 use App\Models\LogProduksi;
-use App\Rules\RelativeFilePath;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-/** Aturan log produksi (satu sumber; store, update, dan dry-run draf Agen AI). */
+/**
+ * Aturan log produksi (satu sumber; store, update, dan dry-run draf Agen AI). Foto lewat `lampiran_ids`
+ * (POST /lampiran lebih dulu); `foto_path` dari body tidak diterima.
+ */
 class StoreLogProduksiRequest extends FormRequest
 {
     protected function log(): ?LogProduksi
@@ -38,8 +41,7 @@ class StoreLogProduksiRequest extends FormRequest
             'waktu_mulai' => ['nullable', 'date_format:H:i'],
             'jam_selesai' => array_merge(['nullable', 'date_format:H:i'], $this->filled('waktu_mulai') ? ['after:waktu_mulai'] : []),
             'kendala' => ['nullable', 'string', 'max:2000'],
-            'foto_path' => ['nullable', new RelativeFilePath],
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
-        ];
+        ] + AturanLampiranIds::untuk('log-produksi');
     }
 }

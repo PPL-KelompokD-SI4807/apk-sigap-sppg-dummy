@@ -6,13 +6,15 @@ use App\Enums\KategoriKeluhan;
 use App\Enums\PrioritasKeluhan;
 use App\Enums\StatusKeluhan;
 use App\Enums\SumberKeluhan;
+use App\Http\Requests\Lampiran\AturanLampiranIds;
 use App\Models\FeedbackKeluhan;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
  * Admin boleh mengubah semua field; peran "RU" lain (kepala_sppg, ahli_gizi) hanya status dan
- * tindak_lanjut (field lain tidak lolos validasi sehingga diabaikan).
+ * tindak_lanjut (field lain tidak lolos validasi sehingga diabaikan). `lampiran_ids` (foto keluhan) boleh
+ * dikirim semua peran yang lolos otorisasi update.
  */
 class UpdateKeluhanRequest extends FormRequest
 {
@@ -31,7 +33,7 @@ class UpdateKeluhanRequest extends FormRequest
             'status' => ['sometimes', 'required', Rule::enum(StatusKeluhan::class)],
             'tindak_lanjut' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
-        ];
+        ] + AturanLampiranIds::untuk('keluhan');
 
         if ($this->user()?->isAdmin()) {
             $terkait = fn (string $tabel) => [

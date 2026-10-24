@@ -1,5 +1,6 @@
 import { toast } from './ui.js';
 import { enqueue, listQueue, removeItem } from './offline-queue.js';
+import { statusMessage } from './errors.js';
 
 const BASE = '/api/v1';
 const TOKEN_KEY = 'sigap_token';
@@ -86,7 +87,7 @@ export async function request(method, path, { query, body, key, silent = false }
   }
   if (res.ok) return data;
 
-  const message = data?.message || `Permintaan gagal (${res.status}).`;
+  const message = statusMessage(res.status, data?.message);
   if (res.status === 401 && path !== '/auth/telegram') {
     setToken(null);
     bus.dispatchEvent(new Event('auth-required'));

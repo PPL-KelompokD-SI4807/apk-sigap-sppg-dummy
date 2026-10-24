@@ -33,7 +33,7 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            'serve' => false, // tidak dipakai unggahan (lihat disk 'uploads'); jangan sajikan lewat /storage/*
             'throw' => false,
             'report' => false,
         ],

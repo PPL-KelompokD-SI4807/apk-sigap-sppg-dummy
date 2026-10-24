@@ -5,6 +5,7 @@ namespace App\Http\Requests\Keluhan;
 use App\Enums\KategoriKeluhan;
 use App\Enums\PrioritasKeluhan;
 use App\Enums\SumberKeluhan;
+use App\Http\Requests\Lampiran\AturanLampiranIds;
 use App\Models\FeedbackKeluhan;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -41,7 +42,7 @@ class StoreKeluhanRequest extends FormRequest
             'batch_tidak_diketahui' => ['nullable', 'boolean'],
             'deskripsi' => ['required', 'string', 'max:2000'],
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
-        ];
+        ] + AturanLampiranIds::untuk('keluhan');
     }
 
     /** @return array<string, string> */

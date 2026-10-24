@@ -21,7 +21,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Keamanan:
  * - Token = 32 byte acak kriptografis (base64url, 43 karakter); hanya hash SHA-256 disimpan.
- * - Berlaku TTL_HOURS jam (48), sekali pakai, dapat dicabut (revoked_at).
+ * - Berlaku TTL_HOURS jam (72, FR-01), sekali pakai, dapat dicabut (revoked_at).
  * - consume*(): transaksi + lockForUpdate + klaim atomik (UPDATE ... WHERE used_at IS NULL),
  *   sehingga dua pemakaian bersamaan tidak pernah sama-sama berhasil.
  * - telegram_id tidak pernah ganda: dicek (termasuk akun terhapus lunak) dan dijaga indeks unik DB.
@@ -33,7 +33,7 @@ use Illuminate\Validation\ValidationException;
  */
 class InvitationService
 {
-    public const TTL_HOURS = 48;
+    public const TTL_HOURS = 72;
 
     public const TOKEN_BYTES = 32;
 
