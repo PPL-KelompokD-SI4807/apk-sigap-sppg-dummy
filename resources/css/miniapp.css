@@ -148,3 +148,31 @@ a.seg-btn { display: flex; align-items: center; justify-content: center; color: 
 .komposisi-row select, .komposisi-row input { min-height: 44px; }
 .komposisi-row .btn { padding: 0; }
 .stack-tight { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---- Modul grup C: KPI, grafik, filter, pratinjau perjalanan ---- */
+.panel input[type="date"], .panel select, .panel textarea, .filter-row input, .filter-row select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--separator); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
+.panel textarea { resize: vertical; }
+.filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.big-num { font-size: 1.25rem; font-weight: 700; }
+.preview-msg { padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); }
+.preview-msg p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.kpi { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--radius); background: var(--bg-secondary); border-left: 4px solid var(--separator); min-width: 0; }
+.kpi-label { font-size: .8rem; color: var(--hint); }
+.kpi-value { font-size: 1.15rem; line-height: 1.25; overflow-wrap: anywhere; }
+.kpi-sub { font-size: .8rem; color: var(--hint); overflow-wrap: anywhere; }
+.kpi-ok { border-left-color: #1f9d6e; }
+.kpi-warn { border-left-color: #d9831f; }
+.kpi-danger { border-left-color: var(--danger); }
+.kpi-danger .kpi-value { color: var(--danger); }
+.progress { height: 8px; border-radius: 999px; background: var(--separator); overflow: hidden; }
+.progress > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.kpi-ok .progress > span { background: #1f9d6e; }
+.kpi-warn .progress > span { background: #d9831f; }
+.kpi-danger .progress > span { background: var(--danger); }
+.chart-box { position: relative; height: 200px; }
+.chart-box-sm { height: 180px; }
+.legend { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px; font-size: .85rem; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: var(--hint); }
+.dot-ok { background: #1f9d6e; } .dot-warn { background: #d9831f; } .dot-danger { background: var(--danger); } .dot-muted { background: var(--hint); }
+@media (min-width: 560px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

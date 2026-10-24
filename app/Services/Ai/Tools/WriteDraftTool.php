@@ -3,13 +3,15 @@
 namespace App\Services\Ai\Tools;
 
 use App\Enums\AksiAiDraft;
+use App\Models\AiDraft;
 use App\Models\User;
 use App\Services\Ai\Drafts\DraftService;
+use App\Services\Ai\Drafts\DraftValidationResult;
 use App\Services\Ai\Drafts\DraftValidator;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Tool tulis (buat_*/ubah_*/hapus_*): TIDAK PERNAH menulis data modul. Alurnya:
+ * Tool tulis (buat_..., ubah_..., hapus_...): TIDAK PERNAH menulis data modul. Alurnya:
  *   argumen tervalidasi skema -> argumen terlindungi dibuang -> target (ubah/hapus) dicari lewat
  *   SppgScope + Policy -> payload divalidasi dry-run dengan Form Request modul (DraftValidator)
  *   -> AiDraft pending (berlaku config ai.drafts.ttl_minutes) -> bot mengirim tombol Mini App.
@@ -91,6 +93,31 @@ abstract class WriteDraftTool extends BaseAiTool
     public function isAvailableFor(User $user): bool
     {
         return $user->sppg_id !== null && parent::isAvailableFor($user);
+    }
+
+    /**
+     * Validasi ulang draf tersimpan (GET /ai-drafts/{uuid}) dengan aturan Form Request terkini.
+     * Null bila modul tidak memakai Form Request (hapus).
+     */
+    public function revalidate(User $user, AiDraft $draft): ?DraftValidationResult
+    {
+        if ($this->formRequest() === null) {
+            return null;
+        }
+
+        $routeParameters = [];
+
+        if ($draft->target_id !== null && $this->routeParameter() !== null) {
+            $target = $this->findTarget($user, (int) $draft->target_id);
+
+            if ($target === null) {
+                return new DraftValidationResult(false);
+            }
+
+            $routeParameters = [$this->routeParameter() => $target];
+        }
+
+        return app(DraftValidator::class)->validate($this->formRequest(), (array) $draft->payload, $user, $routeParameters, (array) $draft->confidence);
     }
 
     final public function execute(User $user, array $arguments, ToolContext $context): ToolResult

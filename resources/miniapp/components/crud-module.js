@@ -1,5 +1,5 @@
 import { h, clear, formatValue } from '../core/dom.js';
-import { api, submitWithQueue } from '../core/api.js';
+import { api, submitWithQueue, request, newKey } from '../core/api.js';
 import { getUser } from '../core/auth.js';
 import { userPerms } from '../core/permissions.js';
 import { errorMessage } from '../core/errors.js';
@@ -9,7 +9,17 @@ import { createListView } from './list-view.js';
 import { createFormView } from './form-view.js';
 
 const unwrap = (res) => (res && res.data !== undefined && !Array.isArray(res) ? res.data : res);
-const me = (slug) => userPerms(getUser(), slug);
+const NONE = { C: false, R: false, U: false, D: false, selfOnly: false };
+
+// Kirim tanpa antrian offline (aksi yang tidak boleh tertunda, mis. memicu notifikasi). Kunci idempotensi tetap dikirim.
+async function submitDirect(method, path, body) {
+  try {
+    return { queued: false, data: await request(method, path, { body, key: newKey(), silent: true }) };
+  } catch (e) {
+    if (e?.status !== 422 && e?.status !== 401) toast(errorMessage(e, 'Gagal menyimpan data.'), 'error');
+    throw e;
+  }
+}
 
 function displayValue(field, rec) {
   if (field.display) return field.display(rec);
@@ -44,6 +54,10 @@ function displayValue(field, rec) {
  */
 export function defineCrudModule(def) {
   const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill } = def;
+  // Opsi tambahan (aditif): extraGuard(user)->bool (penyaring selain matriks, mis. unit relawan), searchable=false,
+  // queueOffline=false (tanpa antrian offline), beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
+  const { extraGuard, searchable = true, queueOffline = true, beforeSave } = def;
+  const me = (s) => (extraGuard && !extraGuard(getUser()) ? NONE : userPerms(getUser(), s));
   const fieldsFor = (mode, record) => (typeof fieldsDef === 'function' ? fieldsDef({ mode, user: getUser(), record }) : fieldsDef);
   const base = `/${slug}`;
   const recTitle = (rec) => (itemTitle ? itemTitle(rec) : rec[(columns.find((c) => c.primary) || columns[0]).key] ?? `#${rec.id}`);
@@ -52,7 +66,8 @@ export function defineCrudModule(def) {
   async function save({ mode, id, values, draftId }) {
     const body = { ...(mapPayload ? mapPayload(values, { mode }) : values) };
     if (draftId) body.ai_draft_id = draftId;
-    const res = await submitWithQueue(mode === 'create' ? 'POST' : 'PUT', mode === 'create' ? endpoint : `${endpoint}/${id}`, body, { label: title });
+    if (beforeSave && !(await beforeSave(body, { mode }))) return;
+    const res = await (queueOffline ? submitWithQueue : (m, p, b) => submitDirect(m, p, b))(mode === 'create' ? 'POST' : 'PUT', mode === 'create' ? endpoint : `${endpoint}/${id}`, body, { label: title });
     if (res.queued) toast('Tersimpan sebagai draf offline, dikirim saat online.', 'info');
     else toast('Data tersimpan.', 'success');
     if (onSaved) { try { onSaved({ mode, res }); } catch { /* abaikan */ } }
@@ -103,7 +118,7 @@ export function defineCrudModule(def) {
       const top = listTop ? listTop(p) : null;
       if (top) ctx.el.append(top);
       const lv = createListView({
-        endpoint, columns, extraQuery: listQuery, filters, renderCard, searchPlaceholder, createLabel,
+        endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder, createLabel,
         createHref: p.C ? `#${base}/baru` : null,
         itemHref: (r) => `#${base}/${r.id}`,
       });
@@ -161,5 +176,5 @@ export function defineCrudModule(def) {
     }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U });
   }
 
-  return { slug, title, icon, description, permissionSlug, register };
+  return { slug, title, icon, description, permissionSlug, register, visibleFor: extraGuard };
 }

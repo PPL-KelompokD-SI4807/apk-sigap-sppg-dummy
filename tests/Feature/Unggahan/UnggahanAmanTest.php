@@ -9,6 +9,7 @@ use App\Services\Storage\KetatPemrosesGambar;
 use App\Services\Storage\SecureUploadService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
 use Tests\Support\GambarUji;
@@ -37,7 +38,7 @@ class UnggahanAmanTest extends TestCase
         $this->pengeluaran = Pengeluaran::factory()->create(['sppg_id' => $this->sppgA]);
     }
 
-    private function unggah(mixed $berkas, ?int $id = null): \Illuminate\Testing\TestResponse
+    private function unggah(mixed $berkas, ?int $id = null): TestResponse
     {
         return $this->post('/api/v1/lampiran', [
             'modul' => 'keuangan-pengeluaran',

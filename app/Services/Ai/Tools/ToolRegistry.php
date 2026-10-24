@@ -62,6 +62,18 @@ class ToolRegistry
         ], $this->forUser($user)));
     }
 
+    /** Tool tulis untuk modul + aksi draf (dipakai GET /ai-drafts untuk validasi ulang). */
+    public function writeToolFor(string $module, string $draftAction): ?WriteDraftTool
+    {
+        foreach ($this->load() as $tool) {
+            if ($tool instanceof WriteDraftTool && $tool->module() === $module && $tool->draftAction()->value === $draftAction) {
+                return $tool;
+            }
+        }
+
+        return null;
+    }
+
     /** @throws ToolException */
     public function resolveFor(User $user, string $name): AiTool
     {

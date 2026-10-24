@@ -22,6 +22,65 @@ tags:
   - name: Auth
     description: Login Telegram (initData) dan sesi token
 paths:
+  /ai-drafts:
+    get:
+      tags: [Agen AI]
+      summary: Daftar draf AI pending milik sendiri
+      description: 'Draf berstatus pending yang belum kedaluwarsa milik pengguna login (maks 10, terbaru dulu). Draf pengguna lain tidak pernah ditampilkan.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AiDraft' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /ai-drafts/{uuid}:
+    parameters:
+      - { name: uuid, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Agen AI]
+      summary: Detail draf AI (prefill formulir)
+      description: |
+        Hanya pemilik draf pada SPPG yang sama; selain itu 404. Draf kedaluwarsa (default 30 menit),
+        sudah disimpan, atau dibuang -> 410. `errors` = validasi dry-run Form Request modul saat ini.
+        Mini App lalu memanggil endpoint modul (mis. POST /titik-layanan) dengan `ai_draft_id`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AiDraft' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Draf kedaluwarsa, sudah disimpan, atau sudah dibuang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { message: 'Draf sudah kedaluwarsa. Kirim ulang pesan ke bot atau isi formulir manual.' }
+    delete:
+      tags: [Agen AI]
+      summary: Buang draf AI
+      description: 'Idempoten untuk draf pending/kedaluwarsa/dibuang. Draf yang sudah disimpan -> 409. Bukan pemilik -> 404.'
+      responses:
+        '204': { description: Dibuang }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Draf sudah disimpan (confirmed).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /armada:
     get:
       tags: [Armada]
@@ -616,6 +675,141 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /bukti-distribusi:
+    get:
+      tags: [Bukti Distribusi]
+      summary: Daftar bukti distribusi
+      description: |
+        Hak R (Tabel 5): admin (lintas SPPG), kepala_sppg, ahli_gizi, akuntan, relawan unit distribusi.
+        Relawan hanya melihat bukti yang ia catat atau untuk jadwal yang ditugaskan kepadanya.
+        Urut waktu tiba terbaru. from/to memfilter tanggal `waktu_tiba`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: terlambat, in: query, schema: { type: boolean } }
+        - { name: jadwal_distribusi_id, in: query, schema: { type: integer } }
+        - { name: titik_layanan_id, in: query, schema: { type: integer } }
+        - { name: tanggal, in: query, description: Tanggal distribusi jadwal, schema: { type: string, format: date } }
+        - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/BuktiDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Bukti Distribusi]
+      summary: Catat bukti serah terima (multipart)
+      description: |
+        Hak C: kepala_sppg, relawan unit distribusi. Relawan: hanya jadwal hari ini (WIB) yang
+        ditugaskan kepadanya atau belum punya petugas (jadwal petugas lain -> 403); `waktu_tiba` =
+        waktu server. Jadwal dibatalkan, belum siap (menunggu), atau ditahan mutu (pemeriksaan terbaru
+        bukan Layak) -> 422 pada `jadwal_distribusi_id`. Satu bukti per jadwal (sudah ada -> 422; bukti
+        terhapus lunak dipulihkan dan ditimpa).
+        Keterlambatan: acuan = estimasi_tiba perjalanan terakhir, atau tanggal_distribusi + jam_rencana_tiba;
+        `terlambat` bila selisih > 15 menit (config). Setelah tersimpan: status jadwal -> diterima,
+        perjalanan aktif -> tiba, event `BuktiDistribusiDicatat` (+ `DistribusiTerlambat` bila terlambat).
+        Foto diverifikasi SecureUploadService (lihat POST /lampiran). Batas laju unggah 20/menit.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/BuktiDistribusiInput' }
+            example:
+              jadwal_distribusi_id: 31
+              porsi_diterima: 238
+              nama_pic: Ibu Contoh
+              catatan_selisih: '2 porsi tumpah saat bongkar'
+              latitude: -6.2
+              longitude: 106.8
+              foto: (binary)
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BuktiDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UploadRejected' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /bukti-distribusi/{id}:
+    get:
+      tags: [Bukti Distribusi]
+      summary: Detail bukti distribusi
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BuktiDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Bukti Distribusi]
+      summary: Ubah bukti distribusi
+      description: |
+        Hak U: kepala_sppg; relawan hanya bukti yang ia catat pada hari yang sama. JSON untuk field
+        teks; untuk mengganti foto kirim multipart lewat POST /bukti-distribusi/{id} dengan `_method=PUT`
+        (foto lama tetap tersimpan sebagai lampiran untuk jejak audit). PATCH diterima sebagai alias.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BuktiDistribusiUpdateInput' }
+            example: { nama_pic: Bapak Contoh, porsi_diterima: 239, catatan_selisih: '1 porsi rusak' }
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/BuktiDistribusiUpdateInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BuktiDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UploadRejected' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [Bukti Distribusi]
+      summary: Hapus lunak bukti distribusi (Kepala SPPG)
+      description: Status jadwal yang "diterima" kembali ke "berangkat" sehingga bukti dapat dicatat ulang.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Dihapus (soft delete + audit) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /jadwal:
     get:
       tags: [Jadwal]
@@ -1087,6 +1281,356 @@ paths:
           schema: { type: integer }
       responses:
         '204': { description: Dihapus (soft delete) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /keuangan/ringkasan:
+    get:
+      tags: [Keuangan]
+      summary: Ringkasan anggaran per periode (Gambar 16)
+      description: |
+        Hak R (akuntan, kepala_sppg, admin). Admin wajib `sppg_id`. Periode default = bulan berjalan (WIB).
+        anggaran = total pencairan periode; terpakai = total pengeluaran bertanggal di bulan periode;
+        sisa = anggaran - terpakai; persen = terpakai/anggaran*100. Status: aman (<80%), peringatan (>=80%),
+        habis (=100%), melampaui (>100% atau pengeluaran tanpa pencairan), belum_ada_anggaran.
+      parameters:
+        - { name: periode, in: query, schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', examples: ['2026-11'] } }
+        - { name: sppg_id, in: query, description: 'Wajib untuk Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RingkasanKeuangan' }
+              example:
+                data:
+                  sppg_id: 1
+                  periode: '2026-11'
+                  anggaran: 100000000
+                  terpakai: 40000000
+                  sisa: 60000000
+                  persen: 40
+                  status: aman
+                  jumlah_pencairan: 1
+                  jumlah_pengeluaran: 2
+                  jumlah_melebihi_anggaran: 0
+                  per_kategori:
+                    - { kategori: bahan_baku, label: Belanja Bahan, nominal: 30000000, jumlah: 1, persen: 75 }
+                    - { kategori: energi, label: 'Energi (Gas/Listrik/Air)', nominal: 10000000, jumlah: 1, persen: 25 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /keuangan/pencairan:
+    get:
+      tags: [Keuangan]
+      summary: Daftar pencairan dana
+      description: Hak R (akuntan, kepala_sppg, admin lintas SPPG). Peran lain 403.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: periode, in: query, schema: { type: string, examples: ['2026-11'] } }
+        - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PencairanDana' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Keuangan]
+      summary: Catat pencairan dana
+      description: |
+        Hak C: akuntan (SPPG sendiri). Nominal rupiah bulat > 0. Bukti transfer opsional (multipart `bukti`).
+        Pencairan baru menaikkan anggaran periode; penanda peringatan 80%/100% yang tidak lagi berlaku
+        dipersenjatai ulang sehingga dapat memicu peringatan lagi.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PencairanDanaInput' }
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/PencairanDanaInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PencairanDana' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UploadRejected' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /keuangan/pencairan/{id}:
+    get:
+      tags: [Keuangan]
+      summary: Detail pencairan dana
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PencairanDana' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Keuangan]
+      summary: Ubah pencairan dana (akuntan)
+      description: |
+        Field opsional. Ganti bukti: multipart POST dengan `_method=PUT`. PATCH = alias.
+        Perubahan nominal/periode menghitung ulang ambang kedua periode.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PencairanDanaInput' }
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/PencairanDanaInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PencairanDana' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UploadRejected' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [Keuangan]
+      summary: Hapus lunak pencairan dana (akuntan)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Dihapus (soft delete + audit) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /keuangan/pengeluaran:
+    get:
+      tags: [Keuangan]
+      summary: Daftar pengeluaran operasional
+      description: Hak R (akuntan, kepala_sppg, admin lintas SPPG). Peran lain 403.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: periode, in: query, description: 'Bulan tanggal pengeluaran.', schema: { type: string, examples: ['2026-11'] } }
+        - { name: kategori, in: query, schema: { $ref: '#/components/schemas/KategoriPengeluaran' } }
+        - { name: pemasok_id, in: query, schema: { type: integer } }
+        - { name: pencairan_dana_id, in: query, schema: { type: integer } }
+        - { name: melebihi_anggaran, in: query, schema: { type: boolean } }
+        - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Pengeluaran' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Keuangan]
+      summary: Catat pengeluaran operasional
+      description: |
+        Hak C: akuntan. Nominal rupiah bulat > 0; nota opsional (multipart `nota`, SecureUploadService).
+        Keputusan FR-09: pengeluaran yang melebihi sisa anggaran periode tetap DICATAT dan ditandai
+        `melebihi_anggaran=true` (config `operasional.keuangan.tolak_melebihi_anggaran=true` -> 422).
+        Event sekali per (SPPG, periode): `AnggaranMencapai80` (>=80%), `AnggaranMencapai100` (>=100%),
+        `AnggaranMelampaui` (>100%); payload {sppg_id, periode, ambang, anggaran, terpakai, sisa, persen}.
+        Ditulis atomik (kunci baris SPPG) sehingga kiriman bersamaan tidak menggandakan event.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PengeluaranInput' }
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/PengeluaranInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengeluaran' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UploadRejected' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /keuangan/pengeluaran/{id}:
+    get:
+      tags: [Keuangan]
+      summary: Detail pengeluaran operasional
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengeluaran' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Keuangan]
+      summary: Ubah pengeluaran operasional (akuntan)
+      description: |
+        Field opsional. Ganti nota: multipart POST dengan `_method=PUT`. PATCH = alias.
+        Perubahan nominal/tanggal menghitung ulang `melebihi_anggaran`; edit tidak pernah memancarkan ulang
+        event ambang yang sudah terkirim. Perubahan nominal tercatat di audit_logs (nilai lama/baru).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PengeluaranInput' }
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/PengeluaranInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengeluaran' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UploadRejected' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [Keuangan]
+      summary: Hapus lunak pengeluaran operasional (akuntan)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Dihapus (soft delete + audit) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /lampiran:
+    post:
+      tags: [Lampiran]
+      summary: Unggah lampiran gambar ke record modul
+      description: |
+        Unggahan aman (NFR-06) lewat SecureUploadService. Jenis ditentukan dari ISI berkas (finfo +
+        tanda tangan byte + getimagesize); ekstensi dan MIME klien diabaikan; nama berkas klien tidak
+        pernah dipakai. Gambar di-encode ulang (EXIF/metadata dibuang, diperkecil ke 1600 px) dan
+        disimpan di disk privat `uploads/{sppg_id}/{modul}/{uuid}.{ext}`.
+        Hak: `update` pada record induk menurut Policy modulnya (mis. akuntan untuk keuangan-pengeluaran).
+        Record induk SPPG lain -> 404. Batas laju unggah: 20/menit per pengguna (429).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/LampiranInput' }
+      responses:
+        '201':
+          description: Tersimpan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Lampiran' }
+              example:
+                data: { id: 12, kategori: nota, mime: image/jpeg, ukuran: 183204, sha256: '9f2c...e1', url: /api/v1/lampiran/12, uploaded_by: 7, created_at: '2026-11-20T09:00:00+07:00' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UploadRejected' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /lampiran/{id}:
+    get:
+      tags: [Lampiran]
+      summary: Sajikan berkas lampiran (privat)
+      description: |
+        Satu-satunya jalan mengakses berkas unggahan (tidak ada URL publik/symlink). Hak `view` pada
+        record induk (Policy modul induk); lampiran/induk SPPG lain atau induk terhapus -> 404;
+        berkas yang berubah di luar aplikasi (sha256 tidak cocok) -> 404.
+        Header: `Content-Type` dari MIME tersimpan, `X-Content-Type-Options: nosniff`,
+        `Content-Disposition: inline; filename="lampiran.<ext>"`, `Cache-Control: private, no-store`,
+        `Content-Security-Policy: default-src 'none'; sandbox`.
+        Mini App: ambil dengan fetch + Authorization lalu tampilkan via URL.createObjectURL(blob).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Isi berkas gambar
+          headers:
+            Content-Disposition:
+              schema: { type: string, examples: ['inline; filename="lampiran.jpg"'] }
+            Cache-Control:
+              schema: { type: string, examples: ['private, no-store'] }
+            X-Content-Type-Options:
+              schema: { type: string, examples: [nosniff] }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -2538,6 +3082,56 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+  /telegram/webhook:
+    post:
+      tags: [Telegram]
+      summary: Webhook Bot Telegram (dipanggil server Telegram)
+      description: |
+        Publik (tanpa token Bearer). Wajib header `X-Telegram-Bot-Api-Secret-Token` yang sama dengan
+        TELEGRAM_WEBHOOK_SECRET (hash_equals); secret kosong = semua ditolak 403. Idempoten berdasarkan
+        `update_id` (duplikat dibalas 200 tanpa diproses ulang). Selalu membalas cepat; pemrosesan di
+        antrean (ProcessTelegramUpdate / ProcessAiMessage). Hanya chat pribadi yang diproses.
+        Didaftarkan dengan `php artisan sigap:telegram-set-webhook` (lihat docs/api/telegram-bot.md).
+      security: []
+      parameters:
+        - { name: X-Telegram-Bot-Api-Secret-Token, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Objek Update Bot API (message atau callback_query).
+              required: [update_id]
+              properties:
+                update_id: { type: integer }
+                message: { type: object }
+                callback_query: { type: object }
+            example:
+              update_id: 900000001
+              message:
+                message_id: 10
+                date: 1793000000
+                chat: { id: 7012345678, type: private }
+                from: { id: 7012345678, is_bot: false, first_name: Siti }
+                text: '/start inv_contohTokenUndanganFiktif1234567890'
+      responses:
+        '200':
+          description: Diterima (atau diabaikan bila bukan update sah/duplikat).
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean } } }
+        '403':
+          description: Secret token salah/kosong.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Payload terlalu besar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /titik-layanan:
     get:
       tags: [Titik Layanan]
@@ -2754,6 +3348,48 @@ components:
           $ref: '#/components/schemas/PaginationLinks'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
+    AiDraft:
+      type: object
+      description: |
+        Draf hasil Agen AI (FR-11) untuk prefill formulir Mini App. Data BELUM tersimpan:
+        simpan dengan memanggil endpoint modul (POST/PUT) beserta `ai_draft_id` = `uuid`.
+        Kolom pada `perlu_dicek` (keyakinan < 0,7 atau gagal validasi) diberi label "Perlu dicek".
+      properties:
+        uuid: { type: string, format: uuid }
+        module: { type: string, description: 'Slug modul config/rbac.php, mis. titik-layanan.', example: titik-layanan }
+        module_label: { type: string, example: Titik Layanan }
+        action: { type: string, enum: [create, update, delete] }
+        target_id: { type: [integer, 'null'], description: 'ID record untuk update/delete.' }
+        payload:
+          type: object
+          additionalProperties: true
+          description: 'Nilai kolom form modul (nama field = field Form Request). Untuk update memuat `id`.'
+        confidence:
+          type: object
+          additionalProperties: { type: number, minimum: 0, maximum: 1 }
+        perlu_dicek: { type: array, items: { type: string } }
+        errors:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+          description: 'Hasil validasi dry-run Form Request terkini (kosong = siap disimpan). Hanya di GET detail.'
+        status: { type: string, enum: [pending, confirmed, discarded, expired] }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        form: { type: string, description: 'Rute Mini App tujuan, mis. /titik-layanan/baru.', example: /titik-layanan/baru }
+      example:
+        uuid: 3f6c1d2e-8a4b-4c1d-9e2f-0a1b2c3d4e5f
+        module: titik-layanan
+        module_label: Titik Layanan
+        action: create
+        target_id: null
+        payload: { nama: SDN 2 Sukamaju, jenis: sekolah, alamat: Jl. Fiktif No. 2, jarak_km: 3.5, jumlah_sasaran: 240, pic_nama: Bu Rina }
+        confidence: { nama: 0.95, jenis: 0.9, alamat: 0.0, jarak_km: 0.85, jumlah_sasaran: 0.9, pic_nama: 0.6 }
+        perlu_dicek: [alamat, pic_nama]
+        errors: {}
+        status: pending
+        expires_at: '2026-11-02T08:30:00+07:00'
+        created_at: '2026-11-02T08:00:00+07:00'
+        form: /titik-layanan/baru
     Armada:
       type: object
       properties:
@@ -2940,6 +3576,86 @@ components:
         sisa: { type: number }
         pemasok_id: { type: [integer, 'null'] }
         sisa_hari: { type: [integer, 'null'], description: 'Hari menuju kedaluwarsa (negatif = lewat)' }
+    BuktiDistribusiInput:
+      type: object
+      required: [jadwal_distribusi_id, porsi_diterima, nama_pic, foto]
+      properties:
+        jadwal_distribusi_id: { type: integer, description: 'Jadwal distribusi SPPG sendiri; satu bukti per jadwal.' }
+        porsi_diterima: { type: integer, minimum: 0, description: 'Maks = jumlah porsi jadwal.' }
+        nama_pic: { type: string, maxLength: 100, description: 'Nama penerima di titik layanan (berita acara).' }
+        no_berita_acara: { type: [string, 'null'], maxLength: 50 }
+        catatan_selisih: { type: [string, 'null'], maxLength: 1000, description: 'Wajib bila porsi_diterima < porsi dikirim.' }
+        catatan: { type: [string, 'null'], maxLength: 2000 }
+        waktu_tiba: { type: [string, 'null'], format: date-time, description: 'Hanya Kepala SPPG (koreksi). Relawan: selalu waktu server.' }
+        waktu_berangkat: { type: [string, 'null'], format: date-time, description: 'Default: waktu berangkat perjalanan terakhir.' }
+        waktu_ambil_foto: { type: [string, 'null'], format: date-time, description: Informasi pendukung dari klien. }
+        latitude: { type: [number, 'null'], minimum: -90, maximum: 90 }
+        longitude: { type: [number, 'null'], minimum: -180, maximum: 180 }
+        foto: { type: string, format: binary, description: 'Foto serah terima (JPEG/PNG/WebP, maks 5 MB).' }
+        berita_acara: { type: string, format: binary, description: 'Opsional: foto berita acara bertanda tangan.' }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    BuktiDistribusiUpdateInput:
+      type: object
+      description: Semua field opsional; `jadwal_distribusi_id` tidak dapat diubah (422).
+      properties:
+        porsi_diterima: { type: integer, minimum: 0 }
+        nama_pic: { type: string, maxLength: 100 }
+        no_berita_acara: { type: [string, 'null'] }
+        catatan_selisih: { type: [string, 'null'] }
+        catatan: { type: [string, 'null'] }
+        waktu_tiba: { type: [string, 'null'], format: date-time, description: 'Hanya Kepala SPPG; menghitung ulang keterlambatan.' }
+        waktu_berangkat: { type: [string, 'null'], format: date-time }
+        waktu_ambil_foto: { type: [string, 'null'], format: date-time }
+        latitude: { type: [number, 'null'] }
+        longitude: { type: [number, 'null'] }
+        foto: { type: string, format: binary }
+        berita_acara: { type: string, format: binary }
+        _method: { type: string, enum: [PUT], description: 'Wajib saat mengirim multipart lewat POST.' }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    BuktiDistribusi:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        jadwal_distribusi:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            tanggal_distribusi: { type: string, format: date }
+            jam_rencana_tiba: { type: [string, 'null'], examples: ['09:45'] }
+            status: { type: string, enum: [menunggu, siap, berangkat, diterima, dibatalkan] }
+            titik_layanan:
+              type: [object, 'null']
+              properties:
+                id: { type: integer }
+                nama: { type: string }
+        porsi_dikirim: { type: [integer, 'null'] }
+        porsi_diterima: { type: integer }
+        selisih_porsi: { type: [integer, 'null'] }
+        nama_pic: { type: string }
+        no_berita_acara: { type: [string, 'null'] }
+        catatan_selisih: { type: [string, 'null'] }
+        catatan: { type: [string, 'null'] }
+        waktu_berangkat: { type: [string, 'null'], format: date-time }
+        waktu_tiba: { type: string, format: date-time }
+        acuan_tiba: { type: [string, 'null'], format: date-time, description: 'Estimasi tiba perjalanan atau jam rencana tiba.' }
+        waktu_ambil_foto: { type: [string, 'null'], format: date-time }
+        terlambat: { type: boolean }
+        menit_keterlambatan: { type: [integer, 'null'], description: 'Menit setelah acuan (null bila tepat waktu/lebih awal).' }
+        latitude: { type: [number, 'null'] }
+        longitude: { type: [number, 'null'] }
+        foto: { $ref: '#/components/schemas/BerkasRingkas' }
+        berita_acara: { $ref: '#/components/schemas/BerkasRingkas' }
+        lampiran:
+          type: array
+          items: { $ref: '#/components/schemas/Lampiran' }
+        dicatat_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     StatusJadwalProduksi:
       type: string
       enum: [direncanakan, dimasak, selesai, dibatalkan]
@@ -3150,6 +3866,140 @@ components:
         per_prioritas: { rendah: 4, sedang: 3, tinggi: 0, kritis: 2 }
         terbuka: 5
         kritis_terbuka: 1
+    KategoriPengeluaran:
+      type: string
+      description: |
+        bahan_baku (belanja bahan), insentif_relawan (gaji/upah), energi (utilitas: gas/listrik/air),
+        transportasi (BBM/transport), peralatan, lainnya.
+      enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya]
+    PencairanDanaInput:
+      type: object
+      required: [periode, sumber_dana, nominal, tanggal_cair]
+      properties:
+        periode: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', examples: ['2026-11'] }
+        sumber_dana: { type: string, maxLength: 100, examples: ['BGN Tahap I'] }
+        nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
+        tanggal_cair: { type: string, format: date, description: Tidak boleh di masa depan. }
+        no_referensi: { type: [string, 'null'], maxLength: 50 }
+        catatan: { type: [string, 'null'], maxLength: 2000 }
+        bukti: { type: string, format: binary, description: 'Opsional (multipart): foto bukti transfer.' }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    PencairanDana:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        periode: { type: string }
+        sumber_dana: { type: string }
+        nominal: { type: integer }
+        tanggal_cair: { type: string, format: date }
+        no_referensi: { type: [string, 'null'] }
+        catatan: { type: [string, 'null'] }
+        bukti: { $ref: '#/components/schemas/BerkasRingkas' }
+        lampiran:
+          type: array
+          items: { $ref: '#/components/schemas/Lampiran' }
+        dicatat_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PengeluaranInput:
+      type: object
+      required: [tanggal, kategori, uraian, nominal]
+      properties:
+        tanggal: { type: string, format: date, description: 'Tidak boleh di masa depan; periode = bulan tanggal.' }
+        kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+        uraian: { type: string, maxLength: 255 }
+        nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
+        pemasok_id: { type: [integer, 'null'], description: Pemasok SPPG sendiri. }
+        pencairan_dana_id: { type: [integer, 'null'], description: Pencairan SPPG sendiri (opsional). }
+        nota: { type: string, format: binary, description: 'Opsional (multipart): foto nota.' }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    Pengeluaran:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        periode: { type: string, examples: ['2026-11'] }
+        tanggal: { type: string, format: date }
+        kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+        kategori_label: { type: string }
+        uraian: { type: string }
+        nominal: { type: integer }
+        melebihi_anggaran: { type: boolean, description: 'Saat dicatat/diubah, nominal melebihi sisa anggaran periode.' }
+        pemasok:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            nama: { type: string }
+        pencairan_dana_id: { type: [integer, 'null'] }
+        nota: { $ref: '#/components/schemas/BerkasRingkas' }
+        lampiran:
+          type: array
+          items: { $ref: '#/components/schemas/Lampiran' }
+        dicatat_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    RingkasanKeuangan:
+      type: object
+      properties:
+        sppg_id: { type: integer }
+        periode: { type: string, examples: ['2026-11'] }
+        anggaran: { type: integer, description: Total pencairan periode. }
+        terpakai: { type: integer, description: Total pengeluaran bertanggal di bulan periode. }
+        sisa: { type: integer, description: 'anggaran - terpakai (boleh negatif).' }
+        persen: { type: [number, 'null'], description: 'Serapan %, null bila belum ada pencairan.' }
+        status: { type: string, enum: [belum_ada_anggaran, aman, peringatan, habis, melampaui] }
+        jumlah_pencairan: { type: integer }
+        jumlah_pengeluaran: { type: integer }
+        jumlah_melebihi_anggaran: { type: integer }
+        per_kategori:
+          type: array
+          items:
+            type: object
+            properties:
+              kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+              label: { type: string }
+              nominal: { type: integer }
+              jumlah: { type: integer }
+              persen: { type: [number, 'null'], description: '% dari terpakai.' }
+    Lampiran:
+      type: object
+      description: Metadata lampiran. Jalur penyimpanan internal tidak pernah dikirim.
+      properties:
+        id: { type: integer }
+        kategori: { type: [string, 'null'], examples: [foto, berita_acara, nota, bukti] }
+        mime: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        ukuran: { type: integer, description: Byte berkas tersimpan (setelah encode ulang). }
+        sha256: { type: string, description: Hash berkas tersimpan (integritas). }
+        url: { type: string, examples: ['/api/v1/lampiran/12'], description: 'Endpoint API ber-token (bukan URL publik).' }
+        uploaded_by: { type: [integer, 'null'] }
+        created_at: { type: string, format: date-time }
+    BerkasRingkas:
+      type: [object, 'null']
+      description: Berkas utama record (foto/nota/bukti). Ambil isinya lewat `url` dengan header Authorization.
+      properties:
+        lampiran_id: { type: integer }
+        url: { type: string, examples: ['/api/v1/lampiran/12'] }
+        mime: { type: string }
+        ukuran: { type: integer }
+    LampiranInput:
+      type: object
+      required: [modul, lampiranable_id, berkas]
+      properties:
+        modul:
+          type: string
+          enum: [bukti-distribusi, keuangan-pencairan, keuangan-pengeluaran, keluhan, mutu, log-produksi]
+        lampiranable_id: { type: integer, description: ID record induk pada modul. }
+        kategori: { type: [string, 'null'], pattern: '^[a-z0-9_]{1,30}$' }
+        berkas: { type: string, format: binary, description: 'JPEG/PNG/WebP, maks 5 MB, sisi maks 8000 px.' }
     LogProduksi:
       type: object
       properties:
@@ -3810,6 +4660,16 @@ components:
       name: to
       in: query
       schema: { type: string, format: date }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        UUID unik per aksi tulis (NFR-07). Pengulangan dengan kunci dan payload sama dalam 24 jam
+        mengembalikan respons yang sama (header `Idempotent-Replayed: true`) tanpa membuat data baru.
+        Kunci sama dengan payload berbeda -> 422; permintaan kembar yang masih diproses -> 409.
+        Respons gagal (non-2xx) tidak disimpan.
+      schema: { type: string, format: uuid }
   responses:
     Unauthorized:
       description: Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
@@ -3849,3 +4709,21 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
           example: { message: 'Terjadi kesalahan pada server.' }
+    Conflict:
+      description: Permintaan dengan Idempotency-Key sama masih diproses.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Permintaan dengan Idempotency-Key yang sama sedang diproses. Coba lagi sebentar lagi.' }
+    UploadRejected:
+      description: |
+        Validasi gagal, termasuk berkas ditolak: bukan JPEG/PNG/WebP menurut ISI berkas, 0 byte,
+        > 5 MB, sisi > 8000 px atau > 30 MP, memuat konten tersembunyi (kode PHP/HTML/skrip/ZIP/PDF),
+        atau gagal diproses ulang.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+          example:
+            message: Data yang dikirim tidak valid.
+            errors:
+              berkas: ['Hanya gambar JPEG, PNG, atau WebP yang diizinkan.']

@@ -14,13 +14,18 @@ abstract class AnggaranEvent implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
 
+    /** anggaran - terpakai (negatif bila melampaui). */
+    public readonly int $sisa;
+
     public function __construct(
         public readonly int $sppgId,
         public readonly string $periode,
         public readonly int $anggaran,
         public readonly int $terpakai,
         public readonly float $persen,
-    ) {}
+    ) {
+        $this->sisa = $anggaran - $terpakai;
+    }
 
     abstract public function ambang(): string;
 
@@ -33,7 +38,7 @@ abstract class AnggaranEvent implements ShouldDispatchAfterCommit
             'ambang' => $this->ambang(),
             'anggaran' => $this->anggaran,
             'terpakai' => $this->terpakai,
-            'sisa' => $this->anggaran - $this->terpakai,
+            'sisa' => $this->sisa,
             'persen' => $this->persen,
         ];
     }

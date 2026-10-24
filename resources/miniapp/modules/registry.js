@@ -22,6 +22,6 @@ export const getModules = () => modules;
 export const menuFor = (role) => {
   const u = getUser();
   const user = u && u.role === role ? u : { role };
-  return modules.filter((m) => !m.hidden && userPerms(user, m.permissionSlug ?? m.slug).R);
+  return modules.filter((m) => !m.hidden && (typeof m.visibleFor !== 'function' || m.visibleFor(user)) && userPerms(user, m.permissionSlug ?? m.slug).R);
 };
 export function registerAllRoutes() { modules.forEach((m) => m.register?.()); }

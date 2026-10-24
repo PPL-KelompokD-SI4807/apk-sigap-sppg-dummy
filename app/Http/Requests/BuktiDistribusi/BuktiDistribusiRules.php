@@ -65,6 +65,12 @@ trait BuktiDistribusiRules
             'foto.max' => 'Ukuran foto maksimal 5 MB.',
             'berita_acara.max' => 'Ukuran foto berita acara maksimal 5 MB.',
             'foto.uploaded' => 'Foto gagal diunggah.',
+            'waktu_tiba.before_or_equal' => 'Waktu tiba tidak boleh di masa depan.',
+            'waktu_berangkat.before_or_equal' => 'Waktu berangkat tidak boleh di masa depan.',
+            'waktu_ambil_foto.before_or_equal' => 'Waktu ambil foto tidak boleh di masa depan.',
+            'latitude.between' => 'Latitude harus antara -90 dan 90.',
+            'longitude.between' => 'Longitude harus antara -180 dan 180.',
+            'porsi_diterima.min' => 'Porsi diterima tidak boleh negatif.',
         ];
     }
 }

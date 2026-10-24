@@ -6,7 +6,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Tool baca (cari_*/lihat_*/cek_*): dijalankan langsung atas nama pengguna login.
+ * Tool baca (cari_..., lihat_..., cek_...): dijalankan langsung atas nama pengguna login.
  *
  * - AiAgentService menjalankan tool di dalam ActingUser::run() sehingga SppgScope berlaku;
  *   subkelas WAJIB memakai query Eloquent biasa (jangan withoutGlobalScopes) dan

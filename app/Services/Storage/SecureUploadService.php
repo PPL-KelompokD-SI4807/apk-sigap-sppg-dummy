@@ -5,6 +5,7 @@ namespace App\Services\Storage;
 use App\Models\Lampiran;
 use App\Models\User;
 use finfo;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -221,7 +222,7 @@ class SecureUploadService
         }
     }
 
-    private function disk(): \Illuminate\Contracts\Filesystem\Filesystem
+    private function disk(): Filesystem
     {
         return Storage::disk((string) config('unggahan.disk', 'uploads'));
     }

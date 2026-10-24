@@ -5,8 +5,8 @@ namespace App\Services\Ai\Tools;
 use App\Models\User;
 
 /**
- * Kontrak tool Agen AI. Jangan implementasikan langsung: turunkan dari ReadTool (cari_*/lihat_*)
- * atau WriteDraftTool (buat_*/ubah_*/hapus_*). Lihat docs/api/ai-tools.md.
+ * Kontrak tool Agen AI. Jangan implementasikan langsung: turunkan dari ReadTool (cari_..., lihat_...)
+ * atau WriteDraftTool (buat_..., ubah_..., hapus_...). Lihat docs/api/ai-tools.md.
  */
 interface AiTool
 {
