@@ -1,0 +1,203 @@
+/pengguna:
+  get:
+    tags: [Pengguna]
+    summary: Daftar pengguna
+    description: |
+      Admin: semua pengguna (lintas SPPG). Kepala SPPG: pengguna SPPG-nya (R). Ahli Gizi, Akuntan,
+      Staf Gudang, Relawan (R*): daftar hanya berisi profil sendiri. Pengguna terhapus lunak tidak tampil.
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: role, in: query, schema: { $ref: '#/components/schemas/Role' } }
+      - { name: unit, in: query, schema: { type: string, enum: [dapur, distribusi] } }
+      - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+      - { name: is_active, in: query, schema: { type: boolean } }
+      - { name: status, in: query, description: 'menunggu_telegram = akun dibuat tetapi Telegram belum tertaut.', schema: { type: string, enum: [aktif, nonaktif, menunggu_telegram] } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/Pengguna' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+  post:
+    tags: [Pengguna]
+    summary: Tambah pengguna (Admin)
+    description: |
+      Membuat akun tanpa Telegram (status `menunggu_telegram`). Tautkan Telegram lewat
+      `POST /pengguna/undangan`. `telegram_id` tidak dapat diisi dari body. Peran admin wajib
+      `sppg_id` kosong; peran lain wajib `sppg_id`; peran relawan wajib `unit`.
+      Menerima `ai_draft_id` opsional (draf Agen AI milik pengguna, pending) yang ditandai confirmed.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PenggunaInput' }
+          example: { name: 'Siti Rahayu', role: relawan, unit: dapur, sppg_id: 1, phone: '0812-0000-1234' }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pengguna' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/pengguna/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Pengguna]
+    summary: Detail pengguna
+    description: Admin dan Kepala SPPG (SPPG-nya) melihat siapa pun yang berhak; peran lain hanya profil sendiri (R*), pengguna lain 403.
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pengguna' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Pengguna]
+    summary: Ubah pengguna (Admin)
+    description: |
+      Hanya Admin. Perubahan role/unit/sppg_id/is_active mencabut seluruh token aktif pengguna itu.
+      Admin tidak dapat menonaktifkan atau mengubah peran akunnya sendiri, dan admin aktif terakhir
+      tidak dapat dinonaktifkan/diturunkan (422, field `user`).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PenggunaUpdateInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pengguna' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Pengguna]
+    summary: Ubah sebagian pengguna (Admin)
+    description: Sama dengan PUT; semua field opsional.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PenggunaUpdateInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pengguna' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Pengguna]
+    summary: Hapus lunak pengguna (Admin)
+    description: Token pengguna dicabut. Tidak dapat menghapus akun sendiri atau admin aktif terakhir (422, field `user`).
+    responses:
+      '204': { description: Dihapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/pengguna/undangan:
+  get:
+    tags: [Pengguna]
+    summary: Daftar undangan Telegram (Admin)
+    description: Token tidak pernah ditampilkan ulang (hanya hash SHA-256 yang disimpan).
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - { name: status, in: query, schema: { type: string, enum: [aktif, terpakai, kedaluwarsa, dicabut] } }
+      - { name: tipe, in: query, schema: { type: string, enum: [pengguna, pic] } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/Undangan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Pengguna]
+    summary: Terbitkan tautan undangan pengguna (Admin)
+    description: |
+      Kebijakan: hanya Admin (FR-02: Admin yang mendaftarkan pengguna; proposal tidak memberi
+      Kepala SPPG hak undang). Dua mode: (a) `user_id` = akun yang sudah dibuat dan belum bertaut
+      Telegram; (b) `role` (+ `unit` untuk relawan, + `sppg_id` untuk non-admin) bila akun dibuat
+      otomatis saat tautan dipakai. Undangan aktif sebelumnya untuk akun yang sama dicabut.
+      Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 72 jam, sekali pakai.
+      `token` dan `deep_link` hanya ada pada respons ini; simpan/kirimkan segera.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UndanganInput' }
+          examples:
+            akunAda: { value: { user_id: 12 } }
+            akunBaru: { value: { role: relawan, unit: distribusi, sppg_id: 1 } }
+    responses:
+      '201':
+        description: Dibuat
+        headers:
+          Cache-Control: { schema: { type: string }, description: 'no-store' }
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/UndanganDibuat' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/pengguna/undangan/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  delete:
+    tags: [Pengguna]
+    summary: Cabut undangan (Admin)
+    description: Menandai undangan dicabut (revoked_at); tautan langsung tidak berlaku. Undangan yang sudah dipakai tidak dapat dicabut (422).
+    responses:
+      '204': { description: Dicabut }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
