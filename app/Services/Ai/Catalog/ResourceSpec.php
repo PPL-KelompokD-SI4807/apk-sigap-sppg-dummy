@@ -36,6 +36,8 @@ final class ResourceSpec
      * @param  string|null  $jenis  sub-jenis unit relawan (config rbac unit_rules.*.jenis), mis. 'produksi'
      * @param  array<string, string>  $hints  deskripsi kolom form untuk LLM
      * @param  list<string>  $exclude  kolom form yang tidak ditawarkan ke LLM
+     * @param  list<string>  $initials  nama kolom hasil ($list/$detail) yang disajikan sebagai inisial
+     *                                  (nama orang, mis. anak penerima manfaat; UU PDP)
      */
     public function __construct(
         public readonly string $key,
@@ -59,6 +61,7 @@ final class ResourceSpec
         public readonly ?string $jenis = null,
         public readonly array $hints = [],
         public readonly array $exclude = [],
+        public readonly array $initials = [],
     ) {}
 
     public function toolName(string $letter): string

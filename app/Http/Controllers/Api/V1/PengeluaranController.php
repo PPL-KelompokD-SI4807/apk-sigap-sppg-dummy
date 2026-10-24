@@ -72,7 +72,7 @@ class PengeluaranController extends ApiController
 
         $pengeluaran = DB::transaction(function () use ($user, $data, $nota, $confirmer) {
             $baru = $this->budget->catatPengeluaran($user, (int) $user->sppg_id, $data, $nota);
-            $confirmer->confirm($data['ai_draft_id'] ?? null, $user, 'keuangan');
+            $confirmer->confirm($data['ai_draft_id'] ?? null, $user, 'keuangan', resource: 'pengeluaran');
 
             return $baru;
         });
@@ -95,7 +95,7 @@ class PengeluaranController extends ApiController
 
         $hasil = DB::transaction(function () use ($user, $pengeluaran, $data, $nota, $confirmer) {
             $diperbarui = $this->budget->ubahPengeluaran($user, $pengeluaran, $data, $nota);
-            $confirmer->confirm($data['ai_draft_id'] ?? null, $user, 'keuangan', (int) $diperbarui->id);
+            $confirmer->confirm($data['ai_draft_id'] ?? null, $user, 'keuangan', (int) $diperbarui->id, resource: 'pengeluaran');
 
             return $diperbarui;
         });

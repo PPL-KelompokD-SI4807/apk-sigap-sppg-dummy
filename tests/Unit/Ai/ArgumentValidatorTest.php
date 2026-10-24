@@ -81,6 +81,46 @@ class ArgumentValidatorTest extends TestCase
         $this->assertSame([], (new ArgumentValidator)->validate($schema, ['a' => ['b' => 1]]));
     }
 
+    public function test_karakter_unicode_tak_terlihat_ditolak(): void
+    {
+        foreach ([
+            "SD\u{200B}1",      // zero-width space
+            "SD\u{200D}1",      // zero-width joiner
+            "SD\u{FEFF}",       // BOM
+            "\u{202E}1 DS",     // right-to-left override
+            "SD\u{2066}1",      // isolate bidi
+            "SD\u{00AD}1",      // soft hyphen
+            "SD\u{E0041}",      // tag "A" (penyelundupan teks ASCII)
+            "SD\u{2028}1",      // pemisah baris Unicode
+            "SD\u{3164}",       // pengisi Hangul
+        ] as $nama) {
+            $this->assertNotSame([], $this->errors(['nama' => $nama]), bin2hex($nama));
+        }
+
+        // Teks Indonesia biasa (huruf beraksen, emoji sederhana) tetap sah.
+        $this->assertSame([], $this->errors(['nama' => 'Café 👍', 'catatan' => "Baris 1\nBaris\t2"]));
+    }
+
+    public function test_kata_kunci_atau_format_skema_tak_dikenal_tidak_diabaikan(): void
+    {
+        $validator = new ArgumentValidator;
+
+        foreach ([
+            ['type' => 'object', 'properties' => ['n' => ['type' => 'integer', 'multipleOf' => 5]]],
+            ['type' => 'object', 'properties' => ['n' => ['type' => 'integer', 'exclusiveMaximum' => 5]]],
+            ['type' => 'object', 'properties' => ['n' => ['type' => 'string', 'format' => 'date-time']]],
+            ['type' => 'object', 'properties' => ['n' => ['type' => 'string', 'maxlength' => 3]]], // salah ketik
+        ] as $schema) {
+            $this->assertNotSame([], $validator->validate($schema, ['n' => 10]), json_encode($schema));
+        }
+
+        // Anotasi description/title tetap boleh.
+        $this->assertSame([], $validator->validate(
+            ['type' => 'object', 'title' => 'x', 'properties' => ['n' => ['type' => 'integer', 'description' => 'Jumlah.']]],
+            ['n' => 10],
+        ));
+    }
+
     public function test_argumen_terlindungi_dibuang_di_semua_level(): void
     {
         [$clean, $removed] = ArgumentValidator::stripProtected(

@@ -40,19 +40,19 @@ class AiDraftController extends ApiController
         $resource = new AiDraftResource($draft);
         $tool = $this->resolver->resolve($draft);
 
-        if ($tool !== null) {
-            if (! $tool->isAvailableFor($user)) {
-                throw new AccessDeniedHttpException('Anda tidak lagi berhak menyimpan draf ini.');
-            }
-
-            $result = ActingUser::run($user, fn () => $tool->revalidate($user, $draft));
-
-            if ($result !== null && ! $result->authorized) {
-                throw new AccessDeniedHttpException('Anda tidak lagi berhak menyimpan draf ini.');
-            }
-
-            $resource->errors = $result?->errors ?? [];
+        // Fail closed: draf tanpa tool pembuat yang dikenali (penanda sub-modul tak cocok, tool dimatikan)
+        // tidak disajikan untuk disimpan.
+        if ($tool === null || ! $tool->isAvailableFor($user)) {
+            throw new AccessDeniedHttpException('Anda tidak lagi berhak menyimpan draf ini.');
         }
+
+        $result = ActingUser::run($user, fn () => $tool->revalidate($user, $draft));
+
+        if ($result !== null && ! $result->authorized) {
+            throw new AccessDeniedHttpException('Anda tidak lagi berhak menyimpan draf ini.');
+        }
+
+        $resource->errors = $result?->errors ?? [];
 
         return $resource;
     }

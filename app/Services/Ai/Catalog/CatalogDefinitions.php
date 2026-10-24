@@ -83,6 +83,8 @@ use BackedEnum;
  * Aturan keamanan (diuji di tests/Feature/Ai/ToolKatalogTest):
  * - Kolom baca TIDAK PERNAH memuat data sensitif (no_sim, no_hp, telepon, telegram_*, NIK, alergi, koordinat,
  *   jalur berkas): RecordPresenter::assertSafe() menolaknya saat tool dibangun.
+ * - Nama orang (anak penerima manfaat, PIC, pengemudi) disajikan sebagai inisial + ID ($initials);
+ *   penerima manfaat juga tanpa sekolah/kelas. Nama lengkap hanya tampil di Mini App.
  * - Kolom form sensitif dikecualikan dari skema tulis ($exclude): pengguna mengisinya sendiri di Mini App.
  * - Ketersediaan tool = matriks Tabel 5 + aturan unit relawan + Policy (BaseAiTool); sppg_id/user_id/role
  *   tidak pernah ditawarkan dan selalu dibuang (config ai.protected_arguments).
@@ -143,17 +145,20 @@ final class CatalogDefinitions
                 store: StoreTitikLayananRequest::class, update: UpdateTitikLayananRequest::class, routeParameter: 'titikLayanan',
                 skip: ['cari_titik_layanan', 'buat_titik_layanan'],
                 exclude: ['pic_telepon'],
+                initials: ['pic_nama'],
             ),
 
-            // 5. Data Penerima Manfaat: catatan alergi (data kesehatan) tidak disajikan/ditawarkan.
+            // 5. Data Penerima Manfaat (data anak, UU PDP): ke LLM hanya inisial + ID, tanpa sekolah/kelas;
+            //    catatan alergi (data kesehatan) tidak disajikan/ditawarkan.
             new ResourceSpec(
                 key: 'penerima_manfaat', module: 'penerima-manfaat', label: 'penerima manfaat', model: PenerimaManfaat::class,
-                search: ['nama', 'kelas_keterangan'],
-                list: ['id', 'nama', 'kelompok_sasaran', 'kelas_keterangan', 'titik_layanan' => 'titikLayanan.nama', 'is_active'],
+                search: ['nama'],
+                list: ['id', 'nama', 'kelompok_sasaran', 'is_active'],
                 filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => self::values(KelompokSasaran::class)]],
                 order: [['nama', 'asc'], ['id', 'asc']],
                 store: StorePenerimaManfaatRequest::class, update: UpdatePenerimaManfaatRequest::class, routeParameter: 'penerimaManfaat',
                 exclude: ['catatan_alergi'],
+                initials: ['nama'],
             ),
 
             // 6. Data Bahan Baku (+ mutasi stok lewat CatatMutasiStokTool).
@@ -219,6 +224,7 @@ final class CatalogDefinitions
                 date: 'tanggal_distribusi', order: [['tanggal_distribusi', 'desc'], ['id', 'desc']],
                 store: StoreJadwalDistribusiRequest::class, update: UpdateJadwalDistribusiRequest::class, routeParameter: 'jadwal_distribusi',
                 marker: 'distribusi', jenis: 'distribusi',
+                initials: ['pengemudi'],
             ),
 
             // 10. Data Log Produksi Harian.
@@ -256,6 +262,7 @@ final class CatalogDefinitions
                 order: [['nama', 'asc']],
                 store: StorePengemudiRequest::class, update: UpdatePengemudiRequest::class, routeParameter: 'pengemudi',
                 marker: 'pengemudi', exclude: ['no_sim', 'no_hp'],
+                initials: ['nama'],
             ),
 
             // 13. Data Bukti Distribusi: foto/berita acara/koordinat diunggah di Mini App, tidak lewat AI.

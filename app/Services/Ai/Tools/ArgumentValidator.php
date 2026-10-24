@@ -9,7 +9,10 @@ namespace App\Services\Ai\Tools;
  * properties, required, additionalProperties (default FALSE = properti tak dikenal ditolak;
  * boleh berupa skema), maxProperties, enum, minLength/maxLength (default maks 1000),
  * pattern, format (date Y-m-d, time H:i), minimum/maximum, items, maxItems (default 50).
- * Kedalaman maksimum 4 level. Karakter NUL/kontrol (selain tab/baris baru) ditolak.
+ * Kedalaman maksimum 4 level. Karakter NUL/kontrol (selain tab/baris baru) ditolak, begitu pula
+ * karakter Unicode tak terlihat (zero-width, kendali arah bidi, tag U+E00xx, pengisi Hangul) yang
+ * dapat menyembunyikan instruksi di payload draf. Kata kunci skema atau format di luar yang didukung
+ * TIDAK diabaikan: argumen ditolak (fail closed) agar batasan yang salah ketik tidak hilang diam-diam.
  */
 final class ArgumentValidator
 {
@@ -20,6 +23,18 @@ final class ArgumentValidator
     public const DEFAULT_MAX_ITEMS = 50;
 
     public const DEFAULT_MAX_PROPERTIES = 40;
+
+    /** Kata kunci skema yang ditegakkan (+ anotasi tanpa efek: description, title). */
+    public const KEYWORDS = [
+        'type', 'properties', 'required', 'additionalProperties', 'maxProperties', 'enum',
+        'minLength', 'maxLength', 'pattern', 'format', 'minimum', 'maximum', 'items', 'minItems', 'maxItems',
+        'description', 'title',
+    ];
+
+    public const FORMATS = ['date', 'time'];
+
+    /** Format (Cf: zero-width, bidi, BOM, tag), pemisah baris/paragraf Unicode, dan huruf "kosong" Hangul. */
+    private const INVISIBLE = '/[\p{Cf}\x{2028}\x{2029}\x{115F}\x{1160}\x{3164}\x{FFA0}]/u';
 
     /**
      * @param  array<string, mixed>  $schema
@@ -97,6 +112,20 @@ final class ArgumentValidator
 
         if ($depth > self::MAX_DEPTH) {
             $errors[] = "{$label}: struktur terlalu dalam.";
+
+            return;
+        }
+
+        $unknown = array_diff(array_map('strval', array_keys($schema)), self::KEYWORDS);
+
+        if ($unknown !== []) {
+            $errors[] = "{$label}: skema memakai kata kunci tidak didukung (".implode(', ', $unknown).').';
+
+            return;
+        }
+
+        if (isset($schema['format']) && ! in_array($schema['format'], self::FORMATS, true)) {
+            $errors[] = "{$label}: format skema tidak didukung.";
 
             return;
         }
@@ -231,7 +260,9 @@ final class ArgumentValidator
         $max = (int) ($schema['maxLength'] ?? self::DEFAULT_MAX_STRING);
         $min = (int) ($schema['minLength'] ?? 0);
 
-        if (! mb_check_encoding($value, 'UTF-8') || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $value) === 1) {
+        if (! mb_check_encoding($value, 'UTF-8')
+            || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $value) === 1
+            || preg_match(self::INVISIBLE, $value) === 1) {
             $errors[] = "{$label}: memuat karakter tidak valid.";
 
             return;

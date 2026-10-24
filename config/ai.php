@@ -68,7 +68,7 @@ return [
     */
     'protected_arguments' => [
         'sppg_id', 'user_id', 'role', 'unit', 'created_by', 'updated_by', 'dicatat_oleh', 'dibuat_oleh',
-        'disusun_oleh', 'pemeriksa_id', 'uploaded_by', 'ditangani_oleh', 'telegram_id', 'pic_telegram_chat_id',
+        'disusun_oleh', 'dipicu_oleh', 'pemeriksa_id', 'penangan_id', 'uploaded_by', 'ditangani_oleh', 'telegram_id', 'pic_telegram_chat_id',
         'is_admin', 'status_kirim', 'ai_draft_id', 'id',
     ],
 

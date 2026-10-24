@@ -5,6 +5,7 @@ namespace App\Services\Ai\Tools\TitikLayanan;
 use App\Enums\JenisTitikLayanan;
 use App\Models\TitikLayanan;
 use App\Models\User;
+use App\Services\Ai\Catalog\RecordPresenter;
 use App\Services\Ai\Tools\ReadTool;
 
 /**
@@ -64,7 +65,7 @@ class CariTitikLayananTool extends ReadTool
                 'alamat' => $t->alamat,
                 'jarak_km' => $t->jarak_km === null ? null : (float) $t->jarak_km,
                 'jumlah_sasaran' => $t->jumlah_sasaran,
-                'pic_nama' => $t->pic_nama,
+                'pic_nama' => RecordPresenter::initials($t->pic_nama),
                 'pic_terhubung' => $t->picTerhubung(),
                 'aktif' => $t->is_active,
             ])->all(),

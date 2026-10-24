@@ -10,6 +10,7 @@ use App\Enums\StatusAiDraft;
 use App\Models\AiDraft;
 use App\Models\BahanBaku;
 use App\Models\FeedbackKeluhan;
+use App\Models\JadwalDistribusi;
 use App\Models\Pemasok;
 use App\Models\PenerimaManfaat;
 use App\Models\Pengemudi;
@@ -375,7 +376,10 @@ class ToolKatalogTest extends MasterApiTestCase
     public function test_argumen_sppg_id_dan_user_id_dari_model_dibuang_dan_draf_milik_pengguna_login(): void
     {
         $llm = new FakeLlmClient([
-            LlmResponse::toolCall('buat_pemasok', ['nama' => 'CV Tani Fiktif', 'jenis' => 'umkm', 'sppg_id' => $this->sppgB, 'user_id' => $this->kepalaB->id, 'role' => 'admin']),
+            LlmResponse::toolCall('buat_pemasok', [
+                'nama' => 'CV Tani Fiktif', 'jenis' => 'umkm', 'sppg_id' => $this->sppgB, 'user_id' => $this->kepalaB->id, 'role' => 'admin',
+                'dipicu_oleh' => $this->kepalaB->id, 'penangan_id' => $this->kepalaB->id,
+            ]),
             LlmResponse::text('Draf siap.'),
         ]);
         $this->app->instance(LlmClient::class, $llm);
@@ -388,6 +392,8 @@ class ToolKatalogTest extends MasterApiTestCase
         $this->assertArrayNotHasKey('sppg_id', $draft->payload);
         $this->assertArrayNotHasKey('user_id', $draft->payload);
         $this->assertArrayNotHasKey('role', $draft->payload);
+        $this->assertArrayNotHasKey('dipicu_oleh', $draft->payload);
+        $this->assertArrayNotHasKey('penangan_id', $draft->payload);
         $this->assertSame(0, Pemasok::query()->withoutGlobalScopes()->count());
     }
 
@@ -480,11 +486,55 @@ class ToolKatalogTest extends MasterApiTestCase
             ['bahan-baku', 'update', null, 'ubah_bahan_baku'],
         ];
 
+        // Fail closed: penanda yang tidak dimiliki tool mana pun -> null (bukan tool pertama).
+        $kasus[] = ['keuangan', 'create', 'tak_dikenal', null];
+        $kasus[] = ['keluhan', 'create', 'pengeluaran', null];
+        $kasus[] = ['bahan-baku', 'update', 'standar_gizi', null];
+
         foreach ($kasus as [$modul, $aksi, $penanda, $diharapkan]) {
             $draft = new AiDraft(['module' => $modul, 'action' => AksiAiDraft::from($aksi), 'payload' => $penanda === null ? [] : ['_resource' => $penanda]]);
 
             $this->assertSame($diharapkan, $resolver->resolve($draft)?->name(), "{$modul}/{$aksi}/{$penanda}");
         }
+
+        $this->assertFalse(method_exists(ToolRegistry::class, 'writeToolFor'));
+    }
+
+    public function test_nama_orang_dikirim_ke_llm_sebagai_inisial(): void
+    {
+        $this->forgetActor();
+        $titik = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA, 'nama' => 'SDN Contoh Rahasia', 'pic_nama' => 'Rahmat Hidayat']);
+        $penerima = PenerimaManfaat::factory()->create([
+            'sppg_id' => $this->sppgA, 'titik_layanan_id' => $titik->id, 'nama' => 'Siti Aminah Fiktif', 'kelas_keterangan' => 'Kelas 3B Melati',
+        ]);
+        $pengemudi = Pengemudi::factory()->create(['sppg_id' => $this->sppgA, 'nama' => 'Budi Santoso']);
+        JadwalDistribusi::factory()->create(['sppg_id' => $this->sppgA, 'titik_layanan_id' => $titik->id, 'pengemudi_id' => $pengemudi->id]);
+
+        $penerimaDaftar = $this->jalankan($this->kepalaA, $this->registry->all()['cari_penerima_manfaat'], ['q' => 'Siti']);
+        $penerimaDetail = $this->jalankan($this->kepalaA, $this->registry->all()['cari_penerima_manfaat'], ['id' => $penerima->id]);
+        $this->assertSame(['id' => $penerima->id, 'nama' => 'S.A.F.'], array_intersect_key($penerimaDetail->data['hasil'][0], ['id' => 1, 'nama' => 1]));
+        $this->assertSame('S.A.F.', $penerimaDaftar->data['hasil'][0]['nama']);
+
+        $pengemudiHasil = $this->jalankan($this->kepalaA, $this->registry->all()['cari_pengemudi'], ['id' => $pengemudi->id]);
+        $this->assertSame('B.S.', $pengemudiHasil->data['hasil'][0]['nama']);
+
+        $jadwal = $this->jalankan($this->kepalaA, $this->registry->all()['cari_jadwal_distribusi']);
+        $this->assertSame('B.S.', $jadwal->data['hasil'][0]['pengemudi']);
+
+        $titikHasil = $this->jalankan($this->kepalaA, $this->registry->all()['cari_titik_layanan'], ['q' => 'Rahasia']);
+        $this->assertSame('R.H.', $titikHasil->data['hasil'][0]['pic_nama']);
+
+        $semua = json_encode([$penerimaDaftar->data, $penerimaDetail->data, $pengemudiHasil->data, $jadwal->data, $titikHasil->data]);
+
+        foreach (['Siti', 'Aminah', 'Kelas 3B', 'Melati', 'Budi', 'Santoso', 'Rahmat', 'Hidayat'] as $nilai) {
+            $this->assertStringNotContainsString($nilai, $semua, "nama/kelas bocor ke LLM: {$nilai}");
+        }
+
+        // Sekolah penerima manfaat tidak ikut di hasil penerima manfaat.
+        $this->assertStringNotContainsString('SDN Contoh', json_encode([$penerimaDaftar->data, $penerimaDetail->data]));
+
+        // Mini App (REST) tetap menyajikan nama lengkap.
+        $this->as($this->kepalaA)->getJson("/api/v1/penerima-manfaat/{$penerima->id}")->assertOk()->assertJsonPath('data.nama', 'Siti Aminah Fiktif');
     }
 
     public function test_alur_catat_mutasi_stok_dari_draf_ke_simpan_di_mini_app(): void

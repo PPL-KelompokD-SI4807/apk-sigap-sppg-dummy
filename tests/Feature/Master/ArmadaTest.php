@@ -299,7 +299,12 @@ class ArmadaTest extends MasterApiTestCase
     public function test_pengemudi_ai_draft_id(): void
     {
         $this->forgetActor();
-        $draf = AiDraft::factory()->create(['user_id' => $this->kepalaA->id, 'sppg_id' => $this->sppgA, 'module' => 'armada']);
+        $draf = AiDraft::factory()->create(['user_id' => $this->kepalaA->id, 'sppg_id' => $this->sppgA, 'module' => 'armada', 'payload' => ['_resource' => 'pengemudi']]);
+        $drafArmada = AiDraft::factory()->create(['user_id' => $this->kepalaA->id, 'sppg_id' => $this->sppgA, 'module' => 'armada']);
+
+        // Draf armada (tanpa penanda) tidak dapat dikonfirmasi lewat endpoint pengemudi.
+        $this->as($this->kepalaA)->postJson('/api/v1/pengemudi', $this->driverPayload(['ai_draft_id' => $drafArmada->uuid]))
+            ->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);
 
         $this->as($this->kepalaA)->postJson('/api/v1/pengemudi', $this->driverPayload(['ai_draft_id' => $draf->uuid]))->assertCreated();
 

@@ -10,6 +10,8 @@ use App\Services\Ai\Tools\WriteDraftTool;
  * Menentukan tool tulis pembuat sebuah draf. Slug modul + aksi tidak selalu unik (mis. modul keuangan:
  * pencairan & pengeluaran; jadwal: produksi & distribusi), sehingga tool bertanda sub-modul dipilih
  * lewat penanda `_resource` pada payload draf; tanpa penanda dipakai tool bawaan modul (tanpa penanda).
+ * Fail closed: penanda yang tidak cocok dengan tool mana pun -> null (draf tidak divalidasi dengan
+ * Form Request yang salah).
  */
 final class DraftToolResolver
 {
@@ -24,10 +26,6 @@ final class DraftToolResolver
                 && $tool->draftAction()->value === $draft->action->value,
         ));
 
-        if (count($candidates) <= 1) {
-            return $candidates[0] ?? null;
-        }
-
         $marker = ((array) $draft->payload)['_resource'] ?? null;
 
         foreach ($candidates as $tool) {
@@ -38,6 +36,6 @@ final class DraftToolResolver
             }
         }
 
-        return $candidates[0];
+        return null;
     }
 }

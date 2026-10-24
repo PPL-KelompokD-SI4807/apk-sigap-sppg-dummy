@@ -42,7 +42,7 @@ final class RecordPresenter
      * @param  array<int|string, string>  $columns
      * @return array<string, mixed>
      */
-    public static function present(Model $model, array $columns, array $rupiah = [], int $maxText = self::MAX_TEXT): array
+    public static function present(Model $model, array $columns, array $rupiah = [], int $maxText = self::MAX_TEXT, array $initials = []): array
     {
         $out = [];
 
@@ -50,6 +50,12 @@ final class RecordPresenter
             $name = is_string($alias) ? $alias : $path;
             $value = str_contains($path, '.') ? data_get($model, $path) : $model->getAttribute($path);
             $column = str_contains($path, '.') ? null : $path;
+
+            if (in_array($name, $initials, true)) {
+                $out[$name] = is_string($value) ? self::initials($value) : null;
+
+                continue;
+            }
 
             $out[$name] = self::value($model, $column, $value, in_array($name, $rupiah, true) || in_array($path, $rupiah, true), $maxText);
         }
@@ -102,6 +108,18 @@ final class RecordPresenter
         }
 
         return null;
+    }
+
+    /** Inisial nama orang untuk LLM, mis. "Ahmad Santoso" -> "A.S." (nama lengkap hanya di Mini App). */
+    public static function initials(?string $name): ?string
+    {
+        $words = preg_split('/[^\p{L}\p{N}]+/u', (string) $name, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if ($words === []) {
+            return null;
+        }
+
+        return implode('', array_map(fn (string $w) => mb_strtoupper(mb_substr($w, 0, 1)).'.', array_slice($words, 0, 4)));
     }
 
     /** Teks aman: tanpa karakter kontrol & penanda blok data palsu, spasi dirapikan, dipotong. */

@@ -66,7 +66,7 @@ class JadwalDistribusiController extends ApiController
 
         $jadwal = DB::transaction(function () use ($request, $data): JadwalDistribusi {
             $jadwal = $this->distribusi->buat($request->user(), $data);
-            $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE);
+            $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, resource: 'distribusi');
 
             return $jadwal;
         });
@@ -88,7 +88,7 @@ class JadwalDistribusiController extends ApiController
 
         $diubah = DB::transaction(function () use ($request, $jadwalDistribusi, $data): JadwalDistribusi {
             $diubah = $this->distribusi->perbarui($jadwalDistribusi, $data);
-            $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id);
+            $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id, resource: 'distribusi');
 
             return $diubah;
         });

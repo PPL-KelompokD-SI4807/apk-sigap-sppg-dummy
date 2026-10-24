@@ -12,6 +12,7 @@ use App\Models\JadwalProduksi;
 use App\Models\PemeriksaanMutu;
 use App\Models\Pengemudi;
 use App\Models\TitikLayanan;
+use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 
 class JadwalDistribusiTest extends GrupBTestCase
@@ -292,11 +293,42 @@ class JadwalDistribusiTest extends GrupBTestCase
         $this->getJson('/api/v1/jadwal/distribusi?per_page=2')->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('meta.total', 3);
     }
 
+    public function test_petugas_wajib_relawan_distribusi_aktif_sppg_sama(): void
+    {
+        $sah = $this->user(Role::Relawan, null, RelawanUnit::Distribusi);
+        $ditolak = [
+            'relawan dapur' => $this->user(Role::Relawan, null, RelawanUnit::Dapur),
+            'bukan relawan' => $this->user(Role::AhliGizi),
+            'nonaktif' => tap($this->user(Role::Relawan, null, RelawanUnit::Distribusi), fn (User $u) => $u->forceFill(['is_active' => false])->save()),
+            'sppg lain' => $this->user(Role::Relawan, $this->sppgB, RelawanUnit::Distribusi),
+            'terhapus' => tap($this->user(Role::Relawan, null, RelawanUnit::Distribusi), fn (User $u) => $u->delete()),
+        ];
+        $this->login(Role::KepalaSppg);
+
+        foreach ($ditolak as $alasan => $petugas) {
+            $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['petugas_id' => $petugas->id]))
+                ->assertUnprocessable()->assertJsonValidationErrors(['petugas_id']);
+        }
+
+        $id = $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['petugas_id' => $sah->id]))
+            ->assertCreated()->assertJsonPath('data.petugas_id', $sah->id)->json('data.id');
+
+        // Update memakai aturan yang sama.
+        $this->patchJson("/api/v1/jadwal/distribusi/{$id}", ['petugas_id' => $ditolak['relawan dapur']->id])
+            ->assertUnprocessable()->assertJsonValidationErrors(['petugas_id']);
+    }
+
     public function test_draf_ai_dikonfirmasi(): void
     {
         $user = $this->user(Role::KepalaSppg);
-        $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal']);
+        $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal', 'payload' => ['_resource' => 'distribusi']]);
+        $drafProduksi = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal']);
         Sanctum::actingAs($user);
+
+        // Draf jadwal PRODUKSI (tanpa penanda) tidak dapat dikonfirmasi lewat endpoint distribusi.
+        $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['ai_draft_id' => $drafProduksi->uuid]))
+            ->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);
+        $this->assertSame('pending', $drafProduksi->fresh()->status->value);
 
         $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['ai_draft_id' => $draf->uuid]))->assertCreated();
         $this->assertSame('confirmed', $draf->fresh()->status->value);

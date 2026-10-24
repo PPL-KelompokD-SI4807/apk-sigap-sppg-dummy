@@ -54,7 +54,7 @@ class PengemudiController extends ApiController
             }
 
             $pengemudi->save();
-            $confirmer->confirm($request->validated('ai_draft_id'), $request->user(), 'armada');
+            $confirmer->confirm($request->validated('ai_draft_id'), $request->user(), 'armada', resource: 'pengemudi');
 
             return $pengemudi;
         });
@@ -66,7 +66,7 @@ class PengemudiController extends ApiController
     {
         DB::transaction(function () use ($request, $pengemudi, $confirmer): void {
             $pengemudi->update($request->safe()->except('ai_draft_id'));
-            $confirmer->confirm($request->validated('ai_draft_id'), $request->user(), 'armada', $pengemudi->getKey());
+            $confirmer->confirm($request->validated('ai_draft_id'), $request->user(), 'armada', $pengemudi->getKey(), resource: 'pengemudi');
         });
 
         return new PengemudiResource($pengemudi->refresh());

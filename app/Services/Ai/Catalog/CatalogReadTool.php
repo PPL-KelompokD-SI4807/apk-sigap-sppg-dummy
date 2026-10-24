@@ -112,7 +112,7 @@ class CatalogReadTool extends ReadTool
         return [
             'jumlah' => $shown->count(),
             'ada_lagi' => ! $detail && $rows->count() > $limit,
-            'hasil' => $shown->map(fn (Model $m) => RecordPresenter::present($m, $columns, $spec->rupiah, $detail ? RecordPresenter::MAX_TEXT_DETAIL : RecordPresenter::MAX_TEXT))->all(),
+            'hasil' => $shown->map(fn (Model $m) => RecordPresenter::present($m, $columns, $spec->rupiah, $detail ? RecordPresenter::MAX_TEXT_DETAIL : RecordPresenter::MAX_TEXT, $spec->initials))->all(),
             'catatan' => RecordPresenter::NOTE,
         ];
     }

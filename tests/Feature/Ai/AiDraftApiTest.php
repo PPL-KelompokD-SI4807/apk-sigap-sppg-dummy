@@ -143,6 +143,25 @@ class AiDraftApiTest extends MasterApiTestCase
         $this->as($this->ahliGiziA)->getJson("/api/v1/ai-drafts/{$draft->uuid}")->assertForbidden();
     }
 
+    public function test_draf_dengan_penanda_sub_modul_tak_dikenal_ditolak_403(): void
+    {
+        $draft = $this->draft($this->kepalaA, ['payload' => ['nama' => 'SDN 3 Fiktif', '_resource' => 'pengeluaran']]);
+
+        $this->as($this->kepalaA)->getJson("/api/v1/ai-drafts/{$draft->uuid}")->assertForbidden();
+    }
+
+    public function test_draf_sub_modul_tidak_dapat_dikonfirmasi_lewat_endpoint_sumber_daya_lain(): void
+    {
+        // Draf penanda 'pengeluaran' (modul titik-layanan tidak punya sub-modul) ditolak endpoint bawaan.
+        $draft = $this->draft($this->kepalaA, ['payload' => ['nama' => 'SDN 3 Fiktif', '_resource' => 'pengeluaran']]);
+
+        $this->as($this->kepalaA)->postJson('/api/v1/titik-layanan', [
+            'nama' => 'SDN 3 Fiktif', 'jenis' => 'sekolah', 'alamat' => 'Jl. Fiktif 3', 'pic_nama' => 'Bu Ani', 'ai_draft_id' => $draft->uuid,
+        ])->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);
+
+        $this->assertSame(StatusAiDraft::Pending, $draft->fresh()->status);
+    }
+
     public function test_draf_create_tidak_dapat_dikonfirmasi_lewat_update(): void
     {
         $titik = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA]);

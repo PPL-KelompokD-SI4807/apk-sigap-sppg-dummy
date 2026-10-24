@@ -173,7 +173,7 @@ class BahanBakuController extends ApiController
                 $request->user(),
                 $data,
             );
-            $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $bahanBaku->id);
+            $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $bahanBaku->id, resource: 'mutasi_stok');
 
             return $mutasi;
         });
