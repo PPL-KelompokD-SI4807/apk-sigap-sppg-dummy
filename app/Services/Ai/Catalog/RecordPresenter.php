@@ -108,7 +108,7 @@ final class RecordPresenter
     public static function text(string $value, int $max = self::MAX_TEXT): string
     {
         $value = (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
-        $value = (string) preg_replace('/<\s*\/?\s*data_pengguna[^>]*>/iu', '', $value);
+        $value = (string) preg_replace('/<\s*\/?\s*(?:data_pengguna|hasil_tool)[^>]*>/iu', '', $value);
         $value = trim((string) preg_replace('/\s+/u', ' ', $value));
 
         return mb_strlen($value) > $max ? rtrim(mb_substr($value, 0, $max)).'…' : $value;

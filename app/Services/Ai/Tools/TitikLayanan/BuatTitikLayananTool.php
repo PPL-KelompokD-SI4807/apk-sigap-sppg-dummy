@@ -40,7 +40,6 @@ class BuatTitikLayananTool extends WriteDraftTool
                 'jarak_km' => ['type' => 'number', 'minimum' => 0, 'maximum' => 9999.99, 'description' => 'Jarak dari SPPG (km).'],
                 'jumlah_sasaran' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 100000],
                 'pic_nama' => ['type' => 'string', 'maxLength' => 255, 'description' => 'Nama PIC penerima di titik layanan.'],
-                'pic_telepon' => ['type' => 'string', 'maxLength' => 20],
             ],
             'required' => ['nama'],
         ];

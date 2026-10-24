@@ -3,6 +3,7 @@
 namespace App\Services\Ai\Tools;
 
 use App\Models\User;
+use App\Services\Ai\Catalog\ToolCatalog;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
 use ReflectionClass;
@@ -103,6 +104,12 @@ class ToolRegistry
 
         foreach ($this->discover() as $class) {
             $this->add($this->container->make($class));
+        }
+
+        if (config('ai.tools.catalog', true)) {
+            foreach (ToolCatalog::tools() as $tool) {
+                $this->add($tool);
+            }
         }
 
         foreach ((array) config('ai.tools.extra', []) as $class) {

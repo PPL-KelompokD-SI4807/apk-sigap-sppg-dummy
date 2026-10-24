@@ -77,6 +77,8 @@ return [
         'paths' => [app_path('Services/Ai/Tools')],
         // Kelas tambahan di luar direktori di atas.
         'extra' => [],
+        // Tool generik 16 modul dari Catalog\CatalogDefinitions (cari_/buat_/ubah_/hapus_).
+        'catalog' => true,
         // Nama tool yang dimatikan (mis. ['hapus_pengeluaran']).
         'disabled' => [],
     ],

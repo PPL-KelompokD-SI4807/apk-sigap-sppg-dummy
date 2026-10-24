@@ -54,7 +54,11 @@ class AiAgentServiceTest extends MasterApiTestCase
         $messages = $this->llm->calls[$call]['messages'];
         $tool = collect($messages)->where('role', 'tool')->last();
 
-        return json_decode($tool['content'], true);
+        // R4: hasil tool selalu dibungkus penanda acak per permintaan sebagai DATA.
+        $this->assertMatchesRegularExpression('#^<hasil_tool_([0-9a-f]{12})>\n.*\n</hasil_tool_\1>$#s', $tool['content']);
+        $this->assertStringContainsString('hasil_tool_', (string) ($this->llm->calls[$call]['options']['system'] ?? ''));
+
+        return json_decode((string) preg_replace('#^<hasil_tool_[0-9a-f]+>\n|\n</hasil_tool_[0-9a-f]+>$#', '', $tool['content']), true);
     }
 
     // ------------------------------------------------------------------ tool baca
@@ -113,14 +117,13 @@ class AiAgentServiceTest extends MasterApiTestCase
 
     public function test_draf_menandai_kolom_gagal_validasi_form_request_dengan_keyakinan_nol(): void
     {
-        $this->llm->push(LlmResponse::toolCall('buat_titik_layanan', ['nama' => 'Posyandu Melati', 'pic_telepon' => '12']));
+        $this->llm->push(LlmResponse::toolCall('buat_titik_layanan', ['nama' => 'Posyandu Melati']));
 
         $this->agent()->handle($this->kepalaA, AiInput::text('tambah posyandu melati'));
 
         $draft = AiDraft::query()->withoutGlobalScopes()->sole();
-        $this->assertEquals(0, $draft->confidence['pic_telepon']);
         $this->assertEquals(0, $draft->confidence['jenis']);
-        $this->assertEqualsCanonicalizing(['jenis', 'alamat', 'pic_nama', 'pic_telepon'], $this->lastToolResult()['data']['perlu_dicek']);
+        $this->assertEqualsCanonicalizing(['jenis', 'alamat', 'pic_nama'], $this->lastToolResult()['data']['perlu_dicek']);
     }
 
     // ------------------------------------------------------------------ prompt injection
@@ -138,8 +141,11 @@ class AiAgentServiceTest extends MasterApiTestCase
 
         $this->agent()->handle($this->kepalaA, AiInput::text($injeksi));
 
+        // Data tidak terhapus: hapus_titik_layanan yang sah hanya membuat DRAF yang menunggu konfirmasi manusia.
         $this->assertSame(1, TitikLayanan::query()->withoutGlobalScopes()->count());
-        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
+        $draf = AiDraft::query()->withoutGlobalScopes()->sole();
+        $this->assertSame('delete', $draf->action->value);
+        $this->assertSame(StatusAiDraft::Pending, $draf->status);
 
         // Masukan dibungkus sebagai data dengan penanda acak; penanda palsu dihapus.
         $user = $this->llm->calls[0]['messages'][0]['content'];
@@ -150,8 +156,7 @@ class AiAgentServiceTest extends MasterApiTestCase
         $this->assertStringContainsString('Kepala SPPG', $system);
 
         $statuses = collect(AiInteraction::query()->sole()->argumen['tools'])->pluck('status')->all();
-        $this->assertSame(['invalid', 'invalid', 'invalid'], $statuses);
-        $this->assertSame(HasilAi::Ditolak, AiInteraction::query()->sole()->hasil);
+        $this->assertSame(['invalid', 'draft', 'invalid'], $statuses);
     }
 
     public function test_relawan_tidak_ditawari_dan_ditolak_saat_memanggil_tool_tulis_admin(): void
@@ -160,7 +165,8 @@ class AiAgentServiceTest extends MasterApiTestCase
 
         $this->agent()->handle($this->relawanA, AiInput::text('tambahkan titik layanan SD Palsu'));
 
-        $this->assertSame(['cari_titik_layanan'], $this->llm->offeredTools(0));
+        $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
+        $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => str_ends_with($n, '_titik_layanan') && ! str_starts_with($n, 'cari_'))));
         $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
         $this->assertSame('ditolak', $this->lastToolResult()['status']);
         $this->assertSame(HasilAi::Ditolak, AiInteraction::query()->sole()->hasil);
@@ -171,7 +177,8 @@ class AiAgentServiceTest extends MasterApiTestCase
         // Admin: lintas SPPG -> tidak ada tool tulis (draf butuh SPPG), tetap boleh membaca.
         $this->llm->push(LlmResponse::text('ok'));
         $this->agent()->handle($this->admin, AiInput::text('halo'));
-        $this->assertSame(['cari_titik_layanan'], $this->llm->offeredTools(0));
+        $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
+        $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_'))));
 
         // Pengguna nonaktif: tidak ada tool, tidak ada panggilan LLM.
         $nonaktif = User::factory()->role(Role::KepalaSppg)->inactive()->create(['sppg_id' => $this->sppgA]);

@@ -145,7 +145,7 @@ class AiAgentService
                     'role' => 'tool',
                     'tool_call_id' => $call->id,
                     'name' => $call->name,
-                    'content' => $result->toModelContent((int) config('ai.agent.max_tool_result_chars', 6000)),
+                    'content' => $this->parser->wrapToolResult($result->toModelContent((int) config('ai.agent.max_tool_result_chars', 6000)), $nonce),
                     'is_error' => $result->isError(),
                 ];
             }

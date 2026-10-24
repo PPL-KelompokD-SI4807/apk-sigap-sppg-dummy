@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Resources\Ai\AiDraftResource;
 use App\Services\Ai\ActingUser;
+use App\Services\Ai\Catalog\DraftToolResolver;
 use App\Services\Ai\Drafts\DraftService;
-use App\Services\Ai\Tools\ToolRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -21,7 +21,7 @@ class AiDraftController extends ApiController
 {
     public function __construct(
         private readonly DraftService $drafts,
-        private readonly ToolRegistry $registry,
+        private readonly DraftToolResolver $resolver,
     ) {}
 
     /** GET /ai-drafts : draf pending milik sendiri (maks config ai.drafts.max_pending_per_user). */
@@ -38,7 +38,7 @@ class AiDraftController extends ApiController
         $this->drafts->assertUsable($draft);
 
         $resource = new AiDraftResource($draft);
-        $tool = $this->registry->writeToolFor($draft->module, $draft->action->value);
+        $tool = $this->resolver->resolve($draft);
 
         if ($tool !== null) {
             if (! $tool->isAvailableFor($user)) {
