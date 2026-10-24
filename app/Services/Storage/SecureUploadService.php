@@ -39,6 +39,8 @@ class SecureUploadService
     /** Pola berbahaya yang menandakan polyglot / payload tersisip (dicari case-insensitive). */
     private const POLA_POLYGLOT = [
         '/<\?php/i',
+        // Short echo PHP ("<?=$x", "<?=system("); "<?=" saja terlalu sering muncul acak di data terkompresi.
+        '/<\?=\s*(\$[a-z_]|[a-z_]\w*\s*\()/i',
         '/<script[\s>\/]/i',
         '/<html[\s>]/i',
         '/<body[\s>]/i',
@@ -180,6 +182,29 @@ class SecureUploadService
         }
 
         return $lampiran;
+    }
+
+    /**
+     * Hapus semua lampiran milik $pemilik (baris + berkas). Di dalam transaksi, berkas baru dihapus
+     * setelah commit (rollback -> berkas tetap ada). Mengembalikan jumlah baris yang dihapus.
+     */
+    public function hapusSemua(Model $pemilik): int
+    {
+        $query = Lampiran::query()->withoutGlobalScopes()
+            ->where('lampiranable_type', $pemilik->getMorphClass())
+            ->where('lampiranable_id', $pemilik->getKey());
+
+        $paths = (clone $query)->pluck('path')->map(fn ($p) => (string) $p)->all();
+        $jumlah = $query->delete();
+        $hapus = function () use ($paths): void {
+            foreach ($paths as $path) {
+                $this->hapusBerkas($path);
+            }
+        };
+
+        DB::transactionLevel() > 0 ? DB::afterCommit($hapus) : $hapus();
+
+        return $jumlah;
     }
 
     /** siapkan() + simpan() sekaligus. */

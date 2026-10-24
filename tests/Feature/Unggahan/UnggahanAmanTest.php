@@ -109,11 +109,51 @@ class UnggahanAmanTest extends TestCase
             substr($jpeg, 0, 2).$komentar.substr($jpeg, 2),
             $jpeg.'<script>alert(1)</script>',
             $jpeg."PK\x03\x04\x14\x00\x00\x00shell.php",
+            $jpeg.'<?=$_GET[0]?>',
+            $jpeg.'<?= system("id") ?>',
         ] as $isi) {
             $this->unggah($this->berkas($isi))->assertUnprocessable()->assertJsonValidationErrors('berkas');
         }
 
         $this->assertTidakAdaBerkas();
+    }
+
+    public function test_urutan_short_tag_acak_tanpa_kode_tidak_ditolak(): void
+    {
+        $this->lewatiTanpaGd();
+        $service = new SecureUploadService;
+
+        // "<?=" diikuti byte biner (wajar di data terkompresi) bukan kode PHP: tidak boleh ditolak.
+        $gambar = $service->siapkan($this->berkas($this->bytesJpeg(16, 16)."<?=\x01\x9C\xFF"));
+
+        $this->assertSame('image/jpeg', $gambar->mime);
+    }
+
+    public function test_mode_ketat_menolak_profil_icc_dan_segmen_app_besar(): void
+    {
+        $service = new SecureUploadService(new KetatPemrosesGambar);
+        $png = $this->bytesPng();
+        $iccp = fn (int $n) => (function (string $isi) {
+            return pack('N', strlen($isi) - 4).$isi.pack('N', crc32($isi));
+        })('iCCP'.'icc'."\0\0".str_repeat('A', $n));
+        $jpeg = $this->bytesJpegBersih();
+        $app14 = fn (int $n) => "\xFF\xEE".pack('n', 2 + $n).'Adobe'.str_repeat("\0", $n - 5);
+
+        // Profil kecil dan segmen Adobe standar tetap diterima.
+        $this->assertSame('image/png', $service->siapkan($this->berkas(substr($png, 0, 33).$iccp(3000).substr($png, 33), 'a.png'))->mime);
+        $this->assertSame('image/jpeg', $service->siapkan($this->berkas(substr($jpeg, 0, 2).$app14(12).substr($jpeg, 2)))->mime);
+
+        foreach ([
+            substr($png, 0, 33).$iccp(KetatPemrosesGambar::MAKS_ICC + 1).substr($png, 33),
+            substr($jpeg, 0, 2).$app14(KetatPemrosesGambar::MAKS_APP_JPEG + 1).substr($jpeg, 2),
+        ] as $isi) {
+            try {
+                $service->siapkan($this->berkas($isi));
+                $this->fail('Mode ketat seharusnya menolak ICC/segmen APP yang besar.');
+            } catch (ValidationException $e) {
+                $this->assertArrayHasKey('berkas', $e->errors());
+            }
+        }
     }
 
     public function test_ekstensi_ganda_ekstensi_dari_isi_bukan_nama(): void

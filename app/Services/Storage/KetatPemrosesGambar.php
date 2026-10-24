@@ -7,7 +7,8 @@ namespace App\Services\Storage;
  * diterima. Ditolak bila: memuat metadata (EXIF/XMP/komentar/teks), ada data setelah penanda
  * akhir (trailer/polyglot), struktur/CRC rusak, animasi, atau sisi terpanjang melebihi
  * maks_sisi_simpan_px (tidak dapat diperkecil). Mini App sudah mengompres via canvas sehingga
- * foto normal dari kamera lolos.
+ * foto normal dari kamera lolos. Profil warna ICC (iCCP/ICCP) dan segmen APP0/APP14 JPEG isinya bebas,
+ * sehingga ukurannya dibatasi (tempat payload tersembunyi).
  */
 class KetatPemrosesGambar implements PemrosesGambar
 {
@@ -16,6 +17,12 @@ class KetatPemrosesGambar implements PemrosesGambar
 
     /** Chunk WebP yang aman (tanpa EXIF/XMP/animasi). */
     private const CHUNK_WEBP = ['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ICCP'];
+
+    /** Ukuran maksimum data profil ICC (byte); profil sRGB/Display P3 umum < 4 KB. */
+    public const MAKS_ICC = 16 * 1024;
+
+    /** Panjang maksimum segmen APP0 (JFIF tanpa thumbnail = 16) dan APP14 (Adobe = 14). */
+    public const MAKS_APP_JPEG = 64;
 
     public function proses(string $isi, string $mime, int $lebar, int $tinggi): GambarSiap
     {
@@ -69,6 +76,10 @@ class KetatPemrosesGambar implements PemrosesGambar
                 throw new BerkasDitolak('Gambar memuat metadata (EXIF/komentar). Unggah ulang dari kamera Mini App.');
             }
 
+            if (($penanda === 0xE0 || $penanda === 0xEE) && $panjang > self::MAKS_APP_JPEG) {
+                throw new BerkasDitolak('Gambar memuat data tambahan yang tidak diizinkan.');
+            }
+
             if ($penanda === 0xDA) { // SOS: sisa = data entropi sampai EOI (sudah dicek di akhir berkas)
                 $akhir = strpos($b, "\xFF\xD9", $i + 2 + $panjang);
 
@@ -116,6 +127,10 @@ class KetatPemrosesGambar implements PemrosesGambar
                 throw new BerkasDitolak('Gambar memuat metadata atau data tambahan yang tidak diizinkan.');
             }
 
+            if ($jenis === 'iCCP' && $panjang > self::MAKS_ICC) {
+                throw new BerkasDitolak('Profil warna gambar terlalu besar.');
+            }
+
             $i += 12 + $panjang;
 
             if ($jenis === 'IEND') {
@@ -145,6 +160,10 @@ class KetatPemrosesGambar implements PemrosesGambar
 
             if (! in_array($jenis, self::CHUNK_WEBP, true)) {
                 throw new BerkasDitolak('Gambar memuat metadata atau animasi yang tidak diizinkan.');
+            }
+
+            if ($jenis === 'ICCP' && $panjang > self::MAKS_ICC) {
+                throw new BerkasDitolak('Profil warna gambar terlalu besar.');
             }
 
             $i += 8 + $panjang + ($panjang % 2);

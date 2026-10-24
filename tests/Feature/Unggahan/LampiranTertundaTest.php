@@ -223,6 +223,40 @@ class LampiranTertundaTest extends GrupBTestCase
             ->assertUnprocessable()->assertJsonValidationErrors(['lampiranable_id']);
     }
 
+    public function test_unggahan_tertunda_aktif_dibatasi_per_pengguna(): void
+    {
+        config(['unggahan.maks_tertunda_per_pengguna' => 3]);
+        $relawan = $this->login(Role::Relawan, null, RelawanUnit::Dapur);
+
+        $ids = [$this->idLampiran('keluhan'), $this->idLampiran('keluhan'), $this->idLampiran('log-produksi')];
+        $this->unggah('keluhan')->assertUnprocessable()->assertJsonValidationErrors(['berkas']);
+        $this->assertSame(3, Lampiran::query()->where('uploaded_by', $relawan->id)->count());
+
+        // Pengguna lain punya kuota sendiri.
+        $this->login(Role::Relawan, null, RelawanUnit::Dapur);
+        $this->unggah('keluhan')->assertCreated();
+
+        // Setelah diikat, kuota kembali tersedia.
+        Sanctum::actingAs($relawan);
+        $this->postJson('/api/v1/keluhan', $this->keluhan(['lampiran_ids' => array_slice($ids, 0, 2)]))->assertCreated();
+        $this->unggah('keluhan')->assertCreated();
+    }
+
+    public function test_modul_tanpa_maks_memakai_batas_bawaan_lima(): void
+    {
+        config(['unggahan.modul.keluhan' => array_diff_key((array) config('unggahan.modul.keluhan'), ['maks' => true])]);
+        $this->login(Role::Admin);
+        $keluhan = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA->id]);
+        $terikat = fn () => $this->post('/api/v1/lampiran', ['modul' => 'keluhan', 'lampiranable_id' => $keluhan->id, 'berkas' => $this->fotoJpeg()], ['Accept' => 'application/json']);
+
+        for ($i = 0; $i < 5; $i++) {
+            $terikat()->assertCreated();
+        }
+
+        $terikat()->assertUnprocessable()->assertJsonValidationErrors(['lampiranable_id']);
+        $this->assertSame(5, $keluhan->lampirans()->count());
+    }
+
     public function test_hak_unggah_tertunda_mengikuti_matriks_peran(): void
     {
         // Akuntan: tidak punya hak keluhan/mutu/log-produksi.

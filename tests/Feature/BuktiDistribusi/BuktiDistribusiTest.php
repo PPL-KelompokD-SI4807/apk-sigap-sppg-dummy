@@ -217,6 +217,33 @@ class BuktiDistribusiTest extends TestCase
         $this->assertTrue(AuditLog::query()->where('auditable_type', BuktiDistribusi::class)->where('auditable_id', $id)->where('event', 'restored')->exists());
     }
 
+    public function test_restore_tidak_membawa_lampiran_bukti_lama(): void
+    {
+        $jadwal = $this->jadwal();
+        Sanctum::actingAs($this->kurir);
+        $id = $this->kirim($this->payload($jadwal, ['berita_acara' => $this->fotoJpeg('ba.jpg')]))->assertCreated()->json('data.id');
+        $lama = Lampiran::query()->where('lampiranable_id', $id)->get();
+        $this->assertCount(2, $lama);
+
+        Sanctum::actingAs($this->kepala);
+        $this->deleteJson("/api/v1/bukti-distribusi/{$id}")->assertNoContent();
+        $baru = $this->kirim($this->payload($jadwal))->assertCreated()
+            ->assertJsonPath('data.id', $id)
+            ->assertJsonCount(1, 'data.lampiran')
+            ->assertJsonPath('data.berita_acara', null)
+            ->json('data');
+
+        // Baris dan berkas lama hilang; hanya foto baru yang terikat dan dapat dibuka.
+        foreach ($lama as $l) {
+            $this->assertDatabaseMissing('lampirans', ['id' => $l->id]);
+            Storage::disk('uploads')->assertMissing($l->path);
+            $this->get("/api/v1/lampiran/{$l->id}")->assertNotFound();
+        }
+
+        $this->assertNotContains($baru['foto']['lampiran_id'], $lama->pluck('id')->all());
+        $this->get($baru['foto']['url'])->assertOk();
+    }
+
     public function test_hak_akses_create_tabel5(): void
     {
         $jadwal = $this->jadwal();

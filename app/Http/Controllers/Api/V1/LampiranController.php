@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Requests\Lampiran\StoreLampiranRequest;
 use App\Http\Resources\LampiranResource;
 use App\Models\Lampiran;
+use App\Services\Storage\PengikatLampiran;
 use App\Services\Storage\SecureUploadService;
 use App\Support\Rbac;
 use Illuminate\Http\JsonResponse;
@@ -22,10 +23,15 @@ use Illuminate\Validation\ValidationException;
  *   pada induk (-> 403), berkas diverifikasi SecureUploadService (-> 422).
  *   Tanpa lampiranable_id (modul 'tertunda'): berkas disimpan belum terikat (hak C/U modul, -> 403),
  *   lalu diikat lewat lampiran_ids pada store/update modul. Lampiran belum terikat hanya dapat
- *   dibaca pengunggahnya.
+ *   dibaca pengunggahnya. Unggahan tertunda aktif per pengguna dibatasi (maks_tertunda_per_pengguna).
+ * - Jumlah lampiran per record dibatasi 'maks' (default PengikatLampiran::MAKS_DEFAULT), dihitung
+ *   di dalam transaksi dengan baris induk terkunci.
  */
 class LampiranController extends ApiController
 {
+    /** Batas bawaan unggahan tertunda (belum diikat) per pengguna. */
+    public const MAKS_TERTUNDA = 10;
+
     public function __construct(private readonly SecureUploadService $unggahan) {}
 
     public function show(Request $request, Lampiran $lampiran): Response
@@ -70,17 +76,19 @@ class LampiranController extends ApiController
         abort_if($induk === null, 404);
         $this->authorize($def['ability'] ?? 'update', $induk);
 
-        $maks = (int) ($def['maks'] ?? 0);
-
-        if ($maks > 0 && $induk->lampirans()->count() >= $maks) {
-            throw ValidationException::withMessages(['lampiranable_id' => ["Jumlah lampiran maksimal {$maks} per data."]]);
-        }
-
+        $maks = (int) ($def['maks'] ?? PengikatLampiran::MAKS_DEFAULT);
         $gambar = $this->unggahan->siapkan($request->file('berkas'), 'berkas');
 
-        $lampiran = DB::transaction(fn () => $this->unggahan->simpan(
-            $gambar, $induk, $data['modul'], $user, $kategori,
-        ));
+        $lampiran = DB::transaction(function () use ($gambar, $induk, $data, $user, $kategori, $maks) {
+            // Kunci baris induk agar dua unggahan bersamaan tidak sama-sama lolos batas jumlah.
+            $induk->newQueryWithoutScopes()->whereKey($induk->getKey())->lockForUpdate()->first();
+
+            if ($induk->lampirans()->count() >= $maks) {
+                throw ValidationException::withMessages(['lampiranable_id' => ["Jumlah lampiran maksimal {$maks} per data."]]);
+            }
+
+            return $this->unggahan->simpan($gambar, $induk, $data['modul'], $user, $kategori);
+        });
 
         return (new LampiranResource($lampiran))->response()->setStatusCode(201);
     }
@@ -101,7 +109,23 @@ class LampiranController extends ApiController
         abort_if($sppgId < 1, 403);
 
         $gambar = $this->unggahan->siapkan($request->file('berkas'), 'berkas');
-        $lampiran = $this->unggahan->simpanTertunda($gambar, $sppgId, $modul, $user, $kategori);
+
+        $lampiran = DB::transaction(function () use ($gambar, $sppgId, $modul, $user, $kategori) {
+            // Kunci baris pengguna: kuota unggahan tertunda aktif dihitung tanpa race.
+            $user->newQueryWithoutScopes()->whereKey($user->getKey())->lockForUpdate()->first();
+            $maks = (int) config('unggahan.maks_tertunda_per_pengguna', self::MAKS_TERTUNDA);
+
+            $aktif = Lampiran::query()->withoutGlobalScopes()
+                ->whereNull('lampiranable_type')
+                ->where('uploaded_by', $user->getKey())
+                ->count();
+
+            if ($aktif >= $maks) {
+                throw ValidationException::withMessages(['berkas' => ["Maksimal {$maks} foto belum tersimpan. Simpan atau tunggu foto sebelumnya kedaluwarsa."]]);
+            }
+
+            return $this->unggahan->simpanTertunda($gambar, $sppgId, $modul, $user, $kategori);
+        });
 
         return (new LampiranResource($lampiran))->response()->setStatusCode(201);
     }

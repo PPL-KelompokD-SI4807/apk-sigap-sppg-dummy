@@ -29,6 +29,9 @@ return [
      */
     'tertunda_ttl_jam' => 24,
 
+    /** Unggahan tertunda aktif (belum diikat) maksimum per pengguna (cegah disk penuh). */
+    'maks_tertunda_per_pengguna' => 10,
+
     /** Batas ukuran berkas masuk (byte). */
     'maks_byte' => 5 * 1024 * 1024,
 

@@ -63,6 +63,9 @@ class PengikatLampiran
             }
         }
 
+        // Kunci baris induk: dua update bersamaan tidak sama-sama lolos batas jumlah.
+        $induk->newQueryWithoutScopes()->whereKey($induk->getKey())->lockForUpdate()->first();
+
         $ada = Lampiran::query()->withoutGlobalScope(SppgScope::class)
             ->where('lampiranable_type', $induk->getMorphClass())
             ->where('lampiranable_id', $induk->getKey())

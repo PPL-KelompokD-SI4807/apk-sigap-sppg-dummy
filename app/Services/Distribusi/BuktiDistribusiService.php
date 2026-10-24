@@ -85,6 +85,8 @@ class BuktiDistribusiService
 
             if ($lama !== null) {
                 $lama->restore();
+                // Foto/berita acara bukti lama tidak boleh ikut tampil sebagai bukti baru.
+                $this->unggahan->hapusSemua($lama);
                 $lama->foto_path = null;
                 $lama->berita_acara_path = null;
                 $lama->created_at = $sekarang;
