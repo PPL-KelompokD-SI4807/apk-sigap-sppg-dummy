@@ -35,12 +35,12 @@
     description: |
       Hak C (ahli_gizi). Pemeriksa = pengguna login. Satu jadwal boleh memiliki banyak pemeriksaan;
       yang TERBARU menjadi gerbang distribusi (JadwalProduksi::isLayakDistribusi). Konsistensi:
-      hasil `layak` hanya bila kebersihan dapur, kebersihan petugas, dan organoleptik semuanya baik
+      hasil `layak` hanya bila kebersihan dapur, kebersihan petugas, rasa, aroma, dan tampilan semuanya baik (satu butir gagal -> 422 pada `hasil`)
       serta suhu >= `config('produksi.mutu.suhu_minimum_c')` (60 C) bila suhu diisi; hasil `tidak_layak`
-      wajib `tindakan_korektif`; organoleptik tidak baik wajib `catatan_organoleptik`. Hasil
+      wajib `tindakan_korektif`; bila ada butir organoleptik tidak baik wajib `catatan_organoleptik`. Hasil
       `tidak_layak` memancarkan event `MutuTidakLayak` dan menahan keberangkatan distribusi terkait
-      (PATCH /jadwal/distribusi/{id} status berangkat -> 422). `foto_path` berupa path relatif (unggah
-      berkas oleh modul unggahan). Menerima `ai_draft_id` opsional.
+      (PATCH /jadwal/distribusi/{id} status berangkat -> 422). Foto: unggah dulu via `POST /lampiran`
+      (modul `mutu`, tanpa `lampiranable_id`) lalu kirim `lampiran_ids` (maks 5); `foto_path` dari body tidak diterima. Menerima `ai_draft_id` opsional.
     requestBody:
       required: true
       content:
@@ -51,8 +51,10 @@
             suhu_makanan_c: 72.5
             kebersihan_dapur: true
             kebersihan_petugas: true
-            organoleptik_baik: true
-            catatan_organoleptik: 'Rasa, aroma, dan tekstur baik'
+            rasa_baik: true
+            aroma_baik: true
+            tampilan_baik: true
+            catatan_organoleptik: 'Rasa, aroma, dan tampilan baik'
             sampel_disimpan: true
             hasil: layak
     responses:

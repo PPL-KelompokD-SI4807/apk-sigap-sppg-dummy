@@ -25,6 +25,7 @@ schemas:
       jadwal_produksi_id: { type: [integer, 'null'], description: 'Wajib untuk keluhan kritis bila batch diketahui.' }
       batch_tidak_diketahui: { type: boolean, description: 'Izinkan keluhan kritis tanpa kaitan batch.' }
       deskripsi: { type: string, maxLength: 2000 }
+      lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
       ai_draft_id: { type: [string, 'null'], format: uuid }
   KeluhanUpdateInput:
     type: object
@@ -37,6 +38,7 @@ schemas:
       titik_layanan_id: { type: [integer, 'null'] }
       jadwal_produksi_id: { type: [integer, 'null'] }
       deskripsi: { type: string, maxLength: 2000 }
+      lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
       ai_draft_id: { type: [string, 'null'], format: uuid }
   Keluhan:
     type: object
@@ -58,6 +60,10 @@ schemas:
       status_label: { type: string }
       deskripsi: { type: string }
       tindak_lanjut: { type: [string, 'null'] }
+      lampiran:
+        type: array
+        description: 'Foto keluhan terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+        items: { $ref: '#/components/schemas/Lampiran' }
       dicatat_oleh:
         type: [object, 'null']
         properties:

@@ -176,3 +176,30 @@ a.seg-btn { display: flex; align-items: center; justify-content: center; color: 
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: var(--hint); }
 .dot-ok { background: #1f9d6e; } .dot-warn { background: #d9831f; } .dot-danger { background: var(--danger); } .dot-muted { background: var(--hint); }
 @media (min-width: 560px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ---- Grup D: unggah foto aman, lampiran, bukti distribusi, keuangan ---- */
+.photo-list { display: flex; flex-direction: column; gap: 8px; }
+.photo-item, .photo-figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.photo-cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.photo-progress { width: 100%; height: 6px; }
+.photo-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.photo-actions .btn.disabled { opacity: .5; pointer-events: none; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.btn-sm { min-height: 36px; padding: 0 12px; font-size: .85rem; }
+.upload-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.upload-row .thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+.upload-info { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; min-width: 0; }
+.upload-row .btn { min-height: 36px; padding: 0 10px; font-size: .85rem; }
+.readonly-text { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); color: var(--hint); overflow-wrap: anywhere; }
+.field input[readonly] { background: var(--bg-secondary); color: var(--hint); }
+.rupiah-wrap { display: flex; align-items: stretch; border: 1px solid var(--separator); border-radius: 10px; background: var(--bg); overflow: hidden; }
+.rupiah-prefix { display: flex; align-items: center; padding: 0 12px; font-weight: 600; background: var(--bg-secondary); color: var(--hint); }
+.field .rupiah-wrap input { border: 0; border-radius: 0; font-variant-numeric: tabular-nums; }
+.progress-lg { height: 12px; position: relative; }
+.progress .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: .55; }
+.status-line { margin: 0; font-size: .9rem; }
+.status-danger { color: var(--danger); }
+.tbl-row .num.pos { color: #1f9d6e; }
+.tbl-row .num.neg { color: var(--danger); }
+.legend-1 { grid-template-columns: 1fr; }
+.section-title { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--hint); margin: 8px 4px 0; }

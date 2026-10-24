@@ -5,7 +5,7 @@ import { rowCard } from '../../components/row-card.js';
 import { navTabs } from '../../components/nav-tabs.js';
 import { createAuthImage } from '../../components/photo-upload.js';
 import { createLampiranPanel } from '../../components/lampiran-field.js';
-import { h, clear, formatValue } from '../../core/dom.js';
+import { h, formatValue } from '../../core/dom.js';
 import { api, fetchList } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms } from '../../core/permissions.js';

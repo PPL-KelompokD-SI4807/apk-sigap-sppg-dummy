@@ -1204,6 +1204,8 @@ paths:
         batch disimpulkan dari jadwal distribusi titik tersebut hari ini; bila tetap tidak diketahui,
         kirim `batch_tidak_diketahui=true`, jika tidak 422 pada `jadwal_produksi_id`.
         Admin wajib mengirim `sppg_id`; untuk peran lain `sppg_id` diabaikan.
+        Foto keluhan: unggah dulu via `POST /lampiran` (modul `keluhan`, tanpa `lampiranable_id`) lalu kirim
+        `lampiran_ids` (maks 5); `foto_path` tidak diterima.
       requestBody:
         required: true
         content:
@@ -1603,8 +1605,15 @@ paths:
         tanda tangan byte + getimagesize); ekstensi dan MIME klien diabaikan; nama berkas klien tidak
         pernah dipakai. Gambar di-encode ulang (EXIF/metadata dibuang, diperkecil ke 1600 px) dan
         disimpan di disk privat `uploads/{sppg_id}/{modul}/{uuid}.{ext}`.
-        Hak: `update` pada record induk menurut Policy modulnya (mis. akuntan untuk keuangan-pengeluaran).
-        Record induk SPPG lain -> 404. Batas laju unggah: 20/menit per pengguna (429).
+        Dua mode:
+        1. Terikat: `lampiranable_id` diisi. Hak `update` pada record induk menurut Policy modulnya (mis. akuntan
+           untuk keuangan-pengeluaran). Record induk SPPG lain -> 404. Modul dengan batas (keluhan, mutu, log-produksi):
+           total lampiran maks 5 per data (422 pada `lampiranable_id`).
+        2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`. Berkas disimpan belum
+           terikat; kirim `id`-nya pada `lampiran_ids` di POST/PATCH modul. Hak: C atau U modul tersebut (Tabel 5)
+           -> selain itu 403; modul lain tanpa `lampiranable_id` -> 422. Lampiran yang belum terikat hanya dapat
+           dibaca pengunggahnya (GET /lampiran/{id}, selain itu 404).
+        Batas laju unggah: 20/menit per pengguna (429).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1635,7 +1644,8 @@ paths:
       summary: Sajikan berkas lampiran (privat)
       description: |
         Satu-satunya jalan mengakses berkas unggahan (tidak ada URL publik/symlink). Hak `view` pada
-        record induk (Policy modul induk); lampiran/induk SPPG lain atau induk terhapus -> 404;
+        record induk (Policy modul induk); lampiran belum terikat: hanya pengunggah (lainnya 404);
+        lampiran/induk SPPG lain atau induk terhapus -> 404;
         berkas yang berubah di luar aplikasi (sha256 tidak cocok) -> 404.
         Header: `Content-Type` dari MIME tersimpan, `X-Content-Type-Options: nosniff`,
         `Content-Disposition: inline; filename="lampiran.<ext>"`, `Cache-Control: private, no-store`,
@@ -1705,7 +1715,8 @@ paths:
         (`BATCH-YYYYMMDD-NN`, unik per SPPG). Jadwal tidak boleh dibatalkan atau belum tiba harinya.
         422 bila jadwal sudah memiliki log aktif. Bila log lama dihapus lunak, log dipulihkan (restore)
         dengan kode batch yang sama. `realisasi_porsi` >= 0 dan <= kapasitas harian SPPG; respons memuat
-        `selisih_porsi` terhadap target. `foto_path` berupa path relatif (unggah berkas dikerjakan modul unggahan).
+        `selisih_porsi` terhadap target. Foto: unggah dulu via `POST /lampiran` (modul `log-produksi`, tanpa `lampiranable_id`) lalu kirim `lampiran_ids` (maks 5);
+        `foto_path` dari body tidak diterima dan tidak dikirim balik; daftar foto ada di `lampiran`.
         Menerima `ai_draft_id` opsional.
       requestBody:
         required: true
@@ -2098,12 +2109,12 @@ paths:
       description: |
         Hak C (ahli_gizi). Pemeriksa = pengguna login. Satu jadwal boleh memiliki banyak pemeriksaan;
         yang TERBARU menjadi gerbang distribusi (JadwalProduksi::isLayakDistribusi). Konsistensi:
-        hasil `layak` hanya bila kebersihan dapur, kebersihan petugas, dan organoleptik semuanya baik
+        hasil `layak` hanya bila kebersihan dapur, kebersihan petugas, rasa, aroma, dan tampilan semuanya baik (satu butir gagal -> 422 pada `hasil`)
         serta suhu >= `config('produksi.mutu.suhu_minimum_c')` (60 C) bila suhu diisi; hasil `tidak_layak`
-        wajib `tindakan_korektif`; organoleptik tidak baik wajib `catatan_organoleptik`. Hasil
+        wajib `tindakan_korektif`; bila ada butir organoleptik tidak baik wajib `catatan_organoleptik`. Hasil
         `tidak_layak` memancarkan event `MutuTidakLayak` dan menahan keberangkatan distribusi terkait
-        (PATCH /jadwal/distribusi/{id} status berangkat -> 422). `foto_path` berupa path relatif (unggah
-        berkas oleh modul unggahan). Menerima `ai_draft_id` opsional.
+        (PATCH /jadwal/distribusi/{id} status berangkat -> 422). Foto: unggah dulu via `POST /lampiran`
+        (modul `mutu`, tanpa `lampiranable_id`) lalu kirim `lampiran_ids` (maks 5); `foto_path` dari body tidak diterima. Menerima `ai_draft_id` opsional.
       requestBody:
         required: true
         content:
@@ -2114,8 +2125,10 @@ paths:
               suhu_makanan_c: 72.5
               kebersihan_dapur: true
               kebersihan_petugas: true
-              organoleptik_baik: true
-              catatan_organoleptik: 'Rasa, aroma, dan tekstur baik'
+              rasa_baik: true
+              aroma_baik: true
+              tampilan_baik: true
+              catatan_organoleptik: 'Rasa, aroma, dan tampilan baik'
               sampel_disimpan: true
               hasil: layak
       responses:
@@ -3834,6 +3847,7 @@ components:
         jadwal_produksi_id: { type: [integer, 'null'], description: 'Wajib untuk keluhan kritis bila batch diketahui.' }
         batch_tidak_diketahui: { type: boolean, description: 'Izinkan keluhan kritis tanpa kaitan batch.' }
         deskripsi: { type: string, maxLength: 2000 }
+        lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     KeluhanUpdateInput:
       type: object
@@ -3846,6 +3860,7 @@ components:
         titik_layanan_id: { type: [integer, 'null'] }
         jadwal_produksi_id: { type: [integer, 'null'] }
         deskripsi: { type: string, maxLength: 2000 }
+        lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     Keluhan:
       type: object
@@ -3867,6 +3882,10 @@ components:
         status_label: { type: string }
         deskripsi: { type: string }
         tindak_lanjut: { type: [string, 'null'] }
+        lampiran:
+          type: array
+          description: 'Foto keluhan terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+          items: { $ref: '#/components/schemas/Lampiran' }
         dicatat_oleh:
           type: [object, 'null']
           properties:
@@ -4032,15 +4051,30 @@ components:
         url: { type: string, examples: ['/api/v1/lampiran/12'] }
         mime: { type: string }
         ukuran: { type: integer }
+    LampiranIds:
+      type: array
+      maxItems: 5
+      items: { type: integer, minimum: 1 }
+      description: |
+        ID lampiran hasil `POST /lampiran` tanpa `lampiranable_id` (unggahan tertunda), diikat ke data ini saat
+        simpan. Tiap id harus milik pengguna yang mengirim, SPPG sama, belum terikat, modul dan kategori
+        sesuai (`foto`); total lampiran per data maks 5 (yang sudah ada + baru). Pelanggaran -> 422 pada
+        `lampiran_ids` (pesan generik; tidak membocorkan id milik orang lain). Lampiran tidak dapat
+        dilepas/dihapus lewat API. Rollback transaksi melepas ikatan sehingga dapat dicoba lagi.
     LampiranInput:
       type: object
-      required: [modul, lampiranable_id, berkas]
+      required: [modul, berkas]
       properties:
         modul:
           type: string
           enum: [bukti-distribusi, keuangan-pencairan, keuangan-pengeluaran, keluhan, mutu, log-produksi]
-        lampiranable_id: { type: integer, description: ID record induk pada modul. }
-        kategori: { type: [string, 'null'], pattern: '^[a-z0-9_]{1,30}$' }
+        lampiranable_id:
+          type: [integer, 'null']
+          description: |
+            ID record induk (terikat langsung). Kosongkan untuk unggahan TERTUNDA (hanya modul keluhan, mutu,
+            log-produksi) lalu kirim id hasilnya sebagai `lampiran_ids` pada POST/PATCH modul tersebut.
+        sppg_id: { type: integer, description: 'Wajib untuk Admin pada unggahan tertunda; diabaikan untuk peran lain (SPPG pengguna).' }
+        kategori: { type: [string, 'null'], pattern: '^[a-z0-9_]{1,30}$', description: 'Modul keluhan/mutu/log-produksi hanya menerima `foto` (default).' }
         berkas: { type: string, format: binary, description: 'JPEG/PNG/WebP, maks 5 MB, sisi maks 8000 px.' }
     LogProduksi:
       type: object
@@ -4066,7 +4100,10 @@ components:
         waktu_mulai: { type: [string, 'null'], examples: ['03:10'] }
         jam_selesai: { type: [string, 'null'], examples: ['08:20'] }
         kendala: { type: [string, 'null'] }
-        foto_path: { type: [string, 'null'] }
+        lampiran:
+          type: array
+          description: 'Foto terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+          items: { $ref: '#/components/schemas/Lampiran' }
         dicatat_oleh: { type: [integer, 'null'] }
         pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
         created_at: { type: string, format: date-time }
@@ -4081,7 +4118,7 @@ components:
         waktu_mulai: { type: [string, 'null'], examples: ['03:10'], description: 'HH:MM' }
         jam_selesai: { type: [string, 'null'], examples: ['08:20'], description: 'HH:MM; harus setelah waktu_mulai' }
         kendala: { type: [string, 'null'], maxLength: 2000 }
-        foto_path: { type: [string, 'null'], maxLength: 255, description: 'Path relatif berkas pada disk privat (tanpa ../, tanpa awalan /)' }
+        lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     KelompokSasaran:
       type: string
@@ -4233,13 +4270,19 @@ components:
         suhu_makanan_c: { type: [number, 'null'] }
         kebersihan_dapur: { type: boolean }
         kebersihan_petugas: { type: boolean }
-        organoleptik_baik: { type: boolean }
+        rasa_baik: { type: boolean }
+        aroma_baik: { type: boolean }
+        tampilan_baik: { type: boolean }
+        organoleptik_baik: { type: boolean, description: 'Turunan: true bila rasa_baik, aroma_baik, dan tampilan_baik semuanya true (kompatibilitas).' }
         catatan_organoleptik: { type: [string, 'null'] }
         sampel_disimpan: { type: boolean }
         hasil: { $ref: '#/components/schemas/HasilMutu' }
         hasil_label: { type: string }
         tindakan_korektif: { type: [string, 'null'] }
-        foto_path: { type: [string, 'null'] }
+        lampiran:
+          type: array
+          description: 'Foto terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+          items: { $ref: '#/components/schemas/Lampiran' }
         catatan_koreksi: { type: [string, 'null'] }
         dikoreksi_pada: { type: [string, 'null'], format: date-time }
         dikoreksi_oleh: { type: [integer, 'null'] }
@@ -4248,19 +4291,23 @@ components:
         updated_at: { type: string, format: date-time }
     PemeriksaanMutuInput:
       type: object
-      required: [jadwal_produksi_id, kebersihan_dapur, kebersihan_petugas, organoleptik_baik, hasil]
+      required: [jadwal_produksi_id, kebersihan_dapur, kebersihan_petugas, hasil]
+      description: 'Wajib: ketiga butir rasa_baik/aroma_baik/tampilan_baik ATAU organoleptik_baik saja (klien lama; berlaku untuk ketiganya).'
       properties:
         jadwal_produksi_id: { type: integer, description: 'Hanya saat membuat; jadwal SPPG yang sama, tidak dibatalkan, tanggal produksi <= hari ini' }
         waktu_pemeriksaan: { type: string, description: 'YYYY-MM-DD HH:MM[:SS]; default sekarang; tidak boleh di masa depan' }
         suhu_makanan_c: { type: [number, 'null'], minimum: -50, maximum: 200 }
         kebersihan_dapur: { type: boolean }
         kebersihan_petugas: { type: boolean }
-        organoleptik_baik: { type: boolean, description: 'Rasa/aroma/tampilan' }
-        catatan_organoleptik: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila organoleptik_baik=false' }
+        rasa_baik: { type: boolean }
+        aroma_baik: { type: boolean }
+        tampilan_baik: { type: boolean }
+        organoleptik_baik: { type: boolean, description: 'Legacy: dipakai bila ketiga butir tidak dikirim. Nilai turunan diabaikan bila ketiga butir dikirim.' }
+        catatan_organoleptik: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila salah satu butir organoleptik false' }
         sampel_disimpan: { type: boolean, default: false }
         hasil: { $ref: '#/components/schemas/HasilMutu' }
         tindakan_korektif: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila hasil=tidak_layak' }
-        foto_path: { type: [string, 'null'], maxLength: 255, description: 'Path relatif berkas (tanpa ../, tanpa awalan /)' }
+        lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
         catatan_koreksi: { type: [string, 'null'], maxLength: 2000, description: 'Wajib saat mengubah pemeriksaan yang memengaruhi distribusi' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     StatusPerjalanan:

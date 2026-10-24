@@ -37,7 +37,8 @@
       (`BATCH-YYYYMMDD-NN`, unik per SPPG). Jadwal tidak boleh dibatalkan atau belum tiba harinya.
       422 bila jadwal sudah memiliki log aktif. Bila log lama dihapus lunak, log dipulihkan (restore)
       dengan kode batch yang sama. `realisasi_porsi` >= 0 dan <= kapasitas harian SPPG; respons memuat
-      `selisih_porsi` terhadap target. `foto_path` berupa path relatif (unggah berkas dikerjakan modul unggahan).
+      `selisih_porsi` terhadap target. Foto: unggah dulu via `POST /lampiran` (modul `log-produksi`, tanpa `lampiranable_id`) lalu kirim `lampiran_ids` (maks 5);
+      `foto_path` dari body tidak diterima dan tidak dikirim balik; daftar foto ada di `lampiran`.
       Menerima `ai_draft_id` opsional.
     requestBody:
       required: true

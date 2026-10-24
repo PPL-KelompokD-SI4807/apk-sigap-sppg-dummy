@@ -33,6 +33,22 @@ Rute otomatis: `#/slug` (daftar), `#/slug/baru`, `#/slug/:id` (detail), `#/slug/
 `type`: `text|number|date|time|select|textarea|photo|relasi`. Relasi: `relation:{endpoint,label:'nama',value:'id',as:'nama_relasi_di_detail'}` (memuat `?per_page=100`). Foto dikompres (maks 1600 px, JPEG 0,8) dan dikirim multipart bila ada.
 Kolom daftar: `{key,label,primary,badge,type,format(rec)}`.
 
+## Unggah foto aman (`components/photo-upload.js`, `components/lampiran-field.js`)
+Dua jalur, sesuai kontrak `docs/api/paths/lampiran.yaml`:
+1. **Foto bagian dari payload modul** (bukti distribusi `foto`/`berita_acara`, pengeluaran `nota`, pencairan `bukti`): cukup tambah kolom
+   `{ name: 'nota', label: 'Foto nota', type: 'photo', photoLabel: 'nota', required: false }`. Nama kolom = nama field multipart di kontrak.
+   Foto dipilih dari kamera (`capture=environment`) atau galeri, dikompres di canvas (maks 1600 px, JPEG 0,8; turun kualitas bila > 5 MB),
+   dipratinjau, bisa diganti/dihapus. Hanya foto baru yang dikirim (multipart otomatis oleh `core/api.js`; PUT lewat POST + `_method`).
+   Offline: `submitWithQueue` menyimpan File di IndexedDB beserta Idempotency-Key, dikirim ulang oleh `flushQueue`.
+   Saat ubah, nilai awal kolom boleh objek `BerkasRingkas` (`{lampiran_id,url}`) dan dipratinjau lewat token.
+2. **Lampiran tambahan ke record yang sudah ada** (keluhan, mutu, log produksi, dst.), `POST /lampiran` {modul, lampiranable_id, kategori, berkas}:
+   di `detailExtras` panggil
+   `createLampiranPanel({ modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran, canAdd: p.U })`.
+   Setiap foto diunggah dengan `Idempotency-Key` yang dibuat sekali per pilihan foto dan dipakai ulang saat Coba lagi; offline -> status
+   "Menunggu jaringan" (antrean `core/offline-queue.js`); galat 413/422/429/409 dipetakan oleh `pesanUnggah` (Indonesia).
+Menampilkan gambar privat: `createAuthImage(berkas, {alt})` (fetch + `Authorization` -> blob -> objectURL, dilepas saat pindah layar).
+Hanya jalur `/api/v1/lampiran/{id}` yang diterima (`lampiranPath`), sehingga token tidak terkirim ke domain lain. Jangan memakai `<img src>` langsung.
+
 ## Draf AI
 `#/draf/<uuid>` (atau `?draft=<uuid>`, `startapp=draft_<uuid>`) membaca `GET /ai-drafts/{uuid}` dan membuka form modul dengan prefill; kolom confidence < 0,7 diberi label "Perlu dicek"; simpan mengirim `ai_draft_id`. Form manual juga bisa: `#/slug/baru?draft=<uuid>`.
 

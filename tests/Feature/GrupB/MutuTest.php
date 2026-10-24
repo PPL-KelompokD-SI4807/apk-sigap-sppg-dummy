@@ -53,7 +53,8 @@ class MutuTest extends GrupBTestCase
 
         $this->assertTrue($jadwal->fresh()->isLayakDistribusi());
         $this->getJson("/api/v1/mutu/{$id}")->assertOk();
-        $this->patchJson("/api/v1/mutu/{$id}", ['catatan_organoleptik' => 'Sangat baik', 'foto_path' => 'mutu/2026/11/f1.jpg'])->assertOk()->assertJsonPath('data.foto_path', 'mutu/2026/11/f1.jpg');
+        $this->patchJson("/api/v1/mutu/{$id}", ['catatan_organoleptik' => 'Sangat baik', 'foto_path' => 'mutu/2026/11/f1.jpg'])->assertOk()->assertJsonMissingPath('data.foto_path');
+        $this->assertNull(PemeriksaanMutu::query()->findOrFail($id)->foto_path);
         $this->deleteJson("/api/v1/mutu/{$id}")->assertNoContent();
         $this->assertSoftDeleted('pemeriksaan_mutus', ['id' => $id]);
         $this->assertFalse($jadwal->fresh()->isLayakDistribusi());
@@ -69,11 +70,11 @@ class MutuTest extends GrupBTestCase
         $this->login(Role::AhliGizi);
         $url = '/api/v1/mutu';
 
-        $this->postJson($url, [])->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id', 'kebersihan_dapur', 'kebersihan_petugas', 'organoleptik_baik', 'hasil']);
+        $this->postJson($url, [])->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id', 'kebersihan_dapur', 'kebersihan_petugas', 'rasa_baik', 'aroma_baik', 'tampilan_baik', 'organoleptik_baik', 'hasil']);
         $this->postJson($url, $this->payload($jadwal, ['hasil' => 'mungkin']))->assertUnprocessable()->assertJsonValidationErrors(['hasil']);
         $this->postJson($url, $this->payload($jadwal, ['suhu_makanan_c' => 500]))->assertUnprocessable()->assertJsonValidationErrors(['suhu_makanan_c']);
         $this->postJson($url, $this->payload($jadwal, ['kebersihan_dapur' => 'ya?']))->assertUnprocessable()->assertJsonValidationErrors(['kebersihan_dapur']);
-        $this->postJson($url, $this->payload($jadwal, ['foto_path' => '../x.jpg']))->assertUnprocessable()->assertJsonValidationErrors(['foto_path']);
+        $this->postJson($url, $this->payload($jadwal, ['lampiran_ids' => ['x']]))->assertUnprocessable()->assertJsonValidationErrors(['lampiran_ids.0']);
         $this->postJson($url, $this->payload($jadwal, ['waktu_pemeriksaan' => now()->addDay()->toDateTimeString()]))->assertUnprocessable()->assertJsonValidationErrors(['waktu_pemeriksaan']);
         $this->postJson($url, $this->payload($lain))->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id']);
         $this->postJson($url, $this->payload($batal))->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id']);

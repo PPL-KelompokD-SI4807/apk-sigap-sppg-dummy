@@ -98,14 +98,16 @@ class LogProduksiTest extends GrupBTestCase
         $this->postJson($url, $this->payload($jadwal, ['sisa_makanan_kg' => -1]))->assertUnprocessable()->assertJsonValidationErrors(['sisa_makanan_kg']);
         $this->postJson($url, $this->payload($jadwal, ['jam_selesai' => '03:00']))->assertUnprocessable()->assertJsonValidationErrors(['jam_selesai']);
         $this->postJson($url, $this->payload($jadwal, ['waktu_mulai' => '99:00']))->assertUnprocessable()->assertJsonValidationErrors(['waktu_mulai']);
-        $this->postJson($url, $this->payload($jadwal, ['foto_path' => '../../etc/passwd']))->assertUnprocessable()->assertJsonValidationErrors(['foto_path']);
-        $this->postJson($url, $this->payload($jadwal, ['foto_path' => '/abs/foto.jpg']))->assertUnprocessable()->assertJsonValidationErrors(['foto_path']);
+        $this->postJson($url, $this->payload($jadwal, ['lampiran_ids' => 'bukan-array']))->assertUnprocessable()->assertJsonValidationErrors(['lampiran_ids']);
+        $this->postJson($url, $this->payload($jadwal, ['lampiran_ids' => [1, 2, 3, 4, 5, 6]]))->assertUnprocessable()->assertJsonValidationErrors(['lampiran_ids']);
         $this->postJson($url, $this->payload($lain))->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id']);
         $this->postJson($url, $this->payload($batal))->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id']);
         $this->postJson($url, $this->payload($masaDepan))->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id']);
         $this->assertSame(0, LogProduksi::query()->count());
 
-        $this->postJson($url, $this->payload($jadwal, ['foto_path' => 'log-produksi/2026/11/foto-1.jpg', 'realisasi_porsi' => 0]))->assertCreated()->assertJsonPath('data.foto_path', 'log-produksi/2026/11/foto-1.jpg');
+        // foto_path dari body tidak diterima (foto lewat lampiran_ids) dan tidak pernah dikirim balik.
+        $id = $this->postJson($url, $this->payload($jadwal, ['foto_path' => '../../etc/passwd', 'realisasi_porsi' => 0]))->assertCreated()->assertJsonMissingPath('data.foto_path')->json('data.id');
+        $this->assertNull(LogProduksi::query()->findOrFail($id)->foto_path);
     }
 
     public function test_hak_akses_per_peran(): void

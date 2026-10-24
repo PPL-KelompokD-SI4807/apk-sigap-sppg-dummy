@@ -55,6 +55,8 @@
       batch disimpulkan dari jadwal distribusi titik tersebut hari ini; bila tetap tidak diketahui,
       kirim `batch_tidak_diketahui=true`, jika tidak 422 pada `jadwal_produksi_id`.
       Admin wajib mengirim `sppg_id`; untuk peran lain `sppg_id` diabaikan.
+      Foto keluhan: unggah dulu via `POST /lampiran` (modul `keluhan`, tanpa `lampiranable_id`) lalu kirim
+      `lampiran_ids` (maks 5); `foto_path` tidak diterima.
     requestBody:
       required: true
       content:
