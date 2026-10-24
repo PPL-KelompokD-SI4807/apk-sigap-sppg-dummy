@@ -4,7 +4,7 @@ namespace App\Services\Ai\Catalog;
 
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Pembatasan SPPG eksplisit untuk query tool (lapis kedua selain SppgScope): berlaku walau tool
@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\DB;
 final class SppgBound
 {
     /**
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $query
-     * @return Builder<\Illuminate\Database\Eloquent\Model>
+     * @param  Builder<Model>  $query
+     * @return Builder<Model>
      */
     public static function apply(Builder $query, User $user, string $column = 'sppg_id'): Builder
     {
@@ -39,7 +39,7 @@ final class SppgBound
      * Cari satu record master by nama dalam SPPG pengguna: cocok persis (tanpa beda huruf besar) lebih
      * dulu, lalu mengandung kata kunci bila tepat satu. Null bila tidak ada / ambigu.
      *
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $modelClass
+     * @param  class-string<Model>  $modelClass
      * @return array{id: int, exact: bool}|null
      */
     public static function matchByName(string $modelClass, string $column, string $name, User $user): ?array
