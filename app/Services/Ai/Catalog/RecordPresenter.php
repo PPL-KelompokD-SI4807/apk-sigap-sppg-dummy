@@ -4,9 +4,9 @@ namespace App\Services\Ai\Catalog;
 
 use BackedEnum;
 use Carbon\CarbonInterface;
-use InvalidArgumentException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 use UnitEnum;
 
 /**
