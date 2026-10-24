@@ -79,6 +79,6 @@ class FeedbackKeluhan extends Model
 
     public function scopeTerbuka(Builder $query): Builder
     {
-        return $query->where('status', '!=', StatusKeluhan::Selesai->value);
+        return $query->whereIn('status', StatusKeluhan::terbukaValues());
     }
 }

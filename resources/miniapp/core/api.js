@@ -111,7 +111,7 @@ export const api = {
 
 /** Daftar paginate Laravel -> {items, page, lastPage, total}. */
 export async function fetchList(endpoint, { page = 1, search = '', perPage = 15, extra = {} } = {}) {
-  const res = await api.get(endpoint, { page, search, per_page: perPage, ...extra });
+  const res = await api.get(endpoint, { page, q: search, per_page: perPage, ...extra });
   const items = Array.isArray(res) ? res : res?.data ?? [];
   const meta = res?.meta ?? {};
   return { items, page: meta.current_page ?? page, lastPage: meta.last_page ?? 1, total: meta.total ?? items.length };

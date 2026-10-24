@@ -1,0 +1,148 @@
+/titik-layanan:
+  get:
+    tags: [Titik Layanan]
+    summary: Daftar titik layanan
+    description: 'Data SPPG pengguna (Admin: semua SPPG).'
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: jenis, in: query, schema: { type: string, enum: [sekolah, paud, posyandu, lainnya] } }
+      - { name: is_active, in: query, schema: { type: boolean } }
+      - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/TitikLayanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+  post:
+    tags: [Titik Layanan]
+    summary: Tambah titik layanan
+    description: 'Admin wajib mengirim `sppg_id`; peran lain otomatis memakai SPPG-nya (sppg_id dari body diabaikan). `pic_telegram_chat_id` tidak dapat diisi dari body: PIC menautkan Telegram lewat undangan PIC.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TitikLayananInput' }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/TitikLayanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/titik-layanan/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Titik Layanan]
+    summary: Detail titik layanan
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/TitikLayanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Titik Layanan]
+    summary: Ubah titik layanan
+    description: '`sppg_id` tidak dapat dipindahkan (diabaikan saat mengubah).'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TitikLayananInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/TitikLayanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Titik Layanan]
+    summary: Ubah sebagian titik layanan
+    description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TitikLayananInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/TitikLayanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Titik Layanan]
+    summary: Hapus lunak titik layanan
+    description: 'Hapus lunak.'
+    responses:
+      '204': { description: Dihapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/titik-layanan/{id}/undangan-pic:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  post:
+    tags: [Titik Layanan]
+    summary: Terbitkan tautan undangan PIC titik layanan
+    description: |
+      Admin atau Kepala SPPG (hak ubah titik layanan, SPPG sendiri). Tanpa body. PIC membuka tautan
+      di Telegram; bot menautkan chat PIC ke titik layanan (`pic_telegram_chat_id`) agar menerima
+      Notifikasi Perjalanan Mobil. Undangan PIC aktif sebelumnya untuk titik yang sama dicabut.
+      Token 32 byte acak, hanya hash disimpan, berlaku 48 jam, sekali pakai; `token` dan
+      `deep_link` hanya tampil pada respons ini.
+    responses:
+      '201':
+        description: Dibuat
+        headers:
+          Cache-Control: { schema: { type: string }, description: 'no-store' }
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/UndanganDibuat' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

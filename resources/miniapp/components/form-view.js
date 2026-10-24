@@ -28,7 +28,12 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     const initial = values[f.name] ?? f.default ?? '';
     let ctl;
 
-    if (type === 'photo') {
+    if (type === 'custom') {
+      // Kolom kustom: f.build({value, values, onChange}) -> {el, get, set?, hasValue, setError?, focusEl?}
+      const c = f.build({ value: initial === '' ? (values[f.name] ?? null) : initial, values, onChange: clearFlag });
+      ctl = { get: c.get, set: c.set || (() => {}), hasValue: c.hasValue, setError: c.setError || null, focusEl: c.focusEl || null };
+      wrap.append(label, c.el);
+    } else if (type === 'photo') {
       const up = createPhotoUpload({ name: f.name, existingUrl: typeof initial === 'string' && initial ? initial : null, onChange: clearFlag });
       ctl = { get: () => up.getFile(), set: () => {}, hasValue: up.hasValue, setError: up.setError, focusEl: null };
       wrap.append(label, up.el);
@@ -91,6 +96,7 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     let first = null;
     for (const [name, c] of Object.entries(controls)) {
       const f = c.field;
+      if (c.hidden) continue; // kolom disembunyikan oleh showIf: tidak divalidasi
       const v = c.get();
       let msg = '';
       if (f.required && !c.hasValue()) msg = `${f.label || name} wajib diisi.`;
@@ -102,6 +108,9 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
         } else if (f.maxlength && String(v).length > f.maxlength) msg = `Maksimal ${f.maxlength} karakter.`;
         else if (f.pattern && !new RegExp(`^(?:${f.pattern})$`).test(String(v))) msg = f.patternMessage || 'Format tidak sesuai.';
       }
+      // Validator kustom: validate(nilai, semuaNilai) -> '' atau pesan. Dijalankan juga untuk kolom kosong
+      // (agar aturan lintas kolom, mis. "no_sim diisi -> masa berlaku wajib", dapat bekerja).
+      if (!msg && typeof f.validate === 'function') msg = f.validate(v, collect()) || '';
       if (msg) { showError(name, msg); first = first || c; }
     }
     first?.focusEl?.focus();
@@ -124,6 +133,7 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
   function collect() {
     const out = {};
     for (const [name, c] of Object.entries(controls)) {
+      if (c.hidden) { if (!c.field.readonly && c.field.type !== 'photo') out[name] = null; continue; }
       const v = c.get();
       if (c.field.type === 'photo') { if (v) out[name] = v; } // tanpa foto baru = tidak dikirim
       else if (!c.field.readonly) out[name] = v;
@@ -148,6 +158,22 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     }
   }
 
+  // showIf(nilaiSekarang) -> boolean: tampilkan/sembunyikan kolom sesuai isian lain (mis. unit hanya untuk relawan).
+  function applyVisibility() {
+    const cur = {};
+    for (const [n, c] of Object.entries(controls)) if (c.field.type !== 'photo') cur[n] = c.get();
+    for (const c of Object.values(controls)) {
+      if (typeof c.field.showIf !== 'function') continue;
+      const show = !!c.field.showIf(cur);
+      c.hidden = !show;
+      c.wrap.hidden = !show;
+      if (!show) c.errEl.textContent = '';
+    }
+  }
+  form.addEventListener('input', applyVisibility);
+  form.addEventListener('change', applyVisibility);
+  applyVisibility();
+
   const formErr = h('p', { class: 'field-error', role: 'alert' });
   form.append(formErr);
   form.addEventListener('submit', (ev) => { ev.preventDefault(); submit(); });
@@ -159,8 +185,10 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
 async function loadRelation(f, select, getInitial) {
   const rel = f.relation || {};
   try {
-    const { items } = await fetchList(rel.endpoint, { perPage: 100 });
-    items.forEach((it) => select.append(h('option', { value: it[rel.value || 'id'] }, it[rel.label || 'nama'] ?? it.name ?? it.id)));
+    const { items } = await fetchList(rel.endpoint, { perPage: 100, extra: rel.query || {} });
+    // rel.filter(item) -> boolean dan rel.format(item) -> teks (opsional)
+    items.filter((it) => (rel.filter ? rel.filter(it) : true))
+      .forEach((it) => select.append(h('option', { value: it[rel.value || 'id'] }, rel.format ? rel.format(it) : (it[rel.label || 'nama'] ?? it.name ?? it.id))));
     const init = getInitial();
     if (init != null) select.value = init;
   } catch {

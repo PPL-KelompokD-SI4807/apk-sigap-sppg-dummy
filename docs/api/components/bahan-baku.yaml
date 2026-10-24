@@ -1,0 +1,84 @@
+schemas:
+  KategoriBahan:
+    type: string
+    enum: [karbohidrat, protein_hewani, protein_nabati, sayur, buah, susu, bumbu, lainnya]
+  JenisMutasi:
+    type: string
+    enum: [masuk, keluar, penyesuaian]
+  BahanBaku:
+    type: object
+    properties:
+      id: { type: integer, examples: [7] }
+      sppg_id: { type: integer, examples: [1] }
+      pemasok_id: { type: [integer, 'null'] }
+      pemasok:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          nama: { type: string }
+      kode: { type: [string, 'null'], examples: ['BB-001'] }
+      nama: { type: string, examples: ['Beras Premium'] }
+      kategori: { $ref: '#/components/schemas/KategoriBahan' }
+      kategori_label: { type: string, examples: ['Karbohidrat'] }
+      satuan: { type: string, examples: ['kg'] }
+      stok: { type: number, examples: [120.5] }
+      stok_minimum: { type: number, examples: [50] }
+      kedaluwarsa_terdekat: { type: [string, 'null'], format: date }
+      stok_menipis: { type: boolean, description: 'stok <= stok_minimum' }
+      akan_kedaluwarsa: { type: boolean, description: 'kedaluwarsa_terdekat <= hari ini + ambang' }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  BahanBakuInput:
+    type: object
+    required: [nama, kategori, satuan]
+    properties:
+      sppg_id: { type: integer, description: 'Wajib untuk Admin saja' }
+      pemasok_id: { type: [integer, 'null'], description: 'Harus pemasok SPPG yang sama' }
+      kode: { type: [string, 'null'], maxLength: 30, description: 'Unik per SPPG' }
+      nama: { type: string, maxLength: 255 }
+      kategori: { $ref: '#/components/schemas/KategoriBahan' }
+      satuan: { type: string, maxLength: 20, examples: [kg] }
+      stok_minimum: { type: number, minimum: 0, default: 0 }
+      kedaluwarsa_terdekat: { type: [string, 'null'], format: date }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  MutasiStok:
+    type: object
+    properties:
+      id: { type: integer }
+      bahan_baku_id: { type: integer }
+      jenis: { $ref: '#/components/schemas/JenisMutasi' }
+      jumlah: { type: number, description: 'Positif untuk masuk/keluar; penyesuaian bertanda' }
+      stok_setelah: { type: [number, 'null'], description: 'Saldo setelah mutasi (hanya pada respons POST)' }
+      harga_satuan: { type: [number, 'null'] }
+      tanggal_mutasi: { type: string, format: date }
+      tanggal_kedaluwarsa: { type: [string, 'null'], format: date }
+      jadwal_produksi_id: { type: [integer, 'null'] }
+      pemasok_id: { type: [integer, 'null'] }
+      pemasok: { type: [object, 'null'], properties: { id: { type: integer }, nama: { type: string } } }
+      dicatat_oleh: { type: [integer, 'null'] }
+      pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
+      catatan: { type: [string, 'null'] }
+      created_at: { type: string, format: date-time }
+  MutasiStokInput:
+    type: object
+    required: [jenis, jumlah]
+    properties:
+      jenis: { $ref: '#/components/schemas/JenisMutasi' }
+      jumlah: { type: number, description: 'Maks 3 desimal' }
+      tanggal_mutasi: { type: string, format: date, description: 'Default hari ini; tidak boleh di masa depan' }
+      tanggal_kedaluwarsa: { type: [string, 'null'], format: date, description: 'Hanya jenis masuk' }
+      harga_satuan: { type: [number, 'null'], minimum: 0 }
+      pemasok_id: { type: [integer, 'null'], description: 'Hanya jenis masuk' }
+      jadwal_produksi_id: { type: [integer, 'null'], description: 'Hanya jenis keluar' }
+      catatan: { type: [string, 'null'], maxLength: 500 }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  BatchStok:
+    type: object
+    properties:
+      mutasi_stok_id: { type: integer }
+      tanggal_masuk: { type: string, format: date }
+      tanggal_kedaluwarsa: { type: [string, 'null'], format: date }
+      jumlah_awal: { type: number }
+      sisa: { type: number }
+      pemasok_id: { type: [integer, 'null'] }
+      sisa_hari: { type: [integer, 'null'], description: 'Hari menuju kedaluwarsa (negatif = lewat)' }

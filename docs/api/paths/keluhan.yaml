@@ -1,0 +1,169 @@
+/keluhan:
+  get:
+    tags: [Keluhan]
+    summary: Daftar feedback dan keluhan
+    description: |
+      Hak R. Admin lintas SPPG; peran lain SPPG-nya; relawan hanya keluhan yang ia catat sendiri.
+      Urut terbaru. Filter rentang tanggal memakai tanggal pencatatan (`created_at`).
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - name: status
+        in: query
+        schema: { $ref: '#/components/schemas/StatusKeluhan' }
+      - name: prioritas
+        in: query
+        schema: { $ref: '#/components/schemas/PrioritasKeluhan' }
+      - name: kategori
+        in: query
+        schema: { $ref: '#/components/schemas/KategoriKeluhan' }
+      - name: titik_layanan_id
+        in: query
+        schema: { type: integer }
+      - name: jadwal_produksi_id
+        in: query
+        schema: { type: integer }
+      - name: sppg_id
+        in: query
+        description: Hanya Admin; peran lain diabaikan.
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/Keluhan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Keluhan]
+    summary: Catat keluhan
+    description: |
+      Hak C (Admin, relawan). Prioritas otomatis dari kategori (makanan_basi, gejala_sakit = kritis;
+      porsi_kurang, terlambat = sedang; lainnya rendah); `prioritas` input hanya dapat menaikkan.
+      Keluhan kritis: `dieskalasi_pada` diisi, event `KeluhanKritis` dipancarkan, dan WAJIB terkait
+      jadwal produksi (batch). Bila `jadwal_produksi_id` kosong tetapi `titik_layanan_id` diisi,
+      batch disimpulkan dari jadwal distribusi titik tersebut hari ini; bila tetap tidak diketahui,
+      kirim `batch_tidak_diketahui=true`, jika tidak 422 pada `jadwal_produksi_id`.
+      Admin wajib mengirim `sppg_id`; untuk peran lain `sppg_id` diabaikan.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/KeluhanInput' }
+          example:
+            sumber: guru
+            kategori: makanan_basi
+            titik_layanan_id: 3
+            jadwal_produksi_id: 18
+            deskripsi: 'Lauk ayam berbau basi, beberapa siswa mual.'
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Keluhan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/keluhan/ringkasan:
+  get:
+    tags: [Keluhan]
+    summary: Ringkasan jumlah keluhan per status
+    description: Hak R; cakupan sama dengan daftar. Mendukung filter from/to (tanggal pencatatan).
+    parameters:
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - name: sppg_id
+        in: query
+        description: Hanya Admin; peran lain diabaikan.
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/KeluhanRingkasan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+/keluhan/{id}:
+  get:
+    tags: [Keluhan]
+    summary: Detail keluhan
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Keluhan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  patch:
+    tags: [Keluhan]
+    summary: Ubah keluhan / tindak lanjut
+    description: |
+      Hak U. Kepala SPPG dan Ahli Gizi hanya dapat mengubah `status` dan `tindak_lanjut`; Admin dapat
+      mengubah semua field. Transisi status: baru -> diproses -> selesai | ditolak (selesai/ditolak final,
+      `tindak_lanjut` wajib terisi saat selesai atau ditolak). Transisi tidak valid: 422 pada `status`.
+      PUT diterima sebagai alias.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/KeluhanUpdateInput' }
+          example: { status: selesai, tindak_lanjut: 'Menu ayam diganti, batch ditarik, orang tua dihubungi.' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Keluhan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Keluhan]
+    summary: Hapus lunak keluhan (Admin)
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    responses:
+      '204': { description: Dihapus (soft delete) }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }

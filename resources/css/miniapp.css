@@ -107,3 +107,44 @@ img { max-width: 100%; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 @media (min-width: 480px) { .menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ---- Modul grup A: tab segmen, kartu baris, dialog undangan ---- */
+.seg { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border-radius: var(--radius); overflow-x: auto; }
+.seg-btn { flex: 1 0 auto; min-height: 40px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font: inherit; font-weight: 600; font-size: .9rem; cursor: pointer; white-space: nowrap; }
+.seg-btn.active { background: var(--bg-section); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.row-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; color: var(--text); background: var(--bg-section); border-radius: var(--radius); }
+.row-card .rc-main { flex: 1; min-width: 0; }
+.row-card .rc-title { font-weight: 600; overflow-wrap: anywhere; }
+.row-card .rc-sub { color: var(--hint); font-size: .88rem; overflow-wrap: anywhere; }
+.row-card .rc-aside { text-align: right; flex: none; }
+.row-card .rc-aside strong { display: block; font-size: 1.05rem; }
+.avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .9rem; color: #fff; background: var(--btn); }
+.badge-ok { background: #e1f4e6; color: #1b6e32; }
+.badge-info { background: #e1effb; color: #17609c; }
+.badge-danger { background: #fde4e4; color: #a12622; }
+:root[data-theme="dark"] .badge-ok { background: #1d3a27; color: #8be0a3; }
+:root[data-theme="dark"] .badge-info { background: #1a3550; color: #8cc4f5; }
+:root[data-theme="dark"] .badge-danger { background: #4a2020; color: #ffb3b0; }
+.stack { display: flex; flex-direction: column; gap: var(--gap); }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.row-actions .btn { flex: 1 1 140px; }
+.invite-link { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); font-family: ui-monospace, monospace; font-size: .8rem; overflow-wrap: anywhere; user-select: all; }
+.modal.invite { max-width: 420px; }
+a.seg-btn { display: flex; align-items: center; justify-content: center; color: var(--text); text-decoration: none; }
+
+/* ---- Modul grup B: lencana ganda, komposisi, ringkasan, peringatan ---- */
+.rc-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex: none; }
+.alert-danger { background: #fde4e4; color: #a12622; border-radius: var(--radius); padding: 10px 14px; font-size: .9rem; }
+:root[data-theme="dark"] .alert-danger { background: #4a2020; color: #ffb3b0; }
+.alert-ok { background: #e1f4e6; color: #1b6e32; border-radius: var(--radius); padding: 10px 14px; font-size: .9rem; }
+:root[data-theme="dark"] .alert-ok { background: #1d3a27; color: #8be0a3; }
+.tbl { display: grid; gap: 6px; }
+.tbl-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .9rem; padding: 6px 0; border-bottom: 1px solid var(--separator); }
+.tbl-row:last-child { border-bottom: 0; }
+.tbl-row > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tbl-row .num { text-align: right; white-space: nowrap; }
+.tbl-row.bad { color: var(--danger); }
+.komposisi-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 44px; gap: 6px; align-items: center; margin-bottom: 8px; }
+.komposisi-row select, .komposisi-row input { min-height: 44px; }
+.komposisi-row .btn { padding: 0; }
+.stack-tight { display: flex; flex-direction: column; gap: 6px; }

@@ -1,0 +1,168 @@
+/rekap-harian:
+  get:
+    tags: [Rekap Harian]
+    summary: Riwayat rekap harian (snapshot)
+    description: |
+      Hak R (admin, kepala_sppg, ahli_gizi, akuntan). Admin lintas SPPG (filter `sppg_id`); lainnya SPPG-nya.
+      Urut tanggal terbaru. Filter from/to memakai kolom `tanggal`.
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - name: sppg_id
+        in: query
+        description: Hanya Admin.
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/RekapHarian' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Rekap Harian]
+    summary: Susun atau susun ulang rekap satu hari
+    description: |
+      Hak C (kepala_sppg). Idempoten per (SPPG, tanggal): bila snapshot sudah ada, ringkasannya dihitung
+      ulang (butuh hak U) dan respons 200; bila baru, 201. `tanggal` default hari ini (WIB), tidak boleh
+      di masa depan. `catatan` yang tidak dikirim mempertahankan catatan lama. `kirim=true` memancarkan
+      event `RekapHarianDibuat` (pengiriman bot oleh listener).
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RekapHarianInput' }
+          example: { tanggal: '2026-11-02', catatan: 'Hujan deras, distribusi sempat tertunda.' }
+    responses:
+      '200':
+        description: Snapshot diperbarui
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RekapHarian' }
+      '201':
+        description: Snapshot dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RekapHarian' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/rekap-harian/ringkasan:
+  get:
+    tags: [Rekap Harian]
+    summary: Ringkasan harian langsung untuk dasbor (tidak disimpan)
+    description: |
+      Hak R. Dihitung saat itu juga dari data operasional. Admin wajib mengirim `sppg_id`.
+    parameters:
+      - name: tanggal
+        in: query
+        description: YYYY-MM-DD (WIB), default hari ini, tidak boleh di masa depan.
+        schema: { type: string, format: date }
+      - name: sppg_id
+        in: query
+        description: Wajib untuk Admin; diabaikan peran lain.
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RekapHarianRingkasan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/rekap-harian/{id}:
+  get:
+    tags: [Rekap Harian]
+    summary: Detail snapshot rekap
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RekapHarian' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  patch:
+    tags: [Rekap Harian]
+    summary: Ubah catatan rekap
+    description: Hak U (kepala_sppg). Hanya `catatan` yang dapat diubah; ringkasan tetap.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [catatan]
+            properties:
+              catatan: { type: [string, 'null'], maxLength: 1000 }
+              ai_draft_id: { type: [string, 'null'], format: uuid }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RekapHarian' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/rekap-harian/{id}/kirim-ulang:
+  post:
+    tags: [Rekap Harian]
+    summary: Kirim ulang rekap ke Kepala SPPG dan pengawas
+    description: |
+      Hak U (kepala_sppg). Mengembalikan `status_kirim` ke menunggu dan memancarkan event
+      `RekapHarianDibuat` (listener bot yang mengirim).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    responses:
+      '200':
+        description: Dijadwalkan kirim ulang
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RekapHarian' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }

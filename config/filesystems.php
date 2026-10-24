@@ -38,6 +38,24 @@ return [
             'report' => false,
         ],
 
+        /*
+         | Unggahan pengguna (foto bukti, nota, lampiran). PRIVAT: di luar public/, tanpa 'serve'
+         | dan tanpa 'url' sehingga tidak pernah ada URL publik/symlink. Berkas hanya disajikan
+         | lewat GET /api/v1/lampiran/{id} (Policy modul induk + SppgScope). Lihat config/unggahan.php.
+         */
+        'uploads' => [
+            'driver' => 'local',
+            'root' => storage_path('app/secure'),
+            'visibility' => 'private',
+            'directory_visibility' => 'private',
+            'permissions' => [
+                'file' => ['public' => 0640, 'private' => 0640],
+                'dir' => ['public' => 0750, 'private' => 0750],
+            ],
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

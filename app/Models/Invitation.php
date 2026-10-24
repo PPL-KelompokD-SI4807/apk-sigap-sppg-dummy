@@ -27,6 +27,7 @@ class Invitation extends Model
         'expires_at',
         'used_at',
         'used_by',
+        'revoked_at',
     ];
 
     /** @return array<string, string> */
@@ -36,6 +37,7 @@ class Invitation extends Model
             'tipe' => TipeUndangan::class,
             'expires_at' => 'datetime',
             'used_at' => 'datetime',
+            'revoked_at' => 'datetime',
         ];
     }
 
@@ -66,12 +68,12 @@ class Invitation extends Model
 
     public function scopeAktif(Builder $query): Builder
     {
-        return $query->whereNull('used_at')->where('expires_at', '>', now());
+        return $query->whereNull('used_at')->whereNull('revoked_at')->where('expires_at', '>', now());
     }
 
     public function isUsable(): bool
     {
-        return $this->used_at === null && $this->expires_at->isFuture();
+        return $this->used_at === null && $this->revoked_at === null && $this->expires_at->isFuture();
     }
 
     public static function hashToken(string $token): string

@@ -22,6 +22,246 @@ tags:
   - name: Auth
     description: Login Telegram (initData) dan sesi token
 paths:
+  /armada:
+    get:
+      tags: [Armada]
+      summary: Daftar armada
+      description: 'Hak: Admin & Kepala SPPG CRUD; Akuntan & Relawan R.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: status, in: query, schema: { type: string, enum: [tersedia, bertugas, servis] } }
+        - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Armada' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [Armada]
+      summary: Tambah armada
+      description: '`plat_nomor` dinormalkan (huruf besar, spasi tunggal) dan unik per SPPG termasuk yang terhapus lunak. Admin wajib mengirim `sppg_id`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArmadaInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Armada' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /armada/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Armada]
+      summary: Detail armada
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Armada' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Armada]
+      summary: Ubah armada
+      description: 'Plat nomor tetap unik per SPPG.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArmadaInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Armada' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Armada]
+      summary: Ubah sebagian armada
+      description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArmadaInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Armada' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Armada]
+      summary: Hapus lunak armada
+      description: 'Hapus lunak. Armada berstatus `bertugas` tidak dapat dihapus (422).'
+      responses:
+        '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /pengemudi:
+    get:
+      tags: [Armada]
+      summary: Daftar pengemudi
+      description: 'Modul Armada dan Pengemudi (matriks hak sama dengan /armada). `no_sim` dan `sim_berlaku_hingga` hanya terlihat oleh peran yang boleh mengubah (Admin, Kepala SPPG); peran R lain melihat `sim_status` saja.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Pengemudi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [Armada]
+      summary: Tambah pengemudi
+      description: 'Bila `no_sim` diisi maka `sim_berlaku_hingga` wajib dan tidak boleh sebelum hari ini.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PengemudiInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengemudi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /pengemudi/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Armada]
+      summary: Detail pengemudi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengemudi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Armada]
+      summary: Ubah pengemudi
+      description: 'Tanggal masa berlaku SIM yang dikirim tidak boleh sebelum hari ini.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PengemudiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengemudi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Armada]
+      summary: Ubah sebagian pengemudi
+      description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PengemudiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengemudi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Armada]
+      summary: Hapus lunak pengemudi
+      description: 'Hapus lunak.'
+      responses:
+        '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /auth/telegram:
     post:
       tags: [Auth]
@@ -122,6 +362,2330 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
               example: { message: 'Berhasil keluar.' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /bahan-baku:
+    get:
+      tags: [Bahan Baku]
+      summary: Daftar bahan baku (SPPG pengguna; Admin lintas SPPG)
+      description: |
+        Hak: R (admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang). Filter: `q` (nama/kode),
+        `kategori`, `pemasok_id`, `stok_menipis=1`, `sppg_id` (hanya Admin).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: kategori, in: query, schema: { $ref: '#/components/schemas/KategoriBahan' } }
+        - { name: pemasok_id, in: query, schema: { type: integer } }
+        - { name: stok_menipis, in: query, schema: { type: integer, enum: [0, 1] } }
+        - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Bahan Baku]
+      summary: Tambah bahan baku (stok awal 0; isi lewat mutasi masuk)
+      description: |
+        Hak: C (admin, staf_gudang). `sppg_id` hanya dipakai Admin (wajib); diabaikan untuk peran lain.
+        Menerima `ai_draft_id` opsional (draf Agen AI ditandai confirmed setelah sukses).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BahanBakuInput' }
+            example: { nama: 'Beras Premium', kode: 'BB-001', kategori: karbohidrat, satuan: kg, stok_minimum: 50, pemasok_id: 3 }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /bahan-baku/stok-menipis:
+    get:
+      tags: [Bahan Baku]
+      summary: Bahan dengan stok <= stok minimum
+      description: Hak R. Diurutkan dari rasio stok/minimum terkecil.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /bahan-baku/kedaluwarsa-dekat:
+    get:
+      tags: [Bahan Baku]
+      summary: Bahan (stok > 0) yang kedaluwarsa dalam N hari ke depan atau sudah lewat
+      description: Hak R. Ambang default `config('gudang.kedaluwarsa_hari')` = 3 hari.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - { name: hari, in: query, description: 'Ambang hari (0-365), default 3', schema: { type: integer, minimum: 0, maximum: 365, default: 3 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /bahan-baku/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Bahan Baku]
+      summary: Detail bahan baku
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Bahan Baku]
+      summary: Ubah bahan baku (stok TIDAK dapat diubah di sini; pakai mutasi)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BahanBakuInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Bahan Baku]
+      summary: Ubah sebagian bahan baku
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BahanBakuInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Bahan Baku]
+      summary: Hapus lunak bahan baku
+      description: Ditolak (422) bila bahan masih dipakai komposisi menu aktif.
+      responses:
+        '204': { description: Terhapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /bahan-baku/{id}/mutasi:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Bahan Baku]
+      summary: Riwayat mutasi stok bahan
+      description: Hak R. Filter `jenis`, `from`/`to` (tanggal_mutasi).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - { name: jenis, in: query, schema: { $ref: '#/components/schemas/JenisMutasi' } }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/MutasiStok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Bahan Baku]
+      summary: Catat mutasi stok (masuk/keluar/penyesuaian), atomik
+      description: |
+        Hak U pada bahan baku (admin, staf_gudang). Transaksi + kunci baris bahan; stok tidak boleh
+        negatif (422 pada `jumlah`). `masuk`/`keluar`: jumlah > 0. `penyesuaian`: jumlah selisih bertanda
+        (boleh negatif, bukan 0) dan `catatan` (alasan) wajib. `keluar` wajib `jadwal_produksi_id` atau
+        `catatan`. `pemasok_id` dan `tanggal_kedaluwarsa` hanya untuk `masuk`. Stok per batch dihitung FEFO
+        dari mutasi masuk bertanggal kedaluwarsa (lihat /bahan-baku/{id}/batch). Pencatat = pengguna login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MutasiStokInput' }
+            examples:
+              masuk:
+                value: { jenis: masuk, jumlah: 100, pemasok_id: 3, harga_satuan: 14500, tanggal_kedaluwarsa: '2027-01-15', catatan: 'Pengiriman pagi' }
+              keluar:
+                value: { jenis: keluar, jumlah: 25.5, jadwal_produksi_id: 12 }
+              penyesuaian:
+                value: { jenis: penyesuaian, jumlah: -2, catatan: 'Susut timbang hasil stok opname' }
+      responses:
+        '201':
+          description: Mutasi tercatat, saldo diperbarui
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MutasiStok' }
+                  bahan_baku: { $ref: '#/components/schemas/BahanBaku' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /bahan-baku/{id}/batch:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Bahan Baku]
+      summary: Stok per batch (FEFO: kedaluwarsa terdekat habis lebih dulu)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/BatchStok' }
+                  stok_tanpa_batch:
+                    type: string
+                    description: Stok yang tidak terikat batch masuk (stok awal/penyesuaian positif).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /jadwal:
+    get:
+      tags: [Jadwal]
+      summary: Daftar jadwal produksi
+      description: |
+        Hak R pada jadwal produksi (admin, kepala_sppg, ahli_gizi, staf_gudang, relawan unit dapur).
+        Filter: `q` (catatan/nama menu), `status`, `tanggal`, `from`/`to`, `menu_id`, `sppg_id` (Admin).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/StatusJadwalProduksi' } }
+        - { name: tanggal, in: query, schema: { type: string, format: date } }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: menu_id, in: query, schema: { type: integer } }
+        - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/JadwalProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Jadwal]
+      summary: Buat jadwal produksi (validasi kapasitas harian SPPG)
+      description: |
+        Hak C (kepala_sppg, ahli_gizi, relawan unit dapur). Status awal selalu `direncanakan`.
+        422 pada `target_porsi` bila target > kapasitas harian SPPG atau total jadwal (tidak dibatalkan)
+        pada tanggal tersebut > kapasitas. Bila stok tidak cukup, event `KekuranganBahan` dipancarkan
+        (notifikasi Staf Gudang) dan respons memuat `kekurangan_bahan`. Menerima `ai_draft_id` opsional.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JadwalProduksiInput' }
+            example: { menu_id: 5, tanggal_produksi: '2026-11-02', jam_mulai_masak: '03:00', target_porsi: 2500, catatan: 'Hari pertama pekan' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalProduksi' }
+                  kekurangan_bahan:
+                    type: array
+                    description: Bahan yang stoknya kurang untuk target ini (kosong bila cukup)
+                    items: { $ref: '#/components/schemas/KebutuhanBahanItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Validasi gagal (termasuk kapasitas harian terlampaui)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidationError' }
+              example:
+                message: 'Data yang dikirim tidak valid.'
+                errors:
+                  target_porsi: ['Total jadwal tanggal 2026-11-02 menjadi 3500 porsi (2000 sudah terjadwal + 1500 baru), melebihi kapasitas harian 3000 porsi. Sisa kapasitas 1000 porsi.']
+  /jadwal/distribusi:
+    get:
+      tags: [Jadwal]
+      summary: Daftar jadwal distribusi
+      description: |
+        Hak R pada jadwal distribusi (relawan unit distribusi dan peran non-relawan). Filter: `status`,
+        `tanggal`, `from`/`to` (tanggal_distribusi), `jadwal_produksi_id`, `titik_layanan_id`, `armada_id`,
+        `pengemudi_id`, `sppg_id` (Admin).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/StatusJadwalDistribusi' } }
+        - { name: tanggal, in: query, schema: { type: string, format: date } }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: jadwal_produksi_id, in: query, schema: { type: integer } }
+        - { name: titik_layanan_id, in: query, schema: { type: integer } }
+        - { name: armada_id, in: query, schema: { type: integer } }
+        - { name: pengemudi_id, in: query, schema: { type: integer } }
+        - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/JadwalDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Jadwal]
+      summary: Buat jadwal distribusi (titik layanan, armada, pengemudi, jam, porsi)
+      description: |
+        Hak C (kepala_sppg, ahli_gizi, relawan unit distribusi). Status awal `menunggu`. Validasi:
+        total porsi distribusi (tidak dibatalkan) <= target porsi produksi (422 `jumlah_porsi`);
+        armada dan pengemudi tidak boleh bentrok jam pada tanggal yang sama (422 `armada_id`/`pengemudi_id`;
+        jendela = jam_berangkat s.d. jam_rencana_tiba, bila tiba kosong dianggap 60 menit); armada tidak
+        boleh berstatus servis; `jam_berangkat` wajib bila armada/pengemudi diisi.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JadwalDistribusiInput' }
+            example: { jadwal_produksi_id: 12, titik_layanan_id: 3, armada_id: 2, pengemudi_id: 4, jam_berangkat: '08:30', jam_rencana_tiba: '09:15', jumlah_porsi: 300 }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /jadwal/distribusi/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Jadwal]
+      summary: Detail jadwal distribusi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Jadwal]
+      summary: Ubah jadwal distribusi
+      description: |
+        Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+        mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JadwalDistribusiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Jadwal]
+      summary: Ubah sebagian jadwal distribusi
+      description: |
+        Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+        mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JadwalDistribusiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalDistribusi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Jadwal]
+      summary: Hapus lunak jadwal distribusi
+      description: 'Hanya status menunggu/siap/dibatalkan dan belum memiliki bukti distribusi; selain itu 422.'
+      responses:
+        '204': { description: Terhapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /jadwal/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Jadwal]
+      summary: Detail jadwal produksi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Jadwal]
+      summary: Ubah jadwal produksi
+      description: |
+        Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+        mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JadwalProduksiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Jadwal]
+      summary: Ubah sebagian jadwal produksi
+      description: |
+        Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+        mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JadwalProduksiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/JadwalProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Jadwal]
+      summary: Hapus lunak jadwal produksi
+      description: 'Hanya status direncanakan/dibatalkan tanpa log produksi dan tanpa jadwal distribusi aktif; selain itu 422.'
+      responses:
+        '204': { description: Terhapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /jadwal/{id}/kebutuhan-bahan:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Jadwal]
+      summary: Estimasi kebutuhan bahan jadwal produksi vs stok
+      description: |
+        Kebutuhan = Sum(gram_per_porsi x target_porsi) per bahan menu, dikonversi ke satuan stok memakai
+        `config('produksi.konversi_gram')` (kg, g, liter, ml). Bahan bersatuan lain (butir, ikat, ...)
+        tidak dapat dibandingkan (`dapat_dibandingkan=false`, kekurangan null).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/KebutuhanBahan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /keluhan:
+    get:
+      tags: [Keluhan]
+      summary: Daftar feedback dan keluhan
+      description: |
+        Hak R. Admin lintas SPPG; peran lain SPPG-nya; relawan hanya keluhan yang ia catat sendiri.
+        Urut terbaru. Filter rentang tanggal memakai tanggal pencatatan (`created_at`).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/StatusKeluhan' }
+        - name: prioritas
+          in: query
+          schema: { $ref: '#/components/schemas/PrioritasKeluhan' }
+        - name: kategori
+          in: query
+          schema: { $ref: '#/components/schemas/KategoriKeluhan' }
+        - name: titik_layanan_id
+          in: query
+          schema: { type: integer }
+        - name: jadwal_produksi_id
+          in: query
+          schema: { type: integer }
+        - name: sppg_id
+          in: query
+          description: Hanya Admin; peran lain diabaikan.
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Keluhan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Keluhan]
+      summary: Catat keluhan
+      description: |
+        Hak C (Admin, relawan). Prioritas otomatis dari kategori (makanan_basi, gejala_sakit = kritis;
+        porsi_kurang, terlambat = sedang; lainnya rendah); `prioritas` input hanya dapat menaikkan.
+        Keluhan kritis: `dieskalasi_pada` diisi, event `KeluhanKritis` dipancarkan, dan WAJIB terkait
+        jadwal produksi (batch). Bila `jadwal_produksi_id` kosong tetapi `titik_layanan_id` diisi,
+        batch disimpulkan dari jadwal distribusi titik tersebut hari ini; bila tetap tidak diketahui,
+        kirim `batch_tidak_diketahui=true`, jika tidak 422 pada `jadwal_produksi_id`.
+        Admin wajib mengirim `sppg_id`; untuk peran lain `sppg_id` diabaikan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeluhanInput' }
+            example:
+              sumber: guru
+              kategori: makanan_basi
+              titik_layanan_id: 3
+              jadwal_produksi_id: 18
+              deskripsi: 'Lauk ayam berbau basi, beberapa siswa mual.'
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Keluhan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /keluhan/ringkasan:
+    get:
+      tags: [Keluhan]
+      summary: Ringkasan jumlah keluhan per status
+      description: Hak R; cakupan sama dengan daftar. Mendukung filter from/to (tanggal pencatatan).
+      parameters:
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - name: sppg_id
+          in: query
+          description: Hanya Admin; peran lain diabaikan.
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/KeluhanRingkasan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /keluhan/{id}:
+    get:
+      tags: [Keluhan]
+      summary: Detail keluhan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Keluhan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Keluhan]
+      summary: Ubah keluhan / tindak lanjut
+      description: |
+        Hak U. Kepala SPPG dan Ahli Gizi hanya dapat mengubah `status` dan `tindak_lanjut`; Admin dapat
+        mengubah semua field. Transisi status: baru -> diproses -> selesai | ditolak (selesai/ditolak final,
+        `tindak_lanjut` wajib terisi saat selesai atau ditolak). Transisi tidak valid: 422 pada `status`.
+        PUT diterima sebagai alias.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeluhanUpdateInput' }
+            example: { status: selesai, tindak_lanjut: 'Menu ayam diganti, batch ditarik, orang tua dihubungi.' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Keluhan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Keluhan]
+      summary: Hapus lunak keluhan (Admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: Dihapus (soft delete) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /log-produksi:
+    get:
+      tags: [Log Produksi]
+      summary: Daftar log produksi harian
+      description: |
+        Hak R (admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan unit dapur). Filter: `q`
+        (kendala/kode batch), `jadwal_produksi_id`, `tanggal`/`from`/`to` (tanggal produksi jadwal),
+        `sppg_id` (Admin).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: jadwal_produksi_id, in: query, schema: { type: integer } }
+        - { name: tanggal, in: query, schema: { type: string, format: date } }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LogProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Log Produksi]
+      summary: Catat log produksi untuk satu jadwal (satu log per jadwal)
+      description: |
+        Hak C (relawan unit dapur saja; kepala_sppg tidak memiliki C). Kode batch dibuat otomatis
+        (`BATCH-YYYYMMDD-NN`, unik per SPPG). Jadwal tidak boleh dibatalkan atau belum tiba harinya.
+        422 bila jadwal sudah memiliki log aktif. Bila log lama dihapus lunak, log dipulihkan (restore)
+        dengan kode batch yang sama. `realisasi_porsi` >= 0 dan <= kapasitas harian SPPG; respons memuat
+        `selisih_porsi` terhadap target. `foto_path` berupa path relatif (unggah berkas dikerjakan modul unggahan).
+        Menerima `ai_draft_id` opsional.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogProduksiInput' }
+            example: { jadwal_produksi_id: 12, realisasi_porsi: 980, sisa_makanan_kg: 3.5, waktu_mulai: '03:10', jam_selesai: '08:20', kendala: 'Gas hampir habis' }
+      responses:
+        '201':
+          description: Dibuat (atau dipulihkan)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/LogProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /log-produksi/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Log Produksi]
+      summary: Detail log produksi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/LogProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Log Produksi]
+      summary: Ubah log produksi
+      description: Hak U (kepala_sppg; relawan dapur hanya log buatannya sendiri pada hari yang sama). `jadwal_produksi_id` tidak dapat diubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogProduksiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/LogProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Log Produksi]
+      summary: Ubah sebagian log produksi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogProduksiInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/LogProduksi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Log Produksi]
+      summary: Hapus lunak log produksi
+      description: Hak D (kepala_sppg). Tercatat di audit_logs sebagai deleted pada pemulihan/penghapusan.
+      responses:
+        '204': { description: Terhapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /menu-gizi:
+    get:
+      tags: [Menu dan Gizi]
+      summary: Daftar menu
+      description: |
+        Hak R (admin, kepala_sppg, ahli_gizi, staf_gudang, relawan). Filter: `q` (nama_menu/siklus),
+        `kelompok_sasaran`, `from`/`to` (tanggal_sajian), `sppg_id` (hanya Admin).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: kelompok_sasaran, in: query, schema: { $ref: '#/components/schemas/KelompokSasaran' } }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Menu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Menu dan Gizi]
+      summary: Tambah menu beserta komposisi bahan
+      description: |
+        Hak C (ahli_gizi). Respons memuat `peringatan_gizi` bila nilai di luar rentang standar kelompok
+        sasaran (peringatan, tidak memblokir penyimpanan). Menerima `ai_draft_id` opsional.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuInput' }
+            example:
+              nama_menu: 'Nasi Ayam Sayur Bayam'
+              kelompok_sasaran: siswa
+              tanggal_sajian: '2026-11-02'
+              siklus: 'Siklus 1'
+              energi_kkal: 620
+              protein_g: 22
+              lemak_g: 18
+              karbohidrat_g: 90
+              serat_g: 7
+              bahan:
+                - { bahan_baku_id: 4, gram_per_porsi: 120 }
+                - { bahan_baku_id: 9, gram_per_porsi: 60 }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Menu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /menu-gizi/standar-gizi:
+    get:
+      tags: [Menu dan Gizi]
+      summary: Daftar standar gizi per kelompok sasaran
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/StandarGizi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Menu dan Gizi]
+      summary: Tambah standar gizi (satu per kelompok sasaran per SPPG)
+      description: Hak C (ahli_gizi). Standar yang sebelumnya dihapus lunak untuk kelompok yang sama dipulihkan dan diperbarui.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StandarGiziInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StandarGizi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /menu-gizi/standar-gizi/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Menu dan Gizi]
+      summary: Detail standar gizi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StandarGizi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Menu dan Gizi]
+      summary: Ubah standar gizi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StandarGiziInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StandarGizi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Menu dan Gizi]
+      summary: Ubah sebagian standar gizi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StandarGiziInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StandarGizi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Menu dan Gizi]
+      summary: Hapus lunak standar gizi
+      responses:
+        '204': { description: Terhapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /menu-gizi/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Menu dan Gizi]
+      summary: Detail menu (komposisi bahan + peringatan gizi)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Menu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Menu dan Gizi]
+      summary: Ubah menu (`bahan` bila dikirim menggantikan seluruh komposisi)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Menu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Menu dan Gizi]
+      summary: Ubah sebagian menu
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Menu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Menu dan Gizi]
+      summary: Hapus lunak menu
+      description: Ditolak (422) bila masih dipakai jadwal produksi berstatus direncanakan/dimasak.
+      responses:
+        '204': { description: Terhapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /menu-gizi/{id}/ringkasan-gizi:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Menu dan Gizi]
+      summary: Ringkasan gizi per porsi dan perbandingan dengan standar
+      description: |
+        Gizi per porsi diambil dari nilai yang diinput pada menu (data bahan baku tidak memuat kandungan
+        gizi). Dibandingkan dengan standar kelompok sasaran menu (`StandarGizi::peringatanUntuk`).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RingkasanGizi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /mutu:
+    get:
+      tags: [Mutu]
+      summary: Daftar pemeriksaan mutu dan keamanan pangan
+      description: |
+        Hak R (admin, kepala_sppg, ahli_gizi, relawan). Filter: `q` (catatan organoleptik/tindakan korektif),
+        `hasil`, `jadwal_produksi_id`, `pemeriksa_id`, `from`/`to` (tanggal pemeriksaan), `sppg_id` (Admin).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: hasil, in: query, schema: { $ref: '#/components/schemas/HasilMutu' } }
+        - { name: jadwal_produksi_id, in: query, schema: { type: integer } }
+        - { name: pemeriksa_id, in: query, schema: { type: integer } }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PemeriksaanMutu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Mutu]
+      summary: Catat pemeriksaan mutu untuk jadwal produksi (boleh periksa ulang)
+      description: |
+        Hak C (ahli_gizi). Pemeriksa = pengguna login. Satu jadwal boleh memiliki banyak pemeriksaan;
+        yang TERBARU menjadi gerbang distribusi (JadwalProduksi::isLayakDistribusi). Konsistensi:
+        hasil `layak` hanya bila kebersihan dapur, kebersihan petugas, dan organoleptik semuanya baik
+        serta suhu >= `config('produksi.mutu.suhu_minimum_c')` (60 C) bila suhu diisi; hasil `tidak_layak`
+        wajib `tindakan_korektif`; organoleptik tidak baik wajib `catatan_organoleptik`. Hasil
+        `tidak_layak` memancarkan event `MutuTidakLayak` dan menahan keberangkatan distribusi terkait
+        (PATCH /jadwal/distribusi/{id} status berangkat -> 422). `foto_path` berupa path relatif (unggah
+        berkas oleh modul unggahan). Menerima `ai_draft_id` opsional.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PemeriksaanMutuInput' }
+            example:
+              jadwal_produksi_id: 12
+              suhu_makanan_c: 72.5
+              kebersihan_dapur: true
+              kebersihan_petugas: true
+              organoleptik_baik: true
+              catatan_organoleptik: 'Rasa, aroma, dan tekstur baik'
+              sampel_disimpan: true
+              hasil: layak
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /mutu/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Mutu]
+      summary: Detail pemeriksaan mutu
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Mutu]
+      summary: Ubah/koreksi pemeriksaan mutu
+      description: |
+        Hak U (ahli_gizi). Bila pemeriksaan sudah memengaruhi distribusi (`memengaruhi_distribusi=true`)
+        `catatan_koreksi` WAJIB; perubahan dicatat di audit_logs beserta pelaku/waktu koreksi.
+        Perubahan hasil menjadi `tidak_layak` memancarkan `MutuTidakLayak`. `jadwal_produksi_id` tidak dapat diubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PemeriksaanMutuInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Mutu]
+      summary: Ubah sebagian / koreksi pemeriksaan mutu
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PemeriksaanMutuInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Mutu]
+      summary: Hapus lunak pemeriksaan mutu
+      description: |
+        Hak D (ahli_gizi). 422 bila pemeriksaan sudah memengaruhi distribusi: distribusi terkait sudah
+        berangkat/diterima, atau ini pemeriksaan terbaru sementara ada distribusi menunggu/siap.
+        Pada kasus itu gunakan koreksi (PUT/PATCH dengan `catatan_koreksi`).
+      responses:
+        '204': { description: Terhapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /notifikasi-perjalanan:
+    get:
+      tags: [Notifikasi Perjalanan]
+      summary: Daftar notifikasi perjalanan per hari
+      description: |
+        Hak modul `notifikasi-perjalanan` R. Admin melihat lintas SPPG (hanya baca); Kepala SPPG melihat
+        SPPG-nya; relawan unit distribusi hanya perjalanan yang dipicunya sendiri. Relawan unit lain 403.
+        Tanpa `tanggal`, daftar memakai hari ini (WIB) berdasarkan `waktu_berangkat`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: tanggal
+          in: query
+          description: Tanggal berangkat (YYYY-MM-DD, WIB). Default hari ini.
+          schema: { type: string, format: date }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/StatusPerjalanan' }
+        - name: titik_layanan_id
+          in: query
+          schema: { type: integer }
+        - name: jadwal_distribusi_id
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Notifikasi Perjalanan]
+      summary: Berangkat dan picu notifikasi perjalanan
+      description: |
+        Hak C (Kepala SPPG; relawan unit distribusi). Syarat jadwal distribusi: status `siap`/`berangkat`,
+        hasil mutu terbaru batch produksinya Layak, belum ada perjalanan aktif untuk jadwal yang sama.
+        Estimasi tiba dihitung TripNotificationService (lihat `NotifikasiPerjalananPratinjau`).
+        Memancarkan event `PerjalananDimulai` (pengiriman bot dilakukan listener, bukan endpoint ini).
+        Bila PIC titik layanan belum menghubungkan Telegram: `dialihkan_ke_kepala=true`, `status_kirim=tidak_terkirim`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotifikasiPerjalananInput' }
+            example:
+              jadwal_distribusi_id: 41
+              waktu_berangkat: '2026-11-02T08:30:00+07:00'
+              estimasi_menit: null
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /notifikasi-perjalanan/terakhir:
+    get:
+      tags: [Notifikasi Perjalanan]
+      summary: Status perjalanan terakhir
+      description: |
+        Perjalanan terbaru (berdasarkan waktu berangkat) pada cakupan hak pengguna, opsional difilter
+        jadwal atau titik layanan. `data` bernilai null bila belum ada.
+      parameters:
+        - name: jadwal_distribusi_id
+          in: query
+          schema: { type: integer }
+        - name: titik_layanan_id
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/NotifikasiPerjalanan'
+                      - type: 'null'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /notifikasi-perjalanan/pratinjau:
+    post:
+      tags: [Notifikasi Perjalanan]
+      summary: Pratinjau estimasi tiba dan pesan (tanpa menyimpan)
+      description: Hak C. Tidak membuat data dan tidak memancarkan event. Validasi sama dengan POST /notifikasi-perjalanan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotifikasiPerjalananInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NotifikasiPerjalananPratinjau' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /notifikasi-perjalanan/{id}:
+    get:
+      tags: [Notifikasi Perjalanan]
+      summary: Detail notifikasi perjalanan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /notifikasi-perjalanan/{id}/status:
+    post:
+      tags: [Notifikasi Perjalanan]
+      summary: Ubah status perjalanan
+      description: |
+        Transisi valid: berangkat -> dalam_perjalanan | dibatalkan; dalam_perjalanan -> tiba | dibatalkan.
+        tiba dan dibatalkan final. `alasan` wajib saat dibatalkan. Memerlukan hak C (memicu notifikasi);
+        relawan hanya perjalanan miliknya. Memancarkan `PerjalananTiba` saat tiba.
+        Transisi tidak valid: 422 pada field `status`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PerjalananStatusInput' }
+            example: { status: tiba }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /pemasok:
+    get:
+      tags: [Pemasok]
+      summary: Daftar pemasok
+      description: 'Hak: Admin CRUD, Staf Gudang CRU, lainnya R (Kepala SPPG, Ahli Gizi, Akuntan).'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: jenis, in: query, schema: { type: string, enum: [umkm, petani, peternak, nelayan] } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Pemasok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [Pemasok]
+      summary: Tambah pemasok
+      description: 'Admin wajib mengirim `sppg_id`. `kontak` berupa nomor telepon (8-15 digit).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PemasokInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pemasok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /pemasok/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Pemasok]
+      summary: Detail pemasok
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pemasok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Pemasok]
+      summary: Ubah pemasok
+      description: 'Staf Gudang boleh mengubah tetapi tidak menghapus.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PemasokInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pemasok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Pemasok]
+      summary: Ubah sebagian pemasok
+      description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PemasokInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pemasok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Pemasok]
+      summary: Hapus lunak pemasok
+      description: 'Hanya Admin. Selalu hapus lunak (tidak ada penghapusan permanen), sehingga riwayat bahan baku/pengeluaran yang memakai pemasok tetap utuh.'
+      responses:
+        '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /penerima-manfaat:
+    get:
+      tags: [Penerima Manfaat]
+      summary: Daftar penerima manfaat
+      description: 'Hak: Admin CRUD, Kepala SPPG CRU, Ahli Gizi R (SPPG sendiri). Tanpa NIK.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: titik_layanan_id, in: query, schema: { type: integer } }
+        - { name: kelompok_sasaran, in: query, schema: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: ada_alergi, in: query, description: 'true = hanya yang memiliki catatan alergi.', schema: { type: boolean } }
+        - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PenerimaManfaat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [Penerima Manfaat]
+      summary: Tambah penerima manfaat
+      description: '`titik_layanan_id` harus titik layanan aktif di SPPG pengguna; `sppg_id` record selalu diturunkan dari titik layanan (body tidak dipercaya). `nama` hanya inisial/nama minimal; deret angka panjang (mirip NIK) ditolak.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PenerimaManfaatInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PenerimaManfaat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /penerima-manfaat/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Penerima Manfaat]
+      summary: Detail penerima manfaat
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PenerimaManfaat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Penerima Manfaat]
+      summary: Ubah penerima manfaat
+      description: 'Kepala SPPG boleh mengubah (U) tetapi tidak menghapus.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PenerimaManfaatInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PenerimaManfaat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Penerima Manfaat]
+      summary: Ubah sebagian penerima manfaat
+      description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PenerimaManfaatInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PenerimaManfaat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Penerima Manfaat]
+      summary: Hapus lunak penerima manfaat
+      description: 'Hanya Admin. Hapus lunak + log audit.'
+      responses:
+        '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /pengguna:
+    get:
+      tags: [Pengguna]
+      summary: Daftar pengguna
+      description: |
+        Admin: semua pengguna (lintas SPPG). Kepala SPPG: pengguna SPPG-nya (R). Ahli Gizi, Akuntan,
+        Staf Gudang, Relawan (R*): daftar hanya berisi profil sendiri. Pengguna terhapus lunak tidak tampil.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/Role' } }
+        - { name: unit, in: query, schema: { type: string, enum: [dapur, distribusi] } }
+        - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: status, in: query, description: 'menunggu_telegram = akun dibuat tetapi Telegram belum tertaut.', schema: { type: string, enum: [aktif, nonaktif, menunggu_telegram] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Pengguna' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [Pengguna]
+      summary: Tambah pengguna (Admin)
+      description: |
+        Membuat akun tanpa Telegram (status `menunggu_telegram`). Tautkan Telegram lewat
+        `POST /pengguna/undangan`. `telegram_id` tidak dapat diisi dari body. Peran admin wajib
+        `sppg_id` kosong; peran lain wajib `sppg_id`; peran relawan wajib `unit`.
+        Menerima `ai_draft_id` opsional (draf Agen AI milik pengguna, pending) yang ditandai confirmed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PenggunaInput' }
+            example: { name: 'Siti Rahayu', role: relawan, unit: dapur, sppg_id: 1, phone: '0812-0000-1234' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengguna' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /pengguna/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Pengguna]
+      summary: Detail pengguna
+      description: Admin dan Kepala SPPG (SPPG-nya) melihat siapa pun yang berhak; peran lain hanya profil sendiri (R*), pengguna lain 403.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengguna' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Pengguna]
+      summary: Ubah pengguna (Admin)
+      description: |
+        Hanya Admin. Perubahan role/unit/sppg_id/is_active mencabut seluruh token aktif pengguna itu.
+        Admin tidak dapat menonaktifkan atau mengubah peran akunnya sendiri, dan admin aktif terakhir
+        tidak dapat dinonaktifkan/diturunkan (422, field `user`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PenggunaUpdateInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengguna' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Pengguna]
+      summary: Ubah sebagian pengguna (Admin)
+      description: Sama dengan PUT; semua field opsional.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PenggunaUpdateInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengguna' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Pengguna]
+      summary: Hapus lunak pengguna (Admin)
+      description: Token pengguna dicabut. Tidak dapat menghapus akun sendiri atau admin aktif terakhir (422, field `user`).
+      responses:
+        '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /pengguna/undangan:
+    get:
+      tags: [Pengguna]
+      summary: Daftar undangan Telegram (Admin)
+      description: Token tidak pernah ditampilkan ulang (hanya hash SHA-256 yang disimpan).
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - { name: status, in: query, schema: { type: string, enum: [aktif, terpakai, kedaluwarsa, dicabut] } }
+        - { name: tipe, in: query, schema: { type: string, enum: [pengguna, pic] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Undangan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Pengguna]
+      summary: Terbitkan tautan undangan pengguna (Admin)
+      description: |
+        Kebijakan: hanya Admin (FR-02: Admin yang mendaftarkan pengguna; proposal tidak memberi
+        Kepala SPPG hak undang). Dua mode: (a) `user_id` = akun yang sudah dibuat dan belum bertaut
+        Telegram; (b) `role` (+ `unit` untuk relawan, + `sppg_id` untuk non-admin) bila akun dibuat
+        otomatis saat tautan dipakai. Undangan aktif sebelumnya untuk akun yang sama dicabut.
+        Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 48 jam, sekali pakai.
+        `token` dan `deep_link` hanya ada pada respons ini; simpan/kirimkan segera.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UndanganInput' }
+            examples:
+              akunAda: { value: { user_id: 12 } }
+              akunBaru: { value: { role: relawan, unit: distribusi, sppg_id: 1 } }
+      responses:
+        '201':
+          description: Dibuat
+          headers:
+            Cache-Control: { schema: { type: string }, description: 'no-store' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UndanganDibuat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /pengguna/undangan/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    delete:
+      tags: [Pengguna]
+      summary: Cabut undangan (Admin)
+      description: Menandai undangan dicabut (revoked_at); tautan langsung tidak berlaku. Undangan yang sudah dipakai tidak dapat dicabut (422).
+      responses:
+        '204': { description: Dicabut }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /rekap-harian:
+    get:
+      tags: [Rekap Harian]
+      summary: Riwayat rekap harian (snapshot)
+      description: |
+        Hak R (admin, kepala_sppg, ahli_gizi, akuntan). Admin lintas SPPG (filter `sppg_id`); lainnya SPPG-nya.
+        Urut tanggal terbaru. Filter from/to memakai kolom `tanggal`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - name: sppg_id
+          in: query
+          description: Hanya Admin.
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/RekapHarian' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Rekap Harian]
+      summary: Susun atau susun ulang rekap satu hari
+      description: |
+        Hak C (kepala_sppg). Idempoten per (SPPG, tanggal): bila snapshot sudah ada, ringkasannya dihitung
+        ulang (butuh hak U) dan respons 200; bila baru, 201. `tanggal` default hari ini (WIB), tidak boleh
+        di masa depan. `catatan` yang tidak dikirim mempertahankan catatan lama. `kirim=true` memancarkan
+        event `RekapHarianDibuat` (pengiriman bot oleh listener).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RekapHarianInput' }
+            example: { tanggal: '2026-11-02', catatan: 'Hujan deras, distribusi sempat tertunda.' }
+      responses:
+        '200':
+          description: Snapshot diperbarui
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RekapHarian' }
+        '201':
+          description: Snapshot dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RekapHarian' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /rekap-harian/ringkasan:
+    get:
+      tags: [Rekap Harian]
+      summary: Ringkasan harian langsung untuk dasbor (tidak disimpan)
+      description: |
+        Hak R. Dihitung saat itu juga dari data operasional. Admin wajib mengirim `sppg_id`.
+      parameters:
+        - name: tanggal
+          in: query
+          description: YYYY-MM-DD (WIB), default hari ini, tidak boleh di masa depan.
+          schema: { type: string, format: date }
+        - name: sppg_id
+          in: query
+          description: Wajib untuk Admin; diabaikan peran lain.
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RekapHarianRingkasan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /rekap-harian/{id}:
+    get:
+      tags: [Rekap Harian]
+      summary: Detail snapshot rekap
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RekapHarian' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Rekap Harian]
+      summary: Ubah catatan rekap
+      description: Hak U (kepala_sppg). Hanya `catatan` yang dapat diubah; ringkasan tetap.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [catatan]
+              properties:
+                catatan: { type: [string, 'null'], maxLength: 1000 }
+                ai_draft_id: { type: [string, 'null'], format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RekapHarian' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /rekap-harian/{id}/kirim-ulang:
+    post:
+      tags: [Rekap Harian]
+      summary: Kirim ulang rekap ke Kepala SPPG dan pengawas
+      description: |
+        Hak U (kepala_sppg). Mengembalikan `status_kirim` ke menunggu dan memancarkan event
+        `RekapHarianDibuat` (listener bot yang mengirim).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Dijadwalkan kirim ulang
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RekapHarian' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /sppg:
+    get:
+      tags: [SPPG]
+      summary: Daftar SPPG
+      description: 'Admin: semua SPPG. Peran lain: hanya SPPG sendiri (satu elemen).'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: status_operasional, in: query, schema: { type: string, enum: [aktif, libur, nonaktif] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Sppg' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [SPPG]
+      summary: Tambah SPPG
+      description: 'Hanya Admin. `kode` unik (termasuk yang terhapus lunak). `kapasitas_porsi_harian` wajib > 0.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SppgInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Sppg' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /sppg/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [SPPG]
+      summary: Detail SPPG
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Sppg' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [SPPG]
+      summary: Ubah SPPG
+      description: 'Admin: semua field. Kepala SPPG: hanya SPPG sendiri dan tidak dapat mengubah `kode`. `kapasitas_porsi_harian` wajib > 0.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SppgInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Sppg' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [SPPG]
+      summary: Ubah sebagian SPPG
+      description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SppgInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Sppg' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [SPPG]
+      summary: Hapus lunak SPPG
+      description: 'Hanya Admin. Ditolak (422) bila SPPG masih memiliki pengguna atau titik layanan aktif.'
+      responses:
+        '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /titik-layanan:
+    get:
+      tags: [Titik Layanan]
+      summary: Daftar titik layanan
+      description: 'Data SPPG pengguna (Admin: semua SPPG).'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - { name: jenis, in: query, schema: { type: string, enum: [sekolah, paud, posyandu, lainnya] } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TitikLayanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [Titik Layanan]
+      summary: Tambah titik layanan
+      description: 'Admin wajib mengirim `sppg_id`; peran lain otomatis memakai SPPG-nya (sppg_id dari body diabaikan). `pic_telegram_chat_id` tidak dapat diisi dari body: PIC menautkan Telegram lewat undangan PIC.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TitikLayananInput' }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TitikLayanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /titik-layanan/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Titik Layanan]
+      summary: Detail titik layanan
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TitikLayanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Titik Layanan]
+      summary: Ubah titik layanan
+      description: '`sppg_id` tidak dapat dipindahkan (diabaikan saat mengubah).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TitikLayananInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TitikLayanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Titik Layanan]
+      summary: Ubah sebagian titik layanan
+      description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TitikLayananInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TitikLayanan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Titik Layanan]
+      summary: Hapus lunak titik layanan
+      description: 'Hapus lunak.'
+      responses:
+        '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /titik-layanan/{id}/undangan-pic:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Titik Layanan]
+      summary: Terbitkan tautan undangan PIC titik layanan
+      description: |
+        Admin atau Kepala SPPG (hak ubah titik layanan, SPPG sendiri). Tanpa body. PIC membuka tautan
+        di Telegram; bot menautkan chat PIC ke titik layanan (`pic_telegram_chat_id`) agar menerima
+        Notifikasi Perjalanan Mobil. Undangan PIC aktif sebelumnya untuk titik yang sama dicabut.
+        Token 32 byte acak, hanya hash disimpan, berlaku 48 jam, sekali pakai; `token` dan
+        `deep_link` hanya tampil pada respons ini.
+      responses:
+        '201':
+          description: Dibuat
+          headers:
+            Cache-Control: { schema: { type: string }, description: 'no-store' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UndanganDibuat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
 components:
   securitySchemes:
     bearerAuth:
@@ -190,6 +2754,51 @@ components:
           $ref: '#/components/schemas/PaginationLinks'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
+    Armada:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        plat_nomor: { type: string, examples: ['B 1234 XY'] }
+        jenis: { type: string }
+        kapasitas_box: { type: integer }
+        status: { type: string, enum: [tersedia, bertugas, servis] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ArmadaInput:
+      type: object
+      required: [plat_nomor, jenis]
+      properties:
+        sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+        plat_nomor: { type: string, maxLength: 20 }
+        jenis: { type: string, maxLength: 50 }
+        kapasitas_box: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+        status: { type: string, enum: [tersedia, bertugas, servis], default: tersedia }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    Pengemudi:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        nama: { type: string }
+        no_hp: { type: [string, 'null'] }
+        no_sim: { type: [string, 'null'], description: 'Hanya untuk peran yang boleh mengubah (Admin, Kepala SPPG); tidak ada di respons peran lain.' }
+        sim_berlaku_hingga: { type: [string, 'null'], format: date, description: 'Sama seperti no_sim: disembunyikan dari peran R.' }
+        sim_status: { type: [string, 'null'], enum: [berlaku, segera_berakhir, kedaluwarsa, null], description: 'segera_berakhir = <= 30 hari; null bila SIM tidak dicatat.' }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PengemudiInput:
+      type: object
+      required: [nama]
+      properties:
+        sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+        nama: { type: string, maxLength: 255 }
+        no_hp: { type: [string, 'null'], maxLength: 30 }
+        no_sim: { type: [string, 'null'], maxLength: 30 }
+        sim_berlaku_hingga: { type: [string, 'null'], format: date }
+        is_active: { type: boolean, default: true }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
     Role:
       type: string
       enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan]
@@ -248,6 +2857,936 @@ components:
         token_type: { type: string, const: Bearer }
         expires_at: { type: [string, 'null'], format: date-time }
         user: { $ref: '#/components/schemas/AuthUser' }
+    KategoriBahan:
+      type: string
+      enum: [karbohidrat, protein_hewani, protein_nabati, sayur, buah, susu, bumbu, lainnya]
+    JenisMutasi:
+      type: string
+      enum: [masuk, keluar, penyesuaian]
+    BahanBaku:
+      type: object
+      properties:
+        id: { type: integer, examples: [7] }
+        sppg_id: { type: integer, examples: [1] }
+        pemasok_id: { type: [integer, 'null'] }
+        pemasok:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            nama: { type: string }
+        kode: { type: [string, 'null'], examples: ['BB-001'] }
+        nama: { type: string, examples: ['Beras Premium'] }
+        kategori: { $ref: '#/components/schemas/KategoriBahan' }
+        kategori_label: { type: string, examples: ['Karbohidrat'] }
+        satuan: { type: string, examples: ['kg'] }
+        stok: { type: number, examples: [120.5] }
+        stok_minimum: { type: number, examples: [50] }
+        kedaluwarsa_terdekat: { type: [string, 'null'], format: date }
+        stok_menipis: { type: boolean, description: 'stok <= stok_minimum' }
+        akan_kedaluwarsa: { type: boolean, description: 'kedaluwarsa_terdekat <= hari ini + ambang' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    BahanBakuInput:
+      type: object
+      required: [nama, kategori, satuan]
+      properties:
+        sppg_id: { type: integer, description: 'Wajib untuk Admin saja' }
+        pemasok_id: { type: [integer, 'null'], description: 'Harus pemasok SPPG yang sama' }
+        kode: { type: [string, 'null'], maxLength: 30, description: 'Unik per SPPG' }
+        nama: { type: string, maxLength: 255 }
+        kategori: { $ref: '#/components/schemas/KategoriBahan' }
+        satuan: { type: string, maxLength: 20, examples: [kg] }
+        stok_minimum: { type: number, minimum: 0, default: 0 }
+        kedaluwarsa_terdekat: { type: [string, 'null'], format: date }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    MutasiStok:
+      type: object
+      properties:
+        id: { type: integer }
+        bahan_baku_id: { type: integer }
+        jenis: { $ref: '#/components/schemas/JenisMutasi' }
+        jumlah: { type: number, description: 'Positif untuk masuk/keluar; penyesuaian bertanda' }
+        stok_setelah: { type: [number, 'null'], description: 'Saldo setelah mutasi (hanya pada respons POST)' }
+        harga_satuan: { type: [number, 'null'] }
+        tanggal_mutasi: { type: string, format: date }
+        tanggal_kedaluwarsa: { type: [string, 'null'], format: date }
+        jadwal_produksi_id: { type: [integer, 'null'] }
+        pemasok_id: { type: [integer, 'null'] }
+        pemasok: { type: [object, 'null'], properties: { id: { type: integer }, nama: { type: string } } }
+        dicatat_oleh: { type: [integer, 'null'] }
+        pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
+        catatan: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+    MutasiStokInput:
+      type: object
+      required: [jenis, jumlah]
+      properties:
+        jenis: { $ref: '#/components/schemas/JenisMutasi' }
+        jumlah: { type: number, description: 'Maks 3 desimal' }
+        tanggal_mutasi: { type: string, format: date, description: 'Default hari ini; tidak boleh di masa depan' }
+        tanggal_kedaluwarsa: { type: [string, 'null'], format: date, description: 'Hanya jenis masuk' }
+        harga_satuan: { type: [number, 'null'], minimum: 0 }
+        pemasok_id: { type: [integer, 'null'], description: 'Hanya jenis masuk' }
+        jadwal_produksi_id: { type: [integer, 'null'], description: 'Hanya jenis keluar' }
+        catatan: { type: [string, 'null'], maxLength: 500 }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    BatchStok:
+      type: object
+      properties:
+        mutasi_stok_id: { type: integer }
+        tanggal_masuk: { type: string, format: date }
+        tanggal_kedaluwarsa: { type: [string, 'null'], format: date }
+        jumlah_awal: { type: number }
+        sisa: { type: number }
+        pemasok_id: { type: [integer, 'null'] }
+        sisa_hari: { type: [integer, 'null'], description: 'Hari menuju kedaluwarsa (negatif = lewat)' }
+    StatusJadwalProduksi:
+      type: string
+      enum: [direncanakan, dimasak, selesai, dibatalkan]
+      description: 'Transisi: direncanakan -> dimasak -> selesai; direncanakan/dimasak -> dibatalkan'
+    StatusJadwalDistribusi:
+      type: string
+      enum: [menunggu, siap, berangkat, diterima, dibatalkan]
+      description: 'Transisi: menunggu -> siap -> berangkat -> diterima; menunggu/siap/berangkat -> dibatalkan. Berangkat memerlukan pemeriksaan mutu terbaru Layak.'
+    JadwalProduksi:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        menu_id: { type: integer }
+        menu:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            nama_menu: { type: string }
+            kelompok_sasaran: { type: string }
+        dibuat_oleh: { type: [integer, 'null'] }
+        tanggal_produksi: { type: string, format: date }
+        jam_mulai_masak: { type: [string, 'null'], examples: ['03:00'] }
+        target_porsi: { type: integer }
+        status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
+        status_label: { type: string }
+        catatan: { type: [string, 'null'] }
+        porsi_terjadwal_distribusi: { type: integer, description: 'Total porsi distribusi aktif (tidak dibatalkan)' }
+        status_mutu: { type: [string, 'null'], enum: [layak, tidak_layak, null], description: 'Hasil pemeriksaan mutu terbaru; null = belum diperiksa' }
+        layak_distribusi: { type: boolean, description: 'true bila pemeriksaan mutu terbaru Layak' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    JadwalProduksiInput:
+      type: object
+      required: [menu_id, tanggal_produksi, target_porsi]
+      properties:
+        menu_id: { type: integer, description: 'Menu SPPG yang sama' }
+        tanggal_produksi: { type: string, format: date, description: 'Tidak boleh di masa lalu saat dibuat' }
+        jam_mulai_masak: { type: [string, 'null'], examples: ['03:00'], description: 'HH:MM' }
+        target_porsi: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
+        catatan: { type: [string, 'null'], maxLength: 2000 }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    JadwalDistribusi:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        jadwal_produksi_id: { type: integer }
+        titik_layanan_id: { type: integer }
+        titik_layanan: { type: [object, 'null'], properties: { id: { type: integer }, nama: { type: string } } }
+        armada_id: { type: [integer, 'null'] }
+        armada: { type: [object, 'null'], properties: { id: { type: integer }, plat_nomor: { type: string } } }
+        pengemudi_id: { type: [integer, 'null'] }
+        pengemudi: { type: [object, 'null'], properties: { id: { type: integer }, nama: { type: string } } }
+        petugas_id: { type: [integer, 'null'] }
+        petugas: { type: [string, 'null'], description: 'Nama petugas' }
+        dibuat_oleh: { type: [integer, 'null'] }
+        tanggal_distribusi: { type: string, format: date }
+        jam_berangkat: { type: [string, 'null'], examples: ['08:30'] }
+        jam_rencana_tiba: { type: [string, 'null'], examples: ['09:15'] }
+        jumlah_porsi: { type: integer }
+        status: { $ref: '#/components/schemas/StatusJadwalDistribusi' }
+        status_label: { type: string }
+        layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
+        catatan: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    JadwalDistribusiInput:
+      type: object
+      required: [jadwal_produksi_id, titik_layanan_id, jumlah_porsi]
+      properties:
+        jadwal_produksi_id: { type: integer, description: 'Tidak dapat diubah setelah dibuat' }
+        titik_layanan_id: { type: integer }
+        armada_id: { type: [integer, 'null'] }
+        pengemudi_id: { type: [integer, 'null'] }
+        petugas_id: { type: [integer, 'null'], description: 'Pengguna SPPG yang sama; default pembuat bila relawan' }
+        tanggal_distribusi: { type: string, format: date, description: 'Default = tanggal produksi; tidak boleh sebelum tanggal produksi' }
+        jam_berangkat: { type: [string, 'null'], examples: ['08:30'], description: 'HH:MM; wajib bila armada/pengemudi diisi' }
+        jam_rencana_tiba: { type: [string, 'null'], examples: ['09:15'], description: 'Harus setelah jam_berangkat' }
+        jumlah_porsi: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/StatusJadwalDistribusi' }
+        catatan: { type: [string, 'null'], maxLength: 2000 }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    KebutuhanBahanItem:
+      type: object
+      properties:
+        bahan_baku_id: { type: integer }
+        nama: { type: string }
+        satuan: { type: string }
+        gram_per_porsi: { type: number }
+        kebutuhan_gram: { type: number }
+        kebutuhan: { type: [number, 'null'], description: 'Dalam satuan stok; null bila satuan tak dapat dikonversi' }
+        stok: { type: number }
+        kekurangan: { type: [number, 'null'], description: 'max(0, kebutuhan - stok); null bila tak dapat dibandingkan' }
+        cukup: { type: [boolean, 'null'] }
+        dapat_dibandingkan: { type: boolean }
+    KebutuhanBahan:
+      type: object
+      properties:
+        jadwal_produksi_id: { type: integer }
+        tanggal_produksi: { type: string, format: date }
+        target_porsi: { type: integer }
+        menu: { type: object, properties: { id: { type: integer }, nama_menu: { type: string } } }
+        bahan:
+          type: array
+          items: { $ref: '#/components/schemas/KebutuhanBahanItem' }
+        cukup: { type: boolean, description: 'true bila tidak ada bahan yang kurang' }
+        jumlah_bahan_kurang: { type: integer }
+        jumlah_bahan_tidak_dapat_dibandingkan: { type: integer }
+    StatusKeluhan:
+      type: string
+      enum: [baru, diproses, selesai, ditolak]
+    PrioritasKeluhan:
+      type: string
+      enum: [rendah, sedang, tinggi, kritis]
+    KategoriKeluhan:
+      type: string
+      enum: [makanan_basi, gejala_sakit, porsi_kurang, terlambat, rasa, kemasan, lainnya]
+    KeluhanInput:
+      type: object
+      required: [sumber, kategori, deskripsi]
+      properties:
+        sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan peran lain.' }
+        sumber:
+          type: string
+          enum: [guru, orang_tua, penerima, relawan, lainnya]
+        kategori: { $ref: '#/components/schemas/KategoriKeluhan' }
+        prioritas:
+          allOf:
+            - $ref: '#/components/schemas/PrioritasKeluhan'
+          description: Opsional; tidak dapat lebih rendah dari prioritas otomatis.
+        titik_layanan_id: { type: [integer, 'null'] }
+        jadwal_produksi_id: { type: [integer, 'null'], description: 'Wajib untuk keluhan kritis bila batch diketahui.' }
+        batch_tidak_diketahui: { type: boolean, description: 'Izinkan keluhan kritis tanpa kaitan batch.' }
+        deskripsi: { type: string, maxLength: 2000 }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    KeluhanUpdateInput:
+      type: object
+      properties:
+        status: { $ref: '#/components/schemas/StatusKeluhan' }
+        tindak_lanjut: { type: [string, 'null'], maxLength: 2000 }
+        sumber: { type: string, description: 'Hanya Admin.' }
+        kategori: { $ref: '#/components/schemas/KategoriKeluhan' }
+        prioritas: { $ref: '#/components/schemas/PrioritasKeluhan' }
+        titik_layanan_id: { type: [integer, 'null'] }
+        jadwal_produksi_id: { type: [integer, 'null'] }
+        deskripsi: { type: string, maxLength: 2000 }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    Keluhan:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        titik_layanan:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            nama: { type: string }
+        jadwal_produksi_id: { type: [integer, 'null'] }
+        jadwal_produksi_tanggal: { type: [string, 'null'], format: date }
+        sumber: { type: string }
+        kategori: { $ref: '#/components/schemas/KategoriKeluhan' }
+        kategori_label: { type: string }
+        prioritas: { $ref: '#/components/schemas/PrioritasKeluhan' }
+        status: { $ref: '#/components/schemas/StatusKeluhan' }
+        status_label: { type: string }
+        deskripsi: { type: string }
+        tindak_lanjut: { type: [string, 'null'] }
+        dicatat_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        ditangani_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        dieskalasi_pada: { type: [string, 'null'], format: date-time }
+        selesai_pada: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    KeluhanRingkasan:
+      type: object
+      properties:
+        total: { type: integer }
+        per_status:
+          type: object
+          description: Semua status selalu hadir (0 bila kosong).
+          properties:
+            baru: { type: integer }
+            diproses: { type: integer }
+            selesai: { type: integer }
+            ditolak: { type: integer }
+        per_prioritas:
+          type: object
+          properties:
+            rendah: { type: integer }
+            sedang: { type: integer }
+            tinggi: { type: integer }
+            kritis: { type: integer }
+        terbuka: { type: integer, description: 'baru + diproses' }
+        kritis_terbuka: { type: integer }
+      example:
+        total: 9
+        per_status: { baru: 3, diproses: 2, selesai: 3, ditolak: 1 }
+        per_prioritas: { rendah: 4, sedang: 3, tinggi: 0, kritis: 2 }
+        terbuka: 5
+        kritis_terbuka: 1
+    LogProduksi:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        jadwal_produksi_id: { type: integer }
+        jadwal:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            tanggal_produksi: { type: string, format: date }
+            target_porsi: { type: integer }
+            status: { type: string }
+            menu: { type: [object, 'null'], properties: { id: { type: integer }, nama_menu: { type: string } } }
+        kode_batch: { type: [string, 'null'], examples: ['BATCH-20261102-01'] }
+        realisasi_porsi: { type: integer }
+        target_porsi: { type: [integer, 'null'] }
+        selisih_porsi: { type: [integer, 'null'], description: 'realisasi - target (negatif = kurang dari target)' }
+        persentase_capaian: { type: [number, 'null'], description: 'realisasi / target x 100 (1 desimal)' }
+        peringatan: { type: [string, 'null'], description: 'Terisi bila realisasi berbeda dari target' }
+        sisa_makanan_kg: { type: number }
+        waktu_mulai: { type: [string, 'null'], examples: ['03:10'] }
+        jam_selesai: { type: [string, 'null'], examples: ['08:20'] }
+        kendala: { type: [string, 'null'] }
+        foto_path: { type: [string, 'null'] }
+        dicatat_oleh: { type: [integer, 'null'] }
+        pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    LogProduksiInput:
+      type: object
+      required: [jadwal_produksi_id, realisasi_porsi]
+      properties:
+        jadwal_produksi_id: { type: integer, description: 'Hanya saat membuat; jadwal SPPG yang sama, tidak dibatalkan, tanggal produksi <= hari ini' }
+        realisasi_porsi: { type: integer, minimum: 0 }
+        sisa_makanan_kg: { type: number, minimum: 0, maximum: 99999 }
+        waktu_mulai: { type: [string, 'null'], examples: ['03:10'], description: 'HH:MM' }
+        jam_selesai: { type: [string, 'null'], examples: ['08:20'], description: 'HH:MM; harus setelah waktu_mulai' }
+        kendala: { type: [string, 'null'], maxLength: 2000 }
+        foto_path: { type: [string, 'null'], maxLength: 255, description: 'Path relatif berkas pada disk privat (tanpa ../, tanpa awalan /)' }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    KelompokSasaran:
+      type: string
+      enum: [siswa, balita, ibu_hamil, ibu_menyusui]
+    PeringatanGizi:
+      type: object
+      properties:
+        kolom: { type: string, enum: [energi_kkal, protein_g, lemak_g, karbohidrat_g, serat_g] }
+        label: { type: string, examples: ['Protein'] }
+        status: { type: string, enum: [kurang, lebih] }
+        nilai: { type: number }
+        minimum: { type: number }
+        maksimum: { type: number }
+        pesan: { type: string, examples: ['Protein 15 g di bawah standar minimum 18 g.'] }
+    KomposisiBahan:
+      type: object
+      properties:
+        bahan_baku_id: { type: integer }
+        nama: { type: string }
+        satuan: { type: string }
+        gram_per_porsi: { type: number }
+    Menu:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        nama_menu: { type: string }
+        kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+        kelompok_sasaran_label: { type: string }
+        tanggal_sajian: { type: [string, 'null'], format: date }
+        siklus: { type: [string, 'null'] }
+        energi_kkal: { type: number }
+        protein_g: { type: number }
+        lemak_g: { type: number }
+        karbohidrat_g: { type: number }
+        serat_g: { type: number }
+        catatan: { type: [string, 'null'] }
+        jumlah_bahan: { type: integer, description: 'Hanya pada daftar' }
+        bahan:
+          type: array
+          description: 'Komposisi; hanya pada detail/simpan'
+          items: { $ref: '#/components/schemas/KomposisiBahan' }
+        peringatan_gizi:
+          type: array
+          description: 'Kosong bila sesuai standar atau standar belum dikonfigurasi; hanya pada detail/simpan'
+          items: { $ref: '#/components/schemas/PeringatanGizi' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    MenuInput:
+      type: object
+      required: [nama_menu, kelompok_sasaran]
+      properties:
+        nama_menu: { type: string, maxLength: 255 }
+        kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+        tanggal_sajian: { type: [string, 'null'], format: date }
+        siklus: { type: [string, 'null'], maxLength: 50 }
+        energi_kkal: { type: number, minimum: 0, maximum: 99999 }
+        protein_g: { type: number, minimum: 0, maximum: 99999 }
+        lemak_g: { type: number, minimum: 0, maximum: 99999 }
+        karbohidrat_g: { type: number, minimum: 0, maximum: 99999 }
+        serat_g: { type: number, minimum: 0, maximum: 99999 }
+        catatan: { type: [string, 'null'], maxLength: 2000 }
+        bahan:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [bahan_baku_id, gram_per_porsi]
+            properties:
+              bahan_baku_id: { type: integer, description: 'Bahan SPPG yang sama; tidak boleh ganda' }
+              gram_per_porsi: { type: number, exclusiveMinimum: 0, maximum: 100000 }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    StandarGizi:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+        energi_min: { type: number }
+        energi_max: { type: number }
+        protein_min: { type: number }
+        protein_max: { type: number }
+        lemak_min: { type: number }
+        lemak_max: { type: number }
+        karbohidrat_min: { type: number }
+        karbohidrat_max: { type: number }
+        serat_min: { type: number }
+        serat_max: { type: number }
+        updated_at: { type: string, format: date-time }
+    StandarGiziInput:
+      type: object
+      required: [kelompok_sasaran, energi_min, energi_max, protein_min, protein_max, lemak_min, lemak_max, karbohidrat_min, karbohidrat_max, serat_min, serat_max]
+      properties:
+        kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+        energi_min: { type: number, minimum: 0 }
+        energi_max: { type: number, description: '>= energi_min' }
+        protein_min: { type: number, minimum: 0 }
+        protein_max: { type: number }
+        lemak_min: { type: number, minimum: 0 }
+        lemak_max: { type: number }
+        karbohidrat_min: { type: number, minimum: 0 }
+        karbohidrat_max: { type: number }
+        serat_min: { type: number, minimum: 0 }
+        serat_max: { type: number }
+    RingkasanGizi:
+      type: object
+      properties:
+        menu_id: { type: integer }
+        nama_menu: { type: string }
+        kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+        sumber_gizi: { type: string, enum: [input_menu] }
+        per_porsi:
+          type: object
+          properties:
+            energi_kkal: { type: number }
+            protein_g: { type: number }
+            lemak_g: { type: number }
+            karbohidrat_g: { type: number }
+            serat_g: { type: number }
+        total_gram_per_porsi: { type: number, description: 'Jumlah gram_per_porsi seluruh bahan' }
+        komposisi:
+          type: array
+          items: { $ref: '#/components/schemas/KomposisiBahan' }
+        standar: { oneOf: [{ $ref: '#/components/schemas/StandarGizi' }, { type: 'null' }] }
+        standar_tersedia: { type: boolean }
+        sesuai_standar: { type: [boolean, 'null'], description: 'null bila standar belum dikonfigurasi' }
+        peringatan:
+          type: array
+          items: { $ref: '#/components/schemas/PeringatanGizi' }
+    HasilMutu:
+      type: string
+      enum: [layak, tidak_layak]
+    PemeriksaanMutu:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        jadwal_produksi_id: { type: integer }
+        jadwal:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            tanggal_produksi: { type: string, format: date }
+            status: { type: string }
+            menu: { type: [object, 'null'], properties: { id: { type: integer }, nama_menu: { type: string } } }
+        pemeriksa_id: { type: [integer, 'null'] }
+        pemeriksa: { type: [string, 'null'], description: 'Nama pemeriksa' }
+        waktu_pemeriksaan: { type: string, format: date-time }
+        suhu_makanan_c: { type: [number, 'null'] }
+        kebersihan_dapur: { type: boolean }
+        kebersihan_petugas: { type: boolean }
+        organoleptik_baik: { type: boolean }
+        catatan_organoleptik: { type: [string, 'null'] }
+        sampel_disimpan: { type: boolean }
+        hasil: { $ref: '#/components/schemas/HasilMutu' }
+        hasil_label: { type: string }
+        tindakan_korektif: { type: [string, 'null'] }
+        foto_path: { type: [string, 'null'] }
+        catatan_koreksi: { type: [string, 'null'] }
+        dikoreksi_pada: { type: [string, 'null'], format: date-time }
+        dikoreksi_oleh: { type: [integer, 'null'] }
+        memengaruhi_distribusi: { type: boolean, description: 'Hanya pada detail/simpan; true = tidak dapat dihapus, hanya dikoreksi' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PemeriksaanMutuInput:
+      type: object
+      required: [jadwal_produksi_id, kebersihan_dapur, kebersihan_petugas, organoleptik_baik, hasil]
+      properties:
+        jadwal_produksi_id: { type: integer, description: 'Hanya saat membuat; jadwal SPPG yang sama, tidak dibatalkan, tanggal produksi <= hari ini' }
+        waktu_pemeriksaan: { type: string, description: 'YYYY-MM-DD HH:MM[:SS]; default sekarang; tidak boleh di masa depan' }
+        suhu_makanan_c: { type: [number, 'null'], minimum: -50, maximum: 200 }
+        kebersihan_dapur: { type: boolean }
+        kebersihan_petugas: { type: boolean }
+        organoleptik_baik: { type: boolean, description: 'Rasa/aroma/tampilan' }
+        catatan_organoleptik: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila organoleptik_baik=false' }
+        sampel_disimpan: { type: boolean, default: false }
+        hasil: { $ref: '#/components/schemas/HasilMutu' }
+        tindakan_korektif: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila hasil=tidak_layak' }
+        foto_path: { type: [string, 'null'], maxLength: 255, description: 'Path relatif berkas (tanpa ../, tanpa awalan /)' }
+        catatan_koreksi: { type: [string, 'null'], maxLength: 2000, description: 'Wajib saat mengubah pemeriksaan yang memengaruhi distribusi' }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    StatusPerjalanan:
+      type: string
+      enum: [berangkat, dalam_perjalanan, tiba, dibatalkan]
+    NotifikasiPerjalananInput:
+      type: object
+      required: [jadwal_distribusi_id]
+      properties:
+        jadwal_distribusi_id: { type: integer }
+        waktu_berangkat:
+          type: [string, 'null']
+          format: date-time
+          description: Default sekarang (WIB). Maksimal 30 menit ke depan.
+        estimasi_menit:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 720
+          description: Estimasi durasi manual (menit); menimpa perhitungan dari jarak.
+        ai_draft_id:
+          type: [string, 'null']
+          format: uuid
+          description: UUID draf Agen AI yang dikonfirmasi lewat aksi ini.
+    PerjalananStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [dalam_perjalanan, tiba, dibatalkan]
+        alasan:
+          type: [string, 'null']
+          maxLength: 500
+          description: Wajib bila status dibatalkan.
+        ai_draft_id:
+          type: [string, 'null']
+          format: uuid
+    NotifikasiPerjalananPratinjau:
+      type: object
+      properties:
+        waktu_berangkat: { type: string, format: date-time }
+        estimasi_tiba: { type: string, format: date-time }
+        estimasi_menit: { type: integer }
+        estimasi_sumber:
+          type: string
+          enum: [manual, jarak, jadwal, default]
+          description: |
+            Rumus: manual -> nilai input; jarak -> ceil(jarak_km / kecepatan_kmj * 60) + buffer_menit;
+            jadwal -> jam_rencana_tiba - jam_berangkat; default -> 30 menit. Hasil jarak/jadwal/default
+            dibatasi 5..720 menit. Zona waktu Asia/Jakarta.
+        penerima:
+          type: string
+          enum: [pic, kepala_sppg]
+          description: kepala_sppg bila PIC belum menghubungkan Telegram.
+        pesan: { type: string }
+    NotifikasiPerjalanan:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        jadwal_distribusi_id: { type: integer }
+        titik_layanan:
+          type: object
+          properties:
+            id: { type: integer }
+            nama: { type: string }
+            pic_nama: { type: [string, 'null'] }
+            pic_terhubung: { type: boolean }
+        status: { $ref: '#/components/schemas/StatusPerjalanan' }
+        status_label: { type: string }
+        status_kirim:
+          type: string
+          enum: [menunggu, terkirim, gagal, tidak_terkirim]
+        dialihkan_ke_kepala: { type: boolean }
+        dipicu_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        waktu_berangkat: { type: [string, 'null'], format: date-time }
+        estimasi_tiba: { type: string, format: date-time }
+        estimasi_menit: { type: [integer, 'null'] }
+        estimasi_sumber: { type: [string, 'null'] }
+        waktu_tiba: { type: [string, 'null'], format: date-time }
+        waktu_dibatalkan: { type: [string, 'null'], format: date-time }
+        alasan_batal: { type: [string, 'null'] }
+        terlambat: { type: boolean }
+        terlambat_dideteksi_pada: { type: [string, 'null'], format: date-time }
+        pesan: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+      example:
+        id: 7
+        sppg_id: 1
+        jadwal_distribusi_id: 41
+        titik_layanan: { id: 3, nama: 'SDN Contoh 3', pic_nama: 'Bu Ani', pic_terhubung: true }
+        status: berangkat
+        status_label: Berangkat
+        status_kirim: menunggu
+        dialihkan_ke_kepala: false
+        dipicu_oleh: { id: 12, name: 'Budi Kurir' }
+        waktu_berangkat: '2026-11-02T08:30:00+07:00'
+        estimasi_tiba: '2026-11-02T08:50:00+07:00'
+        estimasi_menit: 20
+        estimasi_sumber: jarak
+        waktu_tiba: null
+        waktu_dibatalkan: null
+        alasan_batal: null
+        terlambat: false
+        terlambat_dideteksi_pada: null
+        pesan: 'Mobil B 1234 XY berangkat menuju SDN Contoh 3 pukul 08:30 WIB, estimasi tiba 08:50 WIB (20 menit).'
+        created_at: '2026-11-02T08:30:01+07:00'
+    Pemasok:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        nama: { type: string }
+        jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+        kontak: { type: [string, 'null'] }
+        alamat: { type: [string, 'null'] }
+        jenis_bahan: { type: [string, 'null'] }
+        is_active: { type: boolean }
+        bahan_baku_count: { type: integer, description: 'Jumlah bahan baku aktif yang memakai pemasok (pada detail).' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PemasokInput:
+      type: object
+      required: [nama, jenis]
+      properties:
+        sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+        nama: { type: string, maxLength: 255 }
+        jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+        kontak: { type: [string, 'null'], maxLength: 30, description: 'Nomor telepon 8-15 digit.' }
+        alamat: { type: [string, 'null'], maxLength: 255 }
+        jenis_bahan: { type: [string, 'null'], maxLength: 255 }
+        is_active: { type: boolean, default: true }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    PenerimaManfaat:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        titik_layanan_id: { type: integer }
+        titik_layanan_nama: { type: string, description: 'Ada bila relasi dimuat.' }
+        nama: { type: string, description: 'Inisial/nama minimal, tanpa NIK.' }
+        kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+        kelas_keterangan: { type: [string, 'null'] }
+        catatan_alergi: { type: [string, 'null'] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PenerimaManfaatInput:
+      type: object
+      required: [titik_layanan_id, nama, kelompok_sasaran]
+      properties:
+        titik_layanan_id: { type: integer }
+        nama: { type: string, maxLength: 100 }
+        kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+        kelas_keterangan: { type: [string, 'null'], maxLength: 100 }
+        catatan_alergi: { type: [string, 'null'], maxLength: 1000 }
+        is_active: { type: boolean, default: true }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    Pengguna:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        role_label: { type: string }
+        unit: { $ref: '#/components/schemas/RelawanUnit' }
+        sppg_id: { type: [integer, 'null'] }
+        sppg_nama: { type: string, description: 'Ada bila relasi dimuat (daftar/detail).' }
+        phone: { type: [string, 'null'] }
+        telegram_username: { type: [string, 'null'] }
+        telegram_terhubung: { type: boolean }
+        is_active: { type: boolean }
+        status: { type: string, enum: [aktif, nonaktif, menunggu_telegram] }
+        last_login_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+      example:
+        id: 12
+        name: Siti Rahayu
+        role: relawan
+        role_label: Relawan
+        unit: dapur
+        sppg_id: 1
+        sppg_nama: SPPG Melati Demo
+        phone: '0812-0000-1234'
+        telegram_username: null
+        telegram_terhubung: false
+        is_active: true
+        status: menunggu_telegram
+        last_login_at: null
+        created_at: '2026-10-26T08:00:00+07:00'
+    PenggunaInput:
+      type: object
+      required: [name, role]
+      properties:
+        name: { type: string, maxLength: 120 }
+        role: { $ref: '#/components/schemas/Role' }
+        unit: { type: [string, 'null'], enum: [dapur, distribusi, null], description: 'Wajib untuk relawan; harus kosong untuk peran lain.' }
+        sppg_id: { type: [integer, 'null'], description: 'Wajib untuk non-admin; harus kosong untuk admin.' }
+        phone: { type: [string, 'null'], maxLength: 30 }
+        is_active: { type: boolean, default: true }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    PenggunaUpdateInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 120 }
+        role: { $ref: '#/components/schemas/Role' }
+        unit: { type: [string, 'null'], enum: [dapur, distribusi, null] }
+        sppg_id: { type: [integer, 'null'] }
+        phone: { type: [string, 'null'], maxLength: 30 }
+        is_active: { type: boolean }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    Undangan:
+      type: object
+      properties:
+        id: { type: integer }
+        tipe: { type: string, enum: [pengguna, pic] }
+        status: { type: string, enum: [aktif, terpakai, kedaluwarsa, dicabut] }
+        role: { type: [string, 'null'] }
+        unit: { type: [string, 'null'] }
+        sppg_id: { type: [integer, 'null'] }
+        user_id: { type: [integer, 'null'] }
+        user_nama: { type: string, description: 'Ada bila relasi dimuat.' }
+        titik_layanan_id: { type: [integer, 'null'] }
+        titik_layanan_nama: { type: string, description: 'Ada bila relasi dimuat.' }
+        created_by: { type: integer }
+        expires_at: { type: string, format: date-time }
+        used_at: { type: [string, 'null'], format: date-time }
+        revoked_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+    UndanganDibuat:
+      description: Undangan + token mentah (hanya sekali, tidak dapat diambil ulang).
+      allOf:
+        - $ref: '#/components/schemas/Undangan'
+        - type: object
+          properties:
+            token: { type: string, description: '43 karakter base64url (32 byte acak).' }
+            deep_link: { type: [string, 'null'], description: 'https://t.me/<bot>?start=inv_<token>; null bila TELEGRAM_BOT_USERNAME kosong.' }
+      example:
+        id: 5
+        tipe: pengguna
+        status: aktif
+        role: relawan
+        unit: dapur
+        sppg_id: 1
+        user_id: 12
+        titik_layanan_id: null
+        created_by: 1
+        expires_at: '2026-10-28T08:00:00+07:00'
+        used_at: null
+        revoked_at: null
+        created_at: '2026-10-26T08:00:00+07:00'
+        token: 'q8VxS2mT0b1kJ4n7Yp3Zc9HdWfLrAeUoIgNvBxKtMs0'
+        deep_link: 'https://t.me/sigap_sppg_bot?start=inv_q8VxS2mT0b1kJ4n7Yp3Zc9HdWfLrAeUoIgNvBxKtMs0'
+    UndanganInput:
+      type: object
+      properties:
+        user_id: { type: integer, description: 'Akun yang sudah ada tanpa Telegram. Tidak boleh bersama role/unit/sppg_id.' }
+        role: { $ref: '#/components/schemas/Role' }
+        unit: { type: [string, 'null'], enum: [dapur, distribusi, null] }
+        sppg_id: { type: [integer, 'null'] }
+    RekapHarianInput:
+      type: object
+      properties:
+        tanggal: { type: [string, 'null'], format: date }
+        catatan: { type: [string, 'null'], maxLength: 1000 }
+        kirim: { type: boolean, default: false }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    RekapHarianRingkasan:
+      type: object
+      description: Isi `ringkasan` snapshot sekaligus respons /rekap-harian/ringkasan. Uang berupa string desimal (2 digit).
+      properties:
+        tanggal: { type: string, format: date }
+        sppg_id: { type: integer }
+        porsi:
+          type: object
+          properties:
+            jumlah_jadwal: { type: integer, description: 'Jadwal produksi tanggal itu (tanpa yang dibatalkan).' }
+            target: { type: integer }
+            realisasi: { type: integer }
+            capaian_persen: { type: number, description: 'realisasi / target * 100, 0 bila target 0.' }
+            jadwal_tanpa_log: { type: integer }
+        distribusi:
+          type: object
+          properties:
+            total: { type: integer }
+            tiba: { type: integer, description: 'Status diterima (termasuk yang terlambat).' }
+            terlambat: { type: integer, description: 'Bukti distribusi bertanda terlambat.' }
+            batal: { type: integer }
+            belum_selesai: { type: integer }
+        mutu:
+          type: object
+          properties:
+            batch: { type: integer }
+            layak: { type: integer, description: 'Batch dengan pemeriksaan terbaru Layak.' }
+            tidak_layak: { type: integer }
+            belum_diperiksa: { type: integer }
+        stok:
+          type: object
+          properties:
+            menipis: { type: integer, description: 'stok <= stok_minimum' }
+            sudah_kedaluwarsa: { type: integer, description: 'kedaluwarsa_terdekat < tanggal' }
+            akan_kedaluwarsa: { type: integer, description: 'tanggal s.d. tanggal + 3 hari' }
+        keuangan:
+          type: object
+          properties:
+            periode: { type: string, examples: ['2026-11'] }
+            pencairan_periode: { type: string }
+            pengeluaran_hari_ini: { type: string }
+            pengeluaran_periode: { type: string, description: 'Sejak awal bulan sampai tanggal rekap.' }
+            sisa_anggaran: { type: string }
+            serapan_persen: { type: number }
+        keluhan:
+          type: object
+          properties:
+            baru: { type: integer, description: 'Dicatat pada tanggal itu.' }
+            kritis: { type: integer, description: 'Dicatat pada tanggal itu dengan prioritas kritis.' }
+            terbuka: { type: integer, description: 'baru + diproses sampai akhir tanggal itu.' }
+        sisa_makanan_kg: { type: number }
+      example:
+        tanggal: '2026-11-02'
+        sppg_id: 1
+        porsi: { jumlah_jadwal: 2, target: 1200, realisasi: 1180, capaian_persen: 98.33, jadwal_tanpa_log: 0 }
+        distribusi: { total: 4, tiba: 3, terlambat: 1, batal: 0, belum_selesai: 1 }
+        mutu: { batch: 2, layak: 2, tidak_layak: 0, belum_diperiksa: 0 }
+        stok: { menipis: 2, sudah_kedaluwarsa: 0, akan_kedaluwarsa: 1 }
+        keuangan: { periode: '2026-11', pencairan_periode: '50000000.00', pengeluaran_hari_ini: '1250000.00', pengeluaran_periode: '21250000.00', sisa_anggaran: '28750000.00', serapan_persen: 42.5 }
+        keluhan: { baru: 1, kritis: 0, terbuka: 3 }
+        sisa_makanan_kg: 3.2
+    RekapHarian:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        tanggal: { type: string, format: date }
+        ringkasan: { $ref: '#/components/schemas/RekapHarianRingkasan' }
+        catatan: { type: [string, 'null'] }
+        status_kirim:
+          type: string
+          enum: [menunggu, terkirim, gagal, tidak_terkirim]
+        dikirim_pada: { type: [string, 'null'], format: date-time }
+        disusun_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        disusun_pada: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Sppg:
+      type: object
+      properties:
+        id: { type: integer }
+        kode: { type: string }
+        nama: { type: string }
+        alamat: { type: string }
+        mitra_yayasan: { type: [string, 'null'] }
+        telepon: { type: [string, 'null'] }
+        kapasitas_porsi_harian: { type: integer, minimum: 1 }
+        status_operasional: { type: string, enum: [aktif, libur, nonaktif] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      example:
+        id: 1
+        kode: SPPG-DEMO-01
+        nama: SPPG Melati Demo
+        alamat: 'Jl. Contoh Raya No. 1, Kota Contoh'
+        mitra_yayasan: Yayasan Demo Sejahtera
+        telepon: '0812-0000-1111'
+        kapasitas_porsi_harian: 2000
+        status_operasional: aktif
+        created_at: '2026-10-26T08:00:00+07:00'
+        updated_at: '2026-10-26T08:00:00+07:00'
+    SppgInput:
+      type: object
+      required: [kode, nama, alamat, kapasitas_porsi_harian]
+      properties:
+        kode: { type: string, maxLength: 30, description: 'Hanya Admin; diabaikan bila dikirim Kepala SPPG.' }
+        nama: { type: string, maxLength: 255 }
+        alamat: { type: string, maxLength: 255 }
+        mitra_yayasan: { type: [string, 'null'], maxLength: 255 }
+        telepon: { type: [string, 'null'], maxLength: 30 }
+        kapasitas_porsi_harian: { type: integer, minimum: 1, maximum: 100000 }
+        status_operasional: { type: string, enum: [aktif, libur, nonaktif], default: aktif }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    TitikLayanan:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        nama: { type: string }
+        jenis: { type: string, enum: [sekolah, paud, posyandu, lainnya] }
+        alamat: { type: string }
+        jarak_km: { type: string, description: 'decimal(6,2) sebagai string', examples: ['3.50'] }
+        jumlah_sasaran: { type: integer }
+        pic_nama: { type: string }
+        pic_telepon: { type: [string, 'null'] }
+        pic_terhubung: { type: boolean, description: 'PIC sudah menautkan Telegram (chat id tidak diekspos).' }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TitikLayananInput:
+      type: object
+      required: [nama, jenis, alamat, pic_nama]
+      properties:
+        sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+        nama: { type: string, maxLength: 255 }
+        jenis: { type: string, enum: [sekolah, paud, posyandu, lainnya] }
+        alamat: { type: string, maxLength: 255 }
+        jarak_km: { type: number, minimum: 0, maximum: 9999.99, default: 0 }
+        jumlah_sasaran: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+        pic_nama: { type: string, maxLength: 255 }
+        pic_telepon: { type: [string, 'null'], maxLength: 30 }
+        is_active: { type: boolean, default: true }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
   parameters:
     Page:
       name: page

@@ -33,6 +33,9 @@ class PemeriksaanMutu extends Model
         'hasil',
         'tindakan_korektif',
         'foto_path',
+        'catatan_koreksi',
+        'dikoreksi_pada',
+        'dikoreksi_oleh',
     ];
 
     /** @return array<string, string> */
@@ -46,6 +49,7 @@ class PemeriksaanMutu extends Model
             'organoleptik_baik' => 'boolean',
             'sampel_disimpan' => 'boolean',
             'hasil' => HasilMutu::class,
+            'dikoreksi_pada' => 'datetime',
         ];
     }
 
@@ -57,5 +61,10 @@ class PemeriksaanMutu extends Model
     public function pemeriksa(): BelongsTo
     {
         return $this->belongsTo(User::class, 'pemeriksa_id');
+    }
+
+    public function pengoreksi(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'dikoreksi_oleh');
     }
 }

@@ -1,0 +1,101 @@
+schemas:
+  StatusKeluhan:
+    type: string
+    enum: [baru, diproses, selesai, ditolak]
+  PrioritasKeluhan:
+    type: string
+    enum: [rendah, sedang, tinggi, kritis]
+  KategoriKeluhan:
+    type: string
+    enum: [makanan_basi, gejala_sakit, porsi_kurang, terlambat, rasa, kemasan, lainnya]
+  KeluhanInput:
+    type: object
+    required: [sumber, kategori, deskripsi]
+    properties:
+      sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan peran lain.' }
+      sumber:
+        type: string
+        enum: [guru, orang_tua, penerima, relawan, lainnya]
+      kategori: { $ref: '#/components/schemas/KategoriKeluhan' }
+      prioritas:
+        allOf:
+          - $ref: '#/components/schemas/PrioritasKeluhan'
+        description: Opsional; tidak dapat lebih rendah dari prioritas otomatis.
+      titik_layanan_id: { type: [integer, 'null'] }
+      jadwal_produksi_id: { type: [integer, 'null'], description: 'Wajib untuk keluhan kritis bila batch diketahui.' }
+      batch_tidak_diketahui: { type: boolean, description: 'Izinkan keluhan kritis tanpa kaitan batch.' }
+      deskripsi: { type: string, maxLength: 2000 }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  KeluhanUpdateInput:
+    type: object
+    properties:
+      status: { $ref: '#/components/schemas/StatusKeluhan' }
+      tindak_lanjut: { type: [string, 'null'], maxLength: 2000 }
+      sumber: { type: string, description: 'Hanya Admin.' }
+      kategori: { $ref: '#/components/schemas/KategoriKeluhan' }
+      prioritas: { $ref: '#/components/schemas/PrioritasKeluhan' }
+      titik_layanan_id: { type: [integer, 'null'] }
+      jadwal_produksi_id: { type: [integer, 'null'] }
+      deskripsi: { type: string, maxLength: 2000 }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  Keluhan:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      titik_layanan:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          nama: { type: string }
+      jadwal_produksi_id: { type: [integer, 'null'] }
+      jadwal_produksi_tanggal: { type: [string, 'null'], format: date }
+      sumber: { type: string }
+      kategori: { $ref: '#/components/schemas/KategoriKeluhan' }
+      kategori_label: { type: string }
+      prioritas: { $ref: '#/components/schemas/PrioritasKeluhan' }
+      status: { $ref: '#/components/schemas/StatusKeluhan' }
+      status_label: { type: string }
+      deskripsi: { type: string }
+      tindak_lanjut: { type: [string, 'null'] }
+      dicatat_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      ditangani_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      dieskalasi_pada: { type: [string, 'null'], format: date-time }
+      selesai_pada: { type: [string, 'null'], format: date-time }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  KeluhanRingkasan:
+    type: object
+    properties:
+      total: { type: integer }
+      per_status:
+        type: object
+        description: Semua status selalu hadir (0 bila kosong).
+        properties:
+          baru: { type: integer }
+          diproses: { type: integer }
+          selesai: { type: integer }
+          ditolak: { type: integer }
+      per_prioritas:
+        type: object
+        properties:
+          rendah: { type: integer }
+          sedang: { type: integer }
+          tinggi: { type: integer }
+          kritis: { type: integer }
+      terbuka: { type: integer, description: 'baru + diproses' }
+      kritis_terbuka: { type: integer }
+    example:
+      total: 9
+      per_status: { baru: 3, diproses: 2, selesai: 3, ditolak: 1 }
+      per_prioritas: { rendah: 4, sedang: 3, tinggi: 0, kritis: 2 }
+      terbuka: 5
+      kritis_terbuka: 1

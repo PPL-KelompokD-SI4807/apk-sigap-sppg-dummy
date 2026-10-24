@@ -1,0 +1,146 @@
+/mutu:
+  get:
+    tags: [Mutu]
+    summary: Daftar pemeriksaan mutu dan keamanan pangan
+    description: |
+      Hak R (admin, kepala_sppg, ahli_gizi, relawan). Filter: `q` (catatan organoleptik/tindakan korektif),
+      `hasil`, `jadwal_produksi_id`, `pemeriksa_id`, `from`/`to` (tanggal pemeriksaan), `sppg_id` (Admin).
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: hasil, in: query, schema: { $ref: '#/components/schemas/HasilMutu' } }
+      - { name: jadwal_produksi_id, in: query, schema: { type: integer } }
+      - { name: pemeriksa_id, in: query, schema: { type: integer } }
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/PemeriksaanMutu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Mutu]
+    summary: Catat pemeriksaan mutu untuk jadwal produksi (boleh periksa ulang)
+    description: |
+      Hak C (ahli_gizi). Pemeriksa = pengguna login. Satu jadwal boleh memiliki banyak pemeriksaan;
+      yang TERBARU menjadi gerbang distribusi (JadwalProduksi::isLayakDistribusi). Konsistensi:
+      hasil `layak` hanya bila kebersihan dapur, kebersihan petugas, dan organoleptik semuanya baik
+      serta suhu >= `config('produksi.mutu.suhu_minimum_c')` (60 C) bila suhu diisi; hasil `tidak_layak`
+      wajib `tindakan_korektif`; organoleptik tidak baik wajib `catatan_organoleptik`. Hasil
+      `tidak_layak` memancarkan event `MutuTidakLayak` dan menahan keberangkatan distribusi terkait
+      (PATCH /jadwal/distribusi/{id} status berangkat -> 422). `foto_path` berupa path relatif (unggah
+      berkas oleh modul unggahan). Menerima `ai_draft_id` opsional.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PemeriksaanMutuInput' }
+          example:
+            jadwal_produksi_id: 12
+            suhu_makanan_c: 72.5
+            kebersihan_dapur: true
+            kebersihan_petugas: true
+            organoleptik_baik: true
+            catatan_organoleptik: 'Rasa, aroma, dan tekstur baik'
+            sampel_disimpan: true
+            hasil: layak
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/mutu/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Mutu]
+    summary: Detail pemeriksaan mutu
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Mutu]
+    summary: Ubah/koreksi pemeriksaan mutu
+    description: |
+      Hak U (ahli_gizi). Bila pemeriksaan sudah memengaruhi distribusi (`memengaruhi_distribusi=true`)
+      `catatan_koreksi` WAJIB; perubahan dicatat di audit_logs beserta pelaku/waktu koreksi.
+      Perubahan hasil menjadi `tidak_layak` memancarkan `MutuTidakLayak`. `jadwal_produksi_id` tidak dapat diubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PemeriksaanMutuInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Mutu]
+    summary: Ubah sebagian / koreksi pemeriksaan mutu
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PemeriksaanMutuInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PemeriksaanMutu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Mutu]
+    summary: Hapus lunak pemeriksaan mutu
+    description: |
+      Hak D (ahli_gizi). 422 bila pemeriksaan sudah memengaruhi distribusi: distribusi terkait sudah
+      berangkat/diterima, atau ini pemeriksaan terbaru sementara ada distribusi menunggu/siap.
+      Pada kasus itu gunakan koreksi (PUT/PATCH dengan `catatan_koreksi`).
+    responses:
+      '204': { description: Terhapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

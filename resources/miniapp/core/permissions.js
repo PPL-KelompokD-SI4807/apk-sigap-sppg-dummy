@@ -39,4 +39,18 @@ export function perms(role, slug) {
 /** can('admin','pengguna','C') -> boolean. Slug tak dikenal = ditolak. */
 export const can = (role, slug, action) => !!perms(role, slug)[action];
 
+/**
+ * Hak efektif pengguna login pada satu modul = irisan matriks peran (salinan Tabel 5), daftar
+ * `user.modules` dan huruf `user.permissions[slug]` dari respons login (bila ada).
+ * Server tetap otoritas akhir; ini hanya untuk menyembunyikan menu/tombol.
+ */
+export function userPerms(user, slug) {
+  const base = perms(user?.role, slug);
+  if (!user) return { C: false, R: false, U: false, D: false, selfOnly: false };
+  if (Array.isArray(user.modules) && !user.modules.includes(slug)) return { C: false, R: false, U: false, D: false, selfOnly: false };
+  const eff = user.permissions && typeof user.permissions[slug] === 'string' ? user.permissions[slug] : null;
+  if (eff == null) return base;
+  return { C: base.C && eff.includes('C'), R: base.R && eff.includes('R'), U: base.U && eff.includes('U'), D: base.D && eff.includes('D'), selfOnly: base.selfOnly || eff.includes('*') };
+}
+
 export const roleLabel = (role) => ROLES[role] ?? role;

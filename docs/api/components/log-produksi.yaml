@@ -1,0 +1,42 @@
+schemas:
+  LogProduksi:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      jadwal_produksi_id: { type: integer }
+      jadwal:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          tanggal_produksi: { type: string, format: date }
+          target_porsi: { type: integer }
+          status: { type: string }
+          menu: { type: [object, 'null'], properties: { id: { type: integer }, nama_menu: { type: string } } }
+      kode_batch: { type: [string, 'null'], examples: ['BATCH-20261102-01'] }
+      realisasi_porsi: { type: integer }
+      target_porsi: { type: [integer, 'null'] }
+      selisih_porsi: { type: [integer, 'null'], description: 'realisasi - target (negatif = kurang dari target)' }
+      persentase_capaian: { type: [number, 'null'], description: 'realisasi / target x 100 (1 desimal)' }
+      peringatan: { type: [string, 'null'], description: 'Terisi bila realisasi berbeda dari target' }
+      sisa_makanan_kg: { type: number }
+      waktu_mulai: { type: [string, 'null'], examples: ['03:10'] }
+      jam_selesai: { type: [string, 'null'], examples: ['08:20'] }
+      kendala: { type: [string, 'null'] }
+      foto_path: { type: [string, 'null'] }
+      dicatat_oleh: { type: [integer, 'null'] }
+      pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  LogProduksiInput:
+    type: object
+    required: [jadwal_produksi_id, realisasi_porsi]
+    properties:
+      jadwal_produksi_id: { type: integer, description: 'Hanya saat membuat; jadwal SPPG yang sama, tidak dibatalkan, tanggal produksi <= hari ini' }
+      realisasi_porsi: { type: integer, minimum: 0 }
+      sisa_makanan_kg: { type: number, minimum: 0, maximum: 99999 }
+      waktu_mulai: { type: [string, 'null'], examples: ['03:10'], description: 'HH:MM' }
+      jam_selesai: { type: [string, 'null'], examples: ['08:20'], description: 'HH:MM; harus setelah waktu_mulai' }
+      kendala: { type: [string, 'null'], maxLength: 2000 }
+      foto_path: { type: [string, 'null'], maxLength: 255, description: 'Path relatif berkas pada disk privat (tanpa ../, tanpa awalan /)' }
+      ai_draft_id: { type: [string, 'null'], format: uuid }

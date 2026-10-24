@@ -78,6 +78,12 @@ class JadwalProduksi extends Model
         return $this->hasMany(MutasiStok::class);
     }
 
+    /** Pemeriksaan mutu terbaru (eager loadable; urutan sama dengan pemeriksaanMutuTerbaru()). */
+    public function pemeriksaanTerbaru(): HasOne
+    {
+        return $this->hasOne(PemeriksaanMutu::class)->latestOfMany(['waktu_pemeriksaan', 'id']);
+    }
+
     public function scopeTanggal(Builder $query, string $tanggal): Builder
     {
         return $query->whereDate('tanggal_produksi', $tanggal);
