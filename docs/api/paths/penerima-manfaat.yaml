@@ -1,0 +1,123 @@
+/penerima-manfaat:
+  get:
+    tags: [Penerima Manfaat]
+    summary: Daftar penerima manfaat
+    description: 'Hak: Admin CRUD, Kepala SPPG CRU, Ahli Gizi R (SPPG sendiri). Tanpa NIK.'
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: titik_layanan_id, in: query, schema: { type: integer } }
+      - { name: kelompok_sasaran, in: query, schema: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] } }
+      - { name: is_active, in: query, schema: { type: boolean } }
+      - { name: ada_alergi, in: query, description: 'true = hanya yang memiliki catatan alergi.', schema: { type: boolean } }
+      - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/PenerimaManfaat' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+  post:
+    tags: [Penerima Manfaat]
+    summary: Tambah penerima manfaat
+    description: '`titik_layanan_id` harus titik layanan aktif di SPPG pengguna; `sppg_id` record selalu diturunkan dari titik layanan (body tidak dipercaya). `nama` hanya inisial/nama minimal; deret angka panjang (mirip NIK) ditolak.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PenerimaManfaatInput' }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PenerimaManfaat' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/penerima-manfaat/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Penerima Manfaat]
+    summary: Detail penerima manfaat
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PenerimaManfaat' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Penerima Manfaat]
+    summary: Ubah penerima manfaat
+    description: 'Kepala SPPG boleh mengubah (U) tetapi tidak menghapus.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PenerimaManfaatInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PenerimaManfaat' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Penerima Manfaat]
+    summary: Ubah sebagian penerima manfaat
+    description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PenerimaManfaatInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PenerimaManfaat' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Penerima Manfaat]
+    summary: Hapus lunak penerima manfaat
+    description: 'Hanya Admin. Hapus lunak + log audit.'
+    responses:
+      '204': { description: Dihapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
