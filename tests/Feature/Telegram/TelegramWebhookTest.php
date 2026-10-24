@@ -5,6 +5,7 @@ namespace Tests\Feature\Telegram;
 use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Enums\TipeUndangan;
+use App\Jobs\ProcessTelegramUpdate;
 use App\Models\Invitation;
 use App\Models\TelegramUpdate;
 use App\Models\TitikLayanan;
@@ -13,6 +14,7 @@ use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmResponse;
 use App\Services\Users\InvitationService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\Master\MasterApiTestCase;
 
@@ -58,6 +60,48 @@ class TelegramWebhookTest extends MasterApiTestCase
         $this->webhook($update)->assertOk()->assertJson(['ok' => true]);
 
         $this->assertSame(1, TelegramUpdate::query()->count());
+        $this->assertCount(1, $this->telegramCalls('sendMessage'));
+    }
+
+    public function test_update_tersimpan_tanpa_antrean_diproses_ulang_terjadwal_sekali(): void
+    {
+        // Simulasi dispatch gagal saat webhook: baris tersimpan, job tidak pernah masuk antrean.
+        $simpan = fn (int $id, $dibuat) => TelegramUpdate::query()->forceCreate([
+            'update_id' => $id,
+            'payload' => $this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => '/start'], updateId: $id),
+            'created_at' => $dibuat,
+            'updated_at' => $dibuat,
+        ]);
+        $tertinggal = $simpan(900001, now()->subMinutes(10));
+        $masihDiAntrean = $simpan(900002, now()->subMinute());
+        $basi = $simpan(900003, now()->subHours(25));
+
+        $this->artisan('sigap:proses-ulang-telegram')->assertSuccessful();
+        $this->artisan('sigap:proses-ulang-telegram')->assertSuccessful();
+
+        $this->assertNotNull($tertinggal->fresh()->processed_at);
+        $this->assertNull($masihDiAntrean->fresh()->processed_at);
+        $this->assertNull($basi->fresh()->processed_at);
+        $this->assertCount(1, $this->telegramCalls('sendMessage'));
+    }
+
+    public function test_job_update_yang_sedang_dikunci_tidak_diproses_ganda(): void
+    {
+        $update = TelegramUpdate::query()->forceCreate([
+            'update_id' => 900010,
+            'payload' => $this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => '/start'], updateId: 900010),
+        ]);
+
+        $kunci = Cache::lock('telegram-update:'.$update->id, 60);
+        $this->assertTrue($kunci->get());
+        ProcessTelegramUpdate::dispatchSync($update->id);
+        $this->assertNull($update->fresh()->processed_at);
+        Http::assertNothingSent();
+
+        $kunci->release();
+        ProcessTelegramUpdate::dispatchSync($update->id);
+        ProcessTelegramUpdate::dispatchSync($update->id);
+        $this->assertNotNull($update->fresh()->processed_at);
         $this->assertCount(1, $this->telegramCalls('sendMessage'));
     }
 

@@ -23,6 +23,12 @@ return [
 
     'disk' => 'uploads',
 
+    /**
+     * Unggahan tertunda (belum diikat lewat lampiran_ids) lebih tua dari ini dihapus berkas dan
+     * barisnya oleh sigap:bersihkan-lampiran-tertunda (cegah disk penuh oleh berkas yatim).
+     */
+    'tertunda_ttl_jam' => 24,
+
     /** Batas ukuran berkas masuk (byte). */
     'maks_byte' => 5 * 1024 * 1024,
 

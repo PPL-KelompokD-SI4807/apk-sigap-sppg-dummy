@@ -332,4 +332,23 @@ class LampiranTertundaTest extends GrupBTestCase
             ->assertCreated()->assertJsonPath('data.kategori', 'foto');
         $this->getJson("/api/v1/keluhan/{$keluhanId}")->assertJsonCount(1, 'data.lampiran');
     }
+
+    public function test_unggahan_tertunda_kedaluwarsa_dibersihkan_terjadwal(): void
+    {
+        $this->login(Role::Relawan, null, RelawanUnit::Distribusi);
+        $yatim = Lampiran::query()->findOrFail($this->idLampiran('keluhan'));
+        $terikat = $this->idLampiran('keluhan');
+        $this->postJson('/api/v1/keluhan', $this->keluhan(['lampiran_ids' => [$terikat]]))->assertCreated();
+
+        $this->travel(25)->hours();
+        $baru = Lampiran::query()->findOrFail($this->idLampiran('keluhan'));
+
+        $this->artisan('sigap:bersihkan-lampiran-tertunda')->assertSuccessful();
+
+        $this->assertNull(Lampiran::query()->withoutGlobalScopes()->find($yatim->id));
+        Storage::disk('uploads')->assertMissing($yatim->path);
+        $this->assertNotNull(Lampiran::query()->withoutGlobalScopes()->find($terikat));
+        $this->assertNotNull(Lampiran::query()->withoutGlobalScopes()->find($baru->id));
+        Storage::disk('uploads')->assertExists($baru->path);
+    }
 }

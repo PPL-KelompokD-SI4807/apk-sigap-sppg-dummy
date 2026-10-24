@@ -6,6 +6,7 @@ use App\Models\TelegramUpdate;
 use App\Services\Telegram\TelegramUpdateHandler;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Memproses satu pembaruan webhook Telegram di antrean (NFR-03: webhook membalas 200 cepat).
@@ -23,13 +24,17 @@ class ProcessTelegramUpdate implements ShouldQueue
 
     public function handle(TelegramUpdateHandler $handler): void
     {
-        $update = TelegramUpdate::query()->find($this->telegramUpdateId);
+        // Kunci per update: job yang dikirim ulang oleh sigap:proses-ulang-telegram tidak pernah
+        // berjalan bersamaan dengan job aslinya (processed_at dicek ulang di dalam kunci).
+        Cache::lock('telegram-update:'.$this->telegramUpdateId, $this->timeout + 30)->get(function () use ($handler): void {
+            $update = TelegramUpdate::query()->find($this->telegramUpdateId);
 
-        if ($update === null || $update->processed_at !== null) {
-            return;
-        }
+            if ($update === null || $update->processed_at !== null) {
+                return;
+            }
 
-        $handler->handle($update);
+            $handler->handle($update);
+        });
     }
 
     public function failed(\Throwable $e): void

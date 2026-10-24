@@ -35,3 +35,15 @@ Schedule::command('sigap:cek-bukti-distribusi')
     ->timezone(config('operasional.timezone'))
     ->withoutOverlapping()
     ->onOneServer();
+
+// NFR-06: hapus unggahan tertunda yang tidak pernah diikat ke data (berkas yatim), tiap jam.
+Schedule::command('sigap:bersihkan-lampiran-tertunda')
+    ->hourly()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// NFR-03: update webhook Telegram yang tersimpan tetapi tidak sampai ke antrean, tiap 5 menit.
+Schedule::command('sigap:proses-ulang-telegram')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
