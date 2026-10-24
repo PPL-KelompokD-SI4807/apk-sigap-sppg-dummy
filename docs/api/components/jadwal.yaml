@@ -1,0 +1,121 @@
+schemas:
+  StatusJadwalProduksi:
+    type: string
+    enum: [direncanakan, dimasak, selesai, dibatalkan]
+    description: 'Transisi: direncanakan -> dimasak -> selesai; direncanakan/dimasak -> dibatalkan'
+  StatusJadwalDistribusi:
+    type: string
+    enum: [menunggu, siap, berangkat, diterima, dibatalkan]
+    description: 'Transisi: menunggu -> siap -> berangkat -> diterima; menunggu/siap/berangkat -> dibatalkan. Berangkat memerlukan pemeriksaan mutu terbaru Layak.'
+  JadwalProduksi:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      menu_id: { type: integer }
+      menu:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          nama_menu: { type: string }
+          kelompok_sasaran: { type: string }
+      dibuat_oleh: { type: [integer, 'null'] }
+      tanggal_produksi: { type: string, format: date }
+      jam_mulai_masak: { type: [string, 'null'], examples: ['03:00'] }
+      target_porsi: { type: integer }
+      status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
+      status_label: { type: string }
+      catatan: { type: [string, 'null'] }
+      porsi_terjadwal_distribusi: { type: integer, description: 'Total porsi distribusi aktif (tidak dibatalkan)' }
+      status_mutu: { type: [string, 'null'], enum: [layak, tidak_layak, null], description: 'Hasil pemeriksaan mutu terbaru; null = belum diperiksa' }
+      layak_distribusi: { type: boolean, description: 'true bila pemeriksaan mutu terbaru Layak' }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  JadwalProduksiRingkas:
+    type: object
+    description: Ringkasan jadwal produksi tanpa data sensitif (pilihan pada form distribusi)
+    properties:
+      id: { type: integer }
+      tanggal_produksi: { type: string, format: date }
+      nama_menu: { type: [string, 'null'] }
+      target_porsi: { type: integer }
+      status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
+      status_label: { type: string }
+  JadwalProduksiInput:
+    type: object
+    required: [menu_id, tanggal_produksi, target_porsi]
+    properties:
+      menu_id: { type: integer, description: 'Menu SPPG yang sama' }
+      tanggal_produksi: { type: string, format: date, description: 'Tidak boleh di masa lalu saat dibuat' }
+      jam_mulai_masak: { type: [string, 'null'], examples: ['03:00'], description: 'HH:MM' }
+      target_porsi: { type: integer, minimum: 1 }
+      status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
+      catatan: { type: [string, 'null'], maxLength: 2000 }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  JadwalDistribusi:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      jadwal_produksi_id: { type: integer }
+      titik_layanan_id: { type: integer }
+      titik_layanan: { type: [object, 'null'], properties: { id: { type: integer }, nama: { type: string } } }
+      armada_id: { type: [integer, 'null'] }
+      armada: { type: [object, 'null'], properties: { id: { type: integer }, plat_nomor: { type: string } } }
+      pengemudi_id: { type: [integer, 'null'] }
+      pengemudi: { type: [object, 'null'], properties: { id: { type: integer }, nama: { type: string } } }
+      petugas_id: { type: [integer, 'null'] }
+      petugas: { type: [string, 'null'], description: 'Nama petugas' }
+      dibuat_oleh: { type: [integer, 'null'] }
+      tanggal_distribusi: { type: string, format: date }
+      jam_berangkat: { type: [string, 'null'], examples: ['08:30'] }
+      jam_rencana_tiba: { type: [string, 'null'], examples: ['09:15'] }
+      jumlah_porsi: { type: integer }
+      status: { $ref: '#/components/schemas/StatusJadwalDistribusi' }
+      status_label: { type: string }
+      layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
+      catatan: { type: [string, 'null'] }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  JadwalDistribusiInput:
+    type: object
+    required: [jadwal_produksi_id, titik_layanan_id, jumlah_porsi]
+    properties:
+      jadwal_produksi_id: { type: integer, description: 'Tidak dapat diubah setelah dibuat' }
+      titik_layanan_id: { type: integer }
+      armada_id: { type: [integer, 'null'] }
+      pengemudi_id: { type: [integer, 'null'] }
+      petugas_id: { type: [integer, 'null'], description: 'Pengguna SPPG yang sama; default pembuat bila relawan' }
+      tanggal_distribusi: { type: string, format: date, description: 'Default = tanggal produksi; tidak boleh sebelum tanggal produksi' }
+      jam_berangkat: { type: [string, 'null'], examples: ['08:30'], description: 'HH:MM; wajib bila armada/pengemudi diisi' }
+      jam_rencana_tiba: { type: [string, 'null'], examples: ['09:15'], description: 'Harus setelah jam_berangkat' }
+      jumlah_porsi: { type: integer, minimum: 1 }
+      status: { $ref: '#/components/schemas/StatusJadwalDistribusi' }
+      catatan: { type: [string, 'null'], maxLength: 2000 }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  KebutuhanBahanItem:
+    type: object
+    properties:
+      bahan_baku_id: { type: integer }
+      nama: { type: string }
+      satuan: { type: string }
+      gram_per_porsi: { type: number }
+      kebutuhan_gram: { type: number }
+      kebutuhan: { type: [number, 'null'], description: 'Dalam satuan stok; null bila satuan tak dapat dikonversi' }
+      stok: { type: number }
+      kekurangan: { type: [number, 'null'], description: 'max(0, kebutuhan - stok); null bila tak dapat dibandingkan' }
+      cukup: { type: [boolean, 'null'] }
+      dapat_dibandingkan: { type: boolean }
+  KebutuhanBahan:
+    type: object
+    properties:
+      jadwal_produksi_id: { type: integer }
+      tanggal_produksi: { type: string, format: date }
+      target_porsi: { type: integer }
+      menu: { type: object, properties: { id: { type: integer }, nama_menu: { type: string } } }
+      bahan:
+        type: array
+        items: { $ref: '#/components/schemas/KebutuhanBahanItem' }
+      cukup: { type: boolean, description: 'true bila tidak ada bahan yang kurang' }
+      jumlah_bahan_kurang: { type: integer }
+      jumlah_bahan_tidak_dapat_dibandingkan: { type: integer }

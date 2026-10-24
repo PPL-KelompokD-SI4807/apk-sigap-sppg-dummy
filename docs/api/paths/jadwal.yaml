@@ -1,0 +1,337 @@
+/jadwal:
+  get:
+    tags: [Jadwal]
+    summary: Daftar jadwal produksi
+    description: |
+      Hak R pada jadwal produksi (admin, kepala_sppg, ahli_gizi, staf_gudang, relawan unit dapur).
+      Filter: `q` (catatan/nama menu), `status`, `tanggal`, `from`/`to`, `menu_id`, `sppg_id` (Admin).
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/StatusJadwalProduksi' } }
+      - { name: tanggal, in: query, schema: { type: string, format: date } }
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - { name: menu_id, in: query, schema: { type: integer } }
+      - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/JadwalProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Jadwal]
+    summary: Buat jadwal produksi (validasi kapasitas harian SPPG)
+    description: |
+      Hak C (kepala_sppg, ahli_gizi, relawan unit dapur). Status awal selalu `direncanakan`.
+      422 pada `target_porsi` bila target > kapasitas harian SPPG atau total jadwal (tidak dibatalkan)
+      pada tanggal tersebut > kapasitas. Bila stok tidak cukup, event `KekuranganBahan` dipancarkan
+      (notifikasi Staf Gudang) dan respons memuat `kekurangan_bahan`. Menerima `ai_draft_id` opsional.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JadwalProduksiInput' }
+          example: { menu_id: 5, tanggal_produksi: '2026-11-02', jam_mulai_masak: '03:00', target_porsi: 2500, catatan: 'Hari pertama pekan' }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalProduksi' }
+                kekurangan_bahan:
+                  type: array
+                  description: Bahan yang stoknya kurang untuk target ini (kosong bila cukup)
+                  items: { $ref: '#/components/schemas/KebutuhanBahanItem' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422':
+        description: Validasi gagal (termasuk kapasitas harian terlampaui)
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ValidationError' }
+            example:
+              message: 'Data yang dikirim tidak valid.'
+              errors:
+                target_porsi: ['Total jadwal tanggal 2026-11-02 menjadi 3500 porsi (2000 sudah terjadwal + 1500 baru), melebihi kapasitas harian 3000 porsi. Sisa kapasitas 1000 porsi.']
+/jadwal/produksi-ringkas:
+  get:
+    tags: [Jadwal]
+    summary: Ringkasan jadwal produksi per tanggal (untuk pilihan di form distribusi)
+    description: |
+      Daftar ringkas tanpa data sensitif (id, tanggal, nama menu, target porsi, status) agar form jadwal
+      distribusi/bukti dapat memilih jadwal produksi. Dibuka untuk SEMUA peran yang punya hak R modul
+      jadwal, termasuk relawan unit distribusi yang tidak boleh membaca jadwal produksi penuh
+      (`GET /jadwal`): admin, kepala_sppg, ahli_gizi, staf_gudang, relawan (unit dapur/distribusi).
+      Akuntan dan relawan tanpa unit mendapat 403. Dibatasi SPPG pengguna (Admin: opsional `sppg_id`).
+      Jadwal terhapus lunak tidak disertakan; status `dibatalkan` tetap disertakan (klien menyaring).
+      Tanpa paginasi, maks 200 baris, urut jam mulai masak.
+    parameters:
+      - { name: tanggal, in: query, description: 'YYYY-MM-DD; default hari ini (WIB)', schema: { type: string, format: date } }
+      - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: array
+                  items: { $ref: '#/components/schemas/JadwalProduksiRingkas' }
+            example:
+              data:
+                - { id: 12, tanggal_produksi: '2026-11-02', nama_menu: 'Nasi, ayam suwir, sayur bayam', target_porsi: 2500, status: direncanakan, status_label: Direncanakan }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/jadwal/distribusi:
+  get:
+    tags: [Jadwal]
+    summary: Daftar jadwal distribusi
+    description: |
+      Hak R pada jadwal distribusi (relawan unit distribusi dan peran non-relawan). Filter: `status`,
+      `tanggal`, `from`/`to` (tanggal_distribusi), `jadwal_produksi_id`, `titik_layanan_id`, `armada_id`,
+      `pengemudi_id`, `sppg_id` (Admin).
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/StatusJadwalDistribusi' } }
+      - { name: tanggal, in: query, schema: { type: string, format: date } }
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - { name: jadwal_produksi_id, in: query, schema: { type: integer } }
+      - { name: titik_layanan_id, in: query, schema: { type: integer } }
+      - { name: armada_id, in: query, schema: { type: integer } }
+      - { name: pengemudi_id, in: query, schema: { type: integer } }
+      - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/JadwalDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Jadwal]
+    summary: Buat jadwal distribusi (titik layanan, armada, pengemudi, jam, porsi)
+    description: |
+      Hak C (kepala_sppg, ahli_gizi, relawan unit distribusi). Status awal `menunggu`. Validasi:
+      total porsi distribusi (tidak dibatalkan) <= target porsi produksi (422 `jumlah_porsi`);
+      armada dan pengemudi tidak boleh bentrok jam pada tanggal yang sama (422 `armada_id`/`pengemudi_id`;
+      jendela = jam_berangkat s.d. jam_rencana_tiba, bila tiba kosong dianggap 60 menit); armada tidak
+      boleh berstatus servis; `jam_berangkat` wajib bila armada/pengemudi diisi.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JadwalDistribusiInput' }
+          example: { jadwal_produksi_id: 12, titik_layanan_id: 3, armada_id: 2, pengemudi_id: 4, jam_berangkat: '08:30', jam_rencana_tiba: '09:15', jumlah_porsi: 300 }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/jadwal/distribusi/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Jadwal]
+    summary: Detail jadwal distribusi
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Jadwal]
+    summary: Ubah jadwal distribusi
+    description: |
+      Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+      mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JadwalDistribusiInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Jadwal]
+    summary: Ubah sebagian jadwal distribusi
+    description: |
+      Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+      mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JadwalDistribusiInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Jadwal]
+    summary: Hapus lunak jadwal distribusi
+    description: 'Hanya status menunggu/siap/dibatalkan dan belum memiliki bukti distribusi; selain itu 422.'
+    responses:
+      '204': { description: Terhapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/jadwal/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Jadwal]
+    summary: Detail jadwal produksi
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Jadwal]
+    summary: Ubah jadwal produksi
+    description: |
+      Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+      mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JadwalProduksiInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Jadwal]
+    summary: Ubah sebagian jadwal produksi
+    description: |
+      Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
+      mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JadwalProduksiInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/JadwalProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Jadwal]
+    summary: Hapus lunak jadwal produksi
+    description: 'Hanya status direncanakan/dibatalkan tanpa log produksi dan tanpa jadwal distribusi aktif; selain itu 422.'
+    responses:
+      '204': { description: Terhapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/jadwal/{id}/kebutuhan-bahan:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Jadwal]
+    summary: Estimasi kebutuhan bahan jadwal produksi vs stok
+    description: |
+      Kebutuhan = Sum(gram_per_porsi x target_porsi) per bahan menu, dikonversi ke satuan stok memakai
+      `config('produksi.konversi_gram')` (kg, g, liter, ml). Bahan bersatuan lain (butir, ikat, ...)
+      tidak dapat dibandingkan (`dapat_dibandingkan=false`, kekurangan null).
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/KebutuhanBahan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
