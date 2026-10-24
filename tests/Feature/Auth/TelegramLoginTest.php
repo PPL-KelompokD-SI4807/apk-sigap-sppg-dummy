@@ -228,6 +228,53 @@ class TelegramLoginTest extends TestCase
         return ['production' => ['production'], 'staging' => ['staging']];
     }
 
+    #[DataProvider('urlPublik')]
+    public function test_dev_bypass_ditolak_di_local_bila_app_url_publik(string $url): void
+    {
+        $this->app['env'] = 'local';
+        config(['telegram.dev_bypass' => true, 'app.url' => $url]);
+
+        $this->assertFalse(app(TelegramAuthService::class)->devBypassAllowed());
+        $this->postJson(self::URL, ['init_data' => 'dev_role=admin'])->assertUnauthorized();
+        $this->assertSame(0, User::count());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function urlPublik(): array
+    {
+        return [
+            'domain staging' => ['https://staging.sigap-sppg.example'],
+            'ip publik' => ['http://203.0.113.10'],
+            'localhost palsu' => ['https://localhost.example.com'],
+            'tanpa app_url' => [''],
+        ];
+    }
+
+    public function test_dev_bypass_di_local_menerima_host_pengembangan(): void
+    {
+        $this->app['env'] = 'local';
+        config(['telegram.dev_bypass' => true]);
+
+        foreach (['http://localhost:8000', 'http://127.0.0.1', 'http://[::1]:8080', 'https://sigap.test', 'http://app.localhost'] as $url) {
+            config(['app.url' => $url]);
+            $this->assertTrue(app(TelegramAuthService::class)->devBypassAllowed(), $url);
+        }
+    }
+
+    // ---- Usia initData (NFR-04) ----
+
+    public function test_usia_initdata_bawaan_satu_jam(): void
+    {
+        $this->assertSame(3600, (int) config('telegram.init_data_max_age'));
+
+        $this->freezeSecond();
+        $this->registeredUser();
+
+        $this->postJson(self::URL, ['init_data' => $this->makeInitData(['id' => 7012345678], now()->subMinutes(59)->timestamp)])->assertOk();
+        $this->freshAuth();
+        $this->postJson(self::URL, ['init_data' => $this->makeInitData(['id' => 7012345678], now()->subMinutes(61)->timestamp)])->assertUnauthorized();
+    }
+
     // ---- Rate limit ----
 
     public function test_rate_limit_10_per_menit_per_ip(): void

@@ -11,8 +11,9 @@ return [
     // Nilai header X-Telegram-Bot-Api-Secret-Token untuk webhook (setWebhook secret_token).
     'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
 
-    // Umur maksimum initData (detik) sejak auth_date. NFR-04 menyarankan 3600.
-    'init_data_max_age' => (int) env('TELEGRAM_INIT_DATA_MAX_AGE', 86400),
+    // Umur maksimum initData (detik) sejak auth_date (NFR-04: 1 jam). initData tidak sekali pakai,
+    // jadi nilai ini adalah jendela replay bila initData bocor; jangan dinaikkan di production.
+    'init_data_max_age' => (int) env('TELEGRAM_INIT_DATA_MAX_AGE', 3600),
 
     // Toleransi jam: auth_date di masa depan lebih dari ini ditolak (detik).
     'init_data_future_skew' => 60,

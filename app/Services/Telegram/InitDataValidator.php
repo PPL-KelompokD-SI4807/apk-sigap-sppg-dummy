@@ -24,7 +24,7 @@ class InitDataValidator
     {
         return new self(
             config('telegram.bot_token'),
-            (int) config('telegram.init_data_max_age', 86400),
+            (int) config('telegram.init_data_max_age', 3600),
             (int) config('telegram.init_data_future_skew', 60),
         );
     }
