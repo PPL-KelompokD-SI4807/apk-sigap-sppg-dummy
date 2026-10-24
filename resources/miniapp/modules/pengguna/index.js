@@ -53,7 +53,7 @@ const base = defineCrudModule({
   }),
   listTop: (p) => (p.C ? h('div', { class: 'stack' },
     h('a', { class: 'btn btn-block', href: '#/pengguna/undangan' }, 'Kelola tautan undangan'),
-    h('p', { class: 'notice' }, 'Tautan undangan Telegram berlaku sekali pakai dan kedaluwarsa dalam 48 jam. Akun Telegram terhubung otomatis saat tautan dibuka. Buat akun, lalu buka detailnya untuk menerbitkan tautan.')) : null),
+    h('p', { class: 'notice' }, 'Tautan undangan Telegram berlaku sekali pakai dan kedaluwarsa dalam 72 jam. Akun Telegram terhubung otomatis saat tautan dibuka. Buat akun, lalu buka detailnya untuk menerbitkan tautan.')) : null),
   // Admin tidak boleh menghapus akunnya sendiri (422 di server): sembunyikan tombol hapus.
   rowPerms: (rec, p) => (rec.id === getUser()?.id ? { ...p, D: false } : p),
   detailExtras: (rec, p) => {
