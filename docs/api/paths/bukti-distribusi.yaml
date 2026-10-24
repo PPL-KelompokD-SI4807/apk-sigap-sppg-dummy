@@ -1,0 +1,135 @@
+/bukti-distribusi:
+  get:
+    tags: [Bukti Distribusi]
+    summary: Daftar bukti distribusi
+    description: |
+      Hak R (Tabel 5): admin (lintas SPPG), kepala_sppg, ahli_gizi, akuntan, relawan unit distribusi.
+      Relawan hanya melihat bukti yang ia catat atau untuk jadwal yang ditugaskan kepadanya.
+      Urut waktu tiba terbaru. from/to memfilter tanggal `waktu_tiba`.
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - { name: terlambat, in: query, schema: { type: boolean } }
+      - { name: jadwal_distribusi_id, in: query, schema: { type: integer } }
+      - { name: titik_layanan_id, in: query, schema: { type: integer } }
+      - { name: tanggal, in: query, description: Tanggal distribusi jadwal, schema: { type: string, format: date } }
+      - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/BuktiDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Bukti Distribusi]
+    summary: Catat bukti serah terima (multipart)
+    description: |
+      Hak C: kepala_sppg, relawan unit distribusi. Relawan: hanya jadwal hari ini (WIB) yang
+      ditugaskan kepadanya atau belum punya petugas (jadwal petugas lain -> 403); `waktu_tiba` =
+      waktu server. Jadwal dibatalkan, belum siap (menunggu), atau ditahan mutu (pemeriksaan terbaru
+      bukan Layak) -> 422 pada `jadwal_distribusi_id`. Satu bukti per jadwal (sudah ada -> 422; bukti
+      terhapus lunak dipulihkan dan ditimpa).
+      Keterlambatan: acuan = estimasi_tiba perjalanan terakhir, atau tanggal_distribusi + jam_rencana_tiba;
+      `terlambat` bila selisih > 15 menit (config). Setelah tersimpan: status jadwal -> diterima,
+      perjalanan aktif -> tiba, event `BuktiDistribusiDicatat` (+ `DistribusiTerlambat` bila terlambat).
+      Foto diverifikasi SecureUploadService (lihat POST /lampiran). Batas laju unggah 20/menit.
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema: { $ref: '#/components/schemas/BuktiDistribusiInput' }
+          example:
+            jadwal_distribusi_id: 31
+            porsi_diterima: 238
+            nama_pic: Ibu Contoh
+            catatan_selisih: '2 porsi tumpah saat bongkar'
+            latitude: -6.2
+            longitude: 106.8
+            foto: (binary)
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/BuktiDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '409': { $ref: '#/components/responses/Conflict' }
+      '422': { $ref: '#/components/responses/UploadRejected' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/bukti-distribusi/{id}:
+  get:
+    tags: [Bukti Distribusi]
+    summary: Detail bukti distribusi
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/BuktiDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Bukti Distribusi]
+    summary: Ubah bukti distribusi
+    description: |
+      Hak U: kepala_sppg; relawan hanya bukti yang ia catat pada hari yang sama. JSON untuk field
+      teks; untuk mengganti foto kirim multipart lewat POST /bukti-distribusi/{id} dengan `_method=PUT`
+      (foto lama tetap tersimpan sebagai lampiran untuk jejak audit). PATCH diterima sebagai alias.
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BuktiDistribusiUpdateInput' }
+          example: { nama_pic: Bapak Contoh, porsi_diterima: 239, catatan_selisih: '1 porsi rusak' }
+        multipart/form-data:
+          schema: { $ref: '#/components/schemas/BuktiDistribusiUpdateInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/BuktiDistribusi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/UploadRejected' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+  delete:
+    tags: [Bukti Distribusi]
+    summary: Hapus lunak bukti distribusi (Kepala SPPG)
+    description: Status jadwal yang "diterima" kembali ke "berangkat" sehingga bukti dapat dicatat ulang.
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    responses:
+      '204': { description: Dihapus (soft delete + audit) }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
