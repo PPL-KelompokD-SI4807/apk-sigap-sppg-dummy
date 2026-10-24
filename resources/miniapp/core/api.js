@@ -140,26 +140,58 @@ export async function submitWithQueue(method, path, body, { label = 'Draf' } = {
 }
 
 let flushing = false;
-/** Kirim ulang antrian draf offline. Berhenti bila masih offline atau perlu login. */
-export async function flushQueue() {
-  if (flushing || !token) return 0;
+let retryTimer = null;
+
+const RETRIABLE = new Set([409, 429]); // 409: kunci sama masih diproses; 429: kena batas laju. Bukan penolakan data.
+export const FLUSH_BACKOFF_MS = [1000, 2000, 4000];
+export const FLUSH_RETRY_LATER_MS = 60000;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Kirim ulang antrian draf offline. Berhenti bila masih offline atau perlu login.
+ * 409/429 tidak membuang draf: dicoba ulang dengan backoff, lalu tetap di antrian dan dijadwalkan
+ * ulang. 429 menghentikan putaran ini (item lain akan kena batas yang sama); 409 lanjut ke item berikut.
+ * Penolakan 4xx lain (mis. 422) membuang draf karena data memang ditolak server.
+ * `deps` hanya untuk tes; sebagai event listener argumen pertamanya Event dan diabaikan.
+ */
+export async function flushQueue(deps = {}) {
+  const {
+    request: send = request, list = listQueue, remove = removeItem, sleep = wait, authed = () => !!token, notify = toast,
+  } = deps;
+  if (flushing || !authed()) return 0;
   flushing = true;
   let sent = 0;
+  let tertunda = 0;
   try {
-    for (const item of await listQueue()) {
-      try {
-        await request(item.method, item.path, { body: item.body, key: item.id, silent: true });
-        await removeItem(item.id);
-        sent++;
-      } catch (e) {
-        if (e.offline || e.status === 401) break;
-        if (e.status === 422 || (e.status >= 400 && e.status < 500)) {
-          await removeItem(item.id);
-          toast(`${item.label} offline ditolak server: ${e.message}`, 'error');
-        } else break;
+    outer: for (const item of await list()) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await send(item.method, item.path, { body: item.body, key: item.id, silent: true });
+          await remove(item.id);
+          sent++;
+          break;
+        } catch (e) {
+          if (e.offline || e.status === 401) break outer;
+          if (RETRIABLE.has(e.status)) {
+            if (attempt < FLUSH_BACKOFF_MS.length) { await sleep(FLUSH_BACKOFF_MS[attempt]); continue; }
+            tertunda++;
+            if (e.status === 429) break outer;
+            break;
+          }
+          if (e.status >= 400 && e.status < 500) {
+            await remove(item.id);
+            notify(`${item.label} offline ditolak server: ${e.message}`, 'error');
+            break;
+          }
+          break outer; // 5xx / tidak dikenal: coba lagi pada kesempatan berikut
+        }
       }
     }
   } finally { flushing = false; }
-  if (sent) toast(`${sent} draf offline terkirim.`, 'success');
+  if (sent) notify(`${sent} draf offline terkirim.`, 'success');
+  if (tertunda && deps.schedule !== false && !retryTimer) {
+    retryTimer = setTimeout(() => { retryTimer = null; flushQueue(); }, FLUSH_RETRY_LATER_MS);
+    retryTimer.unref?.();
+  }
   return sent;
 }

@@ -341,3 +341,56 @@ test('skema bukti: foto wajib saat baru, opsional saat ubah; payload multipart',
   assert.equal('jadwal_distribusi_id' in u, false);
   assert.equal('foto' in u, false);
 });
+
+// ---------- flushQueue: 409/429 tidak membuang draf ----------
+test('flushQueue: 409/429 dicoba ulang dengan backoff dan tidak dibuang; 422 dibuang', async () => {
+  const { flushQueue, FLUSH_BACKOFF_MS } = await import('../core/api.js');
+  const dasar = (items, send) => {
+    const sisa = new Map(items.map((i) => [i.id, i]));
+    const jeda = [];
+    const notif = [];
+    return {
+      sisa, jeda, notif,
+      deps: {
+        request: send,
+        list: async () => [...sisa.values()],
+        remove: async (id) => { sisa.delete(id); },
+        sleep: async (ms) => { jeda.push(ms); },
+        authed: () => true,
+        notify: (m, t) => notif.push([m, t]),
+        schedule: false,
+      },
+    };
+  };
+  const item = (id) => ({ id, method: 'POST', path: '/x', body: {}, label: `Draf ${id}`, createdAt: 1 });
+
+  // 409 dua kali lalu sukses: terkirim, backoff 1s lalu 2s, antrian kosong.
+  let n = 0;
+  const a = dasar([item('a')], async () => { if (++n <= 2) throw new ApiError(409, 'sedang diproses'); return {}; });
+  assert.equal(await flushQueue(a.deps), 1);
+  assert.deepEqual(a.jeda, FLUSH_BACKOFF_MS.slice(0, 2));
+  assert.equal(a.sisa.size, 0);
+
+  // 429 terus-menerus: draf tetap di antrian, tidak ada toast "ditolak", putaran berhenti (item berikut tidak dicoba).
+  const dicoba = [];
+  const b = dasar([item('b1'), item('b2')], async (m, p, o) => { dicoba.push(o.key); throw new ApiError(429, 'Too Many Attempts.'); });
+  assert.equal(await flushQueue(b.deps), 0);
+  assert.deepEqual([...b.sisa.keys()], ['b1', 'b2']);
+  assert.deepEqual(b.jeda, FLUSH_BACKOFF_MS);
+  assert.deepEqual([...new Set(dicoba)], ['b1']);
+  assert.deepEqual(b.notif, []);
+
+  // 409 terus-menerus pada item pertama: tetap di antrian, item kedua tetap dicoba dan terkirim.
+  const c = dasar([item('c1'), item('c2')], async (m, p, o) => { if (o.key === 'c1') throw new ApiError(409, 'sedang diproses'); return {}; });
+  assert.equal(await flushQueue(c.deps), 1);
+  assert.deepEqual([...c.sisa.keys()], ['c1']);
+
+  // 422 ditolak permanen: dibuang dengan toast; offline: berhenti tanpa membuang.
+  const d = dasar([item('d1')], async () => { throw new ApiError(422, 'tidak valid'); });
+  await flushQueue(d.deps);
+  assert.equal(d.sisa.size, 0);
+  assert.equal(d.notif[0][1], 'error');
+  const e = dasar([item('e1')], async () => { throw new ApiError(0, 'offline'); });
+  await flushQueue(e.deps);
+  assert.equal(e.sisa.size, 1);
+});
