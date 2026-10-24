@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Pint + Test)
+    runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        if: hashFiles('artisan') != ''
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mbstring, intl, bcmath, gd, zip, pdo_sqlite, pdo_mysql
+          coverage: none
+
+      - name: Cache composer
+        if: hashFiles('artisan') != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependensi
+        if: hashFiles('artisan') != ''
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Siapkan .env
+        if: hashFiles('artisan') != ''
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Pint
+        if: hashFiles('artisan') != ''
+        run: vendor/bin/pint --test
+
+      - name: Test
+        if: hashFiles('artisan') != ''
+        run: php artisan test
+
+      - name: Lewati (Laravel belum terpasang)
+        if: hashFiles('artisan') == ''
+        run: echo "artisan tidak ditemukan, job backend dilewati."
+
+  frontend:
+    name: Frontend (Vite build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        if: hashFiles('package.json') != ''
+        run: npm ci
+
+      - name: Build
+        if: hashFiles('package.json') != ''
+        run: npm run build
+
+      - name: Lewati (package.json belum ada)
+        if: hashFiles('package.json') == ''
+        run: echo "package.json tidak ditemukan, job frontend dilewati."
