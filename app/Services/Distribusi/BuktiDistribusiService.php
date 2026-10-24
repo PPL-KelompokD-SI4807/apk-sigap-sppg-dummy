@@ -5,6 +5,7 @@ namespace App\Services\Distribusi;
 use App\Enums\Role;
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusPerjalanan;
+use App\Events\BuktiDistribusiBelumMasuk;
 use App\Events\BuktiDistribusiDicatat;
 use App\Events\DistribusiTerlambat;
 use App\Models\BuktiDistribusi;
@@ -17,6 +18,7 @@ use App\Services\Perjalanan\TripNotificationService;
 use App\Services\Storage\GambarSiap;
 use App\Services\Storage\SecureUploadService;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -150,6 +152,60 @@ class BuktiDistribusiService
 
             return $bukti;
         });
+    }
+
+    /**
+     * Pemindai terjadwal (sigap:cek-bukti-distribusi): jadwal distribusi yang sudah berangkat
+     * (status berangkat, atau siap dengan perjalanan aktif berangkat/dalam_perjalanan), belum punya bukti,
+     * dan sudah melewati jam rencana tiba + operasional.bukti_distribusi.batas_belum_masuk_menit.
+     * Memancarkan BuktiDistribusiBelumMasuk SEKALI per jadwal: penanda bukti_belum_masuk_pada di-set
+     * lewat UPDATE atomik (WHERE penanda NULL) sehingga pemindai paralel tidak menggandakan event.
+     *
+     * @return int jumlah jadwal yang baru ditandai
+     */
+    public function deteksiBuktiBelumMasuk(?CarbonInterface $sekarang = null): int
+    {
+        $sekarang = $sekarang !== null ? Carbon::instance($sekarang)->setTimezone($this->zona()) : Carbon::now($this->zona());
+        $batas = max(0, (int) config('operasional.bukti_distribusi.batas_belum_masuk_menit', 60));
+        $berangkat = [StatusJadwalDistribusi::Siap->value, StatusJadwalDistribusi::Berangkat->value];
+
+        $kandidat = JadwalDistribusi::query()->withoutGlobalScope(SppgScope::class)
+            ->with(['titikLayanan' => fn ($q) => $q->withoutGlobalScope(SppgScope::class)->withTrashed()])
+            ->whereNull('bukti_belum_masuk_pada')
+            ->whereNotNull('jam_rencana_tiba')
+            ->whereDate('tanggal_distribusi', '<=', $sekarang->toDateString())
+            ->where(fn (Builder $q) => $q
+                ->where('status', StatusJadwalDistribusi::Berangkat->value)
+                ->orWhere(fn (Builder $s) => $s->where('status', StatusJadwalDistribusi::Siap->value)
+                    ->whereHas('notifikasiPerjalanans', fn (Builder $n) => $n->withoutGlobalScope(SppgScope::class)->aktif())))
+            ->whereDoesntHave('buktiDistribusi', fn (Builder $b) => $b->withoutGlobalScope(SppgScope::class))
+            ->orderBy('id')
+            ->get();
+
+        $jumlah = 0;
+
+        foreach ($kandidat as $jadwal) {
+            $rencana = Carbon::parse($jadwal->tanggal_distribusi->toDateString().' '.substr((string) $jadwal->jam_rencana_tiba, 0, 8), $this->zona());
+
+            if ($sekarang->lessThanOrEqualTo($rencana->copy()->addMinutes($batas))) {
+                continue;
+            }
+
+            $ditandai = JadwalDistribusi::query()->withoutGlobalScope(SppgScope::class)
+                ->whereKey($jadwal->id)
+                ->whereNull('bukti_belum_masuk_pada')
+                ->whereIn('status', $berangkat)
+                ->update(['bukti_belum_masuk_pada' => $sekarang]);
+
+            if ($ditandai !== 1) {
+                continue;
+            }
+
+            event(BuktiDistribusiBelumMasuk::dari($jadwal, intdiv($sekarang->getTimestamp() - $rencana->getTimestamp(), 60)));
+            $jumlah++;
+        }
+
+        return $jumlah;
     }
 
     /** Hapus lunak; jadwal yang sudah "diterima" dikembalikan ke "berangkat" (bukti dapat diunggah ulang). */

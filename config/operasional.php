@@ -34,6 +34,13 @@ return [
          |   menit_keterlambatan = waktu_tiba - acuan (menit, > 0), terlambat = menit > toleransi.
          */
         'toleransi_terlambat_menit' => (int) env('SIGAP_DISTRIBUSI_TOLERANSI_MENIT', 15),
+
+        /*
+         | Bukti belum masuk (sigap:cek-bukti-distribusi, tiap 10 menit): mobil sudah berangkat tetapi
+         | bukti belum dicatat setelah jam_rencana_tiba + batas ini -> event BuktiDistribusiBelumMasuk
+         | (sekali per jadwal).
+         */
+        'batas_belum_masuk_menit' => (int) env('SIGAP_BUKTI_BELUM_MASUK_MENIT', 60),
     ],
 
     'keuangan' => [

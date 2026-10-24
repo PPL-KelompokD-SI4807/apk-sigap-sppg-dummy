@@ -55,6 +55,21 @@ abstract class WriteDraftTool extends BaseAiTool
         return $arguments;
     }
 
+    /**
+     * Hook opsional setelah validasi dry-run, sebelum draf disimpan: sesuaikan payload/keyakinan
+     * (mis. kolom yang disimpulkan tool dari teks = keyakinan rendah, penanda sub-modul draf).
+     * Tidak boleh menulis data modul. Bawaan: tidak mengubah apa pun.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, float>  $confidence
+     * @param  array<string, list<string>>  $errors
+     * @return array{0: array<string, mixed>, 1: array<string, float>} [payload, keyakinan]
+     */
+    protected function afterValidation(array $payload, array $confidence, array $errors): array
+    {
+        return [$payload, $confidence];
+    }
+
     /** Cari record target lewat query ber-SppgScope (null = tidak ditemukan / SPPG lain). */
     protected function findTarget(User $user, int $id): ?Model
     {
@@ -164,6 +179,8 @@ abstract class WriteDraftTool extends BaseAiTool
             $errors = $result->errors;
             $scores = $result->confidence;
         }
+
+        [$payload, $scores] = $this->afterValidation($payload, $scores, $errors);
 
         $draft = app(DraftService::class)->create(
             user: $user,

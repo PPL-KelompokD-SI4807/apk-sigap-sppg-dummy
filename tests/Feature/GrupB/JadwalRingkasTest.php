@@ -7,6 +7,7 @@ use App\Enums\Role;
 use App\Models\JadwalProduksi;
 use App\Models\Menu;
 use Illuminate\Support\Carbon;
+use Laravel\Sanctum\Sanctum;
 
 /** GET /jadwal/produksi-ringkas: pilihan jadwal produksi untuk form distribusi (hak R jadwal). */
 class JadwalRingkasTest extends GrupBTestCase
@@ -69,7 +70,7 @@ class JadwalRingkasTest extends GrupBTestCase
     {
         $user = $this->user(Role::Relawan);
         $user->forceFill(['unit' => null])->save();
-        \Laravel\Sanctum\Sanctum::actingAs($user->fresh());
+        Sanctum::actingAs($user->fresh());
         $this->getJson(self::URL)->assertForbidden();
     }
 

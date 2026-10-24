@@ -28,3 +28,10 @@ Schedule::command('sigap:rekap-harian')
     ->timezone(config('operasional.timezone'))
     ->withoutOverlapping()
     ->onOneServer();
+
+// Proses bisnis proposal: bukti distribusi belum masuk (jam rencana tiba + 60 menit), tiap 10 menit.
+Schedule::command('sigap:cek-bukti-distribusi')
+    ->everyTenMinutes()
+    ->timezone(config('operasional.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();
