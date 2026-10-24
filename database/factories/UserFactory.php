@@ -2,44 +2,68 @@
 
 namespace Database\Factories;
 
+use App\Enums\RelawanUnit;
+use App\Enums\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 /**
+ * Data fiktif. Default: Kepala SPPG tanpa sppg_id (isi lewat ->state(['sppg_id' => ...])
+ * atau ->forSppg($id)).
+ *
  * @extends Factory<User>
  */
 class UserFactory extends Factory
 {
-    /**
-     * The current password being used by the factory.
-     */
-    protected static ?string $password;
+    protected $model = User::class;
 
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
+        $faker = fake('id_ID');
+
         return [
-            'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
-            'email_verified_at' => now(),
-            'password' => static::$password ??= Hash::make('password'),
-            'remember_token' => Str::random(10),
+            'sppg_id' => null,
+            'telegram_id' => $faker->unique()->numberBetween(100_000_000, 7_999_999_999),
+            'telegram_username' => $faker->optional(0.7)->userName(),
+            'name' => $faker->name(),
+            'role' => Role::KepalaSppg,
+            'unit' => null,
+            'phone' => $faker->optional(0.5)->numerify('08##########'),
+            'is_active' => true,
+            'last_login_at' => null,
         ];
     }
 
-    /**
-     * Indicate that the model's email address should be unverified.
-     */
-    public function unverified(): static
+    public function role(Role $role, ?RelawanUnit $unit = null): static
     {
-        return $this->state(fn (array $attributes) => [
-            'email_verified_at' => null,
+        return $this->state(fn () => [
+            'role' => $role,
+            'unit' => $role === Role::Relawan ? ($unit ?? RelawanUnit::Dapur) : null,
         ]);
+    }
+
+    public function admin(): static
+    {
+        return $this->role(Role::Admin)->state(['sppg_id' => null]);
+    }
+
+    public function relawan(RelawanUnit $unit = RelawanUnit::Dapur): static
+    {
+        return $this->role(Role::Relawan, $unit);
+    }
+
+    public function forSppg(int $sppgId): static
+    {
+        return $this->state(['sppg_id' => $sppgId]);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(['is_active' => false]);
+    }
+
+    public function withoutTelegram(): static
+    {
+        return $this->state(['telegram_id' => null, 'telegram_username' => null]);
     }
 }

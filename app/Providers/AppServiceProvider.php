@@ -2,23 +2,40 @@
 
 namespace App\Providers;
 
+use App\Services\Telegram\InitDataValidator;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
-        //
+        // Dibuat ulang tiap resolve agar perubahan config (tes) langsung berlaku.
+        $this->app->bind(InitDataValidator::class, fn () => InitDataValidator::fromConfig());
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        //
+        // Konvensi Policy: App\Models\X -> App\Policies\XPolicy (termasuk sub-namespace,
+        // mis. App\Models\Keuangan\Pengeluaran -> App\Policies\Keuangan\PengeluaranPolicy).
+        Gate::guessPolicyNamesUsing(function (string $modelClass): array {
+            if (! Str::startsWith($modelClass, 'App\\Models\\')) {
+                return [];
+            }
+
+            return ['App\\Policies\\'.Str::after($modelClass, 'App\\Models\\').'Policy'];
+        });
+
+        // NFR-05: 60 permintaan/menit per pengguna (fallback IP).
+        RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
+            ->by('u:'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
+
+        // Tukar initData -> token: 10/menit per IP.
+        RateLimiter::for('auth-telegram', fn (Request $request) => Limit::perMinute(10)
+            ->by('ip:'.$request->ip()));
     }
 }

@@ -1,0 +1,197 @@
+<?php
+
+namespace App\Support;
+
+use App\Enums\Role;
+use App\Models\User;
+use InvalidArgumentException;
+
+/**
+ * Penerapan matriks CRUD Tabel 5 (config/rbac.php).
+ *
+ * Huruf: C (create), R (read), U (update), D (delete lunak). Pengguna nonaktif/terhapus
+ * tidak memiliki hak apa pun. Modul/huruf tak dikenal melempar exception (cegah salah ketik
+ * yang diam-diam memberi/menolak akses).
+ */
+final class Rbac
+{
+    public const LETTERS = ['C', 'R', 'U', 'D'];
+
+    /** @return list<string> */
+    public static function modules(): array
+    {
+        return array_keys(config('rbac.modules', []));
+    }
+
+    public static function hasModule(string $module): bool
+    {
+        return array_key_exists($module, config('rbac.modules', []));
+    }
+
+    /**
+     * Sel mentah matriks untuk peran (mis. "CRU", "R*", "").
+     */
+    public static function cell(Role|string $role, string $module): string
+    {
+        self::assertModule($module);
+        $role = $role instanceof Role ? $role->value : $role;
+
+        return (string) (config("rbac.modules.{$module}.{$role}") ?? '');
+    }
+
+    /**
+     * Huruf efektif pengguna untuk modul setelah aturan unit relawan diterapkan.
+     * Contoh: "CRU", "R", "". Tanda "*" dipertahankan (lihat isSelfOnly()).
+     */
+    public static function letters(?User $user, string $module): string
+    {
+        self::assertModule($module);
+
+        if ($user === null || ! $user->canAuthenticate() || ! $user->role instanceof Role) {
+            return '';
+        }
+
+        $cell = self::cell($user->role, $module);
+        $rule = config("rbac.unit_rules.{$user->role->value}.{$module}");
+
+        if (is_array($rule)) {
+            $unit = $user->unit?->value;
+
+            if ($unit === null || ! in_array($unit, $rule['units'] ?? [], true)) {
+                return '';
+            }
+        }
+
+        return $cell;
+    }
+
+    public static function can(?User $user, string $module, string $letter): bool
+    {
+        self::assertLetter($letter);
+
+        return str_contains(self::letters($user, $module), $letter);
+    }
+
+    /**
+     * True bila hak $letter hanya untuk record milik sendiri (sel bertanda "*", mis. "R*").
+     */
+    public static function isSelfOnly(?User $user, string $module, string $letter): bool
+    {
+        self::assertLetter($letter);
+        $letters = self::letters($user, $module);
+        $pos = strpos($letters, $letter);
+
+        return $pos !== false && ($letters[$pos + 1] ?? '') === '*';
+    }
+
+    /**
+     * Sub-jenis data yang boleh dikelola pengguna untuk modul (mis. jadwal relawan dapur ->
+     * 'produksi', relawan distribusi -> 'distribusi'). Null = tidak dibatasi sub-jenis.
+     */
+    public static function unitScope(?User $user, string $module): ?string
+    {
+        self::assertModule($module);
+
+        if ($user === null || ! $user->role instanceof Role) {
+            return null;
+        }
+
+        $map = config("rbac.unit_rules.{$user->role->value}.{$module}.jenis");
+
+        if (! is_array($map)) {
+            return null;
+        }
+
+        // Relawan tanpa unit tidak boleh mengelola sub-jenis apa pun.
+        return $map[$user->unit?->value ?? ''] ?? '__none__';
+    }
+
+    /**
+     * True bila pengguna boleh $letter pada sub-jenis $jenis modul (mis. jadwal 'distribusi').
+     */
+    public static function canForJenis(?User $user, string $module, string $letter, string $jenis): bool
+    {
+        if (! self::can($user, $module, $letter)) {
+            return false;
+        }
+
+        $scope = self::unitScope($user, $module);
+
+        return $scope === null || $scope === $jenis;
+    }
+
+    /**
+     * Aturan kepemilikan untuk huruf (mis. relawan U -> 'own_same_day'), atau null.
+     */
+    public static function ownerRule(?User $user, string $letter): ?string
+    {
+        if ($user === null || ! $user->role instanceof Role) {
+            return null;
+        }
+
+        return config("rbac.owner_rules.{$user->role->value}.{$letter}");
+    }
+
+    /**
+     * Slug modul yang punya minimal satu hak untuk pengguna.
+     *
+     * @return list<string>
+     */
+    public static function allowedModules(?User $user): array
+    {
+        return array_keys(self::permissions($user));
+    }
+
+    /**
+     * Peta modul -> huruf efektif (tanpa modul yang kosong), mis. ['sppg' => 'RU'].
+     *
+     * @return array<string, string>
+     */
+    public static function permissions(?User $user): array
+    {
+        $result = [];
+
+        foreach (self::modules() as $module) {
+            $letters = self::letters($user, $module);
+
+            if ($letters !== '') {
+                $result[$module] = $letters;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Ability token Sanctum: "role:<role>" + "<modul>:<huruf>" (informatif; otorisasi
+     * tetap dihitung ulang dari peran terkini di basis data).
+     *
+     * @return list<string>
+     */
+    public static function abilities(User $user): array
+    {
+        $abilities = ['role:'.$user->role->value];
+
+        foreach (self::permissions($user) as $module => $letters) {
+            foreach (str_split(str_replace('*', '', $letters)) as $letter) {
+                $abilities[] = "{$module}:{$letter}";
+            }
+        }
+
+        return $abilities;
+    }
+
+    private static function assertModule(string $module): void
+    {
+        if (! self::hasModule($module)) {
+            throw new InvalidArgumentException("Modul RBAC tidak dikenal: {$module}");
+        }
+    }
+
+    private static function assertLetter(string $letter): void
+    {
+        if (! in_array($letter, self::LETTERS, true)) {
+            throw new InvalidArgumentException("Huruf RBAC tidak dikenal: {$letter}");
+        }
+    }
+}
