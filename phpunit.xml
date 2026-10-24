@@ -19,6 +19,7 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="APP_URL" value="http://localhost"/>
         <!-- Kunci khusus tes (acak, bukan rahasia; JANGAN dipakai di lingkungan lain). -->
         <env name="APP_KEY" value="base64:c2lnYXAtc3BwZy10ZXN0LWtleS1ub3Qtc2VjcmV0ISE="/>
         <env name="APP_DEBUG" value="false"/>
