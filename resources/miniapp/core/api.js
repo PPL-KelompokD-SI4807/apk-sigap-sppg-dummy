@@ -1,5 +1,6 @@
 import { toast } from './ui.js';
 import { enqueue, listQueue, removeItem } from './offline-queue.js';
+import { statusMessage } from './errors.js';
 
 const BASE = '/api/v1';
 const TOKEN_KEY = 'sigap_token';
@@ -86,7 +87,7 @@ export async function request(method, path, { query, body, key, silent = false }
   }
   if (res.ok) return data;
 
-  const message = data?.message || `Permintaan gagal (${res.status}).`;
+  const message = statusMessage(res.status, data?.message);
   if (res.status === 401 && path !== '/auth/telegram') {
     setToken(null);
     bus.dispatchEvent(new Event('auth-required'));
@@ -111,7 +112,7 @@ export const api = {
 
 /** Daftar paginate Laravel -> {items, page, lastPage, total}. */
 export async function fetchList(endpoint, { page = 1, search = '', perPage = 15, extra = {} } = {}) {
-  const res = await api.get(endpoint, { page, search, per_page: perPage, ...extra });
+  const res = await api.get(endpoint, { page, q: search, per_page: perPage, ...extra });
   const items = Array.isArray(res) ? res : res?.data ?? [];
   const meta = res?.meta ?? {};
   return { items, page: meta.current_page ?? page, lastPage: meta.last_page ?? 1, total: meta.total ?? items.length };

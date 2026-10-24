@@ -24,4 +24,19 @@ return [
     */
     'dev_bypass' => (bool) env('TELEGRAM_DEV_BYPASS', false),
 
+    // URL HTTPS Mini App (tombol web_app & menu bot). Default: APP_URL/miniapp/.
+    'miniapp_url' => env('TELEGRAM_MINIAPP_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/miniapp/'),
+
+    // Bot API (tanpa SDK pihak ketiga, KT-04). Token tidak pernah di-log.
+    'api_base_url' => env('TELEGRAM_API_BASE_URL', 'https://api.telegram.org'),
+    'http_timeout' => (int) env('TELEGRAM_HTTP_TIMEOUT', 10),
+    'http_retries' => 2,
+    'http_retry_sleep_ms' => 300,
+
+    // Ukuran body webhook maksimum (byte). Update Telegram umumnya < 10 KB.
+    'webhook_max_body' => 256 * 1024,
+
+    // Pembaruan yang diminta dari Telegram (setWebhook allowed_updates).
+    'allowed_updates' => ['message', 'callback_query'],
+
 ];

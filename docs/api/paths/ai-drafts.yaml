@@ -1,0 +1,59 @@
+/ai-drafts:
+  get:
+    tags: [Agen AI]
+    summary: Daftar draf AI pending milik sendiri
+    description: 'Draf berstatus pending yang belum kedaluwarsa milik pengguna login (maks 10, terbaru dulu). Draf pengguna lain tidak pernah ditampilkan.'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: array
+                  items: { $ref: '#/components/schemas/AiDraft' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/ai-drafts/{uuid}:
+  parameters:
+    - { name: uuid, in: path, required: true, schema: { type: string, format: uuid } }
+  get:
+    tags: [Agen AI]
+    summary: Detail draf AI (prefill formulir)
+    description: |
+      Hanya pemilik draf pada SPPG yang sama; selain itu 404. Draf kedaluwarsa (default 30 menit),
+      sudah disimpan, atau dibuang -> 410. `errors` = validasi dry-run Form Request modul saat ini.
+      Mini App lalu memanggil endpoint modul (mis. POST /titik-layanan) dengan `ai_draft_id`.
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/AiDraft' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '410':
+        description: Draf kedaluwarsa, sudah disimpan, atau sudah dibuang.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { message: 'Draf sudah kedaluwarsa. Kirim ulang pesan ke bot atau isi formulir manual.' }
+  delete:
+    tags: [Agen AI]
+    summary: Buang draf AI
+    description: 'Idempoten untuk draf pending/kedaluwarsa/dibuang. Draf yang sudah disimpan -> 409. Bukan pemilik -> 404.'
+    responses:
+      '204': { description: Dibuang }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409':
+        description: Draf sudah disimpan (confirmed).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }

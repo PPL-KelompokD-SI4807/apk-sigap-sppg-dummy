@@ -107,3 +107,99 @@ img { max-width: 100%; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 @media (min-width: 480px) { .menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ---- Modul grup A: tab segmen, kartu baris, dialog undangan ---- */
+.seg { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border-radius: var(--radius); overflow-x: auto; }
+.seg-btn { flex: 1 0 auto; min-height: 40px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font: inherit; font-weight: 600; font-size: .9rem; cursor: pointer; white-space: nowrap; }
+.seg-btn.active { background: var(--bg-section); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.row-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; color: var(--text); background: var(--bg-section); border-radius: var(--radius); }
+.row-card .rc-main { flex: 1; min-width: 0; }
+.row-card .rc-title { font-weight: 600; overflow-wrap: anywhere; }
+.row-card .rc-sub { color: var(--hint); font-size: .88rem; overflow-wrap: anywhere; }
+.row-card .rc-aside { text-align: right; flex: none; }
+.row-card .rc-aside strong { display: block; font-size: 1.05rem; }
+.avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .9rem; color: #fff; background: var(--btn); }
+.badge-ok { background: #e1f4e6; color: #1b6e32; }
+.badge-info { background: #e1effb; color: #17609c; }
+.badge-danger { background: #fde4e4; color: #a12622; }
+:root[data-theme="dark"] .badge-ok { background: #1d3a27; color: #8be0a3; }
+:root[data-theme="dark"] .badge-info { background: #1a3550; color: #8cc4f5; }
+:root[data-theme="dark"] .badge-danger { background: #4a2020; color: #ffb3b0; }
+.stack { display: flex; flex-direction: column; gap: var(--gap); }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.row-actions .btn { flex: 1 1 140px; }
+.invite-link { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); font-family: ui-monospace, monospace; font-size: .8rem; overflow-wrap: anywhere; user-select: all; }
+.modal.invite { max-width: 420px; }
+a.seg-btn { display: flex; align-items: center; justify-content: center; color: var(--text); text-decoration: none; }
+
+/* ---- Modul grup B: lencana ganda, komposisi, ringkasan, peringatan ---- */
+.rc-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex: none; }
+.alert-danger { background: #fde4e4; color: #a12622; border-radius: var(--radius); padding: 10px 14px; font-size: .9rem; }
+:root[data-theme="dark"] .alert-danger { background: #4a2020; color: #ffb3b0; }
+.alert-ok { background: #e1f4e6; color: #1b6e32; border-radius: var(--radius); padding: 10px 14px; font-size: .9rem; }
+:root[data-theme="dark"] .alert-ok { background: #1d3a27; color: #8be0a3; }
+.tbl { display: grid; gap: 6px; }
+.tbl-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .9rem; padding: 6px 0; border-bottom: 1px solid var(--separator); }
+.tbl-row:last-child { border-bottom: 0; }
+.tbl-row > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tbl-row .num { text-align: right; white-space: nowrap; }
+.tbl-row.bad { color: var(--danger); }
+.komposisi-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 44px; gap: 6px; align-items: center; margin-bottom: 8px; }
+.komposisi-row select, .komposisi-row input { min-height: 44px; }
+.komposisi-row .btn { padding: 0; }
+.stack-tight { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---- Modul grup C: KPI, grafik, filter, pratinjau perjalanan ---- */
+.panel input[type="date"], .panel select, .panel textarea, .filter-row input, .filter-row select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--separator); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
+.panel textarea { resize: vertical; }
+.filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.big-num { font-size: 1.25rem; font-weight: 700; }
+.preview-msg { padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); }
+.preview-msg p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.kpi { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--radius); background: var(--bg-secondary); border-left: 4px solid var(--separator); min-width: 0; }
+.kpi-label { font-size: .8rem; color: var(--hint); }
+.kpi-value { font-size: 1.15rem; line-height: 1.25; overflow-wrap: anywhere; }
+.kpi-sub { font-size: .8rem; color: var(--hint); overflow-wrap: anywhere; }
+.kpi-ok { border-left-color: #1f9d6e; }
+.kpi-warn { border-left-color: #d9831f; }
+.kpi-danger { border-left-color: var(--danger); }
+.kpi-danger .kpi-value { color: var(--danger); }
+.progress { height: 8px; border-radius: 999px; background: var(--separator); overflow: hidden; }
+.progress > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.kpi-ok .progress > span { background: #1f9d6e; }
+.kpi-warn .progress > span { background: #d9831f; }
+.kpi-danger .progress > span { background: var(--danger); }
+.chart-box { position: relative; height: 200px; }
+.chart-box-sm { height: 180px; }
+.legend { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px; font-size: .85rem; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: var(--hint); }
+.dot-ok { background: #1f9d6e; } .dot-warn { background: #d9831f; } .dot-danger { background: var(--danger); } .dot-muted { background: var(--hint); }
+@media (min-width: 560px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ---- Grup D: unggah foto aman, lampiran, bukti distribusi, keuangan ---- */
+.photo-list { display: flex; flex-direction: column; gap: 8px; }
+.photo-item, .photo-figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.photo-cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.photo-progress { width: 100%; height: 6px; }
+.photo-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.photo-actions .btn.disabled { opacity: .5; pointer-events: none; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.btn-sm { min-height: 36px; padding: 0 12px; font-size: .85rem; }
+.upload-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.upload-row .thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+.upload-info { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; min-width: 0; }
+.upload-row .btn { min-height: 36px; padding: 0 10px; font-size: .85rem; }
+.readonly-text { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); color: var(--hint); overflow-wrap: anywhere; }
+.field input[readonly] { background: var(--bg-secondary); color: var(--hint); }
+.rupiah-wrap { display: flex; align-items: stretch; border: 1px solid var(--separator); border-radius: 10px; background: var(--bg); overflow: hidden; }
+.rupiah-prefix { display: flex; align-items: center; padding: 0 12px; font-weight: 600; background: var(--bg-secondary); color: var(--hint); }
+.field .rupiah-wrap input { border: 0; border-radius: 0; font-variant-numeric: tabular-nums; }
+.progress-lg { height: 12px; position: relative; }
+.progress .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: .55; }
+.status-line { margin: 0; font-size: .9rem; }
+.status-danger { color: var(--danger); }
+.tbl-row .num.pos { color: #1f9d6e; }
+.tbl-row .num.neg { color: var(--danger); }
+.legend-1 { grid-template-columns: 1fr; }
+.section-title { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--hint); margin: 8px 4px 0; }

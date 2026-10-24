@@ -1,0 +1,50 @@
+/telegram/webhook:
+  post:
+    tags: [Telegram]
+    summary: Webhook Bot Telegram (dipanggil server Telegram)
+    description: |
+      Publik (tanpa token Bearer). Wajib header `X-Telegram-Bot-Api-Secret-Token` yang sama dengan
+      TELEGRAM_WEBHOOK_SECRET (hash_equals); secret kosong = semua ditolak 403. Idempoten berdasarkan
+      `update_id` (duplikat dibalas 200 tanpa diproses ulang). Selalu membalas cepat; pemrosesan di
+      antrean (ProcessTelegramUpdate / ProcessAiMessage). Hanya chat pribadi yang diproses.
+      Didaftarkan dengan `php artisan sigap:telegram-set-webhook` (lihat docs/api/telegram-bot.md).
+    security: []
+    parameters:
+      - { name: X-Telegram-Bot-Api-Secret-Token, in: header, required: true, schema: { type: string } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            description: Objek Update Bot API (message atau callback_query).
+            required: [update_id]
+            properties:
+              update_id: { type: integer }
+              message: { type: object }
+              callback_query: { type: object }
+          example:
+            update_id: 900000001
+            message:
+              message_id: 10
+              date: 1793000000
+              chat: { id: 7012345678, type: private }
+              from: { id: 7012345678, is_bot: false, first_name: Siti }
+              text: '/start inv_contohTokenUndanganFiktif1234567890'
+    responses:
+      '200':
+        description: Diterima (atau diabaikan bila bukan update sah/duplikat).
+        content:
+          application/json:
+            schema: { type: object, properties: { ok: { type: boolean } } }
+      '403':
+        description: Secret token salah/kosong.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+      '413':
+        description: Payload terlalu besar.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }

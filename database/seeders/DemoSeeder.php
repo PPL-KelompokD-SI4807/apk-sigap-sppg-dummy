@@ -421,6 +421,7 @@ class DemoSeeder extends Seeder
                     'hasil' => $hasilMutu,
                     ...($hasilMutu === HasilMutu::TidakLayak ? [
                         'suhu_makanan_c' => 45.0,
+                        'aroma_baik' => false,
                         'organoleptik_baik' => false,
                         'catatan_organoleptik' => 'Aroma kurang segar (data demo)',
                         'tindakan_korektif' => 'Masak ulang lauk dan periksa ulang',
