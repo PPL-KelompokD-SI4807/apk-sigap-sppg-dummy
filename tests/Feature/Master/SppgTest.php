@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Master;
 
+use App\Enums\AksiAiDraft;
 use App\Enums\Role;
 use App\Models\AiDraft;
 use App\Models\Sppg;
@@ -177,7 +178,7 @@ class SppgTest extends MasterApiTestCase
     public function test_ai_draft_id_dikonfirmasi_saat_simpan(): void
     {
         $this->forgetActor();
-        $draf = AiDraft::factory()->create(['user_id' => $this->kepalaA->id, 'sppg_id' => $this->sppgA, 'module' => 'sppg']);
+        $draf = AiDraft::factory()->create(['user_id' => $this->kepalaA->id, 'sppg_id' => $this->sppgA, 'module' => 'sppg', 'action' => AksiAiDraft::Update, 'target_id' => $this->sppgA]);
 
         $this->as($this->kepalaA)->patchJson("/api/v1/sppg/{$this->sppgA}", ['kapasitas_porsi_harian' => 2800, 'ai_draft_id' => $draf->uuid])->assertOk();
 

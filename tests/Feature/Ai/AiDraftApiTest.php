@@ -143,6 +143,38 @@ class AiDraftApiTest extends MasterApiTestCase
         $this->as($this->ahliGiziA)->getJson("/api/v1/ai-drafts/{$draft->uuid}")->assertForbidden();
     }
 
+    public function test_draf_create_tidak_dapat_dikonfirmasi_lewat_update(): void
+    {
+        $titik = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA]);
+        $draft = $this->draft($this->kepalaA);
+
+        $this->as($this->kepalaA)->putJson("/api/v1/titik-layanan/{$titik->id}", ['nama' => 'Ubah Fiktif', 'ai_draft_id' => $draft->uuid])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['ai_draft_id']);
+
+        $this->assertSame(StatusAiDraft::Pending, $draft->fresh()->status);
+        $this->assertNotSame('Ubah Fiktif', $titik->fresh()->nama);
+    }
+
+    public function test_draf_update_hanya_untuk_target_yang_sama(): void
+    {
+        $titik = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA]);
+        $lain = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA]);
+        $draft = $this->draft($this->kepalaA, ['action' => AksiAiDraft::Update, 'target_id' => $titik->id, 'payload' => ['nama' => 'Ubah Fiktif']]);
+
+        $this->as($this->kepalaA)->putJson("/api/v1/titik-layanan/{$lain->id}", ['nama' => 'Ubah Fiktif', 'ai_draft_id' => $draft->uuid])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['ai_draft_id']);
+
+        // Draf update juga tidak dapat dipakai untuk membuat data baru.
+        $this->postJson('/api/v1/titik-layanan', ['nama' => 'Baru Fiktif', 'jenis' => 'sekolah', 'alamat' => 'Jl. Fiktif 9', 'pic_nama' => 'Bu Fiktif', 'ai_draft_id' => $draft->uuid])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['ai_draft_id']);
+
+        $this->putJson("/api/v1/titik-layanan/{$titik->id}", ['nama' => 'Ubah Fiktif', 'ai_draft_id' => $draft->uuid])->assertOk();
+        $this->assertSame(StatusAiDraft::Confirmed, $draft->fresh()->status);
+    }
+
     public function test_alur_lengkap_chat_ke_draf_ke_konfirmasi_mini_app(): void
     {
         $llm = new FakeLlmClient([

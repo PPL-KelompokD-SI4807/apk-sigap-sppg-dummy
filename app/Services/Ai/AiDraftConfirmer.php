@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Enums\AksiAiDraft;
 use App\Enums\StatusAiDraft;
 use App\Models\AiDraft;
 use App\Models\User;
@@ -16,19 +17,25 @@ use Illuminate\Validation\ValidationException;
  */
 class AiDraftConfirmer
 {
-    public function confirm(?string $uuid, User $user, string $module, ?int $targetId = null): ?AiDraft
+    /**
+     * Aksi draf harus cocok dengan aksi endpoint: tanpa $targetId = store (draf create, tanpa target),
+     * dengan $targetId = update (draf update untuk record yang sama). $action menimpa tebakan ini.
+     */
+    public function confirm(?string $uuid, User $user, string $module, ?int $targetId = null, ?AksiAiDraft $action = null): ?AiDraft
     {
         if ($uuid === null || $uuid === '') {
             return null;
         }
 
+        $action ??= $targetId === null ? AksiAiDraft::Create : AksiAiDraft::Update;
         $draft = AiDraft::query()->where('uuid', $uuid)->lockForUpdate()->first();
 
         if ($draft === null
             || (int) $draft->user_id !== (int) $user->getKey()
             || $draft->module !== $module
             || ! $draft->bisaDikonfirmasi()
-            || ($draft->target_id !== null && $targetId !== null && (int) $draft->target_id !== $targetId)) {
+            || $draft->action !== $action
+            || ($draft->target_id === null ? null : (int) $draft->target_id) !== $targetId) {
             throw ValidationException::withMessages([
                 'ai_draft_id' => ['Draf AI tidak ditemukan, sudah dipakai, atau kedaluwarsa.'],
             ]);
