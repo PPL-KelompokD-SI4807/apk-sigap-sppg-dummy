@@ -1,6 +1,7 @@
 // Skema Log Produksi Harian (fitur 10). Kontrak: docs/api/paths/log-produksi.yaml, components/log-produksi.yaml.
-// Foto: backend baru menerima foto_path (teks); unggah berkas belum tersedia, jadi tidak ada kolom foto.
+// Foto: lampiran_ids dari POST /lampiran (lihat components/lampiran-field.js, kolom `lampiranField` di index.js).
 import { buildPayload } from '../../core/schema-helpers.js';
+import { lampiranIdsPayload } from '../../core/lampiran-uploader.js';
 import { todayISO } from '../../core/validators.js';
 
 export const jadwalOptionLabel = (j) => `${j.tanggal_produksi} · ${j.menu?.nama_menu ?? 'Menu'} (target ${j.target_porsi})`;
@@ -40,6 +41,8 @@ export const logPayload = (values, { mode } = {}) => {
     nullable: ['waktu_mulai', 'jam_selesai', 'kendala'],
   });
   if (mode === 'update') delete out.jadwal_produksi_id; // tidak dapat diubah
+  const lampiran = lampiranIdsPayload(values.lampiran_ids);
+  if (lampiran) out.lampiran_ids = lampiran;
   return out;
 };
 

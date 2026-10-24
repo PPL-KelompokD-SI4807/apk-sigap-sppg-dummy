@@ -1,6 +1,7 @@
 // Log Produksi Harian (fitur 10, PBI 10). Mockup: Gambar 13. Hanya relawan unit dapur yang membuat log.
 import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
+import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
 import { api } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
@@ -38,7 +39,10 @@ export default defineCrudModule({
   description: 'Realisasi porsi, sisa makanan, dan kendala harian',
   endpoint: '/log-produksi',
   columns: [{ key: 'kode_batch', primary: true }],
-  fields: ({ mode, record }) => (mode === 'detail' ? logDetailFields : logFields({ mode, record })),
+  fields: ({ mode, record }) => (mode === 'detail' ? logDetailFields : [...logFields({ mode, record }), lampiranField({
+    modul: 'log-produksi', label: 'Foto produksi', existing: record?.lampiran || [],
+    help: 'Opsional, maks 5 foto (JPEG/PNG/WebP, maks 5 MB). Terunggah langsung; Simpan menunggu semua foto selesai.',
+  })]),
   mapPayload: logPayload,
   itemTitle: (r) => r.kode_batch || `Log #${r.id}`,
   searchPlaceholder: 'Cari kode batch atau kendala...',
@@ -53,5 +57,9 @@ export default defineCrudModule({
     badge: r.peringatan ? { text: 'Beda target', cls: 'badge-warn' } : null,
   }),
   rowPerms: (rec, p) => rowPermsLog(getUser(), rec, p),
-  detailExtras: (rec) => (rec.peringatan ? [h('div', { class: 'notice' }, `⚠ ${rec.peringatan}`)] : []),
+  detailExtras: (rec, p) => {
+    const nodes = rec.peringatan ? [h('div', { class: 'notice' }, `⚠ ${rec.peringatan}`)] : [];
+    if ((rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ modul: 'log-produksi', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto produksi' }));
+    return nodes;
+  },
 });

@@ -253,20 +253,22 @@ test('log produksi: skema (kode batch readonly), payload, hak per baris', () => 
 
 // ---------- mutu ----------
 test('mutu: konsistensi hasil layak dengan checklist', () => {
-  const ok = { hasil: 'layak', kebersihan_dapur: 'true', kebersihan_petugas: 'true', organoleptik_baik: 'true', suhu_makanan_c: 72.5 };
+  const ok = { hasil: 'layak', kebersihan_dapur: 'true', kebersihan_petugas: 'true', rasa_baik: 'true', aroma_baik: 'true', tampilan_baik: 'true', suhu_makanan_c: 72.5 };
   assert.equal(mutu.cekKonsistensiMutu(ok), '');
   assert.equal(mutu.cekKonsistensiMutu({ ...ok, suhu_makanan_c: null }), '', 'suhu opsional');
   assert.match(mutu.cekKonsistensiMutu({ ...ok, suhu_makanan_c: 55 }), /suhu di bawah 60/);
   assert.match(mutu.cekKonsistensiMutu({ ...ok, kebersihan_dapur: 'false' }), /kebersihan dapur/);
-  assert.match(mutu.cekKonsistensiMutu({ ...ok, organoleptik_baik: 'false' }), /rasa\/aroma/);
-  assert.equal(mutu.cekKonsistensiMutu({ ...ok, organoleptik_baik: 'false', hasil: 'tidak_layak' }), '');
+  assert.match(mutu.cekKonsistensiMutu({ ...ok, aroma_baik: 'false' }), /aroma tidak baik/);
+  assert.match(mutu.cekKonsistensiMutu({ ...ok, rasa_baik: 'false', tampilan_baik: 'false' }), /rasa\/tampilan tidak baik/);
+  assert.match(mutu.cekKonsistensiMutu({ ...ok, rasa_baik: undefined }), /rasa tidak baik/, 'butir belum diisi dianggap belum baik');
+  assert.equal(mutu.cekKonsistensiMutu({ ...ok, tampilan_baik: 'false', hasil: 'tidak_layak' }), '');
 });
 
 test('mutu: skema bergantung mode, koreksi wajib bila memengaruhi distribusi', () => {
   const baru = mutu.mutuFields({ mode: 'create' });
   assert.equal(baru[0].name, 'jadwal_produksi_id');
   assert.equal(baru.some((f) => f.name === 'catatan_koreksi'), false);
-  assert.equal(baru.some((f) => f.type === 'photo'), false);
+  assert.equal(baru.some((f) => f.type === 'photo'), false, 'foto lewat kolom lampiranField di index.js, bukan kolom photo');
   const ubahBiasa = mutu.mutuFields({ mode: 'update', record: { memengaruhi_distribusi: false } });
   assert.equal(ubahBiasa.some((f) => f.name === 'catatan_koreksi'), false);
   const koreksi = mutu.mutuFields({ mode: 'update', record: { memengaruhi_distribusi: true } });
@@ -277,13 +279,16 @@ test('mutu: skema bergantung mode, koreksi wajib bila memengaruhi distribusi', (
   assert.equal(tk.showIf({ hasil: 'layak' }), false);
   assert.match(tk.help, /menahan keberangkatan distribusi/);
   const co = baru.find((f) => f.name === 'catatan_organoleptik');
-  assert.equal(co.showIf({ organoleptik_baik: 'false' }), true);
-  assert.equal(co.showIf({ organoleptik_baik: 'true' }), false);
+  const baik = { rasa_baik: 'true', aroma_baik: 'true', tampilan_baik: 'true' };
+  assert.equal(co.showIf(baik), false);
+  for (const n of ['rasa_baik', 'aroma_baik', 'tampilan_baik']) assert.equal(co.showIf({ ...baik, [n]: 'false' }), true, n);
+  assert.equal(co.help.includes('rasa, aroma, atau tampilan'), true);
 });
 
 test('mutu: payload boolean, tindakan korektif dibersihkan saat layak', () => {
-  const v = { jadwal_produksi_id: '12', suhu_makanan_c: '72.5', kebersihan_dapur: 'true', kebersihan_petugas: 'true', organoleptik_baik: 'true', catatan_organoleptik: null, sampel_disimpan: 'false', hasil: 'layak', tindakan_korektif: 'sisa isian', catatan_koreksi: null };
-  assert.deepEqual(mutu.mutuPayload(v, { mode: 'create' }), { jadwal_produksi_id: 12, suhu_makanan_c: 72.5, kebersihan_dapur: true, kebersihan_petugas: true, organoleptik_baik: true, catatan_organoleptik: null, sampel_disimpan: false, hasil: 'layak', tindakan_korektif: null });
+  const v = { jadwal_produksi_id: '12', suhu_makanan_c: '72.5', kebersihan_dapur: 'true', kebersihan_petugas: 'true', rasa_baik: 'true', aroma_baik: 'true', tampilan_baik: 'false', catatan_organoleptik: 'agak hambar', sampel_disimpan: 'false', hasil: 'layak', tindakan_korektif: 'sisa isian', catatan_koreksi: null };
+  assert.deepEqual(mutu.mutuPayload(v, { mode: 'create' }), { jadwal_produksi_id: 12, suhu_makanan_c: 72.5, kebersihan_dapur: true, kebersihan_petugas: true, rasa_baik: true, aroma_baik: true, tampilan_baik: false, catatan_organoleptik: 'agak hambar', sampel_disimpan: false, hasil: 'layak', tindakan_korektif: null });
+  assert.equal('organoleptik_baik' in mutu.mutuPayload(v, { mode: 'create' }), false, 'organoleptik_baik diturunkan server dari tiga butir');
   const tl = mutu.mutuPayload({ ...v, hasil: 'tidak_layak', kebersihan_dapur: 'false', tindakan_korektif: ' Masak ulang ' }, { mode: 'update' });
   assert.equal(tl.tindakan_korektif, 'Masak ulang');
   assert.equal(tl.kebersihan_dapur, false);
@@ -296,4 +301,25 @@ test('mutu: tombol hapus disembunyikan bila memengaruhi distribusi', () => {
   assert.equal(mutu.rowPermsMutu({ memengaruhi_distribusi: true }, p).U, true);
   assert.equal(mutu.rowPermsMutu({ memengaruhi_distribusi: false }, p).D, true);
   assert.equal(mutu.hasilBadge('tidak_layak'), 'badge-danger');
+});
+
+test('mutu: tiga butir organoleptik wajib dan menggantikan satu pilihan gabungan', () => {
+  const f = mutu.mutuFields({ mode: 'create' });
+  for (const n of ['rasa_baik', 'aroma_baik', 'tampilan_baik']) {
+    const k = f.find((x) => x.name === n);
+    assert.equal(k.required, true, n);
+    assert.deepEqual(k.options.map((o) => o.value), ['true', 'false']);
+  }
+  assert.equal(f.some((x) => x.name === 'organoleptik_baik'), false);
+
+  // Ubah: nilai awal dari butir record; data lama tanpa butir ikut organoleptik_baik gabungan.
+  const ubah = mutu.mutuFields({ mode: 'update', record: { rasa_baik: false, aroma_baik: true, tampilan_baik: true, organoleptik_baik: false } });
+  assert.deepEqual(['rasa_baik', 'aroma_baik', 'tampilan_baik'].map((n) => ubah.find((x) => x.name === n).default), [false, true, true]);
+  const lama = mutu.mutuFields({ mode: 'update', record: { organoleptik_baik: true } });
+  assert.equal(lama.find((x) => x.name === 'rasa_baik').default, true);
+
+  // Detail menampilkan tiga butir.
+  const rec = { rasa_baik: true, aroma_baik: false, tampilan_baik: true };
+  assert.deepEqual(['rasa_baik', 'aroma_baik', 'tampilan_baik'].map((n) => { const d = mutu.mutuDetailFields.find((x) => x.name === n); return d.display(rec); }), ['Baik', 'Tidak baik', 'Baik']);
+  assert.equal(mutu.mutuDetailFields.find((x) => x.name === 'rasa_baik').display({ organoleptik_baik: false }), 'Tidak baik', 'data lama');
 });

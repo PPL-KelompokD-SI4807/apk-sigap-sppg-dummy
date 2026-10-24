@@ -1,6 +1,7 @@
 // Skema Feedback dan Keluhan (fitur 15). Kontrak: docs/api/paths/keluhan.yaml, components/keluhan.yaml.
-// Murni (tanpa DOM) agar bisa diuji. Foto keluhan: backend belum menerima foto_path, sehingga tidak ada unggah.
+// Murni (tanpa DOM) agar bisa diuji. Foto keluhan: lampiran_ids dari POST /lampiran (kolom `lampiranField` di index.js).
 import { buildPayload, sppgField } from '../../core/schema-helpers.js';
+import { lampiranIdsPayload } from '../../core/lampiran-uploader.js';
 import { tanggalJamWIB, addDays, todayWIB } from '../../core/waktu.js';
 
 export const KATEGORI = [
@@ -95,6 +96,8 @@ export function keluhanPayload(values, { mode, user }) {
     keys, ints: ['sppg_id', 'titik_layanan_id', 'jadwal_produksi_id'], nullable: ['titik_layanan_id', 'jadwal_produksi_id', 'tindak_lanjut', 'prioritas'],
   });
   if (mode === 'create' && !admin) delete out.sppg_id;
+  const lampiran = lampiranIdsPayload(values.lampiran_ids);
+  if (lampiran) out.lampiran_ids = lampiran;
   if (mode === 'create' && isKritis(values.kategori) && values.batch_tidak_diketahui === true && !out.jadwal_produksi_id) out.batch_tidak_diketahui = true;
   return out;
 }

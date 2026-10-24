@@ -1,6 +1,7 @@
 // Pemeriksaan Mutu dan Keamanan Pangan (fitur 11, PBI 11). Mockup: Gambar 14.
 import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
+import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
 import { mutuFields, mutuDetailFields, mutuPayload, hasilLabel, hasilBadge, rowPermsMutu } from './schema.js';
 
@@ -11,7 +12,10 @@ export default defineCrudModule({
   description: 'Pemeriksaan suhu, kebersihan, dan organoleptik',
   endpoint: '/mutu',
   columns: [{ key: 'jadwal', primary: true, format: (r) => r.jadwal?.menu?.nama_menu ?? `#${r.id}` }],
-  fields: ({ mode, record }) => (mode === 'detail' ? mutuDetailFields : mutuFields({ mode, record })),
+  fields: ({ mode, record }) => (mode === 'detail' ? mutuDetailFields : [...mutuFields({ mode, record }), lampiranField({
+    modul: 'mutu', label: 'Foto pemeriksaan', existing: record?.lampiran || [],
+    help: 'Opsional, maks 5 foto (JPEG/PNG/WebP, maks 5 MB). Terunggah langsung; Simpan menunggu semua foto selesai.',
+  })]),
   mapPayload: mutuPayload,
   itemTitle: (r) => `Mutu ${r.jadwal?.menu?.nama_menu ?? `#${r.id}`}`,
   searchPlaceholder: 'Cari catatan atau tindakan korektif...',
@@ -29,6 +33,7 @@ export default defineCrudModule({
     if (rec.hasil === 'tidak_layak') nodes.push(h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.'));
     if (rec.memengaruhi_distribusi) nodes.push(h('div', { class: 'notice' }, 'Pemeriksaan ini sudah memengaruhi distribusi, sehingga tidak dapat dihapus. Gunakan Ubah dengan catatan koreksi.'));
     if (p.C && rec.jadwal_produksi_id) nodes.push(h('a', { class: 'btn btn-block', href: `#/mutu/baru?jadwal=${rec.jadwal_produksi_id}` }, 'Periksa ulang jadwal ini'));
+    if ((rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ modul: 'mutu', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto pemeriksaan' }));
     return nodes;
   },
 });

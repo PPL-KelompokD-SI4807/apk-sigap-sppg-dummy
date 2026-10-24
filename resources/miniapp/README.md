@@ -46,6 +46,12 @@ Dua jalur, sesuai kontrak `docs/api/paths/lampiran.yaml`:
    `createLampiranPanel({ modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran, canAdd: p.U })`.
    Setiap foto diunggah dengan `Idempotency-Key` yang dibuat sekali per pilihan foto dan dipakai ulang saat Coba lagi; offline -> status
    "Menunggu jaringan" (antrean `core/offline-queue.js`); galat 413/422/429/409 dipetakan oleh `pesanUnggah` (Indonesia).
+3. **Foto pada form modul tertunda** (keluhan, mutu, log produksi; `config/unggahan.php` -> `tertunda`): di `fields` modul tambahkan
+   `lampiranField({ modul: 'mutu', label: 'Foto pemeriksaan', existing: record?.lampiran })` (`components/lampiran-field.js`). Tiap foto dikompres lalu
+   langsung diunggah ke `POST /lampiran` tanpa `lampiranable_id` (progres XHR 0-100%, galat per foto berbahasa Indonesia, Coba lagi memakai
+   `Idempotency-Key` yang sama). Simpan diblokir bila ada foto yang belum selesai/gagal; id terunggah dikirim sebagai `lampiran_ids` oleh
+   `mapPayload` (`lampiranIdsPayload`). Jenis (JPEG/PNG/WebP), maks 5 MB, dan maks 5 foto dicek di klien (`core/lampiran-uploader.js`) dan
+   tetap ditegakkan server. Bukti distribusi memakai jalur 1 (foto bagian dari payload) + panel lampiran jalur 2 untuk lampiran tambahan.
 Menampilkan gambar privat: `createAuthImage(berkas, {alt})` (fetch + `Authorization` -> blob -> objectURL, dilepas saat pindah layar).
 Hanya jalur `/api/v1/lampiran/{id}` yang diterima (`lampiranPath`), sehingga token tidak terkirim ke domain lain. Jangan memakai `<img src>` langsung.
 

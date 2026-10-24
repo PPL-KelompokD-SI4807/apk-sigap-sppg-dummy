@@ -1,6 +1,8 @@
 // Skema Pemeriksaan Mutu dan Keamanan Pangan (fitur 11). Kontrak: docs/api/paths/mutu.yaml, components/mutu.yaml.
-// Foto: backend baru menerima foto_path (teks); unggah berkas belum tersedia, jadi tidak ada kolom foto.
+// Foto: lampiran_ids dari POST /lampiran (lihat components/lampiran-field.js, kolom `lampiranField` di index.js).
+// Checklist organoleptik = tiga butir rasa_baik/aroma_baik/tampilan_baik; organoleptik_baik diturunkan server.
 import { buildPayload } from '../../core/schema-helpers.js';
+import { lampiranIdsPayload } from '../../core/lampiran-uploader.js';
 import { toBool, todayISO } from '../../core/validators.js';
 
 export const SUHU_MINIMUM_C = 60; // default config('produksi.mutu.suhu_minimum_c'); server otoritas
@@ -10,6 +12,19 @@ export const hasilBadge = (v) => (v === 'layak' ? 'badge-ok' : v === 'tidak_laya
 
 const pilih = (ya, tidak) => [{ value: 'true', label: ya }, { value: 'false', label: tidak }];
 export const jadwalOptionLabel = (j) => `${j.tanggal_produksi} · ${j.menu?.nama_menu ?? 'Menu'}`;
+
+/** Butir checklist organoleptik (kontrak API: rasa_baik, aroma_baik, tampilan_baik). */
+export const BUTIR_ORGANOLEPTIK = [
+  { name: 'rasa_baik', label: 'Rasa' },
+  { name: 'aroma_baik', label: 'Aroma' },
+  { name: 'tampilan_baik', label: 'Tampilan' },
+];
+const butirNames = BUTIR_ORGANOLEPTIK.map((b) => b.name);
+
+/** True bila ketiga butir organoleptik baik. */
+export const organoleptikBaik = (v) => butirNames.every((n) => toBool(v?.[n]) === true);
+/** True bila salah satu butir ditandai tidak baik. */
+export const adaButirTidakBaik = (v) => butirNames.some((n) => toBool(v?.[n]) === false);
 
 /**
  * Konsistensi hasil dengan checklist (cermin aturan server). '' bila konsisten.
@@ -21,7 +36,10 @@ export function cekKonsistensiMutu(v, suhuMin = SUHU_MINIMUM_C) {
   const masalah = [];
   if (!t(v.kebersihan_dapur)) masalah.push('kebersihan dapur belum baik');
   if (!t(v.kebersihan_petugas)) masalah.push('kebersihan petugas belum baik');
-  if (!t(v.organoleptik_baik)) masalah.push('rasa/aroma/tampilan tidak baik');
+  if (!organoleptikBaik(v)) {
+    const buruk = BUTIR_ORGANOLEPTIK.filter((b) => !t(v[b.name])).map((b) => b.label.toLowerCase());
+    masalah.push(`${buruk.join('/')} tidak baik`);
+  }
   if (v.suhu_makanan_c != null && v.suhu_makanan_c !== '' && Number(v.suhu_makanan_c) < suhuMin) masalah.push(`suhu di bawah ${suhuMin} °C`);
   return masalah.length ? `Tidak dapat dinyatakan Layak: ${masalah.join(', ')}. Pilih Tidak layak dan isi tindakan korektif.` : '';
 }
@@ -33,8 +51,12 @@ export function mutuFields({ mode, record } = {}) {
     { name: 'suhu_makanan_c', label: 'Suhu makanan (°C)', type: 'number', min: -50, max: 200, step: '0.1', help: `Layak membutuhkan suhu minimal ${SUHU_MINIMUM_C} °C bila diisi.` },
     { name: 'kebersihan_dapur', label: 'Kebersihan dapur', type: 'select', required: true, options: pilih('Bersih', 'Belum bersih') },
     { name: 'kebersihan_petugas', label: 'Kebersihan petugas', type: 'select', required: true, options: pilih('Bersih', 'Belum bersih') },
-    { name: 'organoleptik_baik', label: 'Rasa, aroma, dan tampilan', type: 'select', required: true, options: pilih('Baik', 'Tidak baik') },
-    { name: 'catatan_organoleptik', label: 'Catatan organoleptik', type: 'textarea', maxlength: 2000, required: true, showIf: (v) => v.organoleptik_baik === 'false', help: 'Wajib bila rasa/aroma/tampilan tidak baik.' },
+    ...BUTIR_ORGANOLEPTIK.map((b) => ({
+      name: b.name, label: b.label, type: 'select', required: true, options: pilih('Baik', 'Tidak baik'),
+      // Data lama tanpa butir: ikut nilai organoleptik_baik gabungan.
+      default: record?.[b.name] ?? record?.organoleptik_baik,
+    })),
+    { name: 'catatan_organoleptik', label: 'Catatan organoleptik', type: 'textarea', maxlength: 2000, required: true, showIf: adaButirTidakBaik, help: 'Wajib bila rasa, aroma, atau tampilan tidak baik.' },
     { name: 'sampel_disimpan', label: 'Sampel makanan disimpan', type: 'select', required: true, default: 'false', options: pilih('Ya', 'Tidak') },
     { name: 'hasil', label: 'Hasil pemeriksaan', type: 'select', required: true, options: HASIL, validate: (v, all) => cekKonsistensiMutu(all) },
     { name: 'tindakan_korektif', label: 'Tindakan korektif', type: 'textarea', maxlength: 2000, required: true, showIf: (v) => v.hasil === 'tidak_layak', help: 'Wajib. Hasil Tidak layak menahan keberangkatan distribusi untuk jadwal ini.' },
@@ -49,7 +71,7 @@ export const mutuDetailFields = [
   { name: 'suhu_makanan_c', label: 'Suhu makanan', display: (r) => (r.suhu_makanan_c == null ? '-' : `${Number(r.suhu_makanan_c).toLocaleString('id-ID')} °C`) },
   { name: 'kebersihan_dapur', label: 'Kebersihan dapur', display: (r) => yn(r.kebersihan_dapur, 'Bersih', 'Belum bersih') },
   { name: 'kebersihan_petugas', label: 'Kebersihan petugas', display: (r) => yn(r.kebersihan_petugas, 'Bersih', 'Belum bersih') },
-  { name: 'organoleptik_baik', label: 'Rasa, aroma, tampilan', display: (r) => yn(r.organoleptik_baik, 'Baik', 'Tidak baik') },
+  ...BUTIR_ORGANOLEPTIK.map((b) => ({ name: b.name, label: b.label, display: (r) => (r[b.name] == null ? yn(r.organoleptik_baik, 'Baik', 'Tidak baik') : yn(r[b.name], 'Baik', 'Tidak baik')) })),
   { name: 'catatan_organoleptik', label: 'Catatan organoleptik' },
   { name: 'sampel_disimpan', label: 'Sampel disimpan', display: (r) => yn(r.sampel_disimpan, 'Ya', 'Tidak') },
   { name: 'tindakan_korektif', label: 'Tindakan korektif' },
@@ -61,14 +83,16 @@ export const mutuDetailFields = [
 
 export const mutuPayload = (values, { mode } = {}) => {
   const out = buildPayload(values, {
-    keys: ['jadwal_produksi_id', 'suhu_makanan_c', 'kebersihan_dapur', 'kebersihan_petugas', 'organoleptik_baik', 'catatan_organoleptik', 'sampel_disimpan', 'hasil', 'tindakan_korektif', 'catatan_koreksi'],
+    keys: ['jadwal_produksi_id', 'suhu_makanan_c', 'kebersihan_dapur', 'kebersihan_petugas', ...butirNames, 'catatan_organoleptik', 'sampel_disimpan', 'hasil', 'tindakan_korektif', 'catatan_koreksi'],
     ints: ['jadwal_produksi_id'],
     nums: ['suhu_makanan_c'],
-    bools: ['kebersihan_dapur', 'kebersihan_petugas', 'organoleptik_baik', 'sampel_disimpan'],
+    bools: ['kebersihan_dapur', 'kebersihan_petugas', ...butirNames, 'sampel_disimpan'],
     nullable: ['suhu_makanan_c', 'catatan_organoleptik', 'tindakan_korektif'],
   });
   if (mode === 'update') delete out.jadwal_produksi_id;
   if (out.hasil === 'layak') out.tindakan_korektif = null;
+  const lampiran = lampiranIdsPayload(values.lampiran_ids);
+  if (lampiran) out.lampiran_ids = lampiran;
   return out;
 };
 

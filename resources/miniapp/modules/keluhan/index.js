@@ -1,6 +1,7 @@
 // Feedback dan Keluhan (fitur 15, PBI 15). Mockup: Gambar 17 (form) dan Gambar 10 (keluhan kritis).
-// Foto keluhan belum didukung backend (foto_path tidak diterima), jadi tidak ada unggah foto.
+// Foto keluhan: unggah ke POST /lampiran lalu kirim lampiran_ids saat simpan (components/lampiran-field.js).
 import { defineCrudModule } from '../../components/crud-module.js';
+import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { rowCard } from '../../components/row-card.js';
 import { h } from '../../core/dom.js';
 import { api } from '../../core/api.js';
@@ -31,11 +32,22 @@ const batchField = {
   },
 };
 
+// Foto hanya pada form isi keluhan (baru, atau ubah oleh Admin); form tindak lanjut Kepala SPPG/Ahli Gizi tidak punya foto.
+const fotoField = ({ user, record }) => lampiranField({
+  modul: 'keluhan', label: 'Foto keluhan', existing: record?.lampiran || [],
+  // Admin wajib menyertakan sppg_id pada unggahan tertunda: ikut kolom SPPG di form (baru) atau SPPG record (ubah).
+  sppgId: () => (user?.role === 'admin' ? document.getElementById('f-sppg_id')?.value || record?.sppg_id || null : null),
+  help: 'Opsional, maks 5 foto (JPEG/PNG/WebP, maks 5 MB). Terunggah langsung; Simpan menunggu semua foto selesai.',
+});
+
 function fields({ mode, user, record }) {
   const f = keluhanFields({ mode, user, record });
-  if (mode !== 'create') return f;
-  const i = f.findIndex((x) => x.name === 'jadwal_produksi_id');
-  return [...f.slice(0, i + 1), batchField, ...f.slice(i + 1)];
+  if (mode === 'detail') return f;
+  const i = f.findIndex((x) => x.name === 'deskripsi');
+  const denganFoto = i < 0 ? f : [...f.slice(0, i + 1), fotoField({ user, record }), ...f.slice(i + 1)];
+  if (mode !== 'create') return denganFoto;
+  const j = denganFoto.findIndex((x) => x.name === 'jadwal_produksi_id');
+  return [...denganFoto.slice(0, j + 1), batchField, ...denganFoto.slice(j + 1)];
 }
 
 // ---- Atas form: peringatan prioritas (baru) / ringkasan keluhan (tindak lanjut) ----
@@ -117,6 +129,7 @@ export default defineCrudModule({
     if (p.U && transisiValid(rec.status).length && getUser()?.role !== 'admin') {
       nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/keluhan/${rec.id}/ubah` }, rec.status === 'baru' ? 'Proses keluhan' : 'Selesaikan / tolak dengan catatan'));
     }
+    if ((rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto keluhan' }));
     return nodes;
   },
 });

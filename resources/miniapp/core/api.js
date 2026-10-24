@@ -87,20 +87,56 @@ export async function request(method, path, { query, body, key, silent = false }
   }
   if (res.ok) return data;
 
-  const message = statusMessage(res.status, data?.message);
-  if (res.status === 401 && path !== '/auth/telegram') {
+  throw failFromResponse(res.status, data, path, silent);
+}
+
+/**
+ * Efek samping + ApiError untuk respons non-2xx (dipakai request() dan uploadMultipart()):
+ * 401 -> hapus token + minta login ulang; 403/5xx/lainnya -> toast kecuali silent; 422 ditampilkan oleh form.
+ */
+function failFromResponse(status, data, path, silent) {
+  const message = statusMessage(status, data?.message);
+  if (status === 401 && path !== '/auth/telegram') {
     setToken(null);
     bus.dispatchEvent(new Event('auth-required'));
-  } else if (res.status === 403) {
+  } else if (status === 403) {
     if (!silent) toast('Anda tidak punya hak akses.', 'error');
-  } else if (res.status === 422) {
+  } else if (status === 422) {
     /* ditampilkan di bawah kolom oleh form-view */
-  } else if (res.status >= 500) {
+  } else if (status >= 500) {
     if (!silent) toast('Terjadi gangguan pada server. Coba lagi nanti.', 'error');
-  } else if (!silent && res.status !== 401) {
+  } else if (!silent && status !== 401) {
     toast(message, 'error');
   }
-  throw new ApiError(res.status, res.status === 403 ? 'Anda tidak punya hak akses.' : message, data?.errors ?? null, data);
+  return new ApiError(status, status === 403 ? 'Anda tidak punya hak akses.' : message, data?.errors ?? null, data);
+}
+
+/**
+ * Unggah multipart dengan progres (XMLHttpRequest; fetch belum punya progres unggah).
+ * uploadMultipart(path, body, {key, onProgress(0..100), xhrFactory}) -> data JSON; galat -> ApiError
+ * yang sama dengan request() (status 0 = offline). Selalu silent: pemanggil menampilkan galatnya sendiri.
+ */
+export function uploadMultipart(path, body, { key, onProgress, xhrFactory = () => new XMLHttpRequest() } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = xhrFactory();
+    xhr.open('POST', BASE + path);
+    xhr.setRequestHeader('Accept', 'application/json');
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    if (key) xhr.setRequestHeader('Idempotency-Key', key);
+    if (xhr.upload) {
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable && e.total > 0) onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100)));
+      };
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'Tidak ada koneksi internet.'));
+    xhr.ontimeout = () => reject(new ApiError(0, 'Tidak ada koneksi internet.'));
+    xhr.onload = () => {
+      let data = null;
+      if (xhr.status !== 204) { try { data = JSON.parse(xhr.responseText); } catch { data = null; } }
+      if (xhr.status >= 200 && xhr.status < 300) { onProgress?.(100); resolve(data); } else reject(failFromResponse(xhr.status, data, path, true));
+    };
+    xhr.send(toFormData(body));
+  });
 }
 
 export const api = {
