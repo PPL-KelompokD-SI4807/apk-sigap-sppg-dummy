@@ -1,0 +1,105 @@
+schemas:
+  KategoriPengeluaran:
+    type: string
+    description: |
+      bahan_baku (belanja bahan), insentif_relawan (gaji/upah), energi (utilitas: gas/listrik/air),
+      transportasi (BBM/transport), peralatan, lainnya.
+    enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya]
+  PencairanDanaInput:
+    type: object
+    required: [periode, sumber_dana, nominal, tanggal_cair]
+    properties:
+      periode: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', examples: ['2026-11'] }
+      sumber_dana: { type: string, maxLength: 100, examples: ['BGN Tahap I'] }
+      nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
+      tanggal_cair: { type: string, format: date, description: Tidak boleh di masa depan. }
+      no_referensi: { type: [string, 'null'], maxLength: 50 }
+      catatan: { type: [string, 'null'], maxLength: 2000 }
+      bukti: { type: string, format: binary, description: 'Opsional (multipart): foto bukti transfer.' }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  PencairanDana:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      periode: { type: string }
+      sumber_dana: { type: string }
+      nominal: { type: integer }
+      tanggal_cair: { type: string, format: date }
+      no_referensi: { type: [string, 'null'] }
+      catatan: { type: [string, 'null'] }
+      bukti: { $ref: '#/components/schemas/BerkasRingkas' }
+      lampiran:
+        type: array
+        items: { $ref: '#/components/schemas/Lampiran' }
+      dicatat_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  PengeluaranInput:
+    type: object
+    required: [tanggal, kategori, uraian, nominal]
+    properties:
+      tanggal: { type: string, format: date, description: 'Tidak boleh di masa depan; periode = bulan tanggal.' }
+      kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+      uraian: { type: string, maxLength: 255 }
+      nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
+      pemasok_id: { type: [integer, 'null'], description: Pemasok SPPG sendiri. }
+      pencairan_dana_id: { type: [integer, 'null'], description: Pencairan SPPG sendiri (opsional). }
+      nota: { type: string, format: binary, description: 'Opsional (multipart): foto nota.' }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  Pengeluaran:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      periode: { type: string, examples: ['2026-11'] }
+      tanggal: { type: string, format: date }
+      kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+      kategori_label: { type: string }
+      uraian: { type: string }
+      nominal: { type: integer }
+      melebihi_anggaran: { type: boolean, description: 'Saat dicatat/diubah, nominal melebihi sisa anggaran periode.' }
+      pemasok:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          nama: { type: string }
+      pencairan_dana_id: { type: [integer, 'null'] }
+      nota: { $ref: '#/components/schemas/BerkasRingkas' }
+      lampiran:
+        type: array
+        items: { $ref: '#/components/schemas/Lampiran' }
+      dicatat_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  RingkasanKeuangan:
+    type: object
+    properties:
+      sppg_id: { type: integer }
+      periode: { type: string, examples: ['2026-11'] }
+      anggaran: { type: integer, description: Total pencairan periode. }
+      terpakai: { type: integer, description: Total pengeluaran bertanggal di bulan periode. }
+      sisa: { type: integer, description: 'anggaran - terpakai (boleh negatif).' }
+      persen: { type: [number, 'null'], description: 'Serapan %, null bila belum ada pencairan.' }
+      status: { type: string, enum: [belum_ada_anggaran, aman, peringatan, habis, melampaui] }
+      jumlah_pencairan: { type: integer }
+      jumlah_pengeluaran: { type: integer }
+      jumlah_melebihi_anggaran: { type: integer }
+      per_kategori:
+        type: array
+        items:
+          type: object
+          properties:
+            kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+            label: { type: string }
+            nominal: { type: integer }
+            jumlah: { type: integer }
+            persen: { type: [number, 'null'], description: '% dari terpakai.' }

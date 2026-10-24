@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Pengeluaran extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'pengeluarans';
 
@@ -28,6 +28,7 @@ class Pengeluaran extends Model
         'kategori',
         'uraian',
         'nominal',
+        'melebihi_anggaran',
         'nota_path',
     ];
 
@@ -38,6 +39,7 @@ class Pengeluaran extends Model
             'tanggal' => 'date:Y-m-d',
             'kategori' => KategoriPengeluaran::class,
             'nominal' => 'decimal:2',
+            'melebihi_anggaran' => 'boolean',
         ];
     }
 
