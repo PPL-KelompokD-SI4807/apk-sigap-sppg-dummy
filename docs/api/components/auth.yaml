@@ -1,0 +1,59 @@
+schemas:
+  Role:
+    type: string
+    enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan]
+  RelawanUnit:
+    type: [string, 'null']
+    enum: [dapur, distribusi, null]
+  ModuleSlug:
+    type: string
+    enum:
+      - pengguna
+      - notifikasi-perjalanan
+      - sppg
+      - titik-layanan
+      - penerima-manfaat
+      - bahan-baku
+      - pemasok
+      - menu-gizi
+      - jadwal
+      - log-produksi
+      - mutu
+      - armada
+      - bukti-distribusi
+      - keuangan
+      - keluhan
+      - rekap-harian
+  AuthUser:
+    type: object
+    required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions]
+    properties:
+      id: { type: integer, examples: [12] }
+      name: { type: string, examples: ['Siti Rahayu'] }
+      role: { $ref: '#/components/schemas/Role' }
+      role_label: { type: string, examples: ['Kepala SPPG'] }
+      unit: { $ref: '#/components/schemas/RelawanUnit' }
+      sppg_id: { type: [integer, 'null'], description: 'null untuk Admin (lintas SPPG)' }
+      sppg_name: { type: [string, 'null'], examples: ['SPPG Sukamaju'] }
+      telegram_username: { type: [string, 'null'] }
+      last_login_at: { type: [string, 'null'], format: date-time }
+      modules:
+        type: array
+        description: Slug modul yang punya minimal satu hak (untuk menu Mini App).
+        items: { $ref: '#/components/schemas/ModuleSlug' }
+      permissions:
+        type: object
+        description: |
+          Huruf efektif per modul setelah aturan unit relawan (C/R/U/D). Tanda "*" = hanya
+          record milik sendiri (mis. pengguna "R*" = profil sendiri). Modul tanpa hak tidak muncul.
+        additionalProperties: { type: string, pattern: '^C?R?\*?U?D?$' }
+        examples:
+          - { sppg: RU, jadwal: CRUD, keuangan: R, pengguna: R }
+  LoginResponse:
+    type: object
+    required: [token, token_type, expires_at, user]
+    properties:
+      token: { type: string, examples: ['1|q8Vx...'] }
+      token_type: { type: string, const: Bearer }
+      expires_at: { type: [string, 'null'], format: date-time }
+      user: { $ref: '#/components/schemas/AuthUser' }

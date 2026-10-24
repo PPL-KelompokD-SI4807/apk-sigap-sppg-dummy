@@ -37,7 +37,8 @@ return [
     |
     */
 
-    'guard' => ['web'],
+    // SiGAP hanya memakai token Bearer (Mini App); autentikasi sesi/cookie dinonaktifkan.
+    'guard' => [],
 
     /*
     |--------------------------------------------------------------------------
@@ -50,7 +51,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // FR-01/NFR-04: token sesi berlaku 8 jam (480 menit).
+    'expiration' => (int) env('SANCTUM_EXPIRATION', 480),
 
     /*
     |--------------------------------------------------------------------------

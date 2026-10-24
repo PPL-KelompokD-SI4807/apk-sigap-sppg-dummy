@@ -19,6 +19,9 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!-- Kunci khusus tes (acak, bukan rahasia; JANGAN dipakai di lingkungan lain). -->
+        <env name="APP_KEY" value="base64:c2lnYXAtc3BwZy10ZXN0LWtleS1ub3Qtc2VjcmV0ISE="/>
+        <env name="APP_DEBUG" value="false"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
@@ -30,6 +33,13 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
+        <env name="SANCTUM_EXPIRATION" value="480"/>
+        <!-- Token bot palsu khusus tes (format mirip asli, tidak valid di Telegram). -->
+        <env name="TELEGRAM_BOT_TOKEN" value="123456789:TEST-ONLY-NOT-A-REAL-BOT-TOKEN-sigap"/>
+        <env name="TELEGRAM_BOT_USERNAME" value="sigap_test_bot"/>
+        <env name="TELEGRAM_WEBHOOK_SECRET" value="test-webhook-secret"/>
+        <env name="TELEGRAM_INIT_DATA_MAX_AGE" value="86400"/>
+        <env name="TELEGRAM_DEV_BYPASS" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
     </php>

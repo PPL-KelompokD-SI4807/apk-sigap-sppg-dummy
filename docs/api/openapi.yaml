@@ -1,0 +1,312 @@
+# BERKAS DIHASILKAN OTOMATIS oleh docs/api/build-openapi.php. Jangan edit langsung;
+# ubah docs/api/base.yaml, docs/api/paths/*.yaml, atau docs/api/components/*.yaml.
+openapi: 3.1.0
+info:
+  title: SiGAP SPPG API
+  version: 1.0.0
+  description: |
+    REST API backend SiGAP SPPG untuk Telegram Mini App.
+    Autentikasi: tukar Telegram.WebApp.initData dengan token Bearer (Sanctum, 8 jam) melalui
+    POST /auth/telegram, lalu kirim header `Authorization: Bearer <token>`.
+    Otorisasi mengikuti matriks CRUD Tabel 5 (config/rbac.php) dan dibatasi SPPG pengguna
+    (kecuali Admin). Galat selalu berbentuk `{message, errors?}`.
+    BERKAS INI DIHASILKAN oleh docs/api/build-openapi.php — jangan diedit langsung.
+servers:
+  - url: /api/v1
+    description: Relatif terhadap domain aplikasi
+  - url: http://localhost:8080/api/v1
+    description: Docker Compose lokal
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+    description: Login Telegram (initData) dan sesi token
+paths:
+  /auth/telegram:
+    post:
+      tags: [Auth]
+      summary: Tukar initData Telegram dengan token Bearer
+      description: |
+        Memvalidasi HMAC-SHA256 initData (secret = HMAC_SHA256("WebAppData", bot_token)),
+        auth_date (maks TELEGRAM_INIT_DATA_MAX_AGE detik, tidak boleh >60 dtk di masa depan),
+        lalu mencocokkan user.id dengan akun aktif. Token lama untuk `device` yang sama dicabut.
+        Batas laju 10/menit per IP. Bypass dev `init_data=dev_role=<role>` hanya di APP_ENV
+        local/testing dengan TELEGRAM_DEV_BYPASS=true.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [init_data]
+              properties:
+                init_data:
+                  type: string
+                  maxLength: 8192
+                  description: Telegram.WebApp.initData apa adanya (query string).
+                device:
+                  type: string
+                  maxLength: 64
+                  pattern: '^[A-Za-z0-9._-]+$'
+                  default: miniapp
+            example:
+              init_data: 'query_id=AAH...&user=%7B%22id%22%3A7012345678%2C%22first_name%22%3A%22Siti%22%7D&auth_date=1793000000&signature=...&hash=5f2c...'
+      responses:
+        '200':
+          description: Login berhasil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+              example:
+                token: '1|q8VxS2...'
+                token_type: Bearer
+                expires_at: '2026-10-26T15:30:00+07:00'
+                user:
+                  id: 12
+                  name: Siti Rahayu
+                  role: kepala_sppg
+                  role_label: Kepala SPPG
+                  unit: null
+                  sppg_id: 1
+                  sppg_name: SPPG Sukamaju
+                  telegram_username: siti_rahayu
+                  last_login_at: '2026-10-26T07:30:00+07:00'
+                  modules: [pengguna, notifikasi-perjalanan, sppg, titik-layanan, penerima-manfaat, bahan-baku, pemasok, menu-gizi, jadwal, log-produksi, mutu, armada, bukti-distribusi, keuangan, keluhan, rekap-harian]
+                  permissions: { pengguna: R, sppg: RU, jadwal: CRUD, keuangan: R }
+        '401':
+          description: initData tidak sah, kedaluwarsa, atau waktu di masa depan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                hash: { value: { message: 'Tanda tangan initData tidak valid.' } }
+                expired: { value: { message: 'initData kedaluwarsa. Tutup lalu buka ulang Mini App.' } }
+        '403':
+          description: Akun Telegram belum terdaftar, nonaktif, atau terhapus.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                unregistered: { value: { message: 'Akun Telegram Anda belum terdaftar di SiGAP SPPG. Minta tautan undangan (t.me/<bot>?start=<token>) kepada Admin, buka tautan tersebut di Telegram, lalu buka ulang Mini App.' } }
+                inactive: { value: { message: 'Akun Anda nonaktif. Hubungi Admin SPPG.' } }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Profil pengguna login dan hak akses efektif
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/AuthUser' }
+                  expires_at: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Cabut token yang sedang dipakai
+      responses:
+        '200':
+          description: Token dicabut
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { message: 'Berhasil keluar.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token Sanctum dari POST /auth/telegram (berlaku 480 menit).
+  schemas:
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          examples: ['Anda tidak memiliki hak akses untuk tindakan ini.']
+    ValidationError:
+      type: object
+      required: [message, errors]
+      properties:
+        message:
+          type: string
+          examples: ['Data yang dikirim tidak valid.']
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          examples:
+            - init_data: ['init_data wajib diisi (Telegram.WebApp.initData).']
+    PaginationLinks:
+      type: object
+      properties:
+        first: { type: [string, 'null'], format: uri }
+        last: { type: [string, 'null'], format: uri }
+        prev: { type: [string, 'null'], format: uri }
+        next: { type: [string, 'null'], format: uri }
+    PaginationMeta:
+      type: object
+      properties:
+        current_page: { type: integer }
+        from: { type: [integer, 'null'] }
+        last_page: { type: integer }
+        path: { type: string }
+        per_page: { type: integer, maximum: 100 }
+        to: { type: [integer, 'null'] }
+        total: { type: integer }
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              url: { type: [string, 'null'] }
+              label: { type: string }
+              active: { type: boolean }
+    Paginated:
+      description: |
+        Bentuk daftar berpaginasi (Resource::collection($paginator)). Pakai dengan allOf dan
+        timpa `data.items` dengan skema modul.
+      type: object
+      required: [data, links, meta]
+      properties:
+        data:
+          type: array
+          items: {}
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    Role:
+      type: string
+      enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan]
+    RelawanUnit:
+      type: [string, 'null']
+      enum: [dapur, distribusi, null]
+    ModuleSlug:
+      type: string
+      enum:
+        - pengguna
+        - notifikasi-perjalanan
+        - sppg
+        - titik-layanan
+        - penerima-manfaat
+        - bahan-baku
+        - pemasok
+        - menu-gizi
+        - jadwal
+        - log-produksi
+        - mutu
+        - armada
+        - bukti-distribusi
+        - keuangan
+        - keluhan
+        - rekap-harian
+    AuthUser:
+      type: object
+      required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions]
+      properties:
+        id: { type: integer, examples: [12] }
+        name: { type: string, examples: ['Siti Rahayu'] }
+        role: { $ref: '#/components/schemas/Role' }
+        role_label: { type: string, examples: ['Kepala SPPG'] }
+        unit: { $ref: '#/components/schemas/RelawanUnit' }
+        sppg_id: { type: [integer, 'null'], description: 'null untuk Admin (lintas SPPG)' }
+        sppg_name: { type: [string, 'null'], examples: ['SPPG Sukamaju'] }
+        telegram_username: { type: [string, 'null'] }
+        last_login_at: { type: [string, 'null'], format: date-time }
+        modules:
+          type: array
+          description: Slug modul yang punya minimal satu hak (untuk menu Mini App).
+          items: { $ref: '#/components/schemas/ModuleSlug' }
+        permissions:
+          type: object
+          description: |
+            Huruf efektif per modul setelah aturan unit relawan (C/R/U/D). Tanda "*" = hanya
+            record milik sendiri (mis. pengguna "R*" = profil sendiri). Modul tanpa hak tidak muncul.
+          additionalProperties: { type: string, pattern: '^C?R?\*?U?D?$' }
+          examples:
+            - { sppg: RU, jadwal: CRUD, keuangan: R, pengguna: R }
+    LoginResponse:
+      type: object
+      required: [token, token_type, expires_at, user]
+      properties:
+        token: { type: string, examples: ['1|q8Vx...'] }
+        token_type: { type: string, const: Bearer }
+        expires_at: { type: [string, 'null'], format: date-time }
+        user: { $ref: '#/components/schemas/AuthUser' }
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      description: Jumlah per halaman (maks 100).
+      schema: { type: integer, minimum: 1, maximum: 100, default: 15 }
+    Search:
+      name: q
+      in: query
+      description: Kata kunci pencarian (maks 100 karakter).
+      schema: { type: string, maxLength: 100 }
+    DateFrom:
+      name: from
+      in: query
+      schema: { type: string, format: date }
+    DateTo:
+      name: to
+      in: query
+      schema: { type: string, format: date }
+  responses:
+    Unauthorized:
+      description: Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' }
+    Forbidden:
+      description: Peran tidak memiliki hak (Tabel 5) atau akun nonaktif.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Anda tidak memiliki hak akses untuk tindakan ini.' }
+    NotFound:
+      description: Data tidak ada atau milik SPPG lain.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Data tidak ditemukan.' }
+    ValidationFailed:
+      description: Validasi Form Request gagal.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+    TooManyRequests:
+      description: Batas laju terlampaui (API 60/menit per pengguna; login 10/menit per IP).
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Terlalu banyak permintaan. Coba lagi sebentar lagi.' }
+    ServerError:
+      description: Galat internal (detail tidak pernah dikirim di production).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Terjadi kesalahan pada server.' }

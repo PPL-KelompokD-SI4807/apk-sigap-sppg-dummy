@@ -1,0 +1,100 @@
+/auth/telegram:
+  post:
+    tags: [Auth]
+    summary: Tukar initData Telegram dengan token Bearer
+    description: |
+      Memvalidasi HMAC-SHA256 initData (secret = HMAC_SHA256("WebAppData", bot_token)),
+      auth_date (maks TELEGRAM_INIT_DATA_MAX_AGE detik, tidak boleh >60 dtk di masa depan),
+      lalu mencocokkan user.id dengan akun aktif. Token lama untuk `device` yang sama dicabut.
+      Batas laju 10/menit per IP. Bypass dev `init_data=dev_role=<role>` hanya di APP_ENV
+      local/testing dengan TELEGRAM_DEV_BYPASS=true.
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [init_data]
+            properties:
+              init_data:
+                type: string
+                maxLength: 8192
+                description: Telegram.WebApp.initData apa adanya (query string).
+              device:
+                type: string
+                maxLength: 64
+                pattern: '^[A-Za-z0-9._-]+$'
+                default: miniapp
+          example:
+            init_data: 'query_id=AAH...&user=%7B%22id%22%3A7012345678%2C%22first_name%22%3A%22Siti%22%7D&auth_date=1793000000&signature=...&hash=5f2c...'
+    responses:
+      '200':
+        description: Login berhasil
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginResponse' }
+            example:
+              token: '1|q8VxS2...'
+              token_type: Bearer
+              expires_at: '2026-10-26T15:30:00+07:00'
+              user:
+                id: 12
+                name: Siti Rahayu
+                role: kepala_sppg
+                role_label: Kepala SPPG
+                unit: null
+                sppg_id: 1
+                sppg_name: SPPG Sukamaju
+                telegram_username: siti_rahayu
+                last_login_at: '2026-10-26T07:30:00+07:00'
+                modules: [pengguna, notifikasi-perjalanan, sppg, titik-layanan, penerima-manfaat, bahan-baku, pemasok, menu-gizi, jadwal, log-produksi, mutu, armada, bukti-distribusi, keuangan, keluhan, rekap-harian]
+                permissions: { pengguna: R, sppg: RU, jadwal: CRUD, keuangan: R }
+      '401':
+        description: initData tidak sah, kedaluwarsa, atau waktu di masa depan.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              hash: { value: { message: 'Tanda tangan initData tidak valid.' } }
+              expired: { value: { message: 'initData kedaluwarsa. Tutup lalu buka ulang Mini App.' } }
+      '403':
+        description: Akun Telegram belum terdaftar, nonaktif, atau terhapus.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              unregistered: { value: { message: 'Akun Telegram Anda belum terdaftar di SiGAP SPPG. Minta tautan undangan (t.me/<bot>?start=<token>) kepada Admin, buka tautan tersebut di Telegram, lalu buka ulang Mini App.' } }
+              inactive: { value: { message: 'Akun Anda nonaktif. Hubungi Admin SPPG.' } }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/auth/me:
+  get:
+    tags: [Auth]
+    summary: Profil pengguna login dan hak akses efektif
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user]
+              properties:
+                user: { $ref: '#/components/schemas/AuthUser' }
+                expires_at: { type: [string, 'null'], format: date-time }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/auth/logout:
+  post:
+    tags: [Auth]
+    summary: Cabut token yang sedang dipakai
+    responses:
+      '200':
+        description: Token dicabut
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { message: 'Berhasil keluar.' }
+      '401': { $ref: '#/components/responses/Unauthorized' }

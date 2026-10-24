@@ -28,7 +28,8 @@ trait Auditable
 
         static::updated(function (Model $model): void {
             $changes = $model->auditFilter($model->getChanges());
-            unset($changes['updated_at']);
+            // deleted_at dicatat lewat event deleted/restored, bukan updated.
+            unset($changes['updated_at'], $changes['deleted_at']);
 
             if ($changes === []) {
                 return;

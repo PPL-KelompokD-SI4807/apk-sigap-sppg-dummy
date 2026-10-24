@@ -2,15 +2,30 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToSppg;
 use Closure;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use LogicException;
 
+/**
+ * Log audit append-only (kontrak fondasi auth/RBAC). Ditulis oleh trait Auditable.
+ *
+ * - Terisolasi per SPPG lewat BelongsToSppg (admin lintas SPPG).
+ * - Tidak boleh diubah atau dihapus (updating/deleting melempar LogicException).
+ * - Jangan pernah membuat AuditLog dari input request.
+ *
+ * @property int $id
+ * @property int|null $sppg_id
+ * @property int|null $user_id
+ * @property string $event
+ * @property string $sumber
+ */
 class AuditLog extends Model
 {
-    use HasFactory;
+    use BelongsToSppg, HasFactory;
 
     protected $table = 'audit_logs';
 
@@ -37,17 +52,20 @@ class AuditLog extends Model
         return [
             'old_values' => 'array',
             'new_values' => 'array',
+            'auditable_id' => 'integer',
+            'user_id' => 'integer',
         ];
     }
 
-    public function sppg(): BelongsTo
+    protected static function booted(): void
     {
-        return $this->belongsTo(Sppg::class);
+        static::updating(fn () => throw new LogicException('Log audit tidak boleh diubah.'));
+        static::deleting(fn () => throw new LogicException('Log audit tidak boleh dihapus.'));
     }
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 
     public function auditable(): MorphTo
@@ -61,7 +79,7 @@ class AuditLog extends Model
     }
 
     /**
-     * Jalankan callback dengan sumber audit tertentu (mis. 'ai' saat draf dikonfirmasi).
+     * Jalankan callback dengan sumber audit tertentu (mis. 'ai' saat draf dikonfirmasi, 'bot').
      *
      * @template T
      *
