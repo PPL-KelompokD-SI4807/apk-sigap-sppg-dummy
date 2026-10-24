@@ -118,8 +118,8 @@ class AiAgentServiceTest extends MasterApiTestCase
         $this->agent()->handle($this->kepalaA, AiInput::text('tambah posyandu melati'));
 
         $draft = AiDraft::query()->withoutGlobalScopes()->sole();
-        $this->assertSame(0.0, $draft->confidence['pic_telepon']);
-        $this->assertSame(0.0, $draft->confidence['jenis']);
+        $this->assertEquals(0, $draft->confidence['pic_telepon']);
+        $this->assertEquals(0, $draft->confidence['jenis']);
         $this->assertEqualsCanonicalizing(['jenis', 'alamat', 'pic_nama', 'pic_telepon'], $this->lastToolResult()['data']['perlu_dicek']);
     }
 

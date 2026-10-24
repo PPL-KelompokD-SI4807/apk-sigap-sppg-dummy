@@ -284,10 +284,15 @@ class DomainEventNotifications
     private function distribusiTerlambat(string $name, int $sppgId, array $p): NotificationMessage
     {
         $menit = $this->int($p, 'menitKeterlambatan', 'menit_keterlambatan');
+        $tiba = $this->str($p, 'waktuTiba', 'waktu_tiba');
+        $acuan = $this->str($p, 'acuanTiba', 'acuan_tiba');
+
         $html = sprintf(
-            "<b>Bukti distribusi terlambat</b>\nJadwal distribusi ke %s belum memiliki bukti serah terima%s.",
+            "<b>Distribusi terlambat</b>\n%s: tiba %s WIB%s%s.",
             $this->e($this->str($p, 'titikLayananNama', 'titik_layanan_nama')),
-            $menit ? " ({$menit} menit melewati rencana)" : '',
+            $this->e($this->time($tiba)),
+            $menit ? ", terlambat {$menit} menit" : '',
+            $acuan !== '' ? ' dari acuan '.$this->e($this->time($acuan)).' WIB' : '',
         );
 
         $key = "distribusi_terlambat:{$sppgId}:".$this->int($p, 'jadwalDistribusiId', 'jadwal_distribusi_id', 'id');
@@ -299,20 +304,29 @@ class DomainEventNotifications
     private function anggaran(string $name, int $sppgId, array $p): NotificationMessage
     {
         $periode = $this->str($p, 'periode');
-        $persen = $this->num($p, 'persentase', 'serapanPersen', 'serapan_persen');
-        $sisa = $this->num($p, 'sisaAnggaran', 'sisa_anggaran', 'sisa');
+        $persen = $this->num($p, 'persen', 'persentase', 'serapanPersen', 'serapan_persen');
+        $anggaran = $this->num($p, 'anggaran', 'totalPencairan');
+        $terpakai = $this->num($p, 'terpakai', 'totalPengeluaran');
+        $sisaRaw = $this->int($p, 'sisa', 'sisaAnggaran', 'sisa_anggaran');
         $judul = match ($name) {
             'AnggaranMencapai80' => 'Serapan anggaran mencapai 80%',
             'AnggaranMencapai100' => 'Serapan anggaran mencapai 100%',
             default => 'Pengeluaran MELAMPAUI dana pencairan',
         };
 
+        $sisa = match (true) {
+            $sisaRaw === null => '',
+            $sisaRaw < 0 => ', kelebihan Rp '.$this->e($this->fmt(abs($sisaRaw))),
+            default => ', sisa Rp '.$this->e($this->fmt($sisaRaw)),
+        };
+
         $html = sprintf(
-            "<b>%s</b>\nPeriode %s: serapan %s%%%s.",
+            "<b>%s</b>\nPeriode %s: serapan %s%%%s%s.",
             $judul,
             $this->e($periode),
             $this->e($persen !== '' ? $persen : '-'),
-            $sisa !== '' ? ', sisa anggaran Rp '.$this->e($sisa) : '',
+            $terpakai !== '' && $anggaran !== '' ? ' (Rp '.$this->e($terpakai).' dari Rp '.$this->e($anggaran).')' : '',
+            $sisa,
         );
 
         return $this->message($name, $sppgId, "{$name}:{$sppgId}:{$periode}", $html, 'Buka Keuangan', '/keuangan');
