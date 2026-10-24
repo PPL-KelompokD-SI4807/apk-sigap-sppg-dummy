@@ -394,3 +394,28 @@ test('flushQueue: 409/429 dicoba ulang dengan backoff dan tidak dibuang; 422 dib
   await flushQueue(e.deps);
   assert.equal(e.sisa.size, 1);
 });
+
+// ---------- router: hash bawaan Telegram ----------
+test('parseHashString: hanya "#/..." yang menjadi rute; hash lain (tgWebApp*) = beranda', async () => {
+  const { parseHashString } = await import('../core/router.js');
+  const beranda = (hash) => {
+    const r = parseHashString(hash);
+    assert.equal(r.path, '/', hash);
+    assert.equal([...r.query].length, 0, hash);
+  };
+
+  beranda('#tgWebAppData=query_id%3DAAH%26user%3D%257B%2522id%2522%253A1%257D%26hash%3Dabc&tgWebAppVersion=8.0&tgWebAppPlatform=android');
+  beranda('#tgWebAppData=x?y=1');
+  beranda('#tgWebAppVersion=7.0&tgWebAppThemeParams=%7B%7D');
+  beranda('#');
+  beranda('');
+  beranda();
+  beranda('#jadwal');
+
+  assert.equal(parseHashString('#/').path, '/');
+  assert.equal(parseHashString('#/jadwal/12').path, '/jadwal/12');
+  const r = parseHashString('#/draf/abc?tab=2&x=y');
+  assert.equal(r.path, '/draf/abc');
+  assert.equal(r.query.get('tab'), '2');
+  assert.equal(r.query.get('x'), 'y');
+});
