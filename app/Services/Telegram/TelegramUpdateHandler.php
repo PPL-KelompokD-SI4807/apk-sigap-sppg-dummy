@@ -2,6 +2,7 @@
 
 namespace App\Services\Telegram;
 
+use App\Enums\Role;
 use App\Enums\TipeUndangan;
 use App\Jobs\ProcessAiMessage;
 use App\Models\Scopes\SppgScope;
@@ -173,9 +174,12 @@ class TelegramUpdateHandler
 
     private function greet(int $chatId, User $user, string $opening): void
     {
-        $sppg = $user->sppg_id === null
-            ? 'semua SPPG'
-            : (string) (Sppg::query()->withoutGlobalScopes()->whereKey($user->sppg_id)->value('nama') ?? 'SPPG Anda');
+        // R06a-S-07: investor (sppg_id null) tidak lintas SPPG; SPPG aktif dipilih di Mini App.
+        $sppg = match (true) {
+            $user->role === Role::Investor => 'SPPG milik Anda (pilih di Mini App)',
+            $user->sppg_id === null => 'semua SPPG',
+            default => (string) (Sppg::query()->withoutGlobalScopes()->whereKey($user->sppg_id)->value('nama') ?? 'SPPG Anda'),
+        };
         $unit = $user->unit !== null ? ' unit '.$user->unit->label() : '';
 
         $html = sprintf(

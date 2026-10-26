@@ -294,12 +294,14 @@ final class CatalogDefinitions
                 marker: 'pengeluaran',
             ),
 
-            // 15. Data Feedback dan Keluhan (deskripsi ditulis pengguna lain: DATA tak tepercaya).
+            // 15. Data Feedback dan Keluhan (deskripsi ditulis pengguna lain: DATA tak tepercaya). Deskripsi dan
+            // tindak lanjut dapat memuat nama anak/kontak (R06a-S-05): ke LLM hanya versi tersamar + terpotong.
             new ResourceSpec(
                 key: 'keluhan', module: 'keluhan', label: 'feedback dan keluhan', model: FeedbackKeluhan::class,
                 search: ['deskripsi', 'titikLayanan.nama'],
                 list: ['id', 'sumber', 'kategori', 'prioritas', 'status', 'titik_layanan' => 'titikLayanan.nama', 'deskripsi', 'created_at'],
                 detail: ['tindak_lanjut'],
+                personalText: ['deskripsi', 'tindak_lanjut'],
                 filters: [
                     'status' => ['type' => 'string', 'enum' => self::values(StatusKeluhan::class)],
                     'prioritas' => ['type' => 'string', 'enum' => self::values(PrioritasKeluhan::class)],

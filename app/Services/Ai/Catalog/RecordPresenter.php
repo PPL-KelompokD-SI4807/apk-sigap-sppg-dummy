@@ -26,6 +26,32 @@ final class RecordPresenter
 
     public const MAX_TEXT_DETAIL = 1000;
 
+    /** Batas teks bebas yang dapat memuat data pribadi (deskripsi keluhan) setelah disamarkan. */
+    public const MAX_TEXT_PERSONAL = 160;
+
+    /** Penanda pengganti data kontak/angka panjang pada teks bebas yang disamarkan. */
+    public const REDACTED = '[disamarkan]';
+
+    /**
+     * Kata berhuruf awal kapital yang BUKAN nama orang dan tetap ditampilkan utuh (huruf kecil dibandingkan):
+     * kata umum pembuka kalimat keluhan, sapaan/peran, nama hari/bulan, dan singkatan lembaga.
+     */
+    private const KATA_UMUM = [
+        'ada', 'anak', 'saya', 'kami', 'kita', 'mereka', 'dia', 'beliau', 'kemarin', 'tadi', 'hari', 'ini', 'itu', 'pagi', 'siang', 'sore',
+        'malam', 'nasi', 'sayur', 'sayuran', 'lauk', 'buah', 'susu', 'roti', 'telur', 'ayam', 'ikan', 'tahu', 'tempe', 'daging', 'sambal',
+        'kuah', 'sup', 'air', 'minum', 'minuman', 'makanan', 'makan', 'menu', 'porsi', 'rasa', 'rasanya', 'bau', 'aroma', 'basi', 'mentah',
+        'dingin', 'panas', 'asin', 'hambar', 'pedas', 'keras', 'lembek', 'kurang', 'terlalu', 'tidak', 'belum', 'sudah', 'masih', 'mohon',
+        'tolong', 'terima', 'kasih', 'ibu', 'bapak', 'pak', 'bu', 'kak', 'adik', 'siswa', 'siswi', 'murid', 'guru', 'kepala', 'sekolah',
+        'kelas', 'orang', 'tua', 'wali', 'petugas', 'relawan', 'sopir', 'pengemudi', 'mobil', 'kendaraan', 'terlambat', 'telat', 'jam',
+        'wadah', 'ompreng', 'kotak', 'tempat', 'beberapa', 'banyak', 'sedikit', 'semua', 'sebagian', 'ditemukan', 'terdapat', 'keluhan',
+        'laporan', 'mual', 'muntah', 'sakit', 'perut', 'pusing', 'diare', 'gatal', 'dan', 'atau', 'karena', 'setelah', 'sebelum', 'saat',
+        'ketika', 'namun', 'tetapi', 'tapi', 'juga', 'lalu', 'kemudian', 'pada', 'di', 'ke', 'dari', 'untuk', 'dengan', 'yang', 'agar',
+        'supaya', 'harap', 'segera', 'perlu', 'bisa', 'dapat', 'mau', 'akan', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu',
+        'minggu', 'januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november',
+        'desember', 'sd', 'sdn', 'smp', 'smpn', 'sma', 'sman', 'smk', 'smkn', 'mi', 'min', 'mts', 'mtsn', 'ma', 'man', 'tk', 'paud',
+        'kb', 'posyandu', 'puskesmas', 'uks', 'mbg', 'sppg', 'bgn', 'rt', 'rw', 'ok', 'wib',
+    ];
+
     /** @param array<int|string, string> $columns */
     public static function assertSafe(array $columns): void
     {
@@ -42,7 +68,7 @@ final class RecordPresenter
      * @param  array<int|string, string>  $columns
      * @return array<string, mixed>
      */
-    public static function present(Model $model, array $columns, array $rupiah = [], int $maxText = self::MAX_TEXT, array $initials = []): array
+    public static function present(Model $model, array $columns, array $rupiah = [], int $maxText = self::MAX_TEXT, array $initials = [], array $personalText = []): array
     {
         $out = [];
 
@@ -53,6 +79,12 @@ final class RecordPresenter
 
             if (in_array($name, $initials, true)) {
                 $out[$name] = is_string($value) ? self::initials($value) : null;
+
+                continue;
+            }
+
+            if (in_array($name, $personalText, true)) {
+                $out[$name] = is_string($value) ? self::text(self::redactPersonal($value), min($maxText, self::MAX_TEXT_PERSONAL)) : null;
 
                 continue;
             }
@@ -120,6 +152,25 @@ final class RecordPresenter
         }
 
         return implode('', array_map(fn (string $w) => mb_strtoupper(mb_substr($w, 0, 1)).'.', array_slice($words, 0, 4)));
+    }
+
+    /**
+     * Samarkan data pribadi pada teks bebas sebelum dikirim ke LLM (R06a-S-05, mis. deskripsi keluhan yang
+     * ditulis wali/guru dan dapat memuat nama anak): email, URL, dan deret angka >= 6 digit (telepon/NIK)
+     * menjadi REDACTED; kata berhuruf awal kapital yang bukan kata umum (kemungkinan nama orang) menjadi
+     * inisial, mis. "Budi Santoso muntah" -> "B. S. muntah". Upaya terbaik: teks lengkap hanya di Mini App.
+     */
+    public static function redactPersonal(string $value): string
+    {
+        $value = (string) preg_replace('/[\p{L}\p{N}._%+\-]+@[\p{L}\p{N}.\-]+\.\p{L}{2,}/u', self::REDACTED, $value);
+        $value = (string) preg_replace('#\b(?:https?://|www\.)\S+#iu', self::REDACTED, $value);
+        $value = (string) preg_replace('/\+?\d(?:[\s.\-]?\d){5,}/u', self::REDACTED, $value);
+
+        return (string) preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
+            $kata = $m[0];
+
+            return in_array(mb_strtolower($kata), self::KATA_UMUM, true) ? $kata : mb_substr($kata, 0, 1).'.';
+        }, $value);
     }
 
     /** Teks aman: tanpa karakter kontrol & penanda blok data palsu, spasi dirapikan, dipotong. */
