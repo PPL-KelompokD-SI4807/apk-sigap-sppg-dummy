@@ -15,8 +15,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * Pipeline chat -> Agen AI (dijalankan job ProcessAiMessage):
  *   teks  -> AiInput teks;
- *   foto  -> unduh ukuran terbesar <= batas, verifikasi MIME aktual (JPEG/PNG/WebP), kirim ke LLM
- *            sebagai lampiran gambar (OCR nota/surat jalan oleh LLM); caption = teks;
+ *   foto  -> bila penyedia tidak mendukung gambar (LLM_VISION_MODEL kosong): balasan ramah + tombol
+ *            formulir TANPA mengunduh; selain itu unduh ukuran terbesar <= batas, verifikasi MIME aktual
+ *            (JPEG/PNG/WebP), kirim ke agen sebagai lampiran gambar (dibaca LLM/model vision); caption = teks;
  *   suara -> SpeechToTextService (Null = "belum didukung") -> transkrip sebagai teks.
  * Balasan: teks POLOS (tanpa parse_mode) + tombol web_app "Periksa & Simpan" per draf.
  */
@@ -49,6 +50,12 @@ class AiChatHandler
                 return;
             }
 
+            if ($input instanceof AiReply) {
+                $this->deliver($chatId, $input);
+
+                return;
+            }
+
             $this->deliver($chatId, $this->agent->handle($user, $input));
         } finally {
             TelegramUpdateHandler::finish($update, 'ai');
@@ -57,9 +64,9 @@ class AiChatHandler
 
     /**
      * @param  array<string, mixed>  $message
-     * @return AiInput|string AiInput, atau string = balasan langsung (galat ramah)
+     * @return AiInput|AiReply|string AiInput, atau balasan langsung (string = galat ramah; AiReply = dengan tombol formulir)
      */
-    public function buildInput(array $message): AiInput|string
+    public function buildInput(array $message): AiInput|AiReply|string
     {
         $caption = is_string($message['caption'] ?? null) ? $message['caption'] : '';
 
@@ -75,8 +82,13 @@ class AiChatHandler
     }
 
     /** @param list<array<string, mixed>> $sizes */
-    private function photoInput(array $sizes, string $caption): AiInput|string
+    private function photoInput(array $sizes, string $caption): AiInput|AiReply|string
     {
+        // D6: model vision belum dikonfigurasi -> balas ramah SEBELUM mengunduh foto.
+        if (! $this->agent->acceptsImages()) {
+            return new AiReply('Membaca foto belum didukung. Silakan ketik isi nota/surat jalan, atau isi lewat formulir di Mini App.', fallback: true);
+        }
+
         $max = (int) config('ai.input.photo_max_bytes', 5 * 1024 * 1024);
         $candidates = array_filter($sizes, fn ($s) => is_array($s) && is_string($s['file_id'] ?? null)
             && (! isset($s['file_size']) || (int) $s['file_size'] <= $max));
