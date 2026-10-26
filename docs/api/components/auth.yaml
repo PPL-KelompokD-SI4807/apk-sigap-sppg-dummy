@@ -1,7 +1,8 @@
 schemas:
   Role:
     type: string
-    enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan]
+    enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan, investor]
+    description: 'investor (R-06a) = pemilik SPPG, baca saja, dapat memiliki banyak SPPG (sppg_id selalu null).'
   RelawanUnit:
     type: [string, 'null']
     enum: [dapur, distribusi, null]
@@ -34,8 +35,15 @@ schemas:
       role: { $ref: '#/components/schemas/Role' }
       role_label: { type: string, examples: ['Kepala SPPG'] }
       unit: { $ref: '#/components/schemas/RelawanUnit' }
-      sppg_id: { type: [integer, 'null'], description: 'null untuk Admin (lintas SPPG)' }
-      sppg_name: { type: [string, 'null'], examples: ['SPPG Sukamaju'] }
+      sppg_id: { type: [integer, 'null'], description: 'null untuk Admin (lintas SPPG) dan Investor (SPPG dari kepemilikan)' }
+      sppg_name: { type: [string, 'null'], examples: ['SPPG Sukamaju'], description: 'Nama SPPG aktif.' }
+      sppg_aktif_id: { type: [integer, 'null'], description: 'SPPG aktif permintaan ini (investor: header X-SPPG-Id / SPPG satu-satunya; null = belum dipilih atau Admin).' }
+      multi_sppg: { type: boolean, description: 'true = investor; Mini App wajib menampilkan pemilih SPPG (GET /sppg-saya) dan mengirim X-SPPG-Id.' }
+      baca_saja: { type: boolean, description: 'true = tidak punya hak C/U/D di modul mana pun (sembunyikan semua tombol tulis).' }
+      agregat:
+        type: array
+        description: Modul yang hanya boleh dibaca agregatnya (mis. investor -> penerima-manfaat lewat GET /penerima-manfaat/agregat).
+        items: { $ref: '#/components/schemas/ModuleSlug' }
       telegram_username: { type: [string, 'null'] }
       last_login_at: { type: [string, 'null'], format: date-time }
       modules:

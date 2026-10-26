@@ -1,0 +1,164 @@
+/sppg-saya:
+  get:
+    tags: [SPPG]
+    summary: Daftar SPPG yang boleh dipilih sebagai SPPG aktif (R-06a)
+    description: |
+      Investor: SPPG miliknya (pivot investor_sppg). Peran satu-SPPG: SPPG sendiri. Admin: semua SPPG.
+      Tetap dilayani walau investor belum memilih SPPG aktif. Header X-SPPG-Id yang tidak sah tetap 403.
+      `wajib_pilih` = true bila investor punya >1 SPPG dan belum mengirim header.
+    parameters:
+      - $ref: '#/components/parameters/SppgAktif'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data, sppg_aktif_id, wajib_pilih, header]
+              properties:
+                data:
+                  type: array
+                  items: { $ref: '#/components/schemas/SppgPilihan' }
+                sppg_aktif_id: { type: [integer, 'null'] }
+                wajib_pilih: { type: boolean }
+                header: { type: string, const: X-SPPG-Id }
+            example:
+              data:
+                - { id: 1, kode: SPPG-DEMO-02, nama: SPPG Kenanga Demo, status_operasional: aktif }
+                - { id: 2, kode: SPPG-DEMO-01, nama: SPPG Melati Demo, status_operasional: aktif }
+              sppg_aktif_id: null
+              wajib_pilih: true
+              header: X-SPPG-Id
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/SppgAktifDitolak' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/pengguna/{id}/kepemilikan-sppg:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Pengguna]
+    summary: Lihat kepemilikan SPPG investor (Admin)
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/KepemilikanSppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Pengguna]
+    summary: Ganti seluruh kepemilikan SPPG investor (Admin)
+    description: |
+      Hanya Admin. Target wajib berperan investor (422 pada `user`). `sppg_ids: []` mengosongkan.
+      Perubahan dicatat di audit_logs (event pengguna.kepemilikan_sppg_diubah) dan berlaku pada
+      permintaan berikutnya investor.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [sppg_ids]
+            properties:
+              sppg_ids: { type: array, maxItems: 100, items: { type: integer }, examples: [[1, 2]] }
+    responses:
+      '200':
+        description: Kepemilikan terbaru
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/KepemilikanSppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  post:
+    tags: [Pengguna]
+    summary: Tautkan satu SPPG ke investor (Admin, idempoten)
+    description: 'Sudah tertaut = 200 tanpa perubahan dan tanpa audit. Perubahan dicatat audit (pengguna.kepemilikan_sppg_diubah).'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [sppg_id]
+            properties:
+              sppg_id: { type: integer, examples: [2] }
+    responses:
+      '200':
+        description: Kepemilikan terbaru
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/KepemilikanSppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/pengguna/{id}/kepemilikan-sppg/{sppg_id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+    - { name: sppg_id, in: path, required: true, schema: { type: integer } }
+  delete:
+    tags: [Pengguna]
+    summary: Lepas satu SPPG dari investor (Admin, idempoten)
+    description: 'Tidak tertaut = 200 tanpa perubahan. Berlaku segera: header X-SPPG-Id ke SPPG itu menjadi 403 sppg_aktif_ditolak.'
+    responses:
+      '200':
+        description: Kepemilikan terbaru
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/KepemilikanSppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/penerima-manfaat/agregat:
+  get:
+    tags: [Penerima Manfaat]
+    summary: Agregat penerima manfaat SPPG aktif (tanpa data pribadi)
+    description: |
+      Investor dan peran ber-hak R penerima manfaat (Admin, Kepala SPPG, Ahli Gizi). Admin wajib
+      `sppg_id`; peran lain memakai SPPG aktif. Hanya hitungan per kelompok sasaran dan titik layanan.
+    parameters:
+      - $ref: '#/components/parameters/SppgAktif'
+      - { name: sppg_id, in: query, description: 'Wajib untuk Admin; diabaikan peran lain.', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PenerimaManfaatAgregat' }
+            example:
+              data:
+                sppg_id: 1
+                total: 120
+                aktif: 118
+                per_kelompok_sasaran:
+                  - { kelompok_sasaran: siswa, label: Siswa, jumlah: 90 }
+                  - { kelompok_sasaran: balita, label: Balita, jumlah: 20 }
+                  - { kelompok_sasaran: ibu_hamil, label: Ibu Hamil, jumlah: 5 }
+                  - { kelompok_sasaran: ibu_menyusui, label: Ibu Menyusui, jumlah: 3 }
+                per_titik_layanan:
+                  - { titik_layanan_id: 4, nama: SDN Contoh 1, jumlah: 60 }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/SppgAktifDitolak' }
+      '409': { $ref: '#/components/responses/SppgAktifBelumDipilih' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

@@ -1,0 +1,86 @@
+schemas:
+  SppgAktifError:
+    type: object
+    required: [message, alasan]
+    description: |
+      Galat SPPG aktif (R-06a). `sppg_aktif_ditolak` (403): header X-SPPG-Id berisi SPPG yang
+      bukan milik investor / bukan SPPG pengguna / format salah — hapus pilihan tersimpan lalu ulangi
+      tanpa header atau pilih ulang dari GET /sppg-saya. `sppg_aktif_belum_dipilih` (409): investor
+      dengan >1 SPPG belum mengirim header. `tanpa_sppg` (403): investor belum memiliki SPPG.
+    properties:
+      message: { type: string }
+      alasan: { type: string, enum: [sppg_aktif_ditolak, sppg_aktif_belum_dipilih, tanpa_sppg] }
+      header: { type: string, const: X-SPPG-Id }
+      langkah: { type: string, const: pilih_sppg, description: 'Hanya pada sppg_aktif_belum_dipilih.' }
+  SppgPilihan:
+    type: object
+    required: [id, kode, nama, status_operasional]
+    properties:
+      id: { type: integer, examples: [3] }
+      kode: { type: string, examples: ['SPPG-DEMO-01'] }
+      nama: { type: string, examples: ['SPPG Melati Demo'] }
+      status_operasional: { type: string, enum: [aktif, libur, nonaktif] }
+  KepemilikanSppg:
+    type: object
+    required: [user_id, role, sppg]
+    properties:
+      user_id: { type: integer, examples: [41] }
+      role: { $ref: '#/components/schemas/Role' }
+      sppg:
+        type: array
+        items:
+          type: object
+          required: [id, kode, nama]
+          properties:
+            id: { type: integer }
+            kode: { type: string }
+            nama: { type: string }
+  PenerimaManfaatAgregat:
+    type: object
+    required: [sppg_id, total, aktif, per_kelompok_sasaran, per_titik_layanan]
+    description: Hanya hitungan. Tidak pernah memuat nama, kelas, catatan alergi, atau ID penerima.
+    properties:
+      sppg_id: { type: integer }
+      total: { type: integer, description: 'Seluruh penerima terdaftar (aktif + nonaktif, tanpa yang dihapus).' }
+      aktif: { type: integer }
+      per_kelompok_sasaran:
+        type: array
+        description: Selalu memuat keempat kelompok (jumlah 0 bila kosong); hanya penerima aktif.
+        items:
+          type: object
+          properties:
+            kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+            label: { type: string }
+            jumlah: { type: integer }
+      per_titik_layanan:
+        type: array
+        description: Hanya titik layanan yang memiliki penerima aktif.
+        items:
+          type: object
+          properties:
+            titik_layanan_id: { type: integer }
+            nama: { type: string }
+            jumlah: { type: integer }
+parameters:
+  SppgAktif:
+    name: X-SPPG-Id
+    in: header
+    required: false
+    description: |
+      SPPG aktif (R-06a), divalidasi server di setiap permintaan login penuh. Investor: wajib bila
+      memiliki >1 SPPG dan harus SPPG miliknya. Peran lain: opsional, harus sama dengan SPPG sendiri.
+      Admin: diabaikan.
+    schema: { type: integer, minimum: 1 }
+responses:
+  SppgAktifDitolak:
+    description: Header X-SPPG-Id tidak boleh diakses (`sppg_aktif_ditolak`) atau investor tanpa SPPG (`tanpa_sppg`).
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/SppgAktifError' }
+        example: { message: 'SPPG yang dipilih tidak dapat Anda akses. Pilih ulang SPPG aktif.', alasan: sppg_aktif_ditolak, header: X-SPPG-Id }
+  SppgAktifBelumDipilih:
+    description: Investor dengan lebih dari satu SPPG belum mengirim header X-SPPG-Id.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/SppgAktifError' }
+        example: { message: 'Pilih SPPG aktif terlebih dahulu.', alasan: sppg_aktif_belum_dipilih, header: X-SPPG-Id, langkah: pilih_sppg }
