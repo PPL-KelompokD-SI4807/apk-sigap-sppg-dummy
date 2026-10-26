@@ -106,7 +106,7 @@ final class SppgAktif
             return ['id' => null, 'alasan' => null];
         }
 
-        $diminta = $header === null ? null : (preg_match('/^[1-9][0-9]{0,18}$/', $header) === 1 ? (int) $header : 0);
+        $diminta = self::idDariHeader($header);
 
         if ($user->role !== Role::Investor) {
             $sendiri = $user->sppg_id === null ? null : (int) $user->sppg_id;
@@ -128,6 +128,20 @@ final class SppgAktif
             1 => ['id' => $milik[0], 'alasan' => null],
             default => ['id' => null, 'alasan' => self::BELUM_DIPILIH],
         };
+    }
+
+    /**
+     * Nilai header -> ID diminta. null = tanpa header; 0 = format tidak sah (selalu ditolak).
+     * Hanya bilangan bulat positif tanpa nol di depan, MAKS. 17 digit (R06a-S-10): jauh di bawah
+     * PHP_INT_MAX sehingga tidak pernah terjadi pembulatan/clamp diam-diam saat konversi (int).
+     */
+    public static function idDariHeader(?string $header): ?int
+    {
+        if ($header === null) {
+            return null;
+        }
+
+        return preg_match('/^[1-9][0-9]{0,16}$/D', $header) === 1 ? (int) $header : 0;
     }
 
     private function segarkanBilaPermintaanBaru(): void

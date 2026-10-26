@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApiSecurityHeaders;
+use App\Http\Middleware\EnsureTokenAbility;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\ResolveSppgAktif;
 use Illuminate\Auth\AuthenticationException;
@@ -23,8 +24,12 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(ApiSecurityHeaders::class);
         $middleware->alias(['active' => EnsureUserIsActive::class]);
-        // SPPG aktif (R-06a) harus tervalidasi sebelum route model binding ber-SppgScope.
+        // Urutan (R06a-S-03): akun aktif -> ability token (auth:penuh/pra-login) -> SPPG aktif (R-06a)
+        // -> route model binding ber-SppgScope. Token pra-login/nonaktif ditolak SEBELUM header
+        // X-SPPG-Id dievaluasi, sehingga respons tidak membocorkan daftar kepemilikan SPPG.
         $middleware->prependToPriorityList(SubstituteBindings::class, ResolveSppgAktif::class);
+        $middleware->prependToPriorityList(ResolveSppgAktif::class, EnsureTokenAbility::class);
+        $middleware->prependToPriorityList(EnsureTokenAbility::class, EnsureUserIsActive::class);
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
