@@ -11,7 +11,15 @@
       1. Terikat: `lampiranable_id` diisi. Hak `update` pada record induk menurut Policy modulnya (mis. akuntan
          untuk keuangan-pengeluaran). Record induk SPPG lain -> 404. Semua modul: total lampiran maks 5 per data
          (422 pada `lampiranable_id`).
-      2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`. Berkas disimpan belum
+         Modul berversi (R-06b-2): hak Policy `lampirkan` (bukan `update`) dan penjaga di bawah kunci baris:
+         - `pembelian-bahan`: hanya bila status `diajukan`/`ditolak`; pembelian `terverifikasi` -> 403
+           (409 `pembelian_sudah_diverifikasi` bila berubah di antara pemeriksaan hak dan kunci). Tiap lampiran terikat yang
+           berhasil MENAIKKAN `versi` pembelian sehingga verifikasi dari layar lama -> 409 `versi_tidak_cocok`.
+         - `keuangan-pengeluaran`: pengeluaran hasil pembelian (`pembelian_bahan_id` terisi) -> 403 (409
+           `pengeluaran_dari_pembelian`); pengeluaran `disetujui` -> 409 `pengeluaran_sudah_disetujui` (ubah lewat
+           PATCH agar diajukan ulang); `diajukan`/`ditolak` diizinkan dan menaikkan `versi` (pengajuan yang menunggu
+           ikut versi baru; keputusan investor dari layar lama -> 409 `versi_tidak_cocok`).
+      2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`, `pembelian-bahan` (kategori `nota`, maks 3; hak staf_gudang; disembunyikan dari investor). Berkas disimpan belum
          terikat; kirim `id`-nya pada `lampiran_ids` di POST/PATCH modul. Hak: C atau U modul tersebut (Tabel 5)
          -> selain itu 403; modul lain tanpa `lampiranable_id` -> 422. Lampiran yang belum terikat hanya dapat
          dibaca pengunggahnya (GET /lampiran/{id}, selain itu 404). Maks 10 unggahan tertunda aktif (belum diikat)

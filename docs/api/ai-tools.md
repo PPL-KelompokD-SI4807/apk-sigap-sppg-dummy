@@ -100,6 +100,9 @@ Tool 16 modul (73 tool) dibangun otomatis dari `app/Services/Ai/Catalog/CatalogD
 | penerima-manfaat, pemasok, bahan-baku, menu-gizi (`menu`, `standar_gizi`), jadwal (`jadwal_produksi`, `jadwal_distribusi`), log-produksi, mutu (`pemeriksaan_mutu`), armada (`armada`, `pengemudi`), bukti-distribusi, keuangan (`pencairan_dana`, `pengeluaran`), keluhan | `cari_*`, `buat_*`, `ubah_*`, `hapus_*` (hanya yang diizinkan Tabel 5 + Policy) |
 | bahan-baku | tambahan `catat_mutasi_stok` (draf mutasi masuk/keluar/penyesuaian; target_id = bahan baku) |
 | rekap-harian | `cari_`, `buat_`, `ubah_rekap_harian` |
+| pembelian-bahan (R-06b-2) | `cari_pembelian_bahan` (admin, kepala, akuntan, staf gudang), `buat_`/`ubah_pembelian_bahan` (HANYA staf gudang; draf). Tanpa `hapus_`. **Tidak ada tool verifikasi pembelian maupun keputusan pengeluaran**: itu hanya di Mini App (akuntan / investor); investor tidak pernah mendapat tool tulis |
+
+R-06b-2: `total`, `status`, `satuan`, `versi`, `lampiran_ids`, `status_persetujuan` tidak ada di skema tool (argumen di luar skema ditolak). Untuk draf **ubah** pada record berversi (`ubah_pembelian_bahan`, `ubah_pengeluaran`) `versi` disisipkan SERVER dari record target saat draf dibuat (`ResourceSpec::$berversi` -> `WriteDraftTool::sisipkanDariServer`); mengonfirmasi draf yang basi (record berubah setelah draf) -> 409 `versi_tidak_cocok` dan draf tetap pending. Dry-run `POST pembelian-bahan` dari draf TIDAK menuntut `lampiran_ids` (foto Telegram tidak disimpan), tetapi endpoint nyata tetap mewajibkan minimal satu nota: Mini App memaksa unggah nota saat konfirmasi. Foto nota di bot memakai vision dua tahap yang ada (tahap 1 tanpa tool = data tak tepercaya; tahap 2 hanya dapat memanggil tool draf). Pengeluaran yang dikonfirmasi dari draf akuntan menjadi `diajukan` ke investor (alur normal). `cari_pengeluaran` punya filter `status_persetujuan`.
 
 Aturan: ketersediaan = Tabel 5 + aturan unit relawan + Policy (modul `jadwal` untuk relawan: dapur = produksi, distribusi = distribusi); tool tulis tidak ditawarkan ke Admin (tanpa SPPG). Modul dengan >1 sumber daya menandai draf dengan `_resource` (`DraftToolResolver`) agar `GET /ai-drafts/{uuid}` dan konfirmasi memakai Form Request yang benar.
 
@@ -114,6 +117,7 @@ Data sensitif tidak masuk spesifikasi: `no_sim`, `no_hp`, telepon/kontak, `teleg
 | Model memanggil tool di luar peran | `ToolRegistry::resolveFor()` menolak walau model memanggilnya; tool tidak pernah dikirim ke LLM | `test_relawan_*` |
 | Nama tool karangan | Ditolak (`invalid`), dicatat | `test_injeksi_*` |
 | `sppg_id`/`user_id`/`role`/`created_by` dari model | Dibuang di semua level (`config ai.protected_arguments`), diisi ulang dari pengguna login | `test_argumen_sppg_id_*` |
+| Kunci isian server (`total`, `status`, `satuan`, `status_persetujuan`, `melebihi_anggaran`, `versi` pada draf buat, dst.) yang lolos ke payload | Payload draf disaring ke kunci yang diatur Form Request modul (`DraftValidationResult::saring`); kunci lain tidak pernah tersimpan di `ai_drafts.payload` | `test_l1_payload_draf_hanya_berisi_kunci_aturan_form_request` |
 | Argumen berlebihan/salah tipe/terlalu panjang/terlalu dalam | `ArgumentValidator` (additionalProperties false, enum, maxLength, depth 4, total 4000 karakter) | `test_argumen_*`, `ArgumentValidatorTest` |
 | Aksi tulis otomatis | Tool tulis hanya membuat AiDraft; data tersimpan hanya lewat endpoint modul | `test_tool_tulis_*`, `AiDraftApiTest` |
 | Banjir draf | Maks draf pending per pengguna | `test_jumlah_draf_*` |

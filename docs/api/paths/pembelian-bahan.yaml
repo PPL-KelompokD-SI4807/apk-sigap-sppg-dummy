@@ -1,0 +1,185 @@
+/pembelian-bahan:
+  get:
+    tags: [Pembelian Bahan]
+    summary: Daftar pembelian bahan
+    description: |
+      Hak R: admin (lintas SPPG), kepala_sppg, akuntan, staf_gudang. Ahli gizi, relawan, dan **investor** -> 403
+      (nota privat). Filter: `status`, `bahan_baku_id`, `pemasok_id`, `from`/`to` (tanggal_beli), `q` (nama bahan/pemasok),
+      `sppg_id` (Admin). Daftar tidak memuat `harga_referensi`.
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/StatusPembelianBahan' } }
+      - { name: bahan_baku_id, in: query, schema: { type: integer } }
+      - { name: pemasok_id, in: query, schema: { type: integer } }
+      - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/PembelianBahan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Pembelian Bahan]
+    summary: Catat pembelian bahan (staf gudang)
+    description: |
+      Hak C: staf_gudang. Foto nota WAJIB: unggah dulu lewat `POST /lampiran` (modul `pembelian-bahan`, tertunda),
+      lalu kirim `lampiran_ids` (1..3). `total` = round(jumlah x harga_satuan) dihitung server (bcmath), `satuan` disalin
+      dari bahan baku; status awal `diajukan`, `versi` 1. Bahan/pemasok harus milik SPPG pengguna dan pemasok aktif (422).
+      Total melebihi batas penyimpanan -> 422 pada `harga_satuan`. Menerima `ai_draft_id` opsional. Tidak membuat mutasi stok.
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PembelianBahanInput' }
+          example: { bahan_baku_id: 3, pemasok_id: 7, tanggal_beli: '2026-10-27', jumlah: 50, harga_satuan: 12500, catatan: 'Beli di pasar pagi', lampiran_ids: [41] }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PembelianBahan' }
+            example:
+              data:
+                id: 12
+                sppg_id: 1
+                tanggal_beli: '2026-10-27'
+                bahan_baku: { id: 3, nama: Beras, satuan: kg }
+                pemasok: { id: 7, nama: 'UD Sumber Pangan Fiktif' }
+                jumlah: 50
+                satuan: kg
+                harga_satuan: 12500
+                total: 625000
+                catatan: 'Beli di pasar pagi'
+                status: diajukan
+                status_label: 'Menunggu Verifikasi'
+                versi: 1
+                alasan_penolakan: null
+                pengeluaran_id: null
+                dicatat_oleh: { id: 9, name: 'Staf Gudang 1 (Demo)' }
+                diverifikasi_oleh: null
+                diverifikasi_pada: null
+                lampirans: [{ id: 41, kategori: nota, mime: image/jpeg, ukuran: 90211, url: /api/v1/lampiran/41 }]
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/pembelian-bahan/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Pembelian Bahan]
+    summary: Detail pembelian bahan (+ harga_referensi)
+    description: 'SPPG lain -> 404. `harga_referensi` = harga pemasok terkini dari riwayat harga (informatif, null bila tidak ada).'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PembelianBahan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Pembelian Bahan]
+    summary: Ubah pembelian bahan (staf gudang)
+    description: |
+      Alias PATCH. Hak U: staf_gudang, status `diajukan` atau `ditolak`. `versi` WAJIB (kunci optimistik): beda ->
+      409 `versi_tidak_cocok` + `versi_server`. Pembelian `terverifikasi` -> 409 `pembelian_sudah_diverifikasi`.
+      Setiap ubah menaikkan versi, menghitung ulang total, dan mengembalikan status `ditolak` -> `diajukan`
+      (alasan lama dikosongkan). `lampiran_ids` menambah nota (total maks 3).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PembelianBahanInput' }
+          example: { versi: 1, harga_satuan: 12000 }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PembelianBahan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Pembelian Bahan]
+    summary: Ubah sebagian pembelian bahan (staf gudang)
+    description: 'Sama dengan PUT: `versi` wajib; 409 `versi_tidak_cocok` / `pembelian_sudah_diverifikasi`.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PembelianBahanInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PembelianBahan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/pembelian-bahan/{id}/verifikasi:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  post:
+    tags: [Pembelian Bahan]
+    summary: Verifikasi pembelian bahan (akuntan)
+    description: |
+      Hanya akuntan SPPG yang sama dan BUKAN pencatat pembelian (pemisahan tugas); admin/kepala/staf/investor -> 403.
+      `disetujui`: dalam satu transaksi dibuat pengeluaran kategori `bahan_baku` (nominal = total, tanggal = tanggal_beli,
+      status persetujuan langsung `disetujui` - tidak melewati investor), pembelian menjadi `terverifikasi` (final) dan
+      `pengeluaran_id` terisi; ambang anggaran 80/100% dievaluasi. `ditolak`: `alasan` wajib (5..500).
+      Kunci baris: sppgs -> pembelian_bahans -> pengeluarans. 409 `status_tidak_valid` (keputusan ganda) atau
+      `versi_tidak_cocok`. Tidak ada tool Agen AI untuk endpoint ini.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VerifikasiPembelianInput' }
+          example: { keputusan: ditolak, alasan: 'Harga tidak wajar dibanding pemasok.', versi: 1 }
+    responses:
+      '200':
+        description: Terverifikasi / ditolak
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PembelianBahan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

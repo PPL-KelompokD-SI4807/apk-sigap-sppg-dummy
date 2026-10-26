@@ -1238,6 +1238,7 @@ paths:
         - $ref: '#/components/parameters/DateFrom'
         - $ref: '#/components/parameters/DateTo'
         - { name: menu_id, in: query, schema: { type: integer } }
+        - { name: menu_belum_disetujui, in: query, description: 'true = hanya jadwal yang menunya sekarang bukan `disetujui` (R-06b-2).', schema: { type: boolean } }
         - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
       responses:
         '200':
@@ -1485,6 +1486,8 @@ paths:
       description: |
         Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
         mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+        R-06b-2 (S2): `status=dimasak` ditolak 422 (field `status`) bila menu jadwal saat ini bukan `disetujui`
+        ("Menu jadwal ini belum disetujui investor; ajukan ulang menu sebelum memasak."). `selesai` dan `dibatalkan` tetap diizinkan.
       requestBody:
         required: true
         content:
@@ -1774,7 +1777,9 @@ paths:
     get:
       tags: [Keuangan]
       summary: Daftar pencairan dana
-      description: Hak R (akuntan, kepala_sppg, admin lintas SPPG). Peran lain 403.
+      description: |
+        Hak R: akuntan, kepala_sppg, admin lintas SPPG, **investor** (SPPG aktif via `X-SPPG-Id`, hanya baca + keputusan).
+        Peran lain 403. Setiap baris memuat `status_persetujuan` dan `versi`; detail memuat `riwayat_persetujuan`.
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -1901,6 +1906,7 @@ paths:
         - { name: pemasok_id, in: query, schema: { type: integer } }
         - { name: pencairan_dana_id, in: query, schema: { type: integer } }
         - { name: melebihi_anggaran, in: query, schema: { type: boolean } }
+        - { name: status_persetujuan, in: query, description: 'Status persetujuan investor (R-06b-2).', schema: { $ref: '#/components/schemas/StatusPersetujuanPengeluaran' } }
         - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
       responses:
         '200':
@@ -1922,6 +1928,11 @@ paths:
       summary: Catat pengeluaran operasional
       description: |
         Hak C: akuntan. Nominal rupiah bulat > 0; nota opsional (multipart `nota`, SecureUploadService).
+        R-06b-2: SEMUA pengeluaran yang dicatat langsung akuntan (kategori apa pun, termasuk `bahan_baku`) wajib disetujui
+        investor bila `nominal >= ambang` (`SIGAP_AMBANG_PERSETUJUAN_PENGELUARAN`, bawaan 0 = semua): status awal
+        `diajukan` + baris pengajuan + notifikasi bot ke investor (tanpa `uraian`). Di bawah ambang -> langsung `disetujui`.
+        Hanya pengeluaran `disetujui` dihitung ke `terpakai`/rekap; pengecekan `melebihi_anggaran` dan event ambang 80/100%
+        dijalankan SAAT disetujui (keputusan investor), bukan saat dicatat. Belanja bahan untuk menu masuk lewat Pembelian Bahan.
         Keputusan FR-09: pengeluaran yang melebihi sisa anggaran periode tetap DICATAT dan ditandai
         `melebihi_anggaran=true` (config `operasional.keuangan.tolak_melebihi_anggaran=true` -> 422).
         Event sekali per (SPPG, periode): `AnggaranMencapai80` (>=80%), `AnggaranMencapai100` (>=100%),
@@ -1972,9 +1983,10 @@ paths:
       tags: [Keuangan]
       summary: Ubah pengeluaran operasional (akuntan)
       description: |
-        Field opsional. Ganti nota: multipart POST dengan `_method=PUT`. PATCH = alias.
-        Perubahan nominal/tanggal menghitung ulang `melebihi_anggaran`; edit tidak pernah memancarkan ulang
-        event ambang yang sudah terkirim. Perubahan nominal tercatat di audit_logs (nilai lama/baru).
+        Field opsional KECUALI `versi` (WAJIB, kunci optimistik; beda -> 409 `versi_tidak_cocok` + `versi_server`).
+        Ganti nota: multipart POST dengan `_method=PUT`. PATCH = alias. Perubahan apa pun menaikkan `versi`, mengembalikan
+        status ke `diajukan`, membatalkan pengajuan yang masih menunggu, dan membuat pengajuan baru (investor diberi tahu).
+        Pengeluaran hasil pembelian bahan -> 409 `pengeluaran_dari_pembelian`. Perubahan tercatat di audit_logs tanpa teks bebas.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
@@ -1996,6 +2008,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/UploadRejected' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
     delete:
@@ -2008,6 +2021,39 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /keuangan/pengeluaran/{id}/keputusan:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Keuangan]
+      summary: Putuskan pengajuan pengeluaran (investor)
+      description: |
+        Hanya Investor pemilik SPPG pengeluaran (pivot + `X-SPPG-Id`); admin, kepala, akuntan, dan peran lain -> 403;
+        pengeluaran SPPG lain -> 404. Satu-satunya tulis investor selain keputusan menu. `disetujui`: pengeluaran
+        dihitung ke anggaran (`melebihi_anggaran` dihitung, event 80/100% dievaluasi; 422 `nominal` bila
+        `tolak_melebihi_anggaran=true`). `ditolak`: `catatan` wajib (5..500). Tidak ada `perlu_revisi`: akuntan
+        memperbaiki lewat PATCH (otomatis diajukan ulang). 409 `status_tidak_valid` (sudah diputuskan / investor kedua /
+        pengajuan dibatalkan) atau `versi_tidak_cocok` (+ `versi_server`). Kunci baris: sppgs -> pengeluarans -> persetujuan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeputusanPengeluaranInput' }
+            example: { keputusan: ditolak, catatan: 'Tunda sampai bulan depan.', versi: 1 }
+      responses:
+        '200':
+          description: Diputuskan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Pengeluaran' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /lampiran:
     post:
       tags: [Lampiran]
@@ -2021,7 +2067,15 @@ paths:
         1. Terikat: `lampiranable_id` diisi. Hak `update` pada record induk menurut Policy modulnya (mis. akuntan
            untuk keuangan-pengeluaran). Record induk SPPG lain -> 404. Semua modul: total lampiran maks 5 per data
            (422 pada `lampiranable_id`).
-        2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`. Berkas disimpan belum
+           Modul berversi (R-06b-2): hak Policy `lampirkan` (bukan `update`) dan penjaga di bawah kunci baris:
+           - `pembelian-bahan`: hanya bila status `diajukan`/`ditolak`; pembelian `terverifikasi` -> 403
+             (409 `pembelian_sudah_diverifikasi` bila berubah di antara pemeriksaan hak dan kunci). Tiap lampiran terikat yang
+             berhasil MENAIKKAN `versi` pembelian sehingga verifikasi dari layar lama -> 409 `versi_tidak_cocok`.
+           - `keuangan-pengeluaran`: pengeluaran hasil pembelian (`pembelian_bahan_id` terisi) -> 403 (409
+             `pengeluaran_dari_pembelian`); pengeluaran `disetujui` -> 409 `pengeluaran_sudah_disetujui` (ubah lewat
+             PATCH agar diajukan ulang); `diajukan`/`ditolak` diizinkan dan menaikkan `versi` (pengajuan yang menunggu
+             ikut versi baru; keputusan investor dari layar lama -> 409 `versi_tidak_cocok`).
+        2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`, `pembelian-bahan` (kategori `nota`, maks 3; hak staf_gudang; disembunyikan dari investor). Berkas disimpan belum
            terikat; kirim `id`-nya pada `lampiran_ids` di POST/PATCH modul. Hak: C atau U modul tersebut (Tabel 5)
            -> selain itu 403; modul lain tanpa `lampiranable_id` -> 422. Lampiran yang belum terikat hanya dapat
            dibaca pengunggahnya (GET /lampiran/{id}, selain itu 404). Maks 10 unggahan tertunda aktif (belum diikat)
@@ -3056,6 +3110,191 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+  /pembelian-bahan:
+    get:
+      tags: [Pembelian Bahan]
+      summary: Daftar pembelian bahan
+      description: |
+        Hak R: admin (lintas SPPG), kepala_sppg, akuntan, staf_gudang. Ahli gizi, relawan, dan **investor** -> 403
+        (nota privat). Filter: `status`, `bahan_baku_id`, `pemasok_id`, `from`/`to` (tanggal_beli), `q` (nama bahan/pemasok),
+        `sppg_id` (Admin). Daftar tidak memuat `harga_referensi`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/StatusPembelianBahan' } }
+        - { name: bahan_baku_id, in: query, schema: { type: integer } }
+        - { name: pemasok_id, in: query, schema: { type: integer } }
+        - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PembelianBahan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Pembelian Bahan]
+      summary: Catat pembelian bahan (staf gudang)
+      description: |
+        Hak C: staf_gudang. Foto nota WAJIB: unggah dulu lewat `POST /lampiran` (modul `pembelian-bahan`, tertunda),
+        lalu kirim `lampiran_ids` (1..3). `total` = round(jumlah x harga_satuan) dihitung server (bcmath), `satuan` disalin
+        dari bahan baku; status awal `diajukan`, `versi` 1. Bahan/pemasok harus milik SPPG pengguna dan pemasok aktif (422).
+        Total melebihi batas penyimpanan -> 422 pada `harga_satuan`. Menerima `ai_draft_id` opsional. Tidak membuat mutasi stok.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PembelianBahanInput' }
+            example: { bahan_baku_id: 3, pemasok_id: 7, tanggal_beli: '2026-10-27', jumlah: 50, harga_satuan: 12500, catatan: 'Beli di pasar pagi', lampiran_ids: [41] }
+      responses:
+        '201':
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PembelianBahan' }
+              example:
+                data:
+                  id: 12
+                  sppg_id: 1
+                  tanggal_beli: '2026-10-27'
+                  bahan_baku: { id: 3, nama: Beras, satuan: kg }
+                  pemasok: { id: 7, nama: 'UD Sumber Pangan Fiktif' }
+                  jumlah: 50
+                  satuan: kg
+                  harga_satuan: 12500
+                  total: 625000
+                  catatan: 'Beli di pasar pagi'
+                  status: diajukan
+                  status_label: 'Menunggu Verifikasi'
+                  versi: 1
+                  alasan_penolakan: null
+                  pengeluaran_id: null
+                  dicatat_oleh: { id: 9, name: 'Staf Gudang 1 (Demo)' }
+                  diverifikasi_oleh: null
+                  diverifikasi_pada: null
+                  lampirans: [{ id: 41, kategori: nota, mime: image/jpeg, ukuran: 90211, url: /api/v1/lampiran/41 }]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /pembelian-bahan/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Pembelian Bahan]
+      summary: Detail pembelian bahan (+ harga_referensi)
+      description: 'SPPG lain -> 404. `harga_referensi` = harga pemasok terkini dari riwayat harga (informatif, null bila tidak ada).'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PembelianBahan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Pembelian Bahan]
+      summary: Ubah pembelian bahan (staf gudang)
+      description: |
+        Alias PATCH. Hak U: staf_gudang, status `diajukan` atau `ditolak`. `versi` WAJIB (kunci optimistik): beda ->
+        409 `versi_tidak_cocok` + `versi_server`. Pembelian `terverifikasi` -> 409 `pembelian_sudah_diverifikasi`.
+        Setiap ubah menaikkan versi, menghitung ulang total, dan mengembalikan status `ditolak` -> `diajukan`
+        (alasan lama dikosongkan). `lampiran_ids` menambah nota (total maks 3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PembelianBahanInput' }
+            example: { versi: 1, harga_satuan: 12000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PembelianBahan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Pembelian Bahan]
+      summary: Ubah sebagian pembelian bahan (staf gudang)
+      description: 'Sama dengan PUT: `versi` wajib; 409 `versi_tidak_cocok` / `pembelian_sudah_diverifikasi`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PembelianBahanInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PembelianBahan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /pembelian-bahan/{id}/verifikasi:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Pembelian Bahan]
+      summary: Verifikasi pembelian bahan (akuntan)
+      description: |
+        Hanya akuntan SPPG yang sama dan BUKAN pencatat pembelian (pemisahan tugas); admin/kepala/staf/investor -> 403.
+        `disetujui`: dalam satu transaksi dibuat pengeluaran kategori `bahan_baku` (nominal = total, tanggal = tanggal_beli,
+        status persetujuan langsung `disetujui` - tidak melewati investor), pembelian menjadi `terverifikasi` (final) dan
+        `pengeluaran_id` terisi; ambang anggaran 80/100% dievaluasi. `ditolak`: `alasan` wajib (5..500).
+        Kunci baris: sppgs -> pembelian_bahans -> pengeluarans. 409 `status_tidak_valid` (keputusan ganda) atau
+        `versi_tidak_cocok`. Tidak ada tool Agen AI untuk endpoint ini.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifikasiPembelianInput' }
+            example: { keputusan: ditolak, alasan: 'Harga tidak wajar dibanding pemasok.', versi: 1 }
+      responses:
+        '200':
+          description: Terverifikasi / ditolak
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PembelianBahan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /penerima-manfaat:
     get:
       tags: [Penerima Manfaat]
@@ -4863,6 +5102,8 @@ components:
             id: { type: integer }
             nama_menu: { type: string }
             kelompok_sasaran: { type: string }
+            status_persetujuan: { type: [string, 'null'], enum: [draf, diajukan, disetujui, ditolak, perlu_revisi, null] }
+        menu_belum_disetujui: { type: boolean, description: 'R-06b-2 (S2): dihitung saat baca; true = menu kembali ke draf/ditolak setelah dijadwalkan, jadwal tidak dapat dimasak.' }
         dibuat_oleh: { type: [integer, 'null'] }
         tanggal_produksi: { type: string, format: date }
         jam_mulai_masak: { type: [string, 'null'], examples: ['03:00'] }
@@ -5072,6 +5313,34 @@ components:
         per_prioritas: { rendah: 4, sedang: 3, tinggi: 0, kritis: 2 }
         terbuka: 5
         kritis_terbuka: 1
+    StatusPersetujuanPengeluaran:
+      type: string
+      enum: [diajukan, disetujui, ditolak]
+      description: 'Baris baru default `diajukan` (fail-closed). Pengeluaran lama di-backfill `disetujui` oleh migrasi.'
+    KeputusanPengeluaranInput:
+      type: object
+      required: [keputusan, versi]
+      properties:
+        keputusan: { type: string, enum: [disetujui, ditolak] }
+        catatan: { type: string, minLength: 5, maxLength: 500, description: Wajib bila ditolak. }
+        versi: { type: integer, minimum: 1 }
+    PersetujuanPengeluaran:
+      type: object
+      properties:
+        id: { type: integer }
+        nomor: { type: integer, description: Urutan pengajuan per pengeluaran. }
+        pengeluaran_versi: { type: integer }
+        status: { type: string, enum: [diajukan, disetujui, ditolak, dibatalkan] }
+        status_label: { type: string }
+        kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+        nominal: { type: integer, description: Snapshot saat diajukan. }
+        tanggal: { type: string, format: date }
+        ambang_persetujuan: { type: integer, description: Nilai ambang config saat diajukan. }
+        diajukan_oleh: { type: [string, 'null'] }
+        diajukan_pada: { type: string, format: date-time }
+        diputuskan_oleh: { type: [string, 'null'] }
+        diputuskan_pada: { type: [string, 'null'], format: date-time }
+        catatan_keputusan: { type: [string, 'null'] }
     KategoriPengeluaran:
       type: string
       description: |
@@ -5122,6 +5391,7 @@ components:
         nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
         pemasok_id: { type: [integer, 'null'], description: Pemasok SPPG sendiri. }
         pencairan_dana_id: { type: [integer, 'null'], description: Pencairan SPPG sendiri (opsional). }
+        versi: { type: integer, minimum: 1, description: 'WAJIB pada PUT/PATCH (kunci optimistik); diabaikan saat POST.' }
         nota: { type: string, format: binary, description: 'Opsional (multipart): foto nota.' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     Pengeluaran:
@@ -5135,7 +5405,15 @@ components:
         kategori_label: { type: string }
         uraian: { type: string }
         nominal: { type: integer }
-        melebihi_anggaran: { type: boolean, description: 'Saat dicatat/diubah, nominal melebihi sisa anggaran periode.' }
+        melebihi_anggaran: { type: boolean, description: 'Dihitung SAAT DISETUJUI: nominal melebihi sisa anggaran periode.' }
+        status_persetujuan: { $ref: '#/components/schemas/StatusPersetujuanPengeluaran' }
+        status_persetujuan_label: { type: string }
+        versi: { type: integer, description: 'Naik setiap pengeluaran diubah; kirim sebagai `versi` pada PATCH dan keputusan.' }
+        pembelian_bahan_id: { type: [integer, 'null'], description: 'Terisi bila berasal dari pembelian bahan terverifikasi (tidak dapat diubah/dihapus).' }
+        riwayat_persetujuan:
+          type: array
+          description: 'Hanya pada detail/hasil tulis (bukan daftar).'
+          items: { $ref: '#/components/schemas/PersetujuanPengeluaran' }
         pemasok:
           type: [object, 'null']
           properties:
@@ -5159,13 +5437,19 @@ components:
         sppg_id: { type: integer }
         periode: { type: string, examples: ['2026-11'] }
         anggaran: { type: integer, description: Total pencairan periode. }
-        terpakai: { type: integer, description: Total pengeluaran bertanggal di bulan periode. }
+        terpakai: { type: integer, description: 'Total pengeluaran DISETUJUI bertanggal di bulan periode.' }
         sisa: { type: integer, description: 'anggaran - terpakai (boleh negatif).' }
         persen: { type: [number, 'null'], description: 'Serapan %, null bila belum ada pencairan.' }
         status: { type: string, enum: [belum_ada_anggaran, aman, peringatan, habis, melampaui] }
         jumlah_pencairan: { type: integer }
         jumlah_pengeluaran: { type: integer }
         jumlah_melebihi_anggaran: { type: integer }
+        menunggu_persetujuan:
+          type: object
+          description: 'Pengeluaran berstatus diajukan pada periode (belum dihitung ke terpakai).'
+          properties:
+            jumlah: { type: integer }
+            nominal: { type: integer }
         per_kategori:
           type: array
           items:
@@ -5212,7 +5496,7 @@ components:
       properties:
         modul:
           type: string
-          enum: [bukti-distribusi, keuangan-pencairan, keuangan-pengeluaran, keluhan, mutu, log-produksi]
+          enum: [bukti-distribusi, keuangan-pencairan, keuangan-pengeluaran, keluhan, mutu, log-produksi, pembelian-bahan]
         lampiranable_id:
           type: [integer, 'null']
           description: |
@@ -5610,6 +5894,90 @@ components:
         jenis_bahan: { type: [string, 'null'], maxLength: 255 }
         is_active: { type: boolean, default: true }
         ai_draft_id: { type: [string, 'null'], format: uuid }
+    StatusPembelianBahan:
+      type: string
+      enum: [diajukan, terverifikasi, ditolak]
+      description: |
+        diajukan -> terverifikasi (final) | ditolak (alasan wajib); ditolak -> diajukan lagi bila staf gudang
+        mengubah data (versi naik, alasan lama dikosongkan).
+    PembelianBahanInput:
+      type: object
+      required: [bahan_baku_id, pemasok_id, tanggal_beli, jumlah, harga_satuan, lampiran_ids]
+      description: |
+        `total`, `satuan`, `status`, `versi`, `sppg_id`, `dicatat_oleh` diisi server (dikirim klien = diabaikan).
+        Saat ubah (PATCH) semua field opsional kecuali `versi` (wajib).
+      properties:
+        bahan_baku_id: { type: integer, description: Bahan baku SPPG sendiri. }
+        pemasok_id: { type: integer, description: Pemasok aktif SPPG sendiri. }
+        tanggal_beli: { type: string, format: date, description: Tidak boleh di masa depan. }
+        jumlah: { type: number, exclusiveMinimum: 0, maximum: 999999999, description: 'Dalam satuan bahan baku; maks 3 desimal.' }
+        harga_satuan: { type: number, exclusiveMinimum: 0, maximum: 99999999999, description: 'Rupiah per satuan bahan; maks 2 desimal.' }
+        catatan: { type: [string, 'null'], maxLength: 500 }
+        lampiran_ids:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items: { type: integer }
+          description: 'Foto nota: id hasil POST /lampiran (modul `pembelian-bahan`, kategori `nota`, tertunda). Wajib minimal 1 saat buat.'
+        versi: { type: integer, minimum: 1, description: 'Hanya PATCH (wajib): versi record yang dimuat klien.' }
+        ai_draft_id: { type: [string, 'null'], format: uuid }
+    PembelianBahan:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        tanggal_beli: { type: string, format: date }
+        bahan_baku:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            nama: { type: string }
+            satuan: { type: string }
+        pemasok:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            nama: { type: string }
+        jumlah: { type: number }
+        satuan: { type: string, description: Disalin dari bahan baku saat simpan. }
+        harga_satuan: { type: number }
+        total: { type: integer, description: 'round(jumlah x harga_satuan) rupiah bulat, dihitung server (bcmath).' }
+        catatan: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/StatusPembelianBahan' }
+        status_label: { type: string }
+        versi: { type: integer }
+        alasan_penolakan: { type: [string, 'null'] }
+        pengeluaran_id: { type: [integer, 'null'], description: Terisi setelah terverifikasi. }
+        dicatat_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        diverifikasi_oleh:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        diverifikasi_pada: { type: [string, 'null'], format: date-time }
+        lampirans:
+          type: array
+          items: { $ref: '#/components/schemas/Lampiran' }
+        harga_referensi:
+          type: [object, 'null']
+          description: 'Hanya pada detail. Harga pemasok terkini (informatif); null bila belum ada entri harga. Kunci tidak ada pada daftar.'
+          properties:
+            harga: { type: number }
+            berlaku_mulai: { type: string, format: date }
+            selisih_persen: { type: [number, 'null'], description: '(harga_satuan - harga) / harga x 100.' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    VerifikasiPembelianInput:
+      type: object
+      required: [keputusan, versi]
+      properties:
+        keputusan: { type: string, enum: [disetujui, ditolak] }
+        alasan: { type: string, minLength: 5, maxLength: 500, description: Wajib bila ditolak. }
+        versi: { type: integer, minimum: 1 }
     PenerimaManfaat:
       type: object
       properties:
@@ -6216,6 +6584,14 @@ components:
             message: Data yang dikirim tidak valid.
             errors:
               berkas: ['Hanya gambar JPEG, PNG, atau WebP yang diizinkan.']
+    KonflikVersi:
+      description: |
+        Konflik versi/status. Body berisi `alasan`: `versi_tidak_cocok` (+ `versi_server`), `status_tidak_valid`
+        (+ `status`; keputusan ganda), `pembelian_sudah_diverifikasi`, atau `pengeluaran_dari_pembelian`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Pembelian sudah berubah. Muat ulang lalu ubah kembali.', alasan: versi_tidak_cocok, versi_server: 2 }
     KonflikPersetujuan:
       description: |
         Konflik status/versi. Body berisi `alasan`: `status_menu_tidak_valid`, `versi_menu_tidak_cocok`

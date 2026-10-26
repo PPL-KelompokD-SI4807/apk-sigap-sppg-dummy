@@ -1,4 +1,32 @@
 schemas:
+  StatusPersetujuanPengeluaran:
+    type: string
+    enum: [diajukan, disetujui, ditolak]
+    description: 'Baris baru default `diajukan` (fail-closed). Pengeluaran lama di-backfill `disetujui` oleh migrasi.'
+  KeputusanPengeluaranInput:
+    type: object
+    required: [keputusan, versi]
+    properties:
+      keputusan: { type: string, enum: [disetujui, ditolak] }
+      catatan: { type: string, minLength: 5, maxLength: 500, description: Wajib bila ditolak. }
+      versi: { type: integer, minimum: 1 }
+  PersetujuanPengeluaran:
+    type: object
+    properties:
+      id: { type: integer }
+      nomor: { type: integer, description: Urutan pengajuan per pengeluaran. }
+      pengeluaran_versi: { type: integer }
+      status: { type: string, enum: [diajukan, disetujui, ditolak, dibatalkan] }
+      status_label: { type: string }
+      kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+      nominal: { type: integer, description: Snapshot saat diajukan. }
+      tanggal: { type: string, format: date }
+      ambang_persetujuan: { type: integer, description: Nilai ambang config saat diajukan. }
+      diajukan_oleh: { type: [string, 'null'] }
+      diajukan_pada: { type: string, format: date-time }
+      diputuskan_oleh: { type: [string, 'null'] }
+      diputuskan_pada: { type: [string, 'null'], format: date-time }
+      catatan_keputusan: { type: [string, 'null'] }
   KategoriPengeluaran:
     type: string
     description: |
@@ -49,6 +77,7 @@ schemas:
       nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
       pemasok_id: { type: [integer, 'null'], description: Pemasok SPPG sendiri. }
       pencairan_dana_id: { type: [integer, 'null'], description: Pencairan SPPG sendiri (opsional). }
+      versi: { type: integer, minimum: 1, description: 'WAJIB pada PUT/PATCH (kunci optimistik); diabaikan saat POST.' }
       nota: { type: string, format: binary, description: 'Opsional (multipart): foto nota.' }
       ai_draft_id: { type: [string, 'null'], format: uuid }
   Pengeluaran:
@@ -62,7 +91,15 @@ schemas:
       kategori_label: { type: string }
       uraian: { type: string }
       nominal: { type: integer }
-      melebihi_anggaran: { type: boolean, description: 'Saat dicatat/diubah, nominal melebihi sisa anggaran periode.' }
+      melebihi_anggaran: { type: boolean, description: 'Dihitung SAAT DISETUJUI: nominal melebihi sisa anggaran periode.' }
+      status_persetujuan: { $ref: '#/components/schemas/StatusPersetujuanPengeluaran' }
+      status_persetujuan_label: { type: string }
+      versi: { type: integer, description: 'Naik setiap pengeluaran diubah; kirim sebagai `versi` pada PATCH dan keputusan.' }
+      pembelian_bahan_id: { type: [integer, 'null'], description: 'Terisi bila berasal dari pembelian bahan terverifikasi (tidak dapat diubah/dihapus).' }
+      riwayat_persetujuan:
+        type: array
+        description: 'Hanya pada detail/hasil tulis (bukan daftar).'
+        items: { $ref: '#/components/schemas/PersetujuanPengeluaran' }
       pemasok:
         type: [object, 'null']
         properties:
@@ -86,13 +123,19 @@ schemas:
       sppg_id: { type: integer }
       periode: { type: string, examples: ['2026-11'] }
       anggaran: { type: integer, description: Total pencairan periode. }
-      terpakai: { type: integer, description: Total pengeluaran bertanggal di bulan periode. }
+      terpakai: { type: integer, description: 'Total pengeluaran DISETUJUI bertanggal di bulan periode.' }
       sisa: { type: integer, description: 'anggaran - terpakai (boleh negatif).' }
       persen: { type: [number, 'null'], description: 'Serapan %, null bila belum ada pencairan.' }
       status: { type: string, enum: [belum_ada_anggaran, aman, peringatan, habis, melampaui] }
       jumlah_pencairan: { type: integer }
       jumlah_pengeluaran: { type: integer }
       jumlah_melebihi_anggaran: { type: integer }
+      menunggu_persetujuan:
+        type: object
+        description: 'Pengeluaran berstatus diajukan pada periode (belum dihitung ke terpakai).'
+        properties:
+          jumlah: { type: integer }
+          nominal: { type: integer }
       per_kategori:
         type: array
         items:

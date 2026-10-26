@@ -19,6 +19,8 @@ schemas:
           id: { type: integer }
           nama_menu: { type: string }
           kelompok_sasaran: { type: string }
+          status_persetujuan: { type: [string, 'null'], enum: [draf, diajukan, disetujui, ditolak, perlu_revisi, null] }
+      menu_belum_disetujui: { type: boolean, description: 'R-06b-2 (S2): dihitung saat baca; true = menu kembali ke draf/ditolak setelah dijadwalkan, jadwal tidak dapat dimasak.' }
       dibuat_oleh: { type: [integer, 'null'] }
       tanggal_produksi: { type: string, format: date }
       jam_mulai_masak: { type: [string, 'null'], examples: ['03:00'] }
