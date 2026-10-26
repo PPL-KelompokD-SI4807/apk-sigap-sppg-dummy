@@ -5,6 +5,7 @@ namespace App\Services\Users;
 use App\Enums\Role;
 use App\Models\User;
 use App\Services\Auth\AuditAuth;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -35,25 +36,31 @@ class KepemilikanSppgService
     }
 
     /**
-     * Ganti seluruh kepemilikan investor dengan $sppgIds (sudah divalidasi Form Request).
+     * Ganti seluruh kepemilikan investor (sudah divalidasi Form Request).
      *
-     * @param  list<int>  $sppgIds
+     * $target = daftar ID pengganti penuh, ATAU closure fn (list<int> $lama): list<int> yang dihitung
+     * DI DALAM transaksi setelah baris investor dikunci (R06a-S-01). tautkan()/lepas() memakai closure
+     * agar dua perubahan bersamaan tidak saling menimpa (mis. SPPG yang baru dilepas hidup kembali
+     * karena tautkan() membaca himpunan lama sebelum kunci).
+     *
+     * @param  list<int>|Closure(list<int>): array<int, int>  $target
      * @return list<array{id: int, kode: string, nama: string}>
      */
-    public function atur(User $admin, User $investor, array $sppgIds): array
+    public function atur(User $admin, User $investor, array|Closure $target): array
     {
-        $baru = array_values(array_unique(array_map('intval', $sppgIds)));
-        sort($baru);
-
-        DB::transaction(function () use ($admin, $investor, $baru): void {
+        DB::transaction(function () use ($admin, $investor, $target): void {
             $terkunci = User::query()->withoutGlobalScopes()->lockForUpdate()->find($investor->getKey());
 
             if ($terkunci === null || $terkunci->role !== Role::Investor) {
                 throw ValidationException::withMessages(['user' => ['Kepemilikan SPPG hanya untuk pengguna berperan investor.']]);
             }
 
+            // Dibaca setelah kunci: semua perubahan kepemilikan investor ini berbaris di kunci yang sama.
             $lama = DB::table('investor_sppg')->where('user_id', $terkunci->getKey())
                 ->orderBy('sppg_id')->pluck('sppg_id')->map(fn ($id) => (int) $id)->all();
+
+            $baru = array_values(array_unique(array_map('intval', $target instanceof Closure ? $target($lama) : $target)));
+            sort($baru);
 
             $dihapus = array_values(array_diff($lama, $baru));
             $ditambah = array_values(array_diff($baru, $lama));
@@ -91,7 +98,7 @@ class KepemilikanSppgService
      */
     public function tautkan(User $admin, User $investor, int $sppgId): array
     {
-        return $this->atur($admin, $investor, [...$this->idMilik($investor), $sppgId]);
+        return $this->atur($admin, $investor, fn (array $lama): array => [...$lama, $sppgId]);
     }
 
     /**
@@ -101,14 +108,7 @@ class KepemilikanSppgService
      */
     public function lepas(User $admin, User $investor, int $sppgId): array
     {
-        return $this->atur($admin, $investor, array_values(array_diff($this->idMilik($investor), [$sppgId])));
-    }
-
-    /** @return list<int> */
-    private function idMilik(User $investor): array
-    {
-        return DB::table('investor_sppg')->where('user_id', $investor->getKey())
-            ->pluck('sppg_id')->map(fn ($id) => (int) $id)->all();
+        return $this->atur($admin, $investor, fn (array $lama): array => array_diff($lama, [$sppgId]));
     }
 
     /** Peran berubah dari investor: kepemilikan lama dihapus agar tidak hidup lagi bila peran dikembalikan. */
