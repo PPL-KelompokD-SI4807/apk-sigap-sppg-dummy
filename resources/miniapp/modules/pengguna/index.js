@@ -57,8 +57,10 @@ const base = defineCrudModule({
   // Admin tidak boleh menghapus akunnya sendiri (422 di server): sembunyikan tombol hapus.
   rowPerms: (rec, p) => (rec.id === getUser()?.id ? { ...p, D: false } : p),
   detailExtras: (rec, p) => {
-    if (!(canInvite() && rec.status === 'menunggu_telegram')) return null;
-    const btn = h('button', { class: 'btn btn-primary btn-block', type: 'button' }, 'Buat tautan undangan Telegram');
+    if (!canInvite()) return null;
+    const out = [akunKredensial(rec)];
+    if (rec.status !== 'menunggu_telegram') return out;
+    const btn =h('button', { class: 'btn btn-primary btn-block', type: 'button' }, 'Buat tautan undangan Telegram');
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
@@ -67,9 +69,39 @@ const base = defineCrudModule({
         if (e?.status !== 401) toast(errorMessage(e, 'Gagal membuat undangan.'), 'error');
       } finally { btn.disabled = false; }
     });
-    return btn;
+    out.push(btn);
+    return out;
   },
 });
+
+// Kredensial (R-03): status password, reset password, dan cabut sesi. Admin tidak pernah melihat password.
+function akunKredensial(rec) {
+  const aksi = (label, cls, { title, message, okText, run, sukses }) => {
+    const b = h('button', { class: `btn ${cls} btn-block`, type: 'button' }, label);
+    b.addEventListener('click', async () => {
+      if (!(await showConfirm({ title, message, okText, destructive: true }))) return;
+      b.disabled = true;
+      try { const r = await run(); toast(r?.message || sukses, 'success'); }
+      catch (e) { if (e?.status !== 401) toast(errorMessage(e, 'Aksi gagal.'), 'error'); }
+      finally { b.disabled = false; }
+    });
+    return b;
+  };
+  const self = rec.id === getUser()?.id;
+  return h('div', { class: 'panel stack' },
+    h('h2', { class: 'panel-title' }, 'Kredensial login'),
+    h('p', { class: 'muted small' }, `Username: ${rec.username || '-'} · Password: ${rec.password_diatur ? 'sudah diatur' : 'belum diatur'}`),
+    self ? null : aksi('Reset password', 'btn-danger', {
+      title: 'Reset password', okText: 'Reset', sukses: 'Password direset.',
+      message: `Reset password ${rec.name}? Semua sesinya dicabut dan ia wajib mengatur password baru saat membuka Mini App.`,
+      run: () => api.post(`/pengguna/${rec.id}/reset-password`, {}, { silent: true }),
+    }),
+    aksi('Cabut semua sesi', 'btn-danger', {
+      title: 'Cabut sesi', okText: 'Cabut', sukses: 'Sesi dicabut.',
+      message: `Keluarkan ${rec.name} dari semua perangkat? Password tidak berubah.`,
+      run: () => api.del(`/pengguna/${rec.id}/sesi`, { silent: true }),
+    }));
+}
 
 function registerUndangan() {
   // Didaftarkan SEBELUM rute /pengguna/:id supaya "undangan" tidak dianggap id.
