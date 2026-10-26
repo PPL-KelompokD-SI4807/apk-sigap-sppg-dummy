@@ -134,8 +134,9 @@ export const pengeluaranDetailFields = [
   { name: 'kategori', label: 'Kategori', display: (r) => r.kategori_label || kategoriLabel(r.kategori) },
   { name: 'uraian', label: 'Uraian' },
   { name: 'nominal', label: 'Nominal', display: (r) => formatRupiah(r.nominal) },
+  { name: 'status_persetujuan', label: 'Persetujuan investor', display: (r) => r.status_persetujuan_label || ({ diajukan: 'Menunggu persetujuan', disetujui: 'Disetujui', ditolak: 'Ditolak' }[r.status_persetujuan] ?? 'Disetujui') },
   { name: 'pemasok', label: 'Pemasok', display: (r) => r.pemasok?.nama ?? '-' },
-  { name: 'melebihi_anggaran', label: 'Terhadap anggaran', display: (r) => (r.melebihi_anggaran ? 'Melebihi anggaran periode' : 'Dalam anggaran') },
+  { name: 'melebihi_anggaran', label: 'Terhadap anggaran', display: (r) => (r.status_persetujuan && r.status_persetujuan !== 'disetujui' ? 'Dihitung setelah disetujui' : r.melebihi_anggaran ? 'Melebihi anggaran periode' : 'Dalam anggaran') },
   { name: 'dicatat_oleh', label: 'Dicatat oleh', display: (r) => r.dicatat_oleh?.name ?? '-' },
 ];
 

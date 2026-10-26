@@ -145,3 +145,15 @@ export function ringkasKebutuhan(data) {
   return { kurang: k.filter((s) => s === 'kurang').length, tidakDapat: k.filter((s) => s === 'tidak_dapat').length, cukup: k.filter((s) => s === 'cukup').length, total: bahan.length };
 }
 export const catatanTidakDapat = (it) => `Satuan "${it.satuan}" tidak dapat dikonversi dari gram. Kebutuhan sekitar ${Number(it.kebutuhan_gram ?? 0).toLocaleString('id-ID')} g; cek stok secara manual.`;
+
+// ---- R-06b-2 (S2): menu jadwal yang tidak lagi disetujui investor ----
+/** Penanda dari server (menu_belum_disetujui); bila tak ada, turunkan dari menu.status_persetujuan. */
+export const menuBelumDisetujui = (rec) => (typeof rec?.menu_belum_disetujui === 'boolean' ? rec.menu_belum_disetujui : !!rec?.menu && !menuDisetujui(rec.menu));
+/** Tombol "Mulai masak" ditahan di klien bila menu belum disetujui (server tetap menolak dengan 422 pada `status`). */
+export const masakDitahanMenu = (kind, rec, to) => kind === 'produksi' && to === 'dimasak' && menuBelumDisetujui(rec);
+export const PESAN_MENU_BELUM_DISETUJUI = 'Menu jadwal ini belum disetujui investor; ajukan ulang menu sebelum memasak.';
+/** Pesan 422 saat pindah ke dimasak: pakai errors.status[0] dari server, jika tidak ada pesan baku. */
+export const pesanGagalStatus = (e) => {
+  const m = e?.errors?.status;
+  return (Array.isArray(m) ? m[0] : m) || (e?.status === 422 ? e.message || PESAN_MENU_BELUM_DISETUJUI : null);
+};
