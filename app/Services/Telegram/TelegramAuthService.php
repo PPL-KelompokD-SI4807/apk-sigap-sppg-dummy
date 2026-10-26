@@ -19,6 +19,7 @@ use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
  * Hasil `langkah`:
  * - `sesi_aktif` : klien mengirim token login penuh miliknya (header Authorization) untuk akun
  *                  Telegram yang sama dan perangkat (device_id) yang sama; tidak ada token baru.
+ *                  Token penuh milik akun LAIN dicabut (SesiService::cabutBilaMilikAkunLain).
  * - `masuk`      : token pra-login diterbitkan; lanjut username/no telepon + password.
  * - `aktivasi`   : token pra-login diterbitkan; akun belum punya password (undangan baru,
  *                  sigap:buat-admin, atau di-reset Admin) wajib atur password dulu.
@@ -47,6 +48,10 @@ class TelegramAuthService
         }
 
         $deviceHash = $deviceId === null || $deviceId === '' ? null : SesiService::hashPerangkat($deviceId);
+
+        if (! $dev) {
+            $this->sesi->cabutBilaMilikAkunLain($user, $bearer);
+        }
 
         if (! $dev && $this->sesi->sesiAktifUntuk($user, $bearer, $deviceHash)) {
             return ['langkah' => 'sesi_aktif', 'token' => null, 'expires_at' => null, 'user' => $user];

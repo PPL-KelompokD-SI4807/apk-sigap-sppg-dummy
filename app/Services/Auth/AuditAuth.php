@@ -47,6 +47,9 @@ final class AuditAuth
 
     public const SESI_DICABUT_ADMIN = 'auth.sesi_dicabut_admin';
 
+    /** Token penuh dikirim bersama initData akun Telegram lain lalu dicabut. */
+    public const SESI_DICABUT_AKUN_BERBEDA = 'auth.sesi_dicabut_akun_berbeda';
+
     /** @param array<string, mixed> $konteks */
     public static function catat(User $subjek, string $event, array $konteks = [], ?User $aktor = null): void
     {

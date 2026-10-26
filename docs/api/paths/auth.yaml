@@ -9,7 +9,9 @@
 
       - Bila klien menyimpan token login penuh, kirim di header `Authorization: Bearer <token>`
         beserta `device_id` yang sama: bila sesi itu milik akun Telegram yang sama dan perangkat yang
-        sama, respons `langkah: sesi_aktif` (tanpa token baru).
+        sama, respons `langkah: sesi_aktif` (tanpa token baru). Bila token login penuh itu milik akun
+        LAIN dari akun Telegram initData, token tersebut DICABUT (beserta kepercayaan perangkatnya)
+        dan klien wajib membuangnya; respons tetap 200 untuk akun initData (`langkah: masuk`).
       - Selain itu diterbitkan token PRA-LOGIN (ability `auth:pra-login`, 15 menit) yang hanya berlaku
         untuk /auth/masuk, /auth/aktivasi, /auth/token/*. Semua rute lain
         menolaknya dengan 403 `alasan: perlu_login_penuh`.

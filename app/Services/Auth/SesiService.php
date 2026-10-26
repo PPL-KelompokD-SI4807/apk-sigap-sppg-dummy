@@ -131,6 +131,35 @@ class SesiService
     }
 
     /**
+     * Token login penuh yang dikirim klien bersama initData milik akun LAIN (mis. HP dipakai akun
+     * Telegram berbeda) dicabut beserta kepercayaan perangkatnya, karena tidak bisa lagi dipastikan
+     * dipegang pemiliknya. Token tidak diikat ke initData di setiap request (akses website R-04).
+     */
+    public function cabutBilaMilikAkunLain(User $user, ?string $bearer): bool
+    {
+        if ($bearer === null || $bearer === '') {
+            return false;
+        }
+
+        $token = PersonalAccessToken::findToken($bearer);
+        $pemilik = $token?->tokenable;
+
+        if (! $token instanceof PersonalAccessToken
+            || ! $pemilik instanceof User
+            || $pemilik->is($user)
+            || ! in_array(self::ABILITY_PENUH, (array) $token->abilities, true)) {
+            return false;
+        }
+
+        $this->logout($pemilik, $token);
+        AuditAuth::catat($pemilik, AuditAuth::SESI_DICABUT_AKUN_BERBEDA, [
+            'perangkat_id' => $token->getAttribute('perangkat_tepercaya_id'),
+        ]);
+
+        return true;
+    }
+
+    /**
      * Pemeriksaan sesi untuk Bot (R-02): pengguna aktif dengan minimal satu sesi login penuh.
      * Menu bot yang membuka data wajib memanggil ini sebelum melayani.
      */

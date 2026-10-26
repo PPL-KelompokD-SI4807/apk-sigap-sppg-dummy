@@ -410,12 +410,39 @@ class KredensialTest extends TestCase
         $this->bukaMiniApp($this->siti, self::TABLET, $penuh)->assertOk()->assertJsonPath('langkah', 'masuk');
     }
 
-    public function test_sesi_milik_akun_telegram_lain_tidak_dipakai(): void
+    public function test_sesi_milik_akun_telegram_lain_dicabut(): void
     {
         $penuhSiti = $this->loginPenuh($this->siti, 'siti.dapur', self::PASSWORD);
+        $tabletSiti = $this->loginPenuh($this->siti, 'siti.dapur', self::PASSWORD, self::TABLET);
         $budi = User::factory()->denganKredensial('budi.akuntan')->create(['sppg_id' => $this->siti->sppg_id, 'telegram_id' => 7099990000]);
 
         // initData Budi + token Siti -> bukan sesi aktif; Budi tetap harus masuk sendiri.
         $this->bukaMiniApp($budi, self::HP, $penuhSiti)->assertOk()->assertJsonPath('langkah', 'masuk');
+
+        // Token Siti di HP itu dicabut beserta kepercayaan perangkatnya; sesi Siti di tablet tetap.
+        $this->kirim($penuhSiti, '/api/v1/auth/me', method: 'GET')->assertUnauthorized();
+        $this->kirim($tabletSiti, '/api/v1/auth/me', method: 'GET')->assertOk();
+        $this->assertNull(app(SesiService::class)->perangkatAktif($this->siti, SesiService::hashPerangkat(self::HP)));
+        $this->assertSame(0, $budi->tokens()->where('name', 'like', 'sesi:%')->count());
+
+        $log = AuditLog::query()->where('event', AuditAuth::SESI_DICABUT_AKUN_BERBEDA)->sole();
+        $this->assertSame($this->siti->id, $log->auditable_id);
+        $this->assertStringNotContainsString($penuhSiti, AuditLog::query()->get()->toJson());
+    }
+
+    public function test_token_pemilik_sendiri_dan_token_pra_login_akun_lain_tidak_dicabut_di_auth_telegram(): void
+    {
+        $penuh = $this->loginPenuh($this->siti, 'siti.dapur', self::PASSWORD);
+        $budi = User::factory()->denganKredensial('budi.akuntan')->create(['sppg_id' => $this->siti->sppg_id, 'telegram_id' => 7099990000]);
+        $praBudi = $this->praLogin($budi);
+
+        // Pemilik sendiri dari perangkat lain: bukan sesi aktif, tetapi token tidak dicabut.
+        $this->bukaMiniApp($this->siti, self::TABLET, $penuh)->assertOk()->assertJsonPath('langkah', 'masuk');
+        $this->kirim($penuh, '/api/v1/auth/me', method: 'GET')->assertOk();
+
+        // Hanya token LOGIN PENUH akun lain yang dicabut; token pra-login dibiarkan kedaluwarsa sendiri.
+        $this->bukaMiniApp($this->siti, self::HP, $praBudi)->assertOk();
+        $this->assertSame(1, $budi->tokens()->where('name', 'like', 'pra-login:%')->count());
+        $this->assertSame(0, AuditLog::query()->where('event', AuditAuth::SESI_DICABUT_AKUN_BERBEDA)->count());
     }
 }
