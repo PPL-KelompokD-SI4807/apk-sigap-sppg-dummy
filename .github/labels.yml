@@ -1,0 +1,79 @@
+# Label repositori SiGAP SPPG. Terapkan dengan scripts/create-labels.sh
+- name: fitur-01
+  description: "Data Pengguna (Login Akun)"
+  color: "1d76db"
+- name: fitur-02
+  description: "Notifikasi Perjalanan Mobil ke Tujuan"
+  color: "1d76db"
+- name: fitur-03
+  description: "Data SPPG"
+  color: "1d76db"
+- name: fitur-04
+  description: "Data Titik Layanan"
+  color: "1d76db"
+- name: fitur-05
+  description: "Data Penerima Manfaat"
+  color: "1d76db"
+- name: fitur-06
+  description: "Data Bahan Baku"
+  color: "1d76db"
+- name: fitur-07
+  description: "Data Pemasok"
+  color: "1d76db"
+- name: fitur-08
+  description: "Data Menu dan Gizi"
+  color: "1d76db"
+- name: fitur-09
+  description: "Data Jadwal Produksi dan Distribusi"
+  color: "1d76db"
+- name: fitur-10
+  description: "Data Log Produksi Harian"
+  color: "1d76db"
+- name: fitur-11
+  description: "Data Pemeriksaan Mutu dan Keamanan Pangan"
+  color: "1d76db"
+- name: fitur-12
+  description: "Data Armada dan Pengemudi"
+  color: "1d76db"
+- name: fitur-13
+  description: "Data Bukti Distribusi"
+  color: "1d76db"
+- name: fitur-14
+  description: "Data Keuangan (pencairan + pengeluaran)"
+  color: "1d76db"
+- name: fitur-15
+  description: "Data Feedback dan Keluhan"
+  color: "1d76db"
+- name: fitur-16
+  description: "Laporan Rekapitulasi Harian Operasional"
+  color: "1d76db"
+- name: tier-T0
+  description: "Rutin (haiku, low)"
+  color: "c2e0c6"
+- name: tier-T1
+  description: "Standar (sonnet, medium)"
+  color: "fef2c0"
+- name: tier-T2
+  description: "Penting (sonnet, high)"
+  color: "f9d0c4"
+- name: tier-T3
+  description: "Kritis (opus, high)"
+  color: "d93f0b"
+- name: sprint-1
+  description: "Sprint 1: minggu 7-10 (26 Okt - 22 Nov 2026)"
+  color: "0e8a16"
+- name: sprint-2
+  description: "Sprint 2: minggu 11-14 (23 Nov - 20 Des 2026)"
+  color: "5319e7"
+- name: backend
+  description: "Pekerjaan backend Laravel"
+  color: "bfdadc"
+- name: frontend
+  description: "Pekerjaan Telegram Mini App"
+  color: "c5def5"
+- name: ai-agent
+  description: "Agen AI, ToolRegistry, AiDraft"
+  color: "fbca04"
+- name: infra
+  description: "Docker, CI, deploy"
+  color: "ededed"

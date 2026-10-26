@@ -1,0 +1,76 @@
+schemas:
+  Lampiran:
+    type: object
+    description: Metadata lampiran. Jalur penyimpanan internal tidak pernah dikirim.
+    properties:
+      id: { type: integer }
+      kategori: { type: [string, 'null'], examples: [foto, berita_acara, nota, bukti] }
+      mime: { type: string, enum: [image/jpeg, image/png, image/webp] }
+      ukuran: { type: integer, description: Byte berkas tersimpan (setelah encode ulang). }
+      sha256: { type: string, description: Hash berkas tersimpan (integritas). }
+      url: { type: string, examples: ['/api/v1/lampiran/12'], description: 'Endpoint API ber-token (bukan URL publik).' }
+      uploaded_by: { type: [integer, 'null'] }
+      created_at: { type: string, format: date-time }
+  BerkasRingkas:
+    type: [object, 'null']
+    description: Berkas utama record (foto/nota/bukti). Ambil isinya lewat `url` dengan header Authorization.
+    properties:
+      lampiran_id: { type: integer }
+      url: { type: string, examples: ['/api/v1/lampiran/12'] }
+      mime: { type: string }
+      ukuran: { type: integer }
+  LampiranIds:
+    type: array
+    maxItems: 5
+    items: { type: integer, minimum: 1 }
+    description: |
+      ID lampiran hasil `POST /lampiran` tanpa `lampiranable_id` (unggahan tertunda), diikat ke data ini saat
+      simpan. Tiap id harus milik pengguna yang mengirim, SPPG sama, belum terikat, modul dan kategori
+      sesuai (`foto`); total lampiran per data maks 5 (yang sudah ada + baru). Pelanggaran -> 422 pada
+      `lampiran_ids` (pesan generik; tidak membocorkan id milik orang lain). Lampiran tidak dapat
+      dilepas/dihapus lewat API. Rollback transaksi melepas ikatan sehingga dapat dicoba lagi.
+  LampiranInput:
+    type: object
+    required: [modul, berkas]
+    properties:
+      modul:
+        type: string
+        enum: [bukti-distribusi, keuangan-pencairan, keuangan-pengeluaran, keluhan, mutu, log-produksi]
+      lampiranable_id:
+        type: [integer, 'null']
+        description: |
+          ID record induk (terikat langsung). Kosongkan untuk unggahan TERTUNDA (hanya modul keluhan, mutu,
+          log-produksi) lalu kirim id hasilnya sebagai `lampiran_ids` pada POST/PATCH modul tersebut.
+      sppg_id: { type: integer, description: 'Wajib untuk Admin pada unggahan tertunda; diabaikan untuk peran lain (SPPG pengguna).' }
+      kategori: { type: [string, 'null'], pattern: '^[a-z0-9_]{1,30}$', description: 'Modul keluhan/mutu/log-produksi hanya menerima `foto` (default).' }
+      berkas: { type: string, format: binary, description: 'JPEG/PNG/WebP, maks 5 MB, sisi maks 8000 px.' }
+parameters:
+  IdempotencyKey:
+    name: Idempotency-Key
+    in: header
+    required: false
+    description: |
+      UUID unik per aksi tulis (NFR-07). Pengulangan dengan kunci dan payload sama dalam 24 jam
+      mengembalikan respons yang sama (header `Idempotent-Replayed: true`) tanpa membuat data baru.
+      Kunci sama dengan payload berbeda -> 422; permintaan kembar yang masih diproses -> 409.
+      Respons gagal (non-2xx) tidak disimpan.
+    schema: { type: string, format: uuid }
+responses:
+  Conflict:
+    description: Permintaan dengan Idempotency-Key sama masih diproses.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/Error' }
+        example: { message: 'Permintaan dengan Idempotency-Key yang sama sedang diproses. Coba lagi sebentar lagi.' }
+  UploadRejected:
+    description: |
+      Validasi gagal, termasuk berkas ditolak: bukan JPEG/PNG/WebP menurut ISI berkas, 0 byte,
+      > 5 MB, sisi > 8000 px atau > 30 MP, memuat konten tersembunyi (kode PHP/HTML/skrip/ZIP/PDF),
+      atau gagal diproses ulang.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/ValidationError' }
+        example:
+          message: Data yang dikirim tidak valid.
+          errors:
+            berkas: ['Hanya gambar JPEG, PNG, atau WebP yang diizinkan.']

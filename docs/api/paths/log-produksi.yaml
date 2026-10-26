@@ -1,0 +1,130 @@
+/log-produksi:
+  get:
+    tags: [Log Produksi]
+    summary: Daftar log produksi harian
+    description: |
+      Hak R (admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan unit dapur). Filter: `q`
+      (kendala/kode batch), `jadwal_produksi_id`, `tanggal`/`from`/`to` (tanggal produksi jadwal),
+      `sppg_id` (Admin).
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: jadwal_produksi_id, in: query, schema: { type: integer } }
+      - { name: tanggal, in: query, schema: { type: string, format: date } }
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/LogProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Log Produksi]
+    summary: Catat log produksi untuk satu jadwal (satu log per jadwal)
+    description: |
+      Hak C (relawan unit dapur saja; kepala_sppg tidak memiliki C). Kode batch dibuat otomatis
+      (`BATCH-YYYYMMDD-NN`, unik per SPPG). Jadwal tidak boleh dibatalkan atau belum tiba harinya.
+      422 bila jadwal sudah memiliki log aktif. Bila log lama dihapus lunak, log dipulihkan (restore)
+      dengan kode batch yang sama. `realisasi_porsi` >= 0 dan <= kapasitas harian SPPG; respons memuat
+      `selisih_porsi` terhadap target. Foto: unggah dulu via `POST /lampiran` (modul `log-produksi`, tanpa `lampiranable_id`) lalu kirim `lampiran_ids` (maks 5);
+      `foto_path` dari body tidak diterima dan tidak dikirim balik; daftar foto ada di `lampiran`.
+      Menerima `ai_draft_id` opsional.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LogProduksiInput' }
+          example: { jadwal_produksi_id: 12, realisasi_porsi: 980, sisa_makanan_kg: 3.5, waktu_mulai: '03:10', jam_selesai: '08:20', kendala: 'Gas hampir habis' }
+    responses:
+      '201':
+        description: Dibuat (atau dipulihkan)
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LogProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/log-produksi/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Log Produksi]
+    summary: Detail log produksi
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LogProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Log Produksi]
+    summary: Ubah log produksi
+    description: Hak U (kepala_sppg; relawan dapur hanya log buatannya sendiri pada hari yang sama). `jadwal_produksi_id` tidak dapat diubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LogProduksiInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LogProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Log Produksi]
+    summary: Ubah sebagian log produksi
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LogProduksiInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LogProduksi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Log Produksi]
+    summary: Hapus lunak log produksi
+    description: Hak D (kepala_sppg). Tercatat di audit_logs sebagai deleted pada pemulihan/penghapusan.
+    responses:
+      '204': { description: Terhapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }

@@ -1,0 +1,89 @@
+schemas:
+  RekapHarianInput:
+    type: object
+    properties:
+      tanggal: { type: [string, 'null'], format: date }
+      catatan: { type: [string, 'null'], maxLength: 1000 }
+      kirim: { type: boolean, default: false }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  RekapHarianRingkasan:
+    type: object
+    description: Isi `ringkasan` snapshot sekaligus respons /rekap-harian/ringkasan. Uang berupa string desimal (2 digit).
+    properties:
+      tanggal: { type: string, format: date }
+      sppg_id: { type: integer }
+      porsi:
+        type: object
+        properties:
+          jumlah_jadwal: { type: integer, description: 'Jadwal produksi tanggal itu (tanpa yang dibatalkan).' }
+          target: { type: integer }
+          realisasi: { type: integer }
+          capaian_persen: { type: number, description: 'realisasi / target * 100, 0 bila target 0.' }
+          jadwal_tanpa_log: { type: integer }
+      distribusi:
+        type: object
+        properties:
+          total: { type: integer }
+          tiba: { type: integer, description: 'Status diterima (termasuk yang terlambat).' }
+          terlambat: { type: integer, description: 'Bukti distribusi bertanda terlambat.' }
+          batal: { type: integer }
+          belum_selesai: { type: integer }
+      mutu:
+        type: object
+        properties:
+          batch: { type: integer }
+          layak: { type: integer, description: 'Batch dengan pemeriksaan terbaru Layak.' }
+          tidak_layak: { type: integer }
+          belum_diperiksa: { type: integer }
+      stok:
+        type: object
+        properties:
+          menipis: { type: integer, description: 'stok <= stok_minimum' }
+          sudah_kedaluwarsa: { type: integer, description: 'kedaluwarsa_terdekat < tanggal' }
+          akan_kedaluwarsa: { type: integer, description: 'tanggal s.d. tanggal + 3 hari' }
+      keuangan:
+        type: object
+        properties:
+          periode: { type: string, examples: ['2026-11'] }
+          pencairan_periode: { type: string }
+          pengeluaran_hari_ini: { type: string }
+          pengeluaran_periode: { type: string, description: 'Sejak awal bulan sampai tanggal rekap.' }
+          sisa_anggaran: { type: string }
+          serapan_persen: { type: number }
+      keluhan:
+        type: object
+        properties:
+          baru: { type: integer, description: 'Dicatat pada tanggal itu.' }
+          kritis: { type: integer, description: 'Dicatat pada tanggal itu dengan prioritas kritis.' }
+          terbuka: { type: integer, description: 'baru + diproses sampai akhir tanggal itu.' }
+      sisa_makanan_kg: { type: number }
+    example:
+      tanggal: '2026-11-02'
+      sppg_id: 1
+      porsi: { jumlah_jadwal: 2, target: 1200, realisasi: 1180, capaian_persen: 98.33, jadwal_tanpa_log: 0 }
+      distribusi: { total: 4, tiba: 3, terlambat: 1, batal: 0, belum_selesai: 1 }
+      mutu: { batch: 2, layak: 2, tidak_layak: 0, belum_diperiksa: 0 }
+      stok: { menipis: 2, sudah_kedaluwarsa: 0, akan_kedaluwarsa: 1 }
+      keuangan: { periode: '2026-11', pencairan_periode: '50000000.00', pengeluaran_hari_ini: '1250000.00', pengeluaran_periode: '21250000.00', sisa_anggaran: '28750000.00', serapan_persen: 42.5 }
+      keluhan: { baru: 1, kritis: 0, terbuka: 3 }
+      sisa_makanan_kg: 3.2
+  RekapHarian:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      tanggal: { type: string, format: date }
+      ringkasan: { $ref: '#/components/schemas/RekapHarianRingkasan' }
+      catatan: { type: [string, 'null'] }
+      status_kirim:
+        type: string
+        enum: [menunggu, terkirim, gagal, tidak_terkirim]
+      dikirim_pada: { type: [string, 'null'], format: date-time }
+      disusun_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      disusun_pada: { type: [string, 'null'], format: date-time }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }

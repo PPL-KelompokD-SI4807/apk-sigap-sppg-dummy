@@ -1,0 +1,62 @@
+# SiGAP SPPG - Docker Compose. Kredensial dibaca dari .env (salin dari .env.example).
+# Nilai default hanya untuk pengembangan lokal dan bukan rahasia.
+
+x-app: &app
+  build:
+    context: .
+    target: app
+  image: sigap-sppg-app:${APP_TAG:-local}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DB_HOST: mysql
+    DB_PORT: 3306
+  depends_on:
+    mysql:
+      condition: service_healthy
+  volumes:
+    - app_storage:/var/www/html/storage
+
+services:
+  nginx:
+    build:
+      context: .
+      target: web
+    image: sigap-sppg-web:${APP_TAG:-local}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      - app
+
+  app:
+    <<: *app
+
+  queue:
+    <<: *app
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+
+  scheduler:
+    <<: *app
+    command: php artisan schedule:work
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-sigap_sppg}
+      MYSQL_USER: ${DB_USERNAME:-sigap}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?isi DB_PASSWORD di .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?isi DB_ROOT_PASSWORD di .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  mysql_data:
+  app_storage:
