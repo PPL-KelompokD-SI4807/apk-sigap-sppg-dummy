@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\KelompokSasaran;
+use App\Enums\StatusPersetujuanMenu;
 use App\Models\Menu;
 use App\Models\Sppg;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -29,6 +30,9 @@ class MenuFactory extends Factory
             'karbohidrat_g' => fake()->randomFloat(2, 80, 100),
             'serat_g' => fake()->randomFloat(2, 6, 12),
             'catatan' => null,
+            // Default disetujui agar fitur lain (jadwal produksi) tetap bisa memakai menu; tes persetujuan memakai state eksplisit.
+            'status_persetujuan' => StatusPersetujuanMenu::Disetujui,
+            'versi' => 1,
         ];
     }
 
@@ -41,5 +45,15 @@ class MenuFactory extends Factory
             'karbohidrat_g' => $karbo,
             'serat_g' => $serat,
         ]);
+    }
+
+    public function draf(): static
+    {
+        return $this->state(['status_persetujuan' => StatusPersetujuanMenu::Draf]);
+    }
+
+    public function diajukan(): static
+    {
+        return $this->state(['status_persetujuan' => StatusPersetujuanMenu::Diajukan]);
     }
 }

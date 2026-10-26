@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Enums\KelompokSasaran;
+use App\Enums\StatusPersetujuanMenu;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Menu extends Model
@@ -15,6 +17,12 @@ class Menu extends Model
     use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'menus';
+
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'status_persetujuan' => 'draf',
+        'versi' => 1,
+    ];
 
     /** @var list<string> */
     protected array $searchable = ['nama_menu', 'siklus'];
@@ -38,6 +46,8 @@ class Menu extends Model
     {
         return [
             'kelompok_sasaran' => KelompokSasaran::class,
+            'status_persetujuan' => StatusPersetujuanMenu::class,
+            'versi' => 'integer',
             'tanggal_sajian' => 'date:Y-m-d',
             'energi_kkal' => 'decimal:2',
             'protein_g' => 'decimal:2',
@@ -55,5 +65,15 @@ class Menu extends Model
     public function jadwalProduksis(): HasMany
     {
         return $this->hasMany(JadwalProduksi::class);
+    }
+
+    public function pengajuans(): HasMany
+    {
+        return $this->hasMany(PengajuanMenu::class);
+    }
+
+    public function pengajuanTerakhir(): HasOne
+    {
+        return $this->hasOne(PengajuanMenu::class)->latestOfMany('nomor');
     }
 }
