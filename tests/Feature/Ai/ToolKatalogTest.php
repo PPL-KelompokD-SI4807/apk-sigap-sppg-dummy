@@ -103,8 +103,9 @@ class ToolKatalogTest extends MasterApiTestCase
     {
         $modul = array_values(array_unique(array_map(fn (AiTool $t) => $t->module(), $this->registry->all())));
 
-        $this->assertEqualsCanonicalizing(self::MODUL, $modul);
-        $this->assertEqualsCanonicalizing(array_keys(config('rbac.modules')), self::MODUL);
+        // 16 modul fitur resmi + 'persetujuan-menu' (R-06b-1, hanya tool baca daftar_pengajuan_menu).
+        $this->assertEqualsCanonicalizing([...self::MODUL, 'persetujuan-menu'], $modul);
+        $this->assertEqualsCanonicalizing(array_keys(config('rbac.modules')), [...self::MODUL, 'persetujuan-menu']);
 
         $nama = array_values(array_map(fn (AiTool $t) => $t->name(), $this->registry->all()));
         $this->assertSame($nama, array_values(array_unique($nama)));
