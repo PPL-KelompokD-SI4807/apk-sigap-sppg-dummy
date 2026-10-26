@@ -16,6 +16,8 @@ use Illuminate\Validation\ValidationException;
  */
 class UserAccountService
 {
+    public function __construct(private readonly KepemilikanSppgService $kepemilikan) {}
+
     /** @param array<string, mixed> $data hasil Form Request (name, role, unit, sppg_id, phone, is_active) */
     public function create(array $data): User
     {
@@ -25,7 +27,7 @@ class UserAccountService
             'name' => $data['name'],
             'role' => $role,
             'unit' => $role === Role::Relawan ? ($data['unit'] ?? null) : null,
-            'sppg_id' => $role === Role::Admin ? null : ($data['sppg_id'] ?? null),
+            'sppg_id' => $role->tanpaSppgId() ? null : ($data['sppg_id'] ?? null),
             'phone' => $data['phone'] ?? null,
             'is_active' => $data['is_active'] ?? true,
         ]);
@@ -57,9 +59,14 @@ class UserAccountService
             'role' => $role,
             'is_active' => $active,
             'unit' => $role === Role::Relawan ? (array_key_exists('unit', $data) ? $data['unit'] : $target->unit?->value) : null,
-            'sppg_id' => $role === Role::Admin ? null : (array_key_exists('sppg_id', $data) ? $data['sppg_id'] : $target->sppg_id),
+            'sppg_id' => $role->tanpaSppgId() ? null : (array_key_exists('sppg_id', $data) ? $data['sppg_id'] : $target->sppg_id),
         ]);
+        $bukanInvestorLagi = $target->isDirty('role') && $target->getOriginal('role') === Role::Investor;
         $target->save();
+
+        if ($bukanInvestorLagi) {
+            $this->kepemilikan->hapusSemua($actor, $target);
+        }
 
         return $target;
     }

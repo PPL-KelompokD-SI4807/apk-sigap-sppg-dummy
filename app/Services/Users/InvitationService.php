@@ -154,8 +154,8 @@ class InvitationService
 
         $sppgId = $attributes['sppg_id'] ?? null;
 
-        if ($role === Role::Admin ? $sppgId !== null : $sppgId === null) {
-            throw ValidationException::withMessages(['sppg_id' => ['SPPG wajib untuk non-admin dan harus kosong untuk admin.']]);
+        if ($role->tanpaSppgId() ? $sppgId !== null : $sppgId === null) {
+            throw ValidationException::withMessages(['sppg_id' => ['SPPG wajib untuk peran satu-SPPG dan harus kosong untuk admin/investor.']]);
         }
 
         return ['user_id' => null, 'role' => $role->value, 'unit' => $unit, 'sppg_id' => $sppgId];
