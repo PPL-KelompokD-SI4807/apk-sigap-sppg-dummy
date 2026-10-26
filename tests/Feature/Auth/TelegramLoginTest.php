@@ -223,7 +223,7 @@ class TelegramLoginTest extends TestCase
 
         foreach ([
             ['/api/v1/auth/masuk', ['identitas' => 'demo.admin', 'password' => 'Rahasia123x', 'device_id' => str_repeat('d', 32)]],
-            ['/api/v1/auth/reset-password', ['identitas' => 'demo.admin', 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z', 'device_id' => str_repeat('d', 32)]],
+            ['/api/v1/auth/aktivasi', ['password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z', 'device_id' => str_repeat('d', 32)]],
         ] as [$url, $body]) {
             $this->freshAuth();
             $this->withToken($pra)->postJson($url, $body)->assertForbidden()->assertJsonPath('alasan', 'dev_bypass');

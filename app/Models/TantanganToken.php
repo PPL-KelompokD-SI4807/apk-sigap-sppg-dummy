@@ -33,8 +33,6 @@ class TantanganToken extends Model
 
     public const TUJUAN_AKTIVASI = 'aktivasi';
 
-    public const TUJUAN_RESET_PASSWORD = 'reset_password';
-
     protected $table = 'tantangan_tokens';
 
     protected $guarded = ['*'];

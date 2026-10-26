@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Requests\Auth\AktivasiRequest;
 use App\Http\Requests\Auth\KirimUlangTokenRequest;
 use App\Http\Requests\Auth\MasukRequest;
-use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\VerifikasiTokenRequest;
 use App\Http\Resources\AuthUserResource;
 use App\Models\TantanganToken;
@@ -19,7 +18,8 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Lapis 2 login R-03 (hanya token pra-login, middleware kemampuan:auth:pra-login):
- * masuk, aktivasi, lupa password, verifikasi & kirim ulang token 6 digit.
+ * masuk, aktivasi, verifikasi & kirim ulang token 6 digit. Tidak ada reset password mandiri:
+ * lupa password = hubungi Admin (POST /pengguna/{id}/reset-password) atau sigap:reset-password-admin.
  */
 class KredensialController extends ApiController
 {
@@ -48,21 +48,6 @@ class KredensialController extends ApiController
         $tantangan = $this->kredensial->mulaiAktivasi(
             $request->user(),
             $request->safe()->only(['username', 'phone', 'password']),
-            SesiService::hashPerangkat((string) $request->validated('device_id')),
-            $request->validated('label_perangkat'),
-            $this->praLogin($request),
-        );
-
-        return $this->tantangan($tantangan);
-    }
-
-    /** POST /api/v1/auth/reset-password (lupa password, via token bot) */
-    public function resetPassword(ResetPasswordRequest $request): JsonResponse
-    {
-        $tantangan = $this->kredensial->mulaiReset(
-            $request->user(),
-            (string) $request->validated('identitas'),
-            (string) $request->validated('password'),
             SesiService::hashPerangkat((string) $request->validated('device_id')),
             $request->validated('label_perangkat'),
             $this->praLogin($request),

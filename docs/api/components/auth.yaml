@@ -106,7 +106,7 @@ schemas:
     required: [langkah, tujuan, token, token_type, token_jenis, expires_at, user]
     properties:
       langkah: { type: string, const: selesai }
-      tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi, reset_password] }
+      tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi] }
       token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Simpan di localStorage perangkat ini.' }
       token_type: { type: string, const: Bearer }
       token_jenis: { type: string, const: penuh }
@@ -131,7 +131,7 @@ schemas:
         required: [id, tujuan, kedaluwarsa_pada, kirim_ulang_tersedia_pada, sisa_kirim_ulang, maks_percobaan]
         properties:
           id: { type: string, format: ulid }
-          tujuan: { type: string, enum: [perangkat_baru, aktivasi, reset_password] }
+          tujuan: { type: string, enum: [perangkat_baru, aktivasi] }
           kedaluwarsa_pada: { type: string, format: date-time }
           kirim_ulang_tersedia_pada: { type: [string, 'null'], format: date-time, description: 'null = batas kirim ulang habis.' }
           sisa_kirim_ulang: { type: integer }

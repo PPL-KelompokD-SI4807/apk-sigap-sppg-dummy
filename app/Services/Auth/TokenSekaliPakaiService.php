@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 
 /**
- * Token sekali pakai 6 digit R-03 (aktivasi, reset password, perangkat baru).
+ * Token sekali pakai 6 digit R-03 (aktivasi/atur password dan perangkat baru).
  *
  * - Kode acak kriptografis (random_int), hanya disimpan sebagai HMAC-SHA256(app key, id|kode).
  * - Dikirim bot HANYA ke users.telegram_id dari basis data (tidak pernah ke chat dari input).
@@ -237,7 +237,6 @@ class TokenSekaliPakaiService
         $menit = (int) config('kredensial.token.berlaku_menit', 5);
         $untuk = match ($tantangan->tujuan) {
             TantanganToken::TUJUAN_AKTIVASI => 'aktivasi akun',
-            TantanganToken::TUJUAN_RESET_PASSWORD => 'reset password',
             default => 'masuk dari perangkat baru',
         };
 

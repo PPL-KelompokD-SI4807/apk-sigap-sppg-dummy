@@ -12,8 +12,8 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 
 /**
- * Lapis 2 login R-03: username ATAU no telepon + password, token 6 digit dari bot untuk aktivasi,
- * reset password, dan perangkat baru.
+ * Lapis 2 login R-03: username ATAU no telepon + password, token 6 digit dari bot untuk aktivasi
+ * dan perangkat baru.
  *
  * Aturan keamanan inti:
  * - $user SELALU pemilik token pra-login (= akun Telegram dari initData). Identitas yang diketik
@@ -24,6 +24,9 @@ use Laravel\Sanctum\PersonalAccessToken;
  * - Penguncian sementara per akun setelah salah berulang. Karena identitas wajib milik akun
  *   Telegram yang sama, orang lain tidak dapat mengunci akun ini (bukan vektor DoS).
  * - Token pra-login dari bypass dev tidak pernah ditukar menjadi login penuh.
+ * - Tidak ada reset password mandiri (pemegang Telegram tidak boleh melewati lapis password,
+ *   termasuk saat akun terkunci). Reset hanya oleh Admin dalam scope-nya (Policy) atau
+ *   perintah server sigap:reset-password-admin; pengguna lalu mengatur ulang lewat aktivasi.
  */
 class KredensialService
 {
@@ -104,28 +107,6 @@ class KredensialService
         return $this->token->buat($user, TantanganToken::TUJUAN_AKTIVASI, $deviceHash, $payload);
     }
 
-    /** Lupa password: password baru berlaku setelah token dari bot dikonfirmasi. */
-    public function mulaiReset(User $user, string $identitas, string $passwordBaru, string $deviceHash, ?string $label, PersonalAccessToken $praLogin): TantanganToken
-    {
-        $this->tolakDev($user, $praLogin);
-
-        if (! $user->punyaPassword()) {
-            throw GalatAuth::perluAktivasi();
-        }
-
-        if (! $this->identitasCocok($user, $identitas)) {
-            $this->catatIdentitasAsing($user, $identitas, $deviceHash, 'reset_password');
-            $pesan = 'Username/no telepon tidak cocok dengan akun Telegram ini.';
-
-            throw GalatAuth::respons(422, GalatAuth::KREDENSIAL_SALAH, $pesan, ['identitas' => [$pesan]]);
-        }
-
-        return $this->token->buat($user, TantanganToken::TUJUAN_RESET_PASSWORD, $deviceHash, [
-            'password_hash' => Hash::make($passwordBaru),
-            'label' => $label,
-        ]);
-    }
-
     /**
      * Konfirmasi token 6 digit lalu selesaikan tujuan tantangan dan terbitkan login penuh.
      *
@@ -138,11 +119,9 @@ class KredensialService
         $hasil = $this->token->verifikasi($user, $tantanganId, $kode, $deviceHash, function (TantanganToken $tantangan) use ($user, $deviceHash, $praLogin): array {
             $payload = (array) $tantangan->payload;
 
-            match ($tantangan->tujuan) {
-                TantanganToken::TUJUAN_AKTIVASI => $this->terapkanAktivasi($user, $payload),
-                TantanganToken::TUJUAN_RESET_PASSWORD => $this->terapkanPassword($user, (string) ($payload['password_hash'] ?? '')),
-                default => null,
-            };
+            if ($tantangan->tujuan === TantanganToken::TUJUAN_AKTIVASI) {
+                $this->terapkanAktivasi($user, $payload);
+            }
 
             $label = isset($payload['label']) && is_string($payload['label']) ? $payload['label'] : null;
 
@@ -150,11 +129,7 @@ class KredensialService
                 + $this->sesi->terbitkanPenuh($user->refresh(), $deviceHash, $label, $praLogin);
         });
 
-        $event = match ($hasil['tujuan']) {
-            TantanganToken::TUJUAN_AKTIVASI => AuditAuth::AKTIVASI_BERHASIL,
-            TantanganToken::TUJUAN_RESET_PASSWORD => AuditAuth::RESET_PASSWORD_BERHASIL,
-            default => AuditAuth::MASUK_BERHASIL,
-        };
+        $event = $hasil['tujuan'] === TantanganToken::TUJUAN_AKTIVASI ? AuditAuth::AKTIVASI_BERHASIL : AuditAuth::MASUK_BERHASIL;
         AuditAuth::catat($user, $event, array_filter([
             'metode' => $hasil['metode'],
             'perangkat' => AuditAuth::sidik($deviceHash),
@@ -165,14 +140,14 @@ class KredensialService
     }
 
     /**
-     * Reset password oleh Admin: password dikosongkan (Admin tidak pernah melihat/menentukan
-     * password), semua sesi dicabut; pengguna wajib atur password baru (+ token bot) saat membuka
-     * Mini App berikutnya.
+     * Reset password oleh Admin ($aktor) atau perintah server ($aktor null): password dikosongkan
+     * (tidak pernah dilihat/ditentukan siapa pun selain pemilik), penguncian dibuka, semua sesi
+     * dicabut; pengguna wajib atur password baru (+ token bot) saat membuka Mini App berikutnya.
      */
-    public function resetOlehAdmin(User $admin, User $target): void
+    public function resetPassword(User $target, ?User $aktor = null): void
     {
-        if ($admin->is($target)) {
-            throw ValidationException::withMessages(['user' => ['Gunakan Lupa password untuk akun Anda sendiri.']]);
+        if ($aktor !== null && $aktor->is($target)) {
+            throw ValidationException::withMessages(['user' => ['Password akun sendiri tidak dapat direset lewat menu Admin. Minta Admin lain atau gunakan perintah server.']]);
         }
 
         DB::transaction(function () use ($target): void {
@@ -187,7 +162,7 @@ class KredensialService
             $target->cabutSemuaSesi();
         });
 
-        AuditAuth::catat($target, AuditAuth::PASSWORD_DIRESET_ADMIN, [], $admin);
+        AuditAuth::catat($target, AuditAuth::PASSWORD_DIRESET_ADMIN, $aktor === null ? ['oleh' => 'perintah_server'] : [], $aktor);
     }
 
     /** Cabut semua sesi pengguna oleh Admin. Mengembalikan jumlah sesi login penuh yang dicabut. */
@@ -302,23 +277,6 @@ class KredensialService
             // Balapan: username/no telepon diambil akun lain setelah validasi.
             throw ValidationException::withMessages(['username' => ['Username atau no telepon sudah dipakai akun lain. Ulangi aktivasi.']]);
         }
-    }
-
-    private function terapkanPassword(User $user, string $hash): void
-    {
-        if ($hash === '') {
-            throw GalatAuth::token(GalatAuth::TOKEN_TIDAK_VALID, 'Token tidak valid. Ulangi dari awal.');
-        }
-
-        $segar = User::withoutGlobalScopes()->lockForUpdate()->findOrFail($user->getKey());
-
-        // Event updated mencabut SEMUA sesi & perangkat lama; sesi baru diterbitkan sesudahnya.
-        $segar->forceFill([
-            'password' => $hash,
-            'password_changed_at' => now(),
-            'failed_login_attempts' => 0,
-            'locked_until' => null,
-        ])->save();
     }
 
     private function tolakDev(User $user, PersonalAccessToken $praLogin): void

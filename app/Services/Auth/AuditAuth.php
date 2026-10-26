@@ -39,8 +39,6 @@ final class AuditAuth
 
     public const AKTIVASI_BERHASIL = 'auth.aktivasi_berhasil';
 
-    public const RESET_PASSWORD_BERHASIL = 'auth.reset_password_berhasil';
-
     public const LOGOUT = 'auth.logout';
 
     public const KELUAR_SEMUA = 'auth.keluar_semua';

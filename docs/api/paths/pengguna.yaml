@@ -141,8 +141,10 @@
     description: |
       Admin tidak pernah melihat atau menentukan password: password dikosongkan, semua sesi dan
       perangkat tepercaya pengguna dicabut. Saat membuka Mini App berikutnya pengguna mendapat
-      `langkah: aktivasi` dan mengatur password sendiri (+ token bot). Tidak untuk akun sendiri
-      (422, field `user`; pakai Lupa password). Dicatat di log audit.
+      `langkah: aktivasi` dan mengatur password sendiri (+ token bot). Ini satu-satunya jalan
+      "lupa password" (tidak ada reset mandiri). Tidak untuk akun sendiri (422, field `user`); Admin
+      yang lupa password direset Admin lain atau lewat `php artisan sigap:reset-password-admin`.
+      Dicatat di log audit.
     responses:
       '200':
         description: Password direset

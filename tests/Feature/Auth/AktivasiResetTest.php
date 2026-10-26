@@ -18,8 +18,8 @@ use Tests\Support\CreatesSppg;
 use Tests\TestCase;
 
 /**
- * R-03 aktivasi (undangan / sigap:buat-admin / setelah reset Admin), lupa password via token bot,
- * aturan kekuatan password, dan pencabutan sesi saat password berubah.
+ * R-03 aktivasi (undangan / sigap:buat-admin / setelah reset Admin), tidak ada reset password
+ * mandiri (lupa password = hubungi Admin / sigap:reset-password-admin), aturan kekuatan password.
  */
 class AktivasiResetTest extends TestCase
 {
@@ -101,9 +101,6 @@ class AktivasiResetTest extends TestCase
         // Tanpa password tidak ada jalan pintas ke login penuh.
         $this->kirim($pra, '/api/v1/pengguna', method: 'GET')->assertForbidden();
         $this->kirim($pra, '/api/v1/auth/masuk', ['identitas' => 'admin', 'password' => '', 'device_id' => self::HP])->assertUnprocessable();
-        $this->kirim($pra, '/api/v1/auth/reset-password', [
-            'identitas' => 'admin.fiktif', 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z', 'device_id' => self::HP,
-        ])->assertStatus(409)->assertJsonPath('alasan', 'perlu_aktivasi');
 
         $id = $this->aktivasi($pra, ['username' => 'admin.fiktif'])->assertStatus(202)->json('tantangan.id');
         $penuh = $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $this->kodeTerakhir(7000000001), 'device_id' => self::HP])
@@ -191,46 +188,64 @@ class AktivasiResetTest extends TestCase
         ])->assertUnprocessable()->assertJsonPath('errors.password.0', 'Konfirmasi password tidak sama.');
     }
 
-    // ---------------------------------------------------------------- lupa password (token bot)
+    // ------------------------------------------------- lupa password = hubungi Admin
 
-    public function test_reset_password_via_token_bot_mencabut_semua_sesi_lama(): void
-    {
-        $user = $this->akunBaru(['username' => 'rina.gizi', 'password' => Hash::make(self::PASSWORD), 'phone' => '085711112222']);
-        $hp = $this->loginPenuh($user, 'rina.gizi', self::PASSWORD, self::HP);
-        $tablet = $this->loginPenuh($user, 'rina.gizi', self::PASSWORD, self::TABLET);
-
-        $pra = $this->praLogin($user, self::LAPTOP);
-        $id = $this->kirim($pra, '/api/v1/auth/reset-password', [
-            'identitas' => '085711112222', 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z', 'device_id' => self::LAPTOP,
-        ])->assertStatus(202)->assertJsonPath('tantangan.tujuan', 'reset_password')->json('tantangan.id');
-
-        // Password lama masih berlaku sampai token dikonfirmasi.
-        $this->assertTrue(Hash::check(self::PASSWORD, $user->fresh()->password));
-        $this->kirim($hp, '/api/v1/auth/me', method: 'GET')->assertOk();
-
-        $baru = $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $this->kodeTerakhir(7011112222), 'device_id' => self::LAPTOP])
-            ->assertOk()->assertJsonPath('tujuan', 'reset_password')->json('token');
-
-        $this->kirim($hp, '/api/v1/auth/me', method: 'GET')->assertUnauthorized();
-        $this->kirim($tablet, '/api/v1/auth/me', method: 'GET')->assertUnauthorized();
-        $this->kirim($baru, '/api/v1/auth/me', method: 'GET')->assertOk();
-        $this->assertSame(1, $user->perangkatTepercaya()->aktif()->count());
-
-        $this->assertTrue(Hash::check('BaruSekali9z', $user->fresh()->password));
-        $pra = $this->praLogin($user, self::HP);
-        $this->kirim($pra, '/api/v1/auth/masuk', ['identitas' => 'rina.gizi', 'password' => self::PASSWORD, 'device_id' => self::HP])
-            ->assertUnprocessable()->assertJsonPath('alasan', 'kredensial_salah');
-        $this->assertSame(1, AuditLog::query()->where('event', AuditAuth::RESET_PASSWORD_BERHASIL)->count());
-    }
-
-    public function test_reset_password_tunduk_aturan_password(): void
+    public function test_tidak_ada_reset_password_mandiri_termasuk_saat_akun_terkunci(): void
     {
         $user = $this->akunBaru(['username' => 'rina.gizi', 'password' => Hash::make(self::PASSWORD)]);
+        User::withoutGlobalScopes()->whereKey($user->id)->update(['locked_until' => now()->addMinutes(15)]);
         $pra = $this->praLogin($user);
 
         $this->kirim($pra, '/api/v1/auth/reset-password', [
-            'identitas' => 'rina.gizi', 'password' => 'rina.gizi', 'password_confirmation' => 'rina.gizi', 'device_id' => self::HP,
-        ])->assertUnprocessable()->assertJsonValidationErrors(['password']);
+            'identitas' => 'rina.gizi', 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z', 'device_id' => self::HP,
+        ])->assertNotFound();
+        // Aktivasi juga bukan jalan pintas untuk akun yang sudah berpassword.
+        $this->aktivasi($pra, [])->assertStatus(409)->assertJsonPath('alasan', 'sudah_aktivasi');
+
         $this->assertCount(0, $this->telegramCalls('sendMessage'));
+        $this->assertTrue(Hash::check(self::PASSWORD, $user->fresh()->password));
+    }
+
+    public function test_perintah_server_reset_password_admin_lalu_admin_atur_ulang_sendiri(): void
+    {
+        $admin = User::factory()->admin()->denganKredensial('admin.pusat', self::PASSWORD)->create(['telegram_id' => 7000000002]);
+        $hp = $this->beriSesiPenuh($admin);
+        User::withoutGlobalScopes()->whereKey($admin->id)->update(['locked_until' => now()->addMinutes(15), 'failed_login_attempts' => 3]);
+
+        $this->artisan('sigap:reset-password-admin', ['telegram_id' => '7000000002'])
+            ->expectsConfirmation('Reset password Admin "'.$admin->name.'" dan cabut semua sesinya?', 'yes')
+            ->expectsOutput('Password Admin direset dan semua sesi dicabut.')
+            ->assertSuccessful();
+
+        $admin->refresh();
+        $this->assertNull($admin->password);
+        $this->assertNull($admin->locked_until);
+        $this->assertSame(0, $admin->tokens()->count());
+        $this->assertSame(0, $admin->perangkatTepercaya()->aktif()->count());
+        $this->kirim($hp, '/api/v1/auth/me', method: 'GET')->assertUnauthorized();
+        $log = AuditLog::query()->where('event', AuditAuth::PASSWORD_DIRESET_ADMIN)->sole();
+        $this->assertSame(['oleh' => 'perintah_server'], $log->new_values);
+
+        $pra = $this->bukaMiniApp($admin)->assertOk()->assertJsonPath('langkah', 'aktivasi')->json('token');
+        $id = $this->aktivasi($pra, ['password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z'])->assertStatus(202)->json('tantangan.id');
+        $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $this->kodeTerakhir(7000000002), 'device_id' => self::HP])
+            ->assertOk()->assertJsonPath('user.username', 'admin.pusat');
+        $this->assertTrue(Hash::check('BaruSekali9z', $admin->fresh()->password));
+    }
+
+    public function test_perintah_server_hanya_untuk_admin_aktif_dan_bisa_dibatalkan(): void
+    {
+        $bukanAdmin = $this->akunBaru(['username' => 'rina.gizi', 'password' => Hash::make(self::PASSWORD)]);
+        $admin = User::factory()->admin()->denganKredensial('admin.pusat', self::PASSWORD)->create(['telegram_id' => 7000000003]);
+
+        $this->artisan('sigap:reset-password-admin', ['telegram_id' => (string) $bukanAdmin->telegram_id, '--force' => true])
+            ->expectsOutput('Admin aktif dengan telegram_id tersebut tidak ditemukan.')->assertFailed();
+        $this->artisan('sigap:reset-password-admin', ['telegram_id' => 'abc'])->assertFailed();
+        $this->artisan('sigap:reset-password-admin', ['telegram_id' => '7000000003'])
+            ->expectsConfirmation('Reset password Admin "'.$admin->name.'" dan cabut semua sesinya?', 'no')
+            ->assertFailed();
+
+        $this->assertNotNull($bukanAdmin->fresh()->password);
+        $this->assertNotNull($admin->fresh()->password);
     }
 }

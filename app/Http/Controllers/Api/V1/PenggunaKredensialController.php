@@ -21,7 +21,7 @@ class PenggunaKredensialController extends ApiController
     {
         $this->authorize('update', $user);
 
-        $this->kredensial->resetOlehAdmin($request->user(), $user);
+        $this->kredensial->resetPassword($user, $request->user());
 
         return response()->json([
             'message' => 'Password direset dan semua sesi pengguna dicabut. Pengguna wajib mengatur password baru saat membuka Mini App.',

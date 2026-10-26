@@ -260,7 +260,7 @@ class TelegramWebhookTest extends MasterApiTestCase
         $this->webhook($this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => 'halo']))->assertOk();
 
         $this->beriSesiPenuh($this->kepalaA);
-        app(KredensialService::class)->resetOlehAdmin($this->admin, $this->kepalaA->fresh());
+        app(KredensialService::class)->resetPassword($this->kepalaA->fresh(), $this->admin);
         $this->webhook($this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => 'halo lagi']))->assertOk();
 
         $this->assertSame([], $fake->calls);

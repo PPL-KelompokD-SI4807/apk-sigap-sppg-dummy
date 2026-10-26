@@ -156,10 +156,6 @@ class KredensialTest extends TestCase
                 ->assertUnprocessable()->assertJsonPath('alasan', 'kredensial_salah');
         }
 
-        $this->kirim($pra, '/api/v1/auth/reset-password', [
-            'identitas' => 'budi.akuntan', 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z', 'device_id' => self::HP,
-        ])->assertUnprocessable()->assertJsonPath('alasan', 'kredensial_salah');
-
         $this->assertCount(0, $this->messagesTo(7099990000));
         $this->assertCount(0, $this->telegramCalls('sendMessage'));
         $this->assertSame(0, $budi->tokens()->count());
@@ -167,7 +163,7 @@ class KredensialTest extends TestCase
         $this->assertTrue(Hash::check('BudiRahasia9', $budi->fresh()->password));
 
         $logs = AuditLog::query()->where('event', AuditAuth::IDENTITAS_TIDAK_COCOK)->get();
-        $this->assertCount(3, $logs);
+        $this->assertCount(2, $logs);
         $this->assertTrue($logs->every(fn ($l) => $l->auditable_id === $this->siti->id && $l->new_values['milik_akun_lain'] === true));
         $this->assertStringNotContainsString('0813', $logs->toJson());
     }

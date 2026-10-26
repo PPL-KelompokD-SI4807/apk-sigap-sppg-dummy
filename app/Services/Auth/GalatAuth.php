@@ -89,7 +89,7 @@ final class GalatAuth
 
     public static function sudahAktivasi(): HttpResponseException
     {
-        return self::respons(409, self::SUDAH_AKTIVASI, 'Akun sudah memiliki password. Gunakan Masuk atau Lupa password.', tambahan: ['langkah' => 'masuk']);
+        return self::respons(409, self::SUDAH_AKTIVASI, 'Akun sudah memiliki password. Gunakan Masuk, atau hubungi Admin bila lupa password.', tambahan: ['langkah' => 'masuk']);
     }
 
     /** @param array<string, mixed> $tambahan */

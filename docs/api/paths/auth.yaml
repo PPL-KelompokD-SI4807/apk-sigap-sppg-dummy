@@ -11,10 +11,13 @@
         beserta `device_id` yang sama: bila sesi itu milik akun Telegram yang sama dan perangkat yang
         sama, respons `langkah: sesi_aktif` (tanpa token baru).
       - Selain itu diterbitkan token PRA-LOGIN (ability `auth:pra-login`, 15 menit) yang hanya berlaku
-        untuk /auth/masuk, /auth/aktivasi, /auth/reset-password, /auth/token/*. Semua rute lain
+        untuk /auth/masuk, /auth/aktivasi, /auth/token/*. Semua rute lain
         menolaknya dengan 403 `alasan: perlu_login_penuh`.
       - `langkah: aktivasi` bila akun belum punya password (undangan baru, sigap:buat-admin, atau
         password di-reset Admin); `langkah: masuk` bila sudah.
+      - Tidak ada reset password mandiri. "Lupa password" di Mini App hanya menampilkan arahan
+        menghubungi Admin (Admin: POST /pengguna/{id}/reset-password; Admin sendiri: perintah server
+        `php artisan sigap:reset-password-admin <telegram_id>`), lalu pengguna aktivasi ulang.
 
       Batas laju 10/menit per IP. Bypass dev `init_data=dev_role=<role>` hanya di APP_ENV
       local/testing dengan TELEGRAM_DEV_BYPASS=true dan hanya menerbitkan token pra-login (tidak
@@ -178,50 +181,8 @@
         content:
           application/json:
             schema: { $ref: '#/components/schemas/AuthError' }
-            example: { message: 'Akun sudah memiliki password. Gunakan Masuk atau Lupa password.', alasan: sudah_aktivasi, langkah: masuk }
+            example: { message: 'Akun sudah memiliki password. Gunakan Masuk, atau hubungi Admin bila lupa password.', alasan: sudah_aktivasi, langkah: masuk }
       '422': { $ref: '#/components/responses/ValidationFailed' }
-      '429': { $ref: '#/components/responses/AuthTooManyRequests' }
-      '503': { $ref: '#/components/responses/TokenGagalKirim' }
-/auth/reset-password:
-  post:
-    tags: [Auth]
-    summary: Lupa password - password baru via token bot (token pra-login)
-    description: |
-      Identitas harus milik akun Telegram yang sama. Password baru berlaku setelah token 6 digit
-      dikonfirmasi; saat itu SEMUA sesi & perangkat lama dicabut dan perangkat ini mendapat sesi baru.
-      Alternatif: minta Admin mereset (POST /pengguna/{id}/reset-password), lalu aktivasi ulang.
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            type: object
-            required: [identitas, password, password_confirmation, device_id]
-            properties:
-              identitas: { type: string, minLength: 3, maxLength: 32 }
-              password: { type: string, minLength: 8, maxLength: 64 }
-              password_confirmation: { type: string }
-              device_id: { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$' }
-              label_perangkat: { type: [string, 'null'], maxLength: 120 }
-          example: { identitas: '081234567890', password: 'BaruSekali9z', password_confirmation: 'BaruSekali9z', device_id: 'Qm9va1NpR0FQLWRldmljZS0xMjM0NTY3OA' }
-    responses:
-      '202':
-        description: Token 6 digit dikirim bot.
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/TantanganResponse' }
-      '401': { $ref: '#/components/responses/Unauthorized' }
-      '403': { $ref: '#/components/responses/AuthForbidden' }
-      '409':
-        description: Akun belum diaktivasi.
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AuthError' }
-      '422':
-        description: Validasi gagal, atau identitas tidak cocok dengan akun Telegram ini (`alasan: kredensial_salah`).
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AuthError' }
       '429': { $ref: '#/components/responses/AuthTooManyRequests' }
       '503': { $ref: '#/components/responses/TokenGagalKirim' }
 /auth/token/verifikasi:
