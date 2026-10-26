@@ -70,7 +70,7 @@ class KredensialService
             return ['langkah' => 'selesai'] + $hasil;
         }
 
-        $tantangan = $this->token->buat($user, TantanganToken::TUJUAN_PERANGKAT_BARU, $deviceHash, [
+        $tantangan = $this->token->buat($user, $praLogin, TantanganToken::TUJUAN_PERANGKAT_BARU, $deviceHash, [
             'label' => $label,
             'metode' => $this->metode($identitas),
         ]);
@@ -103,7 +103,7 @@ class KredensialService
 
         // Ketersediaan username diperiksa setelah jatah tantangan terpakai: pesan seragam dan
         // maks config('kredensial.token.maks_tantangan') kali per jendela (bukan oracle akun murah).
-        return $this->token->buat($user, TantanganToken::TUJUAN_AKTIVASI, $deviceHash, $payload,
+        return $this->token->buat($user, $praLogin, TantanganToken::TUJUAN_AKTIVASI, $deviceHash, $payload,
             fn () => $this->usernameDipakaiAkunLain($user, $payload['username'] ?? null) ? throw self::usernameTidakTersedia() : null);
     }
 
@@ -136,7 +136,7 @@ class KredensialService
     {
         $this->tolakDev($user, $praLogin);
 
-        $hasil = $this->token->verifikasi($user, $tantanganId, $kode, $deviceHash, function (TantanganToken $tantangan) use ($user, $deviceHash, $praLogin): array {
+        $hasil = $this->token->verifikasi($user, $praLogin, $tantanganId, $kode, $deviceHash, function (TantanganToken $tantangan) use ($user, $deviceHash, $praLogin): array {
             $payload = (array) $tantangan->payload;
 
             if ($tantangan->tujuan === TantanganToken::TUJUAN_AKTIVASI) {

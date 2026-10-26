@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Token sekali pakai 6 digit R-03 (aktivasi/atur password dan perangkat baru).
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\RateLimiter;
  * - Kedaluwarsa config('kredensial.token.berlaku_menit') (5), sekali pakai (klaim atomik),
  *   hangus setelah maks_percobaan salah (total per tantangan, termasuk setelah kirim ulang), kirim ulang dibatasi jeda & jumlah, tantangan baru per
  *   pengguna dibatasi per jendela waktu.
- * - Terikat ke pengguna + perangkat (device_hash); tantangan milik pengguna/perangkat lain
+ * - Terikat ke pengguna + token pra-login yang memintanya + perangkat (device_hash); Mini App yang
+ *   dibuka ulang (token pra-login baru) wajib mengulang dari awal. Tantangan milik pengguna/perangkat lain
  *   diperlakukan sama dengan tidak ada (tanpa membedakan pesan).
  * - Pesan bot tidak pernah memuat password atau no telepon.
  */
@@ -35,7 +37,7 @@ class TokenSekaliPakaiService
      * @param  (Closure(): void)|null  $periksa  dijalankan SETELAH jatah tantangan terpakai (pemeriksaan
      *                                           yang bisa menjadi oracle, mis. username tersedia)
      */
-    public function buat(User $user, string $tujuan, string $deviceHash, array $payload = [], ?Closure $periksa = null): TantanganToken
+    public function buat(User $user, PersonalAccessToken $praLogin, string $tujuan, string $deviceHash, array $payload = [], ?Closure $periksa = null): TantanganToken
     {
         if ($user->telegram_id === null) {
             throw GalatAuth::respons(422, GalatAuth::TELEGRAM_BELUM_TERHUBUNG, 'Akun belum terhubung ke Telegram. Minta tautan undangan kepada Admin.');
@@ -58,7 +60,7 @@ class TokenSekaliPakaiService
 
         $kode = $this->kodeAcak();
 
-        $tantangan = DB::transaction(function () use ($user, $tujuan, $deviceHash, $payload, $kode): TantanganToken {
+        $tantangan = DB::transaction(function () use ($user, $praLogin, $tujuan, $deviceHash, $payload, $kode): TantanganToken {
             // Satu tantangan terbuka per pengguna+tujuan+perangkat: yang lama hangus.
             $user->tantanganToken()->terbuka()
                 ->where('tujuan', $tujuan)->where('device_hash', $deviceHash)
@@ -68,6 +70,7 @@ class TokenSekaliPakaiService
             $tantangan->forceFill([
                 'id' => $tantangan->newUniqueId(),
                 'user_id' => $user->getKey(),
+                'personal_access_token_id' => $praLogin->getKey(),
                 'tujuan' => $tujuan,
                 'device_hash' => $deviceHash,
                 'percobaan' => 0,
@@ -90,9 +93,9 @@ class TokenSekaliPakaiService
      * Kirim ulang: kode baru (kode lama tidak berlaku) dan masa berlaku diperbarui. Hitungan percobaan
      * salah TIDAK di-reset: total tebakan per tantangan tetap maks_percobaan.
      */
-    public function kirimUlang(User $user, string $tantanganId, string $deviceHash): TantanganToken
+    public function kirimUlang(User $user, PersonalAccessToken $praLogin, string $tantanganId, string $deviceHash): TantanganToken
     {
-        $tantangan = $this->milik($user, $tantanganId, $deviceHash);
+        $tantangan = $this->milik($user, $praLogin, $tantanganId, $deviceHash);
 
         if ($tantangan === null || ! $tantangan->terbuka()) {
             throw GalatAuth::token(GalatAuth::TOKEN_TIDAK_VALID, 'Permintaan token tidak berlaku lagi. Ulangi dari awal.');
@@ -142,12 +145,12 @@ class TokenSekaliPakaiService
      * @param  Closure(TantanganToken): T  $lanjutan
      * @return T
      */
-    public function verifikasi(User $user, string $tantanganId, string $kode, string $deviceHash, Closure $lanjutan): mixed
+    public function verifikasi(User $user, PersonalAccessToken $praLogin, string $tantanganId, string $kode, string $deviceHash, Closure $lanjutan): mixed
     {
         $maks = max(1, (int) config('kredensial.token.maks_percobaan', 5));
 
-        $hasil = DB::transaction(function () use ($user, $tantanganId, $kode, $deviceHash, $lanjutan, $maks): array {
-            $tantangan = $this->milik($user, $tantanganId, $deviceHash, kunci: true);
+        $hasil = DB::transaction(function () use ($user, $praLogin, $tantanganId, $kode, $deviceHash, $lanjutan, $maks): array {
+            $tantangan = $this->milik($user, $praLogin, $tantanganId, $deviceHash, kunci: true);
 
             if ($tantangan === null) {
                 return ['galat' => GalatAuth::TOKEN_TIDAK_VALID];
@@ -228,11 +231,13 @@ class TokenSekaliPakaiService
         };
     }
 
-    private function milik(User $user, string $tantanganId, string $deviceHash, bool $kunci = false): ?TantanganToken
+    /** Tantangan milik user + token pra-login ini + perangkat ini; selain itu null (tanpa membedakan). */
+    private function milik(User $user, PersonalAccessToken $praLogin, string $tantanganId, string $deviceHash, bool $kunci = false): ?TantanganToken
     {
         $tantangan = TantanganToken::query()
             ->whereKey($tantanganId)
             ->where('user_id', $user->getKey())
+            ->where('personal_access_token_id', $praLogin->getKey())
             ->when($kunci, fn ($q) => $q->lockForUpdate())
             ->first();
 

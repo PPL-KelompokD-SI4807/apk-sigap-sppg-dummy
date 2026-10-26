@@ -261,11 +261,12 @@ class KredensialTest extends TestCase
 
         $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kode, 'device_id' => self::HP])->assertOk();
 
-        // Token pra-login lama sudah habis; Mini App dibuka ulang lalu kode yang sama dicoba lagi.
+        // Token pra-login lama sudah habis setelah dipakai; kode yang sama tidak bisa dipakai lagi.
         $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kode, 'device_id' => self::HP])->assertUnauthorized();
+        $this->assertNotNull(TantanganToken::query()->find($id)->dipakai_pada);
         $praBaru = $this->praLogin($this->siti);
         $this->kirim($praBaru, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kode, 'device_id' => self::HP])
-            ->assertUnprocessable()->assertJsonPath('alasan', 'token_dipakai');
+            ->assertUnprocessable()->assertJsonPath('alasan', 'token_tidak_valid');
 
         $this->assertSame(1, $this->siti->tokens()->where('name', 'like', 'sesi:%')->count());
         $this->assertNull(TantanganToken::query()->find($id)->payload, 'Payload dikosongkan setelah dipakai.');
@@ -315,9 +316,31 @@ class KredensialTest extends TestCase
 
         $this->assertSame(0, PersonalAccessToken::query()->where('name', 'like', 'sesi:%')->count());
 
-        // Pemilik sah tetap bisa (Mini App dibuka ulang di perangkat yang sama tidak masalah).
+        // Pemilik sah dengan token pra-login yang meminta tantangan tetap bisa.
+        $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kode, 'device_id' => self::HP])->assertOk();
+    }
+
+    public function test_tantangan_terikat_token_pra_login_yang_memintanya(): void
+    {
+        [$pra, $id] = $this->mulaiMasuk();
+        $kode = $this->kodeTerakhir(7012345678);
+
+        // Token pra-login LAIN milik akun yang sama (dari perangkat lain) + device_id & kode benar: ditolak.
+        $praLain = $this->praLogin($this->siti, self::TABLET);
+        $this->kirim($praLain, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kode, 'device_id' => self::HP])
+            ->assertUnprocessable()->assertJsonPath('alasan', 'token_tidak_valid');
+        $this->travel(61)->seconds();
+        $this->kirim($praLain, '/api/v1/auth/token/kirim-ulang', ['tantangan_id' => $id, 'device_id' => self::HP])
+            ->assertUnprocessable()->assertJsonPath('alasan', 'token_tidak_valid');
+        $this->assertSame(0, TantanganToken::query()->find($id)->percobaan, 'Percobaan dari token lain tidak menyentuh tantangan.');
+
+        // Mini App dibuka ulang di perangkat yang sama = token pra-login baru: wajib ulangi dari awal.
         $praUlang = $this->praLogin($this->siti);
-        $this->kirim($praUlang, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kode, 'device_id' => self::HP])->assertOk();
+        $this->kirim($praUlang, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kode, 'device_id' => self::HP])
+            ->assertUnprocessable()->assertJsonPath('alasan', 'token_tidak_valid');
+        $this->assertSame(0, $this->siti->tokens()->where('name', 'like', 'sesi:%')->count());
+        $this->assertNotSame($pra, $praUlang);
+        $this->assertSame((int) explode('|', $pra)[0], TantanganToken::query()->find($id)->personal_access_token_id);
     }
 
     public function test_kirim_ulang_dibatasi_jeda_dan_kode_lama_tidak_berlaku(): void

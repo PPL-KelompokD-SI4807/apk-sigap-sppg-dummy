@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
  *
  * @property string $id
  * @property int $user_id
+ * @property int|null $personal_access_token_id token pra-login yang meminta tantangan
  * @property string $tujuan
  * @property string $device_hash
  * @property string $kode_hash
@@ -43,6 +44,7 @@ class TantanganToken extends Model
     {
         return [
             'user_id' => 'integer',
+            'personal_access_token_id' => 'integer',
             'percobaan' => 'integer',
             'kirim_ulang' => 'integer',
             'terkirim_pada' => 'datetime',

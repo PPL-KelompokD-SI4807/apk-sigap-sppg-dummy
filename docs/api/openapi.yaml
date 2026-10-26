@@ -518,8 +518,10 @@ paths:
       tags: [Auth]
       summary: Konfirmasi token 6 digit -> token login penuh (token pra-login)
       description: |
-        Token berlaku 5 menit, sekali pakai, terikat ke akun + device_id (Mini App boleh dibuka ulang
-        di perangkat yang sama; simpan `tantangan.id`). 5 kali salah -> tantangan hangus.
+        Token berlaku 5 menit, sekali pakai, terikat ke akun + device_id + token PRA-LOGIN yang
+        memintanya. Bila Mini App ditutup lalu dibuka ulang (token pra-login baru), tantangan lama
+        tidak berlaku (`alasan: token_tidak_valid`): ulangi dari Masuk/Aktivasi. Simpan token pra-login
+        dan `tantangan.id` di memori selama layar token terbuka. 5 kali salah -> tantangan hangus.
         Respons sukses berisi token login penuh (ability `auth:penuh`, `expires_at: null`). Token
         pra-login yang dipakai otomatis dicabut.
       requestBody:

@@ -75,6 +75,7 @@ class KredensialController extends ApiController
     {
         $tantangan = $token->kirimUlang(
             $request->user(),
+            $this->praLogin($request),
             (string) $request->validated('tantangan_id'),
             SesiService::hashPerangkat((string) $request->validated('device_id')),
         );

@@ -175,7 +175,7 @@ class AktivasiResetTest extends TestCase
         $user = $this->akunBaru(['telegram_id' => null]);
 
         try {
-            app(TokenSekaliPakaiService::class)->buat($user, TantanganToken::TUJUAN_AKTIVASI, str_repeat('a', 64));
+            app(TokenSekaliPakaiService::class)->buat($user, $user->createToken('pra-login:uji', ['auth:pra-login'])->accessToken, TantanganToken::TUJUAN_AKTIVASI, str_repeat('a', 64));
             $this->fail('Seharusnya ditolak.');
         } catch (HttpResponseException $e) {
             $this->assertSame(422, $e->getResponse()->getStatusCode());
