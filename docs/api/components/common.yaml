@@ -6,7 +6,7 @@ securitySchemes:
       Token Sanctum. Rute data wajib token LOGIN PENUH (ability auth:penuh) dari
       POST /auth/masuk atau /auth/token/verifikasi; tidak kedaluwarsa, berakhir hanya karena logout
       atau pencabutan. Token pra-login dari POST /auth/telegram hanya untuk rute /auth/masuk,
-      /auth/aktivasi, /auth/token/*.
+      /auth/aktivasi, /auth/lupa-password*, /auth/token/*.
 schemas:
   Error:
     type: object

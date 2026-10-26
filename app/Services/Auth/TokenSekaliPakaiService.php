@@ -250,6 +250,7 @@ class TokenSekaliPakaiService
         $menit = (int) config('kredensial.token.berlaku_menit', 5);
         $untuk = match ($tantangan->tujuan) {
             TantanganToken::TUJUAN_AKTIVASI => 'aktivasi akun',
+            TantanganToken::TUJUAN_RESET_PASSWORD => 'reset password (disetujui Admin)',
             default => 'masuk dari perangkat baru',
         };
 

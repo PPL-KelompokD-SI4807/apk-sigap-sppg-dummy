@@ -34,6 +34,9 @@ class TantanganToken extends Model
 
     public const TUJUAN_AKTIVASI = 'aktivasi';
 
+    /** Password baru setelah permintaan reset disetujui Admin (PermintaanResetService). */
+    public const TUJUAN_RESET_PASSWORD = 'reset_password';
+
     protected $table = 'tantangan_tokens';
 
     protected $guarded = ['*'];

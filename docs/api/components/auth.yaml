@@ -106,7 +106,7 @@ schemas:
     required: [langkah, tujuan, token, token_type, token_jenis, expires_at, user]
     properties:
       langkah: { type: string, const: selesai }
-      tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi] }
+      tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi, reset_password] }
       token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Simpan di localStorage perangkat ini.' }
       token_type: { type: string, const: Bearer }
       token_jenis: { type: string, const: penuh }
@@ -131,7 +131,7 @@ schemas:
         required: [id, tujuan, kedaluwarsa_pada, kirim_ulang_tersedia_pada, sisa_kirim_ulang, maks_percobaan]
         properties:
           id: { type: string, format: ulid }
-          tujuan: { type: string, enum: [perangkat_baru, aktivasi] }
+          tujuan: { type: string, enum: [perangkat_baru, aktivasi, reset_password] }
           kedaluwarsa_pada: { type: string, format: date-time }
           kirim_ulang_tersedia_pada: { type: [string, 'null'], format: date-time, description: 'null = batas kirim ulang habis.' }
           sisa_kirim_ulang: { type: integer }
@@ -140,6 +140,26 @@ schemas:
       langkah: verifikasi_token
       message: Token 6 digit telah dikirim bot SiGAP ke chat Telegram Anda.
       tantangan: { id: '01JBDQ6V9X8Y7Z6W5V4U3T2S1R', tujuan: perangkat_baru, kedaluwarsa_pada: '2026-10-26T08:05:00+07:00', kirim_ulang_tersedia_pada: '2026-10-26T08:01:00+07:00', sisa_kirim_ulang: 3, maks_percobaan: 5 }
+  PermintaanReset:
+    type: object
+    required: [id, status, dibuat_pada, kedaluwarsa_pada]
+    properties:
+      id: { type: string, format: ulid }
+      status: { type: string, enum: [menunggu, disetujui, ditolak, selesai, kedaluwarsa] }
+      dibuat_pada: { type: string, format: date-time }
+      kedaluwarsa_pada: { type: string, format: date-time, description: '24 jam sejak dibuat.' }
+      diputuskan_pada: { type: [string, 'null'], format: date-time }
+      selesai_pada: { type: [string, 'null'], format: date-time }
+      pengguna:
+        type: object
+        description: Hanya pada daftar Admin. Tanpa no telepon/identitas Telegram.
+        properties:
+          id: { type: integer }
+          name: { type: string }
+          username: { type: [string, 'null'] }
+          role: { $ref: '#/components/schemas/Role' }
+          role_label: { type: string }
+          sppg_id: { type: [integer, 'null'] }
   Sesi:
     type: object
     required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, diverifikasi_pada, sesi_ini]

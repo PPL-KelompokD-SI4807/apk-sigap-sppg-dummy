@@ -49,6 +49,14 @@ final class AuditAuth
 
     public const PASSWORD_DIUBAH = 'auth.password_diubah';
 
+    public const RESET_DIMINTA = 'auth.reset_diminta';
+
+    public const RESET_DISETUJUI = 'auth.reset_disetujui';
+
+    public const RESET_DITOLAK = 'auth.reset_ditolak';
+
+    public const RESET_PASSWORD_BERHASIL = 'auth.reset_password_berhasil';
+
     public const UBAH_PASSWORD_GAGAL = 'auth.ubah_password_gagal';
 
     /** Satu sesi dicabut pemiliknya dari daftar sesi. */

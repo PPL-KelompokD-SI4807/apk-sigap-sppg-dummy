@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Requests\Auth\AktivasiRequest;
 use App\Http\Requests\Auth\KirimUlangTokenRequest;
 use App\Http\Requests\Auth\MasukRequest;
+use App\Http\Requests\Auth\ResetDisetujuiRequest;
 use App\Http\Requests\Auth\VerifikasiTokenRequest;
 use App\Http\Resources\AuthUserResource;
+use App\Http\Resources\PermintaanResetResource;
 use App\Models\TantanganToken;
 use App\Models\User;
 use App\Services\Auth\KredensialService;
+use App\Services\Auth\PermintaanResetService;
 use App\Services\Auth\SesiService;
 use App\Services\Auth\TokenSekaliPakaiService;
 use Illuminate\Http\JsonResponse;
@@ -18,8 +21,8 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Lapis 2 login R-03 (hanya token pra-login, middleware kemampuan:auth:pra-login):
- * masuk, aktivasi, verifikasi & kirim ulang token 6 digit. Tidak ada reset password mandiri:
- * lupa password = hubungi Admin (POST /pengguna/{id}/reset-password) atau sigap:reset-password-admin.
+ * masuk, aktivasi, lupa password (permintaan reset yang wajib disetujui Admin, lalu password baru +
+ * token), verifikasi & kirim ulang token 6 digit.
  */
 class KredensialController extends ApiController
 {
@@ -48,6 +51,41 @@ class KredensialController extends ApiController
         $tantangan = $this->kredensial->mulaiAktivasi(
             $request->user(),
             $request->safe()->only(['username', 'phone', 'password']),
+            SesiService::hashPerangkat((string) $request->validated('device_id')),
+            $request->validated('label_perangkat'),
+            $this->praLogin($request),
+        );
+
+        return $this->tantangan($tantangan);
+    }
+
+    /** GET /api/v1/auth/lupa-password — status permintaan reset terkini milik akun ini (atau null). */
+    public function statusLupaPassword(Request $request, PermintaanResetService $permintaan): JsonResponse
+    {
+        $terkini = $permintaan->terkini($request->user());
+
+        return response()->json(['data' => $terkini === null ? null : (new PermintaanResetResource($terkini))->resolve($request)]);
+    }
+
+    /** POST /api/v1/auth/lupa-password — ajukan permintaan reset ke Admin (tanpa token bot). */
+    public function mintaReset(Request $request, PermintaanResetService $permintaan): JsonResponse
+    {
+        [$hasil, $baru] = $permintaan->minta($request->user());
+
+        return response()->json([
+            'message' => $baru
+                ? 'Permintaan reset password dikirim ke Admin. Admin akan memastikan identitas Anda sebelum menyetujui.'
+                : 'Anda sudah punya permintaan reset yang masih berjalan.',
+            'data' => (new PermintaanResetResource($hasil))->resolve($request),
+        ], $baru ? 201 : 200);
+    }
+
+    /** POST /api/v1/auth/lupa-password/lanjut — password baru setelah disetujui (+ token bot). */
+    public function lanjutReset(ResetDisetujuiRequest $request): JsonResponse
+    {
+        $tantangan = $this->kredensial->mulaiResetDisetujui(
+            $request->user(),
+            (string) $request->validated('password'),
             SesiService::hashPerangkat((string) $request->validated('device_id')),
             $request->validated('label_perangkat'),
             $this->praLogin($request),

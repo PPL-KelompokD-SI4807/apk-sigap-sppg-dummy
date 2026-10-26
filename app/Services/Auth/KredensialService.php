@@ -2,6 +2,7 @@
 
 namespace App\Services\Auth;
 
+use App\Enums\StatusPermintaanReset;
 use App\Models\TantanganToken;
 use App\Models\User;
 use App\Support\Telepon;
@@ -25,15 +26,17 @@ use Laravel\Sanctum\PersonalAccessToken;
  * - Penguncian sementara per akun setelah salah berulang, atomik terhadap request paralel
  *   (reservasiPercobaan). Identitas wajib milik akun Telegram yang sama.
  * - Token pra-login dari bypass dev tidak pernah ditukar menjadi login penuh.
- * - Tidak ada reset password mandiri (pemegang Telegram tidak boleh melewati lapis password,
- *   termasuk saat akun terkunci). Reset hanya oleh Admin dalam scope-nya (Policy) atau
- *   perintah server sigap:reset-password-admin; pengguna lalu mengatur ulang lewat aktivasi.
+ * - Lupa password = permintaan reset yang wajib DISETUJUI Admin dalam scope-nya (PermintaanResetService);
+ *   pemegang Telegram saja tidak bisa melewati lapis password, dan akun terkunci tidak bisa meminta.
+ *   Setelah disetujui, password baru berlaku setelah token 6 digit (mulaiResetDisetujui). Admin juga
+ *   bisa mengosongkan password (resetPassword) atau lewat perintah server sigap:reset-password-admin.
  */
 class KredensialService
 {
     public function __construct(
         private readonly SesiService $sesi,
         private readonly TokenSekaliPakaiService $token,
+        private readonly PermintaanResetService $permintaan,
     ) {}
 
     /**
@@ -107,6 +110,29 @@ class KredensialService
             fn () => $this->usernameDipakaiAkunLain($user, $payload['username'] ?? null) ? throw self::usernameTidakTersedia() : null);
     }
 
+    /**
+     * Permintaan reset sudah disetujui Admin: password baru (+ token 6 digit ke telegram_id pemilik
+     * dari DB) berlaku setelah token dikonfirmasi lewat selesaikan(). Tanpa persetujuan: 409.
+     */
+    public function mulaiResetDisetujui(User $user, string $passwordBaru, string $deviceHash, ?string $label, PersonalAccessToken $praLogin): TantanganToken
+    {
+        $this->tolakDev($user, $praLogin);
+
+        if (! $user->punyaPassword()) {
+            // Password sudah dikosongkan Admin: atur lewat aktivasi.
+            throw GalatAuth::perluAktivasi();
+        }
+
+        $permintaan = $this->permintaan->disetujuiUntuk($user)
+            ?? throw GalatAuth::respons(409, GalatAuth::RESET_BELUM_DISETUJUI, 'Permintaan reset password belum disetujui Admin atau sudah kedaluwarsa.');
+
+        return $this->token->buat($user, $praLogin, TantanganToken::TUJUAN_RESET_PASSWORD, $deviceHash, [
+            'password_hash' => Hash::make($passwordBaru),
+            'permintaan_id' => $permintaan->id,
+            'label' => $label,
+        ]);
+    }
+
     public const USERNAME_TIDAK_TERSEDIA = 'Username tidak tersedia. Pilih username lain.';
 
     public static function usernameTidakTersedia(): ValidationException
@@ -139,9 +165,11 @@ class KredensialService
         $hasil = $this->token->verifikasi($user, $praLogin, $tantanganId, $kode, $deviceHash, function (TantanganToken $tantangan) use ($user, $deviceHash, $praLogin): array {
             $payload = (array) $tantangan->payload;
 
-            if ($tantangan->tujuan === TantanganToken::TUJUAN_AKTIVASI) {
-                $this->terapkanAktivasi($user, $payload);
-            }
+            match ($tantangan->tujuan) {
+                TantanganToken::TUJUAN_AKTIVASI => $this->terapkanAktivasi($user, $payload),
+                TantanganToken::TUJUAN_RESET_PASSWORD => $this->terapkanReset($user, $payload),
+                default => null,
+            };
 
             $label = isset($payload['label']) && is_string($payload['label']) ? $payload['label'] : null;
 
@@ -149,7 +177,11 @@ class KredensialService
                 + $this->sesi->terbitkanPenuh($user->refresh(), $deviceHash, $label, $praLogin);
         });
 
-        $event = $hasil['tujuan'] === TantanganToken::TUJUAN_AKTIVASI ? AuditAuth::AKTIVASI_BERHASIL : AuditAuth::MASUK_BERHASIL;
+        $event = match ($hasil['tujuan']) {
+            TantanganToken::TUJUAN_AKTIVASI => AuditAuth::AKTIVASI_BERHASIL,
+            TantanganToken::TUJUAN_RESET_PASSWORD => AuditAuth::RESET_PASSWORD_BERHASIL,
+            default => AuditAuth::MASUK_BERHASIL,
+        };
         AuditAuth::catat($user, $event, array_filter([
             'metode' => $hasil['metode'],
             'perangkat' => AuditAuth::sidik($deviceHash),
@@ -400,6 +432,32 @@ class KredensialService
             // Balapan: username/no telepon diambil akun lain setelah pemeriksaan (pesan seragam).
             throw self::usernameTidakTersedia();
         }
+    }
+
+    /**
+     * Terapkan password baru dari permintaan reset yang masih disetujui (dicek ulang di bawah kunci:
+     * Admin bisa saja mencabut/permintaan kedaluwarsa setelah token dikirim). Event updated User
+     * mencabut SEMUA sesi & perangkat lama; sesi baru diterbitkan sesudahnya.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function terapkanReset(User $user, array $payload): void
+    {
+        $permintaan = $this->permintaan->disetujuiUntuk($user, kunci: true);
+        $hash = (string) ($payload['password_hash'] ?? '');
+
+        if ($permintaan === null || $hash === '' || $permintaan->id !== ($payload['permintaan_id'] ?? null)) {
+            throw GalatAuth::respons(409, GalatAuth::RESET_BELUM_DISETUJUI, 'Permintaan reset password tidak berlaku lagi. Ajukan permintaan baru.');
+        }
+
+        User::withoutGlobalScopes()->lockForUpdate()->findOrFail($user->getKey())->forceFill([
+            'password' => $hash,
+            'password_changed_at' => now(),
+            'failed_login_attempts' => 0,
+            'locked_until' => null,
+        ])->save();
+
+        $permintaan->forceFill(['status' => StatusPermintaanReset::Selesai, 'selesai_pada' => now()])->save();
     }
 
     private function tolakDev(User $user, PersonalAccessToken $praLogin): void

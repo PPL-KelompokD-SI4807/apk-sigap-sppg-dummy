@@ -41,6 +41,12 @@ final class GalatAuth
 
     public const DEV_BYPASS = 'dev_bypass';
 
+    public const RESET_BELUM_DISETUJUI = 'reset_belum_disetujui';
+
+    public const PERMINTAAN_TIDAK_AKTIF = 'permintaan_tidak_aktif';
+
+    public const TIDAK_ADA_PEMUTUS = 'tidak_ada_pemutus';
+
     /**
      * @param  array<string, list<string>>|null  $errors
      * @param  array<string, mixed>  $tambahan

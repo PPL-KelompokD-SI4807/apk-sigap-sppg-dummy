@@ -141,9 +141,9 @@
     description: |
       Admin tidak pernah melihat atau menentukan password: password dikosongkan, semua sesi dan
       perangkat tepercaya pengguna dicabut. Saat membuka Mini App berikutnya pengguna mendapat
-      `langkah: aktivasi` dan mengatur password sendiri (+ token bot). Ini satu-satunya jalan
-      "lupa password" (tidak ada reset mandiri). Tidak untuk akun sendiri (422, field `user`); Admin
-      yang lupa password direset Admin lain atau lewat `php artisan sigap:reset-password-admin`.
+      `langkah: aktivasi` dan mengatur password sendiri (+ token bot). "Lupa password" dari pengguna
+      memakai permintaan reset (/pengguna/permintaan-reset). Tidak untuk akun sendiri (422, field
+      `user`); Admin yang lupa password direset Admin lain atau lewat `php artisan sigap:reset-password-admin`.
       Dicatat di log audit.
     responses:
       '200':
@@ -222,6 +222,86 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+/pengguna/permintaan-reset:
+  get:
+    tags: [Pengguna]
+    summary: Daftar permintaan reset password (Admin)
+    description: |
+      Hanya Admin (hak ubah Data Pengguna); peran lain 403. Hanya permintaan pengguna dalam scope
+      Admin dan bukan milik sendiri. Default `status=menunggu` (belum kedaluwarsa).
+    parameters:
+      - { name: status, in: query, schema: { type: string, enum: [menunggu, disetujui, ditolak, selesai, kedaluwarsa, semua], default: menunggu } }
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/PermintaanReset' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+/pengguna/permintaan-reset/{id}/setujui:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: string, format: ulid } }
+  post:
+    tags: [Pengguna]
+    summary: Setujui permintaan reset password (Admin)
+    description: |
+      Pastikan identitas pemohon di luar sistem lebih dulu. Admin tidak melihat/menetapkan password:
+      pemohon diberi tahu lewat bot (tanpa token) lalu menetapkan password baru sendiri dengan token
+      6 digit. Tanpa hak / di luar scope / permintaan sendiri -> 403. Sudah diputus atau kedaluwarsa
+      -> 409 `permintaan_tidak_aktif` (+ `status`). Dicatat di log audit.
+    responses:
+      '200':
+        description: Disetujui
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+                data: { $ref: '#/components/schemas/PermintaanReset' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409':
+        description: Permintaan tidak aktif lagi.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+            example: { message: 'Permintaan ini sudah diputuskan atau kedaluwarsa.', alasan: permintaan_tidak_aktif, status: kedaluwarsa }
+/pengguna/permintaan-reset/{id}/tolak:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: string, format: ulid } }
+  post:
+    tags: [Pengguna]
+    summary: Tolak permintaan reset password (Admin)
+    description: Pemohon diberi tahu lewat bot. Aturan hak akses dan 409 sama dengan setujui.
+    responses:
+      '200':
+        description: Ditolak
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+                data: { $ref: '#/components/schemas/PermintaanReset' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409':
+        description: Permintaan tidak aktif lagi.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
 /pengguna/undangan:
   get:
     tags: [Pengguna]
