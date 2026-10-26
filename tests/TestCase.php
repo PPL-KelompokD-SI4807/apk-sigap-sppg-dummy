@@ -20,6 +20,15 @@ abstract class TestCase extends BaseTestCase
         return Sanctum::actingAs($user, [SesiService::ABILITY_PENUH, ...$abilities]);
     }
 
+    /**
+     * Terbitkan sesi login penuh SUNGGUHAN (token tersimpan + perangkat tepercaya) tanpa alur
+     * initData/password, mis. agar SesiService::punyaSesiPenuh() benar untuk tes bot.
+     */
+    protected function beriSesiPenuh(User $user, string $deviceId = 'perangkat-uji-aaaaaaaaaaaaaaaaaa'): string
+    {
+        return app(SesiService::class)->terbitkanPenuh($user, SesiService::hashPerangkat($deviceId), 'Perangkat uji', null)['token'];
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
