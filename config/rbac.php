@@ -99,6 +99,12 @@ return [
             'label' => 'Persetujuan Menu oleh Investor',
             'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => 'CR', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => '', 'investor' => 'R',
         ],
+        // R-06b-2 (tambahan di luar 16 fitur): staf gudang mencatat pembelian bahan + nota; akuntan memverifikasi
+        // lewat hak 'keputusan'. Investor tidak melihat pembelian (nota privat).
+        'pembelian-bahan' => [
+            'label' => 'Pembelian Bahan (dicatat gudang, diverifikasi akuntan)',
+            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => '', 'akuntan' => 'R', 'staf_gudang' => 'CRU', 'relawan' => '', 'investor' => '',
+        ],
     ],
 
     /*
@@ -108,6 +114,9 @@ return [
     */
     'keputusan' => [
         'persetujuan-menu' => ['investor'],
+        // R-06b-2: akuntan memverifikasi pembelian bahan; investor memutuskan pengajuan pengeluaran.
+        'pembelian-bahan' => ['akuntan'],
+        'keuangan' => ['investor'],
     ],
 
     /*
