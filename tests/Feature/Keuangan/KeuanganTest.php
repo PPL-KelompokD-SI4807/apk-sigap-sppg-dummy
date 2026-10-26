@@ -44,6 +44,19 @@ class KeuanganTest extends TestCase
         $this->sppgB = $this->createSppg('SPPG B');
         $this->akuntan = $this->pengguna(Role::Akuntan, $this->sppgA);
         $this->kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
+
+        // R-06b-2: tes lama menguji logika anggaran (ringkasan, ambang 80/100%, melebihi). Ambang persetujuan
+        // dinaikkan setinggi-tingginya agar pengeluaran langsung `disetujui` (jalur setujuiPengeluaran yang sama);
+        // alur persetujuan investor diuji di tests/Feature/Pembelian dan tests/Feature/Persetujuan.
+        config(['operasional.keuangan.ambang_persetujuan_pengeluaran' => PHP_INT_MAX]);
+    }
+
+    /** PATCH pengeluaran dengan versi terkini (kunci optimistik R-06b-2). @param array<string, mixed> $data */
+    private function ubah(int $id, array $data)
+    {
+        $versi = (int) $this->getJson("/api/v1/keuangan/pengeluaran/{$id}")->json('data.versi');
+
+        return $this->putJson("/api/v1/keuangan/pengeluaran/{$id}", $data + ['versi' => $versi]);
     }
 
     protected function tearDown(): void
@@ -233,8 +246,8 @@ class KeuanganTest extends TestCase
         ]);
 
         // Edit turun-naik di sekitar 80% tidak memancarkan ulang.
-        $this->putJson("/api/v1/keuangan/pengeluaran/{$b}", ['nominal' => 100_000])->assertOk();
-        $this->putJson("/api/v1/keuangan/pengeluaran/{$b}", ['nominal' => 2_000_000])->assertOk();
+        $this->ubah($b, ['nominal' => 100_000])->assertOk();
+        $this->ubah($b, ['nominal' => 2_000_000])->assertOk();
         Event::assertDispatchedTimes(AnggaranMencapai80::class, 1);
 
         $this->keluar(19_000_000);
@@ -247,7 +260,7 @@ class KeuanganTest extends TestCase
         Event::assertDispatched(AnggaranMelampaui::class, fn ($e) => $e->terpakai === 100_500_000 && $e->persen === 100.5);
 
         $this->keluar(100_000);
-        $this->putJson("/api/v1/keuangan/pengeluaran/{$c}", ['nominal' => 600_000])->assertOk();
+        $this->ubah($c, ['nominal' => 600_000])->assertOk();
         Event::assertDispatchedTimes(AnggaranMencapai100::class, 1);
         Event::assertDispatchedTimes(AnggaranMelampaui::class, 1);
         $this->assertDatabaseCount('peringatan_anggarans', 3);
@@ -272,7 +285,7 @@ class KeuanganTest extends TestCase
 
         $this->postJson('/api/v1/keuangan/pencairan', $this->pencairan(['nominal' => 2_000_000]))->assertCreated();
         // Edit nominal menghitung ulang penanda (sisa tanpa baris ini = 2 jt).
-        $this->putJson("/api/v1/keuangan/pengeluaran/{$id}", ['nominal' => 1_900_000])->assertOk()->assertJsonPath('data.melebihi_anggaran', false);
+        $this->ubah($id, ['nominal' => 1_900_000])->assertOk()->assertJsonPath('data.melebihi_anggaran', false);
         $this->getJson('/api/v1/keuangan/pengeluaran?melebihi_anggaran=0')->assertJsonPath('meta.total', 1);
 
         config(['operasional.keuangan.tolak_melebihi_anggaran' => true]);
@@ -287,11 +300,13 @@ class KeuanganTest extends TestCase
         $cair = $this->postJson('/api/v1/keuangan/pencairan', $this->pencairan())->json('data.id');
         $id = $this->keluar(1_500_000);
 
-        $this->putJson("/api/v1/keuangan/pengeluaran/{$id}", ['nominal' => 1_750_000, 'uraian' => 'Belanja sayur (koreksi nota)'])
+        $this->ubah($id, ['nominal' => 1_750_000, 'uraian' => 'Belanja sayur (koreksi nota)'])
             ->assertOk()->assertJsonPath('data.nominal', 1_750_000);
         $this->patchJson("/api/v1/keuangan/pencairan/{$cair}", ['nominal' => 120_000_000])->assertOk()->assertJsonPath('data.nominal', 120_000_000);
 
-        $audit = AuditLog::query()->where('auditable_type', Pengeluaran::class)->where('auditable_id', $id)->where('event', 'updated')->firstOrFail();
+        $audit = AuditLog::query()->where('auditable_type', Pengeluaran::class)->where('auditable_id', $id)->where('event', 'updated')->get()
+            ->first(fn (AuditLog $l) => array_key_exists('nominal', (array) $l->new_values));
+        $this->assertNotNull($audit);
         $this->assertEquals(1_500_000, (float) $audit->old_values['nominal']);
         $this->assertEquals(1_750_000, (float) $audit->new_values['nominal']);
         $this->assertSame($this->akuntan->id, $audit->user_id);
