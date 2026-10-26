@@ -1,0 +1,37 @@
+schemas:
+  Sppg:
+    type: object
+    properties:
+      id: { type: integer }
+      kode: { type: string }
+      nama: { type: string }
+      alamat: { type: string }
+      mitra_yayasan: { type: [string, 'null'] }
+      telepon: { type: [string, 'null'] }
+      kapasitas_porsi_harian: { type: integer, minimum: 1 }
+      status_operasional: { type: string, enum: [aktif, libur, nonaktif] }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+    example:
+      id: 1
+      kode: SPPG-DEMO-01
+      nama: SPPG Melati Demo
+      alamat: 'Jl. Contoh Raya No. 1, Kota Contoh'
+      mitra_yayasan: Yayasan Demo Sejahtera
+      telepon: '0812-0000-1111'
+      kapasitas_porsi_harian: 2000
+      status_operasional: aktif
+      created_at: '2026-10-26T08:00:00+07:00'
+      updated_at: '2026-10-26T08:00:00+07:00'
+  SppgInput:
+    type: object
+    required: [kode, nama, alamat, kapasitas_porsi_harian]
+    properties:
+      kode: { type: string, maxLength: 30, description: 'Hanya Admin; diabaikan bila dikirim Kepala SPPG.' }
+      nama: { type: string, maxLength: 255 }
+      alamat: { type: string, maxLength: 255 }
+      mitra_yayasan: { type: [string, 'null'], maxLength: 255 }
+      telepon: { type: [string, 'null'], maxLength: 30 }
+      kapasitas_porsi_harian: { type: integer, minimum: 1, maximum: 100000 }
+      status_operasional: { type: string, enum: [aktif, libur, nonaktif], default: aktif }
+      ai_draft_id: { type: [string, 'null'], format: uuid }

@@ -20,11 +20,18 @@ export function route(pattern, handler, opts = {}) {
   routes.push({ pattern, re, keys, handler, ...opts });
 }
 
-export function parseHash() {
-  const raw = location.hash.replace(/^#/, '') || '/';
-  const [path, qs = ''] = raw.split('?');
+/**
+ * Hash rute hanya yang berawalan "#/". Hash lain diperlakukan sebagai beranda, termasuk
+ * "#tgWebAppData=...&tgWebAppVersion=..." yang dipasang Telegram saat membuka Mini App: hash itu
+ * dibaca telegram-web-app.js (initData), jadi router tidak boleh mengubah atau menghapusnya.
+ */
+export function parseHashString(hash = '') {
+  if (!hash.startsWith('#/')) return { path: '/', query: new URLSearchParams() };
+  const [path, qs = ''] = hash.slice(1).split('?');
   return { path: path || '/', query: new URLSearchParams(qs) };
 }
+
+export const parseHash = () => parseHashString(location.hash);
 
 export const currentRoute = () => current;
 

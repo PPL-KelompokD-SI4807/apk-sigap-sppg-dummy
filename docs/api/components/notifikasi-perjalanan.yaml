@@ -1,0 +1,110 @@
+schemas:
+  StatusPerjalanan:
+    type: string
+    enum: [berangkat, dalam_perjalanan, tiba, dibatalkan]
+  NotifikasiPerjalananInput:
+    type: object
+    required: [jadwal_distribusi_id]
+    properties:
+      jadwal_distribusi_id: { type: integer }
+      waktu_berangkat:
+        type: [string, 'null']
+        format: date-time
+        description: Default sekarang (WIB). Maksimal 30 menit ke depan.
+      estimasi_menit:
+        type: [integer, 'null']
+        minimum: 1
+        maximum: 720
+        description: Estimasi durasi manual (menit); menimpa perhitungan dari jarak.
+      ai_draft_id:
+        type: [string, 'null']
+        format: uuid
+        description: UUID draf Agen AI yang dikonfirmasi lewat aksi ini.
+  PerjalananStatusInput:
+    type: object
+    required: [status]
+    properties:
+      status:
+        type: string
+        enum: [dalam_perjalanan, tiba, dibatalkan]
+      alasan:
+        type: [string, 'null']
+        maxLength: 500
+        description: Wajib bila status dibatalkan.
+      ai_draft_id:
+        type: [string, 'null']
+        format: uuid
+  NotifikasiPerjalananPratinjau:
+    type: object
+    properties:
+      waktu_berangkat: { type: string, format: date-time }
+      estimasi_tiba: { type: string, format: date-time }
+      estimasi_menit: { type: integer }
+      estimasi_sumber:
+        type: string
+        enum: [manual, jarak, jadwal, default]
+        description: |
+          Rumus: manual -> nilai input; jarak -> ceil(jarak_km / kecepatan_kmj * 60) + buffer_menit;
+          jadwal -> jam_rencana_tiba - jam_berangkat; default -> 30 menit. Hasil jarak/jadwal/default
+          dibatasi 5..720 menit. Zona waktu Asia/Jakarta.
+      penerima:
+        type: string
+        enum: [pic, kepala_sppg]
+        description: kepala_sppg bila PIC belum menghubungkan Telegram.
+      pesan: { type: string }
+  NotifikasiPerjalanan:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      jadwal_distribusi_id: { type: integer }
+      titik_layanan:
+        type: object
+        properties:
+          id: { type: integer }
+          nama: { type: string }
+          pic_nama: { type: [string, 'null'] }
+          pic_terhubung: { type: boolean }
+      status: { $ref: '#/components/schemas/StatusPerjalanan' }
+      status_label: { type: string }
+      status_kirim:
+        type: string
+        enum: [menunggu, terkirim, gagal, tidak_terkirim]
+      dialihkan_ke_kepala: { type: boolean }
+      dipicu_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      waktu_berangkat: { type: [string, 'null'], format: date-time }
+      estimasi_tiba: { type: string, format: date-time }
+      estimasi_menit: { type: [integer, 'null'] }
+      estimasi_sumber: { type: [string, 'null'] }
+      waktu_tiba: { type: [string, 'null'], format: date-time }
+      waktu_dibatalkan: { type: [string, 'null'], format: date-time }
+      alasan_batal: { type: [string, 'null'] }
+      terlambat: { type: boolean }
+      terlambat_dideteksi_pada: { type: [string, 'null'], format: date-time }
+      pesan: { type: [string, 'null'] }
+      created_at: { type: string, format: date-time }
+    example:
+      id: 7
+      sppg_id: 1
+      jadwal_distribusi_id: 41
+      titik_layanan: { id: 3, nama: 'SDN Contoh 3', pic_nama: 'Bu Ani', pic_terhubung: true }
+      status: berangkat
+      status_label: Berangkat
+      status_kirim: menunggu
+      dialihkan_ke_kepala: false
+      dipicu_oleh: { id: 12, name: 'Budi Kurir' }
+      waktu_berangkat: '2026-11-02T08:30:00+07:00'
+      estimasi_tiba: '2026-11-02T08:50:00+07:00'
+      estimasi_menit: 20
+      estimasi_sumber: jarak
+      waktu_tiba: null
+      waktu_dibatalkan: null
+      alasan_batal: null
+      terlambat: false
+      terlambat_dideteksi_pada: null
+      pesan: 'Mobil B 1234 XY berangkat menuju SDN Contoh 3 pukul 08:30 WIB, estimasi tiba 08:50 WIB (20 menit).'
+      created_at: '2026-11-02T08:30:01+07:00'

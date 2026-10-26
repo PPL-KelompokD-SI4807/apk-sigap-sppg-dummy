@@ -3,13 +3,15 @@
 namespace App\Models;
 
 use App\Enums\KelompokSasaran;
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class StandarGizi extends Model
 {
-    use BelongsToSppg, HasFactory;
+    use Auditable, BelongsToSppg, HasFactory, SoftDeletes;
 
     protected $table = 'standar_gizis';
 

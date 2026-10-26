@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class BuktiDistribusi extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'bukti_distribusis';
 
@@ -24,6 +24,7 @@ class BuktiDistribusi extends Model
         'dicatat_oleh',
         'waktu_berangkat',
         'waktu_tiba',
+        'acuan_tiba',
         'waktu_ambil_foto',
         'porsi_diterima',
         'nama_pic',
@@ -33,6 +34,7 @@ class BuktiDistribusi extends Model
         'latitude',
         'longitude',
         'catatan_selisih',
+        'catatan',
         'terlambat',
         'menit_keterlambatan',
     ];
@@ -43,6 +45,7 @@ class BuktiDistribusi extends Model
         return [
             'waktu_berangkat' => 'datetime',
             'waktu_tiba' => 'datetime',
+            'acuan_tiba' => 'datetime',
             'waktu_ambil_foto' => 'datetime',
             'porsi_diterima' => 'integer',
             'latitude' => 'decimal:7',

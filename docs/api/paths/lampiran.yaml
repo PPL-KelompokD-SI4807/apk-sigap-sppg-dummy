@@ -1,0 +1,81 @@
+/lampiran:
+  post:
+    tags: [Lampiran]
+    summary: Unggah lampiran gambar ke record modul
+    description: |
+      Unggahan aman (NFR-06) lewat SecureUploadService. Jenis ditentukan dari ISI berkas (finfo +
+      tanda tangan byte + getimagesize); ekstensi dan MIME klien diabaikan; nama berkas klien tidak
+      pernah dipakai. Gambar di-encode ulang (EXIF/metadata dibuang, diperkecil ke 1600 px) dan
+      disimpan di disk privat `uploads/{sppg_id}/{modul}/{uuid}.{ext}`.
+      Dua mode:
+      1. Terikat: `lampiranable_id` diisi. Hak `update` pada record induk menurut Policy modulnya (mis. akuntan
+         untuk keuangan-pengeluaran). Record induk SPPG lain -> 404. Semua modul: total lampiran maks 5 per data
+         (422 pada `lampiranable_id`).
+      2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`. Berkas disimpan belum
+         terikat; kirim `id`-nya pada `lampiran_ids` di POST/PATCH modul. Hak: C atau U modul tersebut (Tabel 5)
+         -> selain itu 403; modul lain tanpa `lampiranable_id` -> 422. Lampiran yang belum terikat hanya dapat
+         dibaca pengunggahnya (GET /lampiran/{id}, selain itu 404). Maks 10 unggahan tertunda aktif (belum diikat)
+         per pengguna -> 422 pada `berkas`; kuota kembali setelah diikat atau kedaluwarsa (24 jam).
+      Batas laju unggah: 20/menit per pengguna (429).
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema: { $ref: '#/components/schemas/LampiranInput' }
+    responses:
+      '201':
+        description: Tersimpan
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Lampiran' }
+            example:
+              data: { id: 12, kategori: nota, mime: image/jpeg, ukuran: 183204, sha256: '9f2c...e1', url: /api/v1/lampiran/12, uploaded_by: 7, created_at: '2026-11-20T09:00:00+07:00' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/Conflict' }
+      '422': { $ref: '#/components/responses/UploadRejected' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/lampiran/{id}:
+  get:
+    tags: [Lampiran]
+    summary: Sajikan berkas lampiran (privat)
+    description: |
+      Satu-satunya jalan mengakses berkas unggahan (tidak ada URL publik/symlink). Hak `view` pada
+      record induk (Policy modul induk); lampiran belum terikat: hanya pengunggah (lainnya 404);
+      lampiran/induk SPPG lain atau induk terhapus -> 404;
+      berkas yang berubah di luar aplikasi (sha256 tidak cocok) -> 404.
+      Header: `Content-Type` dari MIME tersimpan, `X-Content-Type-Options: nosniff`,
+      `Content-Disposition: inline; filename="lampiran.<ext>"`, `Cache-Control: private, no-store`,
+      `Content-Security-Policy: default-src 'none'; sandbox`.
+      Mini App: ambil dengan fetch + Authorization lalu tampilkan via URL.createObjectURL(blob).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    responses:
+      '200':
+        description: Isi berkas gambar
+        headers:
+          Content-Disposition:
+            schema: { type: string, examples: ['inline; filename="lampiran.jpg"'] }
+          Cache-Control:
+            schema: { type: string, examples: ['private, no-store'] }
+          X-Content-Type-Options:
+            schema: { type: string, examples: [nosniff] }
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary }
+          image/png:
+            schema: { type: string, format: binary }
+          image/webp:
+            schema: { type: string, format: binary }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }

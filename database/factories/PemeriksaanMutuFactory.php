@@ -26,6 +26,9 @@ class PemeriksaanMutuFactory extends Factory
             'suhu_makanan_c' => fake()->randomFloat(1, 62, 80),
             'kebersihan_dapur' => true,
             'kebersihan_petugas' => true,
+            'rasa_baik' => true,
+            'aroma_baik' => true,
+            'tampilan_baik' => true,
             'organoleptik_baik' => true,
             'catatan_organoleptik' => 'Rasa, aroma, tekstur baik',
             'sampel_disimpan' => true,
@@ -45,6 +48,7 @@ class PemeriksaanMutuFactory extends Factory
         return $this->state([
             'hasil' => HasilMutu::TidakLayak,
             'suhu_makanan_c' => 45.0,
+            'aroma_baik' => false,
             'organoleptik_baik' => false,
             'catatan_organoleptik' => 'Aroma kurang segar',
             'tindakan_korektif' => 'Masak ulang dan periksa ulang',

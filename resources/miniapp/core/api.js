@@ -1,5 +1,6 @@
 import { toast } from './ui.js';
 import { enqueue, listQueue, removeItem } from './offline-queue.js';
+import { statusMessage } from './errors.js';
 
 const BASE = '/api/v1';
 const TOKEN_KEY = 'sigap_token';
@@ -86,20 +87,56 @@ export async function request(method, path, { query, body, key, silent = false }
   }
   if (res.ok) return data;
 
-  const message = data?.message || `Permintaan gagal (${res.status}).`;
-  if (res.status === 401 && path !== '/auth/telegram') {
+  throw failFromResponse(res.status, data, path, silent);
+}
+
+/**
+ * Efek samping + ApiError untuk respons non-2xx (dipakai request() dan uploadMultipart()):
+ * 401 -> hapus token + minta login ulang; 403/5xx/lainnya -> toast kecuali silent; 422 ditampilkan oleh form.
+ */
+function failFromResponse(status, data, path, silent) {
+  const message = statusMessage(status, data?.message);
+  if (status === 401 && path !== '/auth/telegram') {
     setToken(null);
     bus.dispatchEvent(new Event('auth-required'));
-  } else if (res.status === 403) {
+  } else if (status === 403) {
     if (!silent) toast('Anda tidak punya hak akses.', 'error');
-  } else if (res.status === 422) {
+  } else if (status === 422) {
     /* ditampilkan di bawah kolom oleh form-view */
-  } else if (res.status >= 500) {
+  } else if (status >= 500) {
     if (!silent) toast('Terjadi gangguan pada server. Coba lagi nanti.', 'error');
-  } else if (!silent && res.status !== 401) {
+  } else if (!silent && status !== 401) {
     toast(message, 'error');
   }
-  throw new ApiError(res.status, res.status === 403 ? 'Anda tidak punya hak akses.' : message, data?.errors ?? null, data);
+  return new ApiError(status, status === 403 ? 'Anda tidak punya hak akses.' : message, data?.errors ?? null, data);
+}
+
+/**
+ * Unggah multipart dengan progres (XMLHttpRequest; fetch belum punya progres unggah).
+ * uploadMultipart(path, body, {key, onProgress(0..100), xhrFactory}) -> data JSON; galat -> ApiError
+ * yang sama dengan request() (status 0 = offline). Selalu silent: pemanggil menampilkan galatnya sendiri.
+ */
+export function uploadMultipart(path, body, { key, onProgress, xhrFactory = () => new XMLHttpRequest() } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = xhrFactory();
+    xhr.open('POST', BASE + path);
+    xhr.setRequestHeader('Accept', 'application/json');
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    if (key) xhr.setRequestHeader('Idempotency-Key', key);
+    if (xhr.upload) {
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable && e.total > 0) onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100)));
+      };
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'Tidak ada koneksi internet.'));
+    xhr.ontimeout = () => reject(new ApiError(0, 'Tidak ada koneksi internet.'));
+    xhr.onload = () => {
+      let data = null;
+      if (xhr.status !== 204) { try { data = JSON.parse(xhr.responseText); } catch { data = null; } }
+      if (xhr.status >= 200 && xhr.status < 300) { onProgress?.(100); resolve(data); } else reject(failFromResponse(xhr.status, data, path, true));
+    };
+    xhr.send(toFormData(body));
+  });
 }
 
 export const api = {
@@ -111,7 +148,7 @@ export const api = {
 
 /** Daftar paginate Laravel -> {items, page, lastPage, total}. */
 export async function fetchList(endpoint, { page = 1, search = '', perPage = 15, extra = {} } = {}) {
-  const res = await api.get(endpoint, { page, search, per_page: perPage, ...extra });
+  const res = await api.get(endpoint, { page, q: search, per_page: perPage, ...extra });
   const items = Array.isArray(res) ? res : res?.data ?? [];
   const meta = res?.meta ?? {};
   return { items, page: meta.current_page ?? page, lastPage: meta.last_page ?? 1, total: meta.total ?? items.length };
@@ -139,26 +176,58 @@ export async function submitWithQueue(method, path, body, { label = 'Draf' } = {
 }
 
 let flushing = false;
-/** Kirim ulang antrian draf offline. Berhenti bila masih offline atau perlu login. */
-export async function flushQueue() {
-  if (flushing || !token) return 0;
+let retryTimer = null;
+
+const RETRIABLE = new Set([409, 429]); // 409: kunci sama masih diproses; 429: kena batas laju. Bukan penolakan data.
+export const FLUSH_BACKOFF_MS = [1000, 2000, 4000];
+export const FLUSH_RETRY_LATER_MS = 60000;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Kirim ulang antrian draf offline. Berhenti bila masih offline atau perlu login.
+ * 409/429 tidak membuang draf: dicoba ulang dengan backoff, lalu tetap di antrian dan dijadwalkan
+ * ulang. 429 menghentikan putaran ini (item lain akan kena batas yang sama); 409 lanjut ke item berikut.
+ * Penolakan 4xx lain (mis. 422) membuang draf karena data memang ditolak server.
+ * `deps` hanya untuk tes; sebagai event listener argumen pertamanya Event dan diabaikan.
+ */
+export async function flushQueue(deps = {}) {
+  const {
+    request: send = request, list = listQueue, remove = removeItem, sleep = wait, authed = () => !!token, notify = toast,
+  } = deps;
+  if (flushing || !authed()) return 0;
   flushing = true;
   let sent = 0;
+  let tertunda = 0;
   try {
-    for (const item of await listQueue()) {
-      try {
-        await request(item.method, item.path, { body: item.body, key: item.id, silent: true });
-        await removeItem(item.id);
-        sent++;
-      } catch (e) {
-        if (e.offline || e.status === 401) break;
-        if (e.status === 422 || (e.status >= 400 && e.status < 500)) {
-          await removeItem(item.id);
-          toast(`${item.label} offline ditolak server: ${e.message}`, 'error');
-        } else break;
+    outer: for (const item of await list()) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await send(item.method, item.path, { body: item.body, key: item.id, silent: true });
+          await remove(item.id);
+          sent++;
+          break;
+        } catch (e) {
+          if (e.offline || e.status === 401) break outer;
+          if (RETRIABLE.has(e.status)) {
+            if (attempt < FLUSH_BACKOFF_MS.length) { await sleep(FLUSH_BACKOFF_MS[attempt]); continue; }
+            tertunda++;
+            if (e.status === 429) break outer;
+            break;
+          }
+          if (e.status >= 400 && e.status < 500) {
+            await remove(item.id);
+            notify(`${item.label} offline ditolak server: ${e.message}`, 'error');
+            break;
+          }
+          break outer; // 5xx / tidak dikenal: coba lagi pada kesempatan berikut
+        }
       }
     }
   } finally { flushing = false; }
-  if (sent) toast(`${sent} draf offline terkirim.`, 'success');
+  if (sent) notify(`${sent} draf offline terkirim.`, 'success');
+  if (tertunda && deps.schedule !== false && !retryTimer) {
+    retryTimer = setTimeout(() => { retryTimer = null; flushQueue(); }, FLUSH_RETRY_LATER_MS);
+    retryTimer.unref?.();
+  }
   return sent;
 }

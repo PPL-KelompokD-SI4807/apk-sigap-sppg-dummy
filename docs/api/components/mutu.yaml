@@ -1,0 +1,63 @@
+schemas:
+  HasilMutu:
+    type: string
+    enum: [layak, tidak_layak]
+  PemeriksaanMutu:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      jadwal_produksi_id: { type: integer }
+      jadwal:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          tanggal_produksi: { type: string, format: date }
+          status: { type: string }
+          menu: { type: [object, 'null'], properties: { id: { type: integer }, nama_menu: { type: string } } }
+      pemeriksa_id: { type: [integer, 'null'] }
+      pemeriksa: { type: [string, 'null'], description: 'Nama pemeriksa' }
+      waktu_pemeriksaan: { type: string, format: date-time }
+      suhu_makanan_c: { type: [number, 'null'] }
+      kebersihan_dapur: { type: boolean }
+      kebersihan_petugas: { type: boolean }
+      rasa_baik: { type: boolean }
+      aroma_baik: { type: boolean }
+      tampilan_baik: { type: boolean }
+      organoleptik_baik: { type: boolean, description: 'Turunan: true bila rasa_baik, aroma_baik, dan tampilan_baik semuanya true (kompatibilitas).' }
+      catatan_organoleptik: { type: [string, 'null'] }
+      sampel_disimpan: { type: boolean }
+      hasil: { $ref: '#/components/schemas/HasilMutu' }
+      hasil_label: { type: string }
+      tindakan_korektif: { type: [string, 'null'] }
+      lampiran:
+        type: array
+        description: 'Foto terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+        items: { $ref: '#/components/schemas/Lampiran' }
+      catatan_koreksi: { type: [string, 'null'] }
+      dikoreksi_pada: { type: [string, 'null'], format: date-time }
+      dikoreksi_oleh: { type: [integer, 'null'] }
+      memengaruhi_distribusi: { type: boolean, description: 'Hanya pada detail/simpan; true = tidak dapat dihapus, hanya dikoreksi' }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  PemeriksaanMutuInput:
+    type: object
+    required: [jadwal_produksi_id, kebersihan_dapur, kebersihan_petugas, hasil]
+    description: 'Wajib: ketiga butir rasa_baik/aroma_baik/tampilan_baik ATAU organoleptik_baik saja (klien lama; berlaku untuk ketiganya).'
+    properties:
+      jadwal_produksi_id: { type: integer, description: 'Hanya saat membuat; jadwal SPPG yang sama, tidak dibatalkan, tanggal produksi <= hari ini' }
+      waktu_pemeriksaan: { type: string, description: 'YYYY-MM-DD HH:MM[:SS]; default sekarang; tidak boleh di masa depan' }
+      suhu_makanan_c: { type: [number, 'null'], minimum: -50, maximum: 200 }
+      kebersihan_dapur: { type: boolean }
+      kebersihan_petugas: { type: boolean }
+      rasa_baik: { type: boolean }
+      aroma_baik: { type: boolean }
+      tampilan_baik: { type: boolean }
+      organoleptik_baik: { type: boolean, description: 'Legacy: dipakai bila ketiga butir tidak dikirim. Nilai turunan diabaikan bila ketiga butir dikirim.' }
+      catatan_organoleptik: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila salah satu butir organoleptik false' }
+      sampel_disimpan: { type: boolean, default: false }
+      hasil: { $ref: '#/components/schemas/HasilMutu' }
+      tindakan_korektif: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila hasil=tidak_layak' }
+      lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
+      catatan_koreksi: { type: [string, 'null'], maxLength: 2000, description: 'Wajib saat mengubah pemeriksaan yang memengaruhi distribusi' }
+      ai_draft_id: { type: [string, 'null'], format: uuid }

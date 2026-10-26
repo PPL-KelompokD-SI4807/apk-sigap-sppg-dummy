@@ -1,0 +1,173 @@
+/notifikasi-perjalanan:
+  get:
+    tags: [Notifikasi Perjalanan]
+    summary: Daftar notifikasi perjalanan per hari
+    description: |
+      Hak modul `notifikasi-perjalanan` R. Admin melihat lintas SPPG (hanya baca); Kepala SPPG melihat
+      SPPG-nya; relawan unit distribusi hanya perjalanan yang dipicunya sendiri. Relawan unit lain 403.
+      Tanpa `tanggal`, daftar memakai hari ini (WIB) berdasarkan `waktu_berangkat`.
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - name: tanggal
+        in: query
+        description: Tanggal berangkat (YYYY-MM-DD, WIB). Default hari ini.
+        schema: { type: string, format: date }
+      - name: status
+        in: query
+        schema: { $ref: '#/components/schemas/StatusPerjalanan' }
+      - name: titik_layanan_id
+        in: query
+        schema: { type: integer }
+      - name: jadwal_distribusi_id
+        in: query
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  post:
+    tags: [Notifikasi Perjalanan]
+    summary: Berangkat dan picu notifikasi perjalanan
+    description: |
+      Hak C (Kepala SPPG; relawan unit distribusi). Syarat jadwal distribusi: status `siap`/`berangkat`,
+      hasil mutu terbaru batch produksinya Layak, belum ada perjalanan aktif untuk jadwal yang sama.
+      Estimasi tiba dihitung TripNotificationService (lihat `NotifikasiPerjalananPratinjau`).
+      Memancarkan event `PerjalananDimulai` (pengiriman bot dilakukan listener, bukan endpoint ini).
+      Bila PIC titik layanan belum menghubungkan Telegram: `dialihkan_ke_kepala=true`, `status_kirim=tidak_terkirim`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/NotifikasiPerjalananInput' }
+          example:
+            jadwal_distribusi_id: 41
+            waktu_berangkat: '2026-11-02T08:30:00+07:00'
+            estimasi_menit: null
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/notifikasi-perjalanan/terakhir:
+  get:
+    tags: [Notifikasi Perjalanan]
+    summary: Status perjalanan terakhir
+    description: |
+      Perjalanan terbaru (berdasarkan waktu berangkat) pada cakupan hak pengguna, opsional difilter
+      jadwal atau titik layanan. `data` bernilai null bila belum ada.
+    parameters:
+      - name: jadwal_distribusi_id
+        in: query
+        schema: { type: integer }
+      - name: titik_layanan_id
+        in: query
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data:
+                  oneOf:
+                    - $ref: '#/components/schemas/NotifikasiPerjalanan'
+                    - type: 'null'
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+/notifikasi-perjalanan/pratinjau:
+  post:
+    tags: [Notifikasi Perjalanan]
+    summary: Pratinjau estimasi tiba dan pesan (tanpa menyimpan)
+    description: Hak C. Tidak membuat data dan tidak memancarkan event. Validasi sama dengan POST /notifikasi-perjalanan.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/NotifikasiPerjalananInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/NotifikasiPerjalananPratinjau' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/notifikasi-perjalanan/{id}:
+  get:
+    tags: [Notifikasi Perjalanan]
+    summary: Detail notifikasi perjalanan
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/notifikasi-perjalanan/{id}/status:
+  post:
+    tags: [Notifikasi Perjalanan]
+    summary: Ubah status perjalanan
+    description: |
+      Transisi valid: berangkat -> dalam_perjalanan | dibatalkan; dalam_perjalanan -> tiba | dibatalkan.
+      tiba dan dibatalkan final. `alasan` wajib saat dibatalkan. Memerlukan hak C (memicu notifikasi);
+      relawan hanya perjalanan miliknya. Memancarkan `PerjalananTiba` saat tiba.
+      Transisi tidak valid: 422 pada field `status`.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PerjalananStatusInput' }
+          example: { status: tiba }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/NotifikasiPerjalanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

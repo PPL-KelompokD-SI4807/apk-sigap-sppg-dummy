@@ -1,0 +1,26 @@
+schemas:
+  PenerimaManfaat:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      titik_layanan_id: { type: integer }
+      titik_layanan_nama: { type: string, description: 'Ada bila relasi dimuat.' }
+      nama: { type: string, description: 'Inisial/nama minimal, tanpa NIK.' }
+      kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+      kelas_keterangan: { type: [string, 'null'] }
+      catatan_alergi: { type: [string, 'null'] }
+      is_active: { type: boolean }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  PenerimaManfaatInput:
+    type: object
+    required: [titik_layanan_id, nama, kelompok_sasaran]
+    properties:
+      titik_layanan_id: { type: integer }
+      nama: { type: string, maxLength: 100 }
+      kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+      kelas_keterangan: { type: [string, 'null'], maxLength: 100 }
+      catatan_alergi: { type: [string, 'null'], maxLength: 1000 }
+      is_active: { type: boolean, default: true }
+      ai_draft_id: { type: [string, 'null'], format: uuid }

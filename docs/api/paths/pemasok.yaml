@@ -1,0 +1,121 @@
+/pemasok:
+  get:
+    tags: [Pemasok]
+    summary: Daftar pemasok
+    description: 'Hak: Admin CRUD, Staf Gudang CRU, lainnya R (Kepala SPPG, Ahli Gizi, Akuntan).'
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: jenis, in: query, schema: { type: string, enum: [umkm, petani, peternak, nelayan] } }
+      - { name: is_active, in: query, schema: { type: boolean } }
+      - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/Pemasok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+  post:
+    tags: [Pemasok]
+    summary: Tambah pemasok
+    description: 'Admin wajib mengirim `sppg_id`. `kontak` berupa nomor telepon (8-15 digit).'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PemasokInput' }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pemasok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/pemasok/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Pemasok]
+    summary: Detail pemasok
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pemasok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Pemasok]
+    summary: Ubah pemasok
+    description: 'Staf Gudang boleh mengubah tetapi tidak menghapus.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PemasokInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pemasok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Pemasok]
+    summary: Ubah sebagian pemasok
+    description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PemasokInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pemasok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Pemasok]
+    summary: Hapus lunak pemasok
+    description: 'Hanya Admin. Selalu hapus lunak (tidak ada penghapusan permanen), sehingga riwayat bahan baku/pengeluaran yang memakai pemasok tetap utuh.'
+    responses:
+      '204': { description: Dihapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

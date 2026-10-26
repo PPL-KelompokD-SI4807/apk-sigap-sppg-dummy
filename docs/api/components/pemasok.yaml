@@ -1,0 +1,27 @@
+schemas:
+  Pemasok:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      nama: { type: string }
+      jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+      kontak: { type: [string, 'null'] }
+      alamat: { type: [string, 'null'] }
+      jenis_bahan: { type: [string, 'null'] }
+      is_active: { type: boolean }
+      bahan_baku_count: { type: integer, description: 'Jumlah bahan baku aktif yang memakai pemasok (pada detail).' }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  PemasokInput:
+    type: object
+    required: [nama, jenis]
+    properties:
+      sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+      nama: { type: string, maxLength: 255 }
+      jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+      kontak: { type: [string, 'null'], maxLength: 30, description: 'Nomor telepon 8-15 digit.' }
+      alamat: { type: [string, 'null'], maxLength: 255 }
+      jenis_bahan: { type: [string, 'null'], maxLength: 255 }
+      is_active: { type: boolean, default: true }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
