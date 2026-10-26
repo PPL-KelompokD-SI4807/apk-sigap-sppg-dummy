@@ -555,7 +555,8 @@ class ToolKatalogTest extends MasterApiTestCase
         $this->postJson("/api/v1/bahan-baku/{$bahan->id}/mutasi", ['jenis' => 'masuk', 'jumlah' => 5, 'ai_draft_id' => $uuid])
             ->assertCreated();
 
-        $this->assertSame($stokAwal + 5, (float) BahanBaku::query()->withoutGlobalScopes()->find($bahan->id)->stok);
+        // Stok acak dari factory (3 desimal): bandingkan dengan toleransi agar tidak gagal karena pembulatan float.
+        $this->assertEqualsWithDelta($stokAwal + 5, (float) BahanBaku::query()->withoutGlobalScopes()->find($bahan->id)->stok, 0.0005);
         $this->assertSame(StatusAiDraft::Confirmed, AiDraft::query()->withoutGlobalScopes()->where('uuid', $uuid)->sole()->status);
     }
 
