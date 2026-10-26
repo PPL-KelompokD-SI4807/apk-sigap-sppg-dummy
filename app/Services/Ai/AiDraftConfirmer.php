@@ -29,6 +29,13 @@ class AiDraftConfirmer
             return null;
         }
 
+        // Investor baca saja (R-06a): tidak pernah mengonfirmasi draf (lapis kedua selain Policy modul).
+        if ($user->isInvestor()) {
+            throw ValidationException::withMessages([
+                'ai_draft_id' => ['Draf AI tidak ditemukan, sudah dipakai, atau kedaluwarsa.'],
+            ]);
+        }
+
         $action ??= $targetId === null ? AksiAiDraft::Create : AksiAiDraft::Update;
         $draft = AiDraft::query()->where('uuid', $uuid)->lockForUpdate()->first();
 

@@ -30,9 +30,10 @@ class IntentParser
     public function systemPrompt(User $user, array $toolNames, string $nonce): string
     {
         $peran = $user->role->label().($user->unit !== null ? ' unit '.$user->unit->label() : '');
-        $sppg = $user->sppg_id === null
-            ? 'lintas SPPG (Admin)'
-            : (string) (Sppg::query()->withoutGlobalScopes()->whereKey($user->sppg_id)->value('nama') ?? 'SPPG #'.$user->sppg_id);
+        $sppgId = $user->sppgAktifId();
+        $sppg = $sppgId === null
+            ? ($user->isAdmin() ? 'lintas SPPG (Admin)' : 'tidak ada SPPG aktif')
+            : (string) (Sppg::query()->withoutGlobalScopes()->whereKey($sppgId)->value('nama') ?? 'SPPG #'.$sppgId);
         $now = Carbon::now((string) config('operasional.timezone', 'Asia/Jakarta'))->locale('id');
         $tag = "data_pengguna_{$nonce}";
         $tools = $toolNames === [] ? '(tidak ada tool; jawab bahwa permintaan harus dilakukan lewat Mini App)' : implode(', ', $toolNames);

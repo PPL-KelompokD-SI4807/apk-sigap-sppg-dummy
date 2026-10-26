@@ -23,10 +23,12 @@ final class SppgBound
         }
 
         $qualified = $query->getModel()->qualifyColumn($column);
+        // Investor: SPPG aktif tervalidasi (bukan gabungan semua SPPG miliknya).
+        $sppgId = $user->sppgAktifId();
 
-        return $user->sppg_id === null
+        return $sppgId === null
             ? $query->whereRaw('1 = 0')
-            : $query->where($qualified, $user->sppg_id);
+            : $query->where($qualified, $sppgId);
     }
 
     /** Pola LIKE aman: karakter khusus di-escape dengan '!'. */

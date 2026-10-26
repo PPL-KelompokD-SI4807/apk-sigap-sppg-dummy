@@ -28,7 +28,7 @@ class DraftService
      */
     public function create(User $user, string $module, AksiAiDraft $action, array $payload, array $confidence, ?int $interactionId = null, ?int $targetId = null): AiDraft
     {
-        if ($user->sppg_id === null) {
+        if ($user->sppg_id === null || $user->isInvestor()) {
             throw new DraftLimitException('Draf AI membutuhkan SPPG pengguna.');
         }
 

@@ -47,7 +47,7 @@ class AiAgentService
         }
 
         $interaction = AiInteraction::query()->create([
-            'sppg_id' => $user->sppg_id,
+            'sppg_id' => $user->isInvestor() ? $user->sppgAktifId() : $user->sppg_id,
             'user_id' => $user->getKey(),
             'jenis_input' => $input->type,
             'model' => mb_substr($this->llm->modelName(), 0, 100),
@@ -60,6 +60,15 @@ class AiAgentService
             if (! $this->withinRateLimit($user)) {
                 return $this->finish($interaction, $started, $log, HasilAi::Ditolak, 'rate_limited', new AiReply(
                     'Batas penggunaan Agen AI tercapai. Coba lagi nanti atau isi formulir di Mini App.',
+                    fallback: true,
+                    interactionId: $interaction->id,
+                ));
+            }
+
+            // Investor (R-06a) di chat bot tidak mengirim header SPPG aktif: hanya boleh bila SPPG-nya satu.
+            if ($user->isInvestor() && $user->sppgAktifId() === null) {
+                return $this->finish($interaction, $started, $log, HasilAi::Ditolak, 'sppg_aktif_belum_dipilih', new AiReply(
+                    'Anda memiliki lebih dari satu SPPG (atau belum terhubung ke SPPG). Buka Mini App dan pilih SPPG aktif untuk melihat datanya.',
                     fallback: true,
                     interactionId: $interaction->id,
                 ));
