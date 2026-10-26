@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\JenisPemasok;
 use App\Http\Controllers\Api\V1\Concerns\FiltersMasterData;
+use App\Http\Requests\Pemasok\StoreHargaPemasokRequest;
 use App\Http\Requests\Pemasok\StorePemasokRequest;
 use App\Http\Requests\Pemasok\UpdatePemasokRequest;
+use App\Http\Resources\Pemasok\HargaPemasokResource;
 use App\Http\Resources\Pemasok\PemasokResource;
+use App\Models\HargaPemasok;
 use App\Models\Pemasok;
 use App\Services\Ai\AiDraftConfirmer;
 use Illuminate\Http\JsonResponse;
@@ -84,5 +87,37 @@ class PemasokController extends ApiController
         $pemasok->delete();
 
         return response()->noContent();
+    }
+
+    /** Riwayat harga bahan dari pemasok (terbaru dulu). Filter: bahan_baku_id. */
+    public function harga(Request $request, Pemasok $pemasok): AnonymousResourceCollection
+    {
+        $this->authorize('lihatHarga', $pemasok);
+
+        $query = HargaPemasok::query()->where('pemasok_id', $pemasok->getKey())->with('bahanBaku')
+            ->orderByDesc('berlaku_mulai')->orderByDesc('id');
+
+        if (($bahanId = filter_var($request->query('bahan_baku_id'), FILTER_VALIDATE_INT)) !== false) {
+            $query->where('bahan_baku_id', $bahanId);
+        }
+
+        return HargaPemasokResource::collection($this->paginate($query, $request));
+    }
+
+    /** Catat harga baru (append-only; koreksi = entri baru). */
+    public function catatHarga(StoreHargaPemasokRequest $request, Pemasok $pemasok): JsonResponse
+    {
+        $harga = DB::transaction(function () use ($request, $pemasok): HargaPemasok {
+            $harga = new HargaPemasok($request->validated());
+            $harga->forceFill([
+                'sppg_id' => $pemasok->sppg_id,
+                'pemasok_id' => $pemasok->getKey(),
+                'dicatat_oleh' => $request->user()->getKey(),
+            ])->save();
+
+            return $harga;
+        });
+
+        return (new HargaPemasokResource($harga->load('bahanBaku')))->response()->setStatusCode(201);
     }
 }
