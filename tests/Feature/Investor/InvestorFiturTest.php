@@ -31,13 +31,20 @@ class InvestorFiturTest extends InvestorTestCase
         PenerimaManfaat::factory()->create(['sppg_id' => $this->sppgA, 'titik_layanan_id' => $titik->id, 'kelompok_sasaran' => 'balita', 'is_active' => false]);
         PenerimaManfaat::factory()->create(['sppg_id' => $this->sppgB, 'kelompok_sasaran' => 'balita']);
 
+        // Hitungan < 5 disamarkan untuk investor (R06a-S-02, lihat AgregatAmbangTest).
         $res = $this->sebagai($this->investorAB, $this->sppgA)->getJson('/api/v1/penerima-manfaat/agregat')->assertOk()
             ->assertJsonPath('data.sppg_id', $this->sppgA)
+            ->assertJsonPath('data.total', null)
+            ->assertJsonPath('data.aktif', null)
+            ->assertJsonPath('data.per_kelompok_sasaran.0', ['kelompok_sasaran' => 'siswa', 'label' => 'Siswa', 'jumlah' => null, 'penanda' => '<5'])
+            ->assertJsonPath('data.per_titik_layanan', [['titik_layanan_id' => $titik->id, 'nama' => 'SDN Fiktif 1', 'jumlah' => null, 'penanda' => '<5']]);
+
+        // Peran ber-hak R penuh melihat angka asli.
+        $this->sebagai($this->kepalaA)->getJson('/api/v1/penerima-manfaat/agregat')->assertOk()
             ->assertJsonPath('data.total', 3)
             ->assertJsonPath('data.aktif', 2)
-            ->assertJsonPath('data.per_kelompok_sasaran.0', ['kelompok_sasaran' => 'siswa', 'label' => 'Siswa', 'jumlah' => 2])
-            ->assertJsonPath('data.per_kelompok_sasaran.1.jumlah', 0)
-            ->assertJsonPath('data.per_titik_layanan', [['titik_layanan_id' => $titik->id, 'nama' => 'SDN Fiktif 1', 'jumlah' => 2]]);
+            ->assertJsonPath('data.per_kelompok_sasaran.0.jumlah', 2)
+            ->assertJsonPath('data.per_titik_layanan.0.jumlah', 2);
 
         $json = $res->getContent();
         foreach (['Anak Rahasia', 'Kelas 4B', 'Alergi kacang', 'catatan_alergi', 'kelas_keterangan', '"nama_penerima"'] as $pribadi) {
@@ -46,7 +53,8 @@ class InvestorFiturTest extends InvestorTestCase
 
         // SPPG aktif B: hanya data B.
         $this->sebagai($this->investorAB, $this->sppgB)->getJson('/api/v1/penerima-manfaat/agregat')->assertOk()
-            ->assertJsonPath('data.total', 1);
+            ->assertJsonPath('data.sppg_id', $this->sppgB)
+            ->assertJsonPath('data.total_penanda', '<5');
     }
 
     public function test_akses_agregat_per_peran(): void

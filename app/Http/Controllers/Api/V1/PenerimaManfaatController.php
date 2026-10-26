@@ -10,6 +10,8 @@ use App\Http\Resources\PenerimaManfaat\PenerimaManfaatResource;
 use App\Models\PenerimaManfaat;
 use App\Models\TitikLayanan;
 use App\Services\Ai\AiDraftConfirmer;
+use App\Services\PenerimaManfaat\AgregatPenerimaService;
+use App\Support\Rbac;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -55,8 +57,9 @@ class PenerimaManfaatController extends ApiController
      * GET /penerima-manfaat/agregat (R-06a): jumlah penerima AKTIF per kelompok sasaran dan per
      * titik layanan untuk SPPG aktif. HANYA hitungan: tanpa nama, kelas, catatan alergi, atau ID
      * penerima. Admin wajib ?sppg_id=; peran lain memakai SPPG aktif (investor: header X-SPPG-Id).
+     * Peran yang hanya punya hak agregat (investor) menerima sel kecil tersamar (R06a-S-02).
      */
-    public function agregat(Request $request): JsonResponse
+    public function agregat(Request $request, AgregatPenerimaService $agregat): JsonResponse
     {
         $this->authorize('viewAgregat', PenerimaManfaat::class);
 
@@ -70,33 +73,9 @@ class PenerimaManfaatController extends ApiController
         $sppgId = $user->isAdmin() ? (int) $data['sppg_id'] : (int) $user->sppgAktifId();
         abort_if($sppgId === 0, 403);
 
-        $basis = fn () => DB::table('penerima_manfaats')->where('penerima_manfaats.sppg_id', $sppgId)->whereNull('penerima_manfaats.deleted_at');
+        $samarkan = in_array('penerima-manfaat', Rbac::aggregateOnlyModules($user), true);
 
-        $perKelompok = $basis()->where('is_active', true)
-            ->groupBy('kelompok_sasaran')->selectRaw('kelompok_sasaran, COUNT(*) as jumlah')
-            ->pluck('jumlah', 'kelompok_sasaran');
-
-        $perTitik = $basis()->where('penerima_manfaats.is_active', true)
-            ->join('titik_layanans', 'titik_layanans.id', '=', 'penerima_manfaats.titik_layanan_id')
-            ->groupBy('titik_layanans.id', 'titik_layanans.nama')
-            ->orderBy('titik_layanans.nama')->orderBy('titik_layanans.id')
-            ->get(['titik_layanans.id', 'titik_layanans.nama', DB::raw('COUNT(*) as jumlah')]);
-
-        return response()->json(['data' => [
-            'sppg_id' => $sppgId,
-            'total' => $basis()->count(),
-            'aktif' => (int) $perKelompok->sum(),
-            'per_kelompok_sasaran' => array_map(fn (KelompokSasaran $k) => [
-                'kelompok_sasaran' => $k->value,
-                'label' => $k->label(),
-                'jumlah' => (int) ($perKelompok[$k->value] ?? 0),
-            ], KelompokSasaran::cases()),
-            'per_titik_layanan' => $perTitik->map(fn ($t) => [
-                'titik_layanan_id' => (int) $t->id,
-                'nama' => (string) $t->nama,
-                'jumlah' => (int) $t->jumlah,
-            ])->values(),
-        ]]);
+        return response()->json(['data' => $agregat->hitung($sppgId, $samarkan)]);
     }
 
     public function show(PenerimaManfaat $penerimaManfaat): PenerimaManfaatResource

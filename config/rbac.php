@@ -124,6 +124,16 @@ return [
     ],
 
     /*
+    | Ambang sel kecil agregat (R06a-S-02, docs/decisions/2026-10-26-ambang-agregat-k5.md). Untuk peran
+    | yang HANYA punya hak agregat (Rbac::aggregateOnlyModules), setiap hitungan 1..k-1 disamarkan menjadi
+    | null + penanda, termasuk sel pelengkap (suppression sekunder) agar tidak dapat dihitung dari
+    | total/aktif. Peran ber-hak R penuh tetap melihat angka asli. Nilai k minimal 2.
+    */
+    'agregat_ambang' => [
+        'k' => 5,
+    ],
+
+    /*
     | "Relawan hanya dapat mengubah data yang ia buat sendiri pada hari yang sama."
     | Diterapkan BaseSppgPolicy::update() memakai kolom $ownerColumn (default created_by).
     */
