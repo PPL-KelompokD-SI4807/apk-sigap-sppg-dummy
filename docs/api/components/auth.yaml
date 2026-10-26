@@ -25,6 +25,7 @@ schemas:
       - keuangan
       - keluhan
       - rekap-harian
+      - persetujuan-menu
   AuthUser:
     type: object
     required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions]
@@ -43,6 +44,10 @@ schemas:
       agregat:
         type: array
         description: Modul yang hanya boleh dibaca agregatnya (mis. investor -> penerima-manfaat lewat GET /penerima-manfaat/agregat).
+        items: { $ref: '#/components/schemas/ModuleSlug' }
+      keputusan:
+        type: array
+        description: 'Modul yang boleh diputuskan peran ini (bukan huruf C/U/D). Investor: [persetujuan-menu]; peran lain kosong.'
         items: { $ref: '#/components/schemas/ModuleSlug' }
       telegram_username: { type: [string, 'null'] }
       last_login_at: { type: [string, 'null'], format: date-time }

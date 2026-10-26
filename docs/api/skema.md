@@ -58,7 +58,7 @@ FK `users.sppg_id -> sppgs.id` (nullOnDelete) ditambahkan migrasi `..._100028_ad
 | KelompokSasaran | siswa, balita, ibu_hamil, ibu_menyusui |
 | KategoriBahan | karbohidrat, protein_hewani, protein_nabati, sayur, buah, susu, bumbu, lainnya |
 | JenisMutasi | masuk, keluar, penyesuaian |
-| JenisPemasok | umkm, petani, peternak, nelayan |
+| JenisPemasok | umkm, petani, peternak, nelayan, koperasi |
 | StatusJadwalProduksi | direncanakan, dimasak, selesai, dibatalkan |
 | StatusJadwalDistribusi | menunggu, siap, berangkat, diterima, dibatalkan |
 | HasilMutu | layak, tidak_layak |

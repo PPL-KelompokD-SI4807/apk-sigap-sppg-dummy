@@ -264,3 +264,69 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+/menu-gizi/{id}/rincian-biaya:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Menu dan Gizi]
+    summary: Pratinjau rincian biaya menu (harga pemasok terkini)
+    description: 'Tidak menyimpan apa pun. Bahan tanpa harga berlaku atau tanpa konversi ditandai di `bahan_bermasalah` dan `lengkap` = false. Memuat harga pemasok, sehingga 403 untuk peran tanpa hak R modul `persetujuan-menu` ATAU (hak R `pemasok` DAN `menu-gizi`) (mis. relawan, akuntan, investor); ahli gizi, kepala SPPG, admin, dan staf gudang boleh.'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RincianBiayaMenu' }
+            example:
+              data:
+                menu_id: 12
+                menu_versi: 2
+                bahan:
+                  - { bahan_baku_id: 3, nama: Beras, satuan: kg, gram_per_porsi: 90, gram_per_satuan: 1000, harga_per_satuan: 12500, pemasok_id: 5, pemasok_nama: 'Koperasi Desa Sejahtera (Demo)', pemasok_utama: false, berlaku_mulai: '2026-10-23', biaya_per_porsi: 1125, masalah: null }
+                biaya_per_porsi: 6840
+                jumlah_porsi: 500
+                sumber_porsi: penerima_manfaat_total
+                keterangan_asumsi: 'Jumlah porsi memakai total penerima manfaat aktif.'
+                total_biaya: 3420000
+                lengkap: true
+                bahan_bermasalah: []
+                tanggal_acuan: '2026-10-26'
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/menu-gizi/{id}/ajukan:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  post:
+    tags: [Menu dan Gizi]
+    summary: Ajukan menu ke investor
+    description: |
+      Hanya Ahli Gizi SPPG menu. Status menu harus draf/ditolak/perlu_revisi. Snapshot harga, biaya, dan porsi
+      dihitung dan dibekukan server (field lain dari klien diabaikan). 409: status menu tidak valid atau `versi` beda.
+      422 (`alasan`): `harga_bahan_belum_lengkap` (bahan tanpa harga/konversi: `errors.bahan` + `bahan_bermasalah`, atau menu tanpa
+      komposisi), `jumlah_porsi_nol` (belum ada jadwal produksi maupun penerima manfaat aktif), `biaya_melebihi_batas`
+      (biaya per porsi >= 1.000.000.000.000 atau total >= 100.000.000.000.000; tidak muat di kolom snapshot).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AjukanMenuInput' }
+          example: { versi: 2, catatan_pengaju: 'Mohon ditinjau.' }
+    responses:
+      '201':
+        description: Pengajuan dibuat (status `diajukan`)
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/PengajuanMenu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikPersetujuan' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }

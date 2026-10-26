@@ -2497,6 +2497,72 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /menu-gizi/{id}/rincian-biaya:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Menu dan Gizi]
+      summary: Pratinjau rincian biaya menu (harga pemasok terkini)
+      description: 'Tidak menyimpan apa pun. Bahan tanpa harga berlaku atau tanpa konversi ditandai di `bahan_bermasalah` dan `lengkap` = false. Memuat harga pemasok, sehingga 403 untuk peran tanpa hak R modul `persetujuan-menu` ATAU (hak R `pemasok` DAN `menu-gizi`) (mis. relawan, akuntan, investor); ahli gizi, kepala SPPG, admin, dan staf gudang boleh.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RincianBiayaMenu' }
+              example:
+                data:
+                  menu_id: 12
+                  menu_versi: 2
+                  bahan:
+                    - { bahan_baku_id: 3, nama: Beras, satuan: kg, gram_per_porsi: 90, gram_per_satuan: 1000, harga_per_satuan: 12500, pemasok_id: 5, pemasok_nama: 'Koperasi Desa Sejahtera (Demo)', pemasok_utama: false, berlaku_mulai: '2026-10-23', biaya_per_porsi: 1125, masalah: null }
+                  biaya_per_porsi: 6840
+                  jumlah_porsi: 500
+                  sumber_porsi: penerima_manfaat_total
+                  keterangan_asumsi: 'Jumlah porsi memakai total penerima manfaat aktif.'
+                  total_biaya: 3420000
+                  lengkap: true
+                  bahan_bermasalah: []
+                  tanggal_acuan: '2026-10-26'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /menu-gizi/{id}/ajukan:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Menu dan Gizi]
+      summary: Ajukan menu ke investor
+      description: |
+        Hanya Ahli Gizi SPPG menu. Status menu harus draf/ditolak/perlu_revisi. Snapshot harga, biaya, dan porsi
+        dihitung dan dibekukan server (field lain dari klien diabaikan). 409: status menu tidak valid atau `versi` beda.
+        422 (`alasan`): `harga_bahan_belum_lengkap` (bahan tanpa harga/konversi: `errors.bahan` + `bahan_bermasalah`, atau menu tanpa
+        komposisi), `jumlah_porsi_nol` (belum ada jadwal produksi maupun penerima manfaat aktif), `biaya_melebihi_batas`
+        (biaya per porsi >= 1.000.000.000.000 atau total >= 100.000.000.000.000; tidak muat di kolom snapshot).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AjukanMenuInput' }
+            example: { versi: 2, catatan_pengaju: 'Mohon ditinjau.' }
+      responses:
+        '201':
+          description: Pengajuan dibuat (status `diajukan`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PengajuanMenu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikPersetujuan' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /mutu:
     get:
       tags: [Mutu]
@@ -2827,7 +2893,7 @@ paths:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
         - $ref: '#/components/parameters/Search'
-        - { name: jenis, in: query, schema: { type: string, enum: [umkm, petani, peternak, nelayan] } }
+        - { name: jenis, in: query, schema: { type: string, enum: [umkm, petani, peternak, nelayan, koperasi] } }
         - { name: is_active, in: query, schema: { type: boolean } }
         - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
       responses:
@@ -2939,6 +3005,57 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+  /pemasok/{id}/harga:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Pemasok]
+      summary: Riwayat harga bahan dari pemasok (terbaru dulu)
+      description: 'Hak R modul pemasok (Investor tidak punya akses).'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - { name: bahan_baku_id, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/HargaPemasok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [Pemasok]
+      summary: Catat harga bahan dari pemasok (append-only)
+      description: 'Hak C modul pemasok (Admin, Staf Gudang). Tanpa endpoint ubah/hapus; koreksi = entri baru. Pemasok dan bahan wajib satu SPPG.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HargaPemasokInput' }
+            example: { bahan_baku_id: 3, harga: 12500, berlaku_mulai: '2026-10-26', catatan: 'Harga koperasi' }
+      responses:
+        '201':
+          description: Dicatat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/HargaPemasok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /penerima-manfaat:
     get:
       tags: [Penerima Manfaat]
@@ -3435,6 +3552,111 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+  /persetujuan-menu:
+    get:
+      tags: [Persetujuan Menu]
+      summary: Daftar pengajuan menu
+      description: 'Hak R: Admin, Kepala SPPG, Ahli Gizi, Investor (SPPG aktif via X-SPPG-Id). Daftar tanpa `rincian`.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/StatusPengajuanMenu' } }
+        - { name: menu_id, in: query, schema: { type: integer } }
+        - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PengajuanMenu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /persetujuan-menu/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Persetujuan Menu]
+      summary: Detail pengajuan menu (snapshot lengkap)
+      description: 'Pengajuan SPPG lain atau investor tanpa kepemilikan SPPG tersebut -> 403/404.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PengajuanMenu' }
+              example:
+                data:
+                  id: 7
+                  sppg_id: 1
+                  menu_id: 12
+                  nama_menu: 'Nasi, Ayam Panggang, Sup Wortel'
+                  kelompok_sasaran: siswa
+                  nomor: 1
+                  menu_versi: 2
+                  status: diajukan
+                  status_label: Diajukan
+                  biaya_per_porsi: 6840
+                  jumlah_porsi: 500
+                  sumber_porsi: penerima_manfaat_total
+                  keterangan_asumsi: 'Jumlah porsi memakai total penerima manfaat aktif.'
+                  total_biaya: 3420000
+                  catatan_pengaju: 'Mohon ditinjau.'
+                  diajukan_oleh: 'Ahli Gizi 1 (Demo)'
+                  diajukan_pada: '2026-10-26T09:00:00+07:00'
+                  diputuskan_oleh: null
+                  diputuskan_pada: null
+                  catatan_keputusan: null
+                  menu_versi_sekarang: 2
+                  kedaluwarsa: false
+                  rincian:
+                    menu: { nama_menu: 'Nasi, Ayam Panggang, Sup Wortel', kelompok_sasaran: siswa, gizi_per_porsi: { energi_kkal: 630, protein_g: 23, lemak_g: 18, karbohidrat_g: 91, serat_g: 8 } }
+                    bahan:
+                      - { bahan_baku_id: 3, nama: Beras, satuan: kg, gram_per_porsi: 90, gram_per_satuan: 1000, harga_per_satuan: 12500, pemasok_id: 5, pemasok_nama: 'Koperasi Desa Sejahtera (Demo)', pemasok_utama: false, berlaku_mulai: '2026-10-23', biaya_per_porsi: 1125, masalah: null }
+                    tanggal_acuan: '2026-10-26'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /persetujuan-menu/{id}/keputusan:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Persetujuan Menu]
+      summary: Putuskan pengajuan menu (investor)
+      description: |
+        Hanya Investor pemilik SPPG pengajuan (pivot + `X-SPPG-Id`); peran lain termasuk Admin -> 403.
+        Transaksi mengunci menu lalu pengajuan. 409 bila pengajuan sudah diputuskan/dibatalkan, menu berubah,
+        atau `versi_menu` tidak sama dengan versi menu di server. Tidak ada endpoint ubah/hapus pengajuan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeputusanInput' }
+            example: { keputusan: perlu_revisi, catatan: 'Turunkan porsi ayam menjadi 50 g.', versi_menu: 2 }
+      responses:
+        '200':
+          description: Diputuskan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PengajuanMenu' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikPersetujuan' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /rekap-harian:
     get:
       tags: [Rekap Harian]
@@ -4300,6 +4522,7 @@ components:
         - keuangan
         - keluhan
         - rekap-harian
+        - persetujuan-menu
     AuthUser:
       type: object
       required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions]
@@ -4318,6 +4541,10 @@ components:
         agregat:
           type: array
           description: Modul yang hanya boleh dibaca agregatnya (mis. investor -> penerima-manfaat lewat GET /penerima-manfaat/agregat).
+          items: { $ref: '#/components/schemas/ModuleSlug' }
+        keputusan:
+          type: array
+          description: 'Modul yang boleh diputuskan peran ini (bukan huruf C/U/D). Investor: [persetujuan-menu]; peran lain kosong.'
           items: { $ref: '#/components/schemas/ModuleSlug' }
         telegram_username: { type: [string, 'null'] }
         last_login_at: { type: [string, 'null'], format: date-time }
@@ -5074,6 +5301,23 @@ components:
         karbohidrat_g: { type: number }
         serat_g: { type: number }
         catatan: { type: [string, 'null'] }
+        status_persetujuan: { $ref: '#/components/schemas/StatusPersetujuanMenu' }
+        status_persetujuan_label: { type: string }
+        versi: { type: integer, description: 'Naik setiap menu diubah (atribut/komposisi); dikirim sebagai `versi` saat mengajukan.' }
+        pengajuan_terakhir:
+          type: [object, 'null']
+          description: 'Ringkasan pengajuan terbaru. Hanya ada (kunci disertakan) bila relasi dimuat DAN pemanggil punya hak R modul `persetujuan-menu` (ahli gizi, kepala SPPG, admin); untuk staf gudang/relawan kunci ini tidak dikirim.'
+          properties:
+            id: { type: integer }
+            nomor: { type: integer }
+            menu_versi: { type: integer }
+            status: { $ref: '#/components/schemas/StatusPengajuanMenu' }
+            biaya_per_porsi: { type: number }
+            jumlah_porsi: { type: integer }
+            total_biaya: { type: number }
+            diajukan_pada: { type: [string, 'null'], format: date-time }
+            diputuskan_pada: { type: [string, 'null'], format: date-time }
+            catatan_keputusan: { type: [string, 'null'] }
         jumlah_bahan: { type: integer, description: 'Hanya pada daftar' }
         bahan:
           type: array
@@ -5346,7 +5590,7 @@ components:
         id: { type: integer }
         sppg_id: { type: integer }
         nama: { type: string }
-        jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+        jenis: { type: string, enum: [umkm, petani, peternak, nelayan, koperasi] }
         kontak: { type: [string, 'null'] }
         alamat: { type: [string, 'null'] }
         jenis_bahan: { type: [string, 'null'] }
@@ -5360,7 +5604,7 @@ components:
       properties:
         sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
         nama: { type: string, maxLength: 255 }
-        jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+        jenis: { type: string, enum: [umkm, petani, peternak, nelayan, koperasi] }
         kontak: { type: [string, 'null'], maxLength: 30, description: 'Nomor telepon 8-15 digit.' }
         alamat: { type: [string, 'null'], maxLength: 255 }
         jenis_bahan: { type: [string, 'null'], maxLength: 255 }
@@ -5497,6 +5741,118 @@ components:
         role: { $ref: '#/components/schemas/Role' }
         unit: { type: [string, 'null'], enum: [dapur, distribusi, null] }
         sppg_id: { type: [integer, 'null'] }
+    StatusPersetujuanMenu:
+      type: string
+      enum: [draf, diajukan, disetujui, ditolak, perlu_revisi]
+      description: 'Status persetujuan pada menu. Hanya `disetujui` yang dapat dipakai Jadwal Produksi.'
+    StatusPengajuanMenu:
+      type: string
+      enum: [diajukan, disetujui, ditolak, perlu_revisi, dibatalkan]
+    HargaPemasok:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        pemasok_id: { type: integer }
+        bahan_baku_id: { type: integer }
+        bahan_baku_nama: { type: [string, 'null'] }
+        satuan: { type: [string, 'null'] }
+        harga: { type: number, description: 'Rupiah per satuan bahan.' }
+        gram_per_satuan: { type: [number, 'null'] }
+        berlaku_mulai: { type: string, format: date }
+        sudah_berlaku: { type: boolean }
+        catatan: { type: [string, 'null'] }
+        dicatat_oleh: { type: [integer, 'null'] }
+        created_at: { type: string, format: date-time }
+    HargaPemasokInput:
+      type: object
+      required: [bahan_baku_id, harga, berlaku_mulai]
+      properties:
+        bahan_baku_id: { type: integer, description: 'Wajib bahan SPPG yang sama dengan pemasok.' }
+        harga: { type: number, exclusiveMinimum: 0 }
+        gram_per_satuan: { type: [number, 'null'], minimum: 0.001, maximum: 1000000, multipleOf: 0.001, description: 'Wajib bila satuan bahan bukan kg/g/gram/liter/l/ml. Minimal 0,001 dan maksimal 3 desimal.' }
+        berlaku_mulai: { type: string, format: date, description: 'Hari ini -1 tahun s.d. +1 tahun.' }
+        catatan: { type: [string, 'null'], maxLength: 255 }
+    RincianBiayaBahan:
+      type: object
+      properties:
+        bahan_baku_id: { type: integer }
+        nama: { type: string }
+        satuan: { type: string }
+        gram_per_porsi: { type: number }
+        gram_per_satuan: { type: [number, 'null'] }
+        harga_per_satuan: { type: [number, 'null'] }
+        pemasok_id: { type: [integer, 'null'] }
+        pemasok_nama: { type: [string, 'null'] }
+        pemasok_utama: { type: boolean }
+        berlaku_mulai: { type: [string, 'null'], format: date }
+        biaya_per_porsi: { type: [number, 'null'] }
+        masalah: { type: [string, 'null'], description: 'null bila lengkap; selain itu tanpa harga berlaku atau tanpa konversi satuan.' }
+    RincianBiayaMenu:
+      type: object
+      properties:
+        menu_id: { type: integer }
+        menu_versi: { type: integer }
+        bahan:
+          type: array
+          items: { $ref: '#/components/schemas/RincianBiayaBahan' }
+        biaya_per_porsi: { type: number }
+        jumlah_porsi: { type: integer }
+        sumber_porsi: { type: string, enum: [jadwal_produksi, penerima_manfaat_kelompok, penerima_manfaat_total] }
+        keterangan_asumsi: { type: string }
+        total_biaya: { type: number }
+        lengkap: { type: boolean, description: 'false = ada bahan bermasalah; pengajuan akan ditolak 422.' }
+        bahan_bermasalah:
+          type: array
+          items:
+            type: object
+            properties:
+              bahan_baku_id: { type: integer }
+              nama: { type: string }
+              masalah: { type: string }
+        tanggal_acuan: { type: string, format: date }
+    AjukanMenuInput:
+      type: object
+      required: [versi]
+      description: 'Hanya versi dan catatan; harga, biaya, dan porsi dihitung server.'
+      properties:
+        versi: { type: integer, minimum: 1, description: 'Harus sama dengan `versi` menu di server (409 bila beda).' }
+        catatan_pengaju: { type: [string, 'null'], maxLength: 1000 }
+    KeputusanInput:
+      type: object
+      required: [keputusan, versi_menu]
+      properties:
+        keputusan: { type: string, enum: [disetujui, ditolak, perlu_revisi] }
+        catatan: { type: [string, 'null'], minLength: 5, maxLength: 1000, description: 'Wajib untuk ditolak dan perlu_revisi.' }
+        versi_menu: { type: integer, minimum: 1, description: 'Isi dengan `menu_versi` pengajuan yang dilihat.' }
+    PengajuanMenu:
+      type: object
+      properties:
+        id: { type: integer }
+        sppg_id: { type: integer }
+        menu_id: { type: integer }
+        nama_menu: { type: [string, 'null'] }
+        kelompok_sasaran: { type: [string, 'null'] }
+        nomor: { type: integer, description: 'Urut pengajuan per menu.' }
+        menu_versi: { type: integer }
+        status: { $ref: '#/components/schemas/StatusPengajuanMenu' }
+        status_label: { type: string }
+        biaya_per_porsi: { type: number }
+        jumlah_porsi: { type: integer }
+        sumber_porsi: { type: string }
+        keterangan_asumsi: { type: [string, 'null'] }
+        total_biaya: { type: number }
+        catatan_pengaju: { type: [string, 'null'] }
+        diajukan_oleh: { type: [string, 'null'], description: 'Nama pengaju.' }
+        diajukan_pada: { type: [string, 'null'], format: date-time }
+        diputuskan_oleh: { type: [string, 'null'], description: 'Nama pemutus; null bila dibatalkan sistem.' }
+        diputuskan_pada: { type: [string, 'null'], format: date-time }
+        catatan_keputusan: { type: [string, 'null'] }
+        menu_versi_sekarang: { type: [integer, 'null'], description: 'Hanya pada detail.' }
+        kedaluwarsa: { type: boolean, description: 'Hanya pada detail. true = menu sudah berubah/dihapus sejak diajukan.' }
+        rincian:
+          type: object
+          description: 'Hanya pada detail. Snapshot beku: menu (nama, kelompok, gizi), bahan (lihat RincianBiayaBahan), tanggal_acuan.'
     RekapHarianInput:
       type: object
       properties:
@@ -5860,6 +6216,14 @@ components:
             message: Data yang dikirim tidak valid.
             errors:
               berkas: ['Hanya gambar JPEG, PNG, atau WebP yang diizinkan.']
+    KonflikPersetujuan:
+      description: |
+        Konflik status/versi. Body berisi `alasan`: `status_menu_tidak_valid`, `versi_menu_tidak_cocok`
+        (+ `versi_server`), `pengajuan_sudah_diputuskan`, atau `menu_berubah_setelah_diajukan`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Pengajuan ini sudah diputuskan atau dibatalkan.', alasan: pengajuan_sudah_diputuskan, status: disetujui }
     SppgAktifDitolak:
       description: Header X-SPPG-Id tidak boleh diakses (`sppg_aktif_ditolak`) atau investor tanpa SPPG (`tanpa_sppg`).
       content:

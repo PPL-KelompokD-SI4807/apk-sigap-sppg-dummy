@@ -35,6 +35,23 @@ schemas:
       karbohidrat_g: { type: number }
       serat_g: { type: number }
       catatan: { type: [string, 'null'] }
+      status_persetujuan: { $ref: '#/components/schemas/StatusPersetujuanMenu' }
+      status_persetujuan_label: { type: string }
+      versi: { type: integer, description: 'Naik setiap menu diubah (atribut/komposisi); dikirim sebagai `versi` saat mengajukan.' }
+      pengajuan_terakhir:
+        type: [object, 'null']
+        description: 'Ringkasan pengajuan terbaru. Hanya ada (kunci disertakan) bila relasi dimuat DAN pemanggil punya hak R modul `persetujuan-menu` (ahli gizi, kepala SPPG, admin); untuk staf gudang/relawan kunci ini tidak dikirim.'
+        properties:
+          id: { type: integer }
+          nomor: { type: integer }
+          menu_versi: { type: integer }
+          status: { $ref: '#/components/schemas/StatusPengajuanMenu' }
+          biaya_per_porsi: { type: number }
+          jumlah_porsi: { type: integer }
+          total_biaya: { type: number }
+          diajukan_pada: { type: [string, 'null'], format: date-time }
+          diputuskan_pada: { type: [string, 'null'], format: date-time }
+          catatan_keputusan: { type: [string, 'null'] }
       jumlah_bahan: { type: integer, description: 'Hanya pada daftar' }
       bahan:
         type: array
