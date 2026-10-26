@@ -30,6 +30,7 @@ schemas:
     properties:
       id: { type: integer, examples: [12] }
       name: { type: string, examples: ['Siti Rahayu'] }
+      username: { type: [string, 'null'], examples: ['siti.dapur'], description: 'Username login (huruf kecil).' }
       role: { $ref: '#/components/schemas/Role' }
       role_label: { type: string, examples: ['Kepala SPPG'] }
       unit: { $ref: '#/components/schemas/RelawanUnit' }
@@ -49,11 +50,148 @@ schemas:
         additionalProperties: { type: string, pattern: '^C?R?\*?U?D?$' }
         examples:
           - { sppg: RU, jadwal: CRUD, keuangan: R, pengguna: R }
-  LoginResponse:
+  AuthError:
     type: object
-    required: [token, token_type, expires_at, user]
+    required: [message, alasan]
+    description: Galat autentikasi R-03 (format standar + kode mesin `alasan`).
     properties:
-      token: { type: string, examples: ['1|q8Vx...'] }
+      message: { type: string }
+      errors:
+        type: object
+        additionalProperties: { type: array, items: { type: string } }
+      alasan:
+        type: string
+        enum:
+          - perlu_login_penuh
+          - bukan_pra_login
+          - kredensial_salah
+          - terkunci
+          - perlu_aktivasi
+          - sudah_aktivasi
+          - telegram_belum_terhubung
+          - terlalu_sering
+          - gagal_kirim
+          - token_tidak_valid
+          - token_salah
+          - token_kedaluwarsa
+          - token_dipakai
+          - token_hangus
+          - dev_bypass
+      sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah' }
+      terkunci_sampai: { type: string, format: date-time, description: 'terkunci' }
+      langkah: { type: string, enum: [aktivasi, masuk], description: 'perlu_aktivasi / sudah_aktivasi' }
+  PraLoginResponse:
+    type: object
+    required: [langkah, token, token_type, token_jenis, expires_at, akun]
+    properties:
+      langkah: { type: string, enum: [masuk, aktivasi] }
+      token: { type: string, description: 'Token PRA-LOGIN (ability auth:pra-login). Simpan di memori saja.' }
       token_type: { type: string, const: Bearer }
-      expires_at: { type: [string, 'null'], format: date-time }
+      token_jenis: { type: string, const: pra_login }
+      expires_at: { type: string, format: date-time, description: '15 menit.' }
+      akun:
+        type: object
+        required: [nama, perlu_username]
+        properties:
+          nama: { type: string }
+          perlu_username: { type: boolean, description: 'true = field username wajib saat aktivasi.' }
+  SesiAktifResponse:
+    type: object
+    required: [langkah, user]
+    properties:
+      langkah: { type: string, const: sesi_aktif }
       user: { $ref: '#/components/schemas/AuthUser' }
+  LoginPenuhResponse:
+    type: object
+    required: [langkah, tujuan, token, token_type, token_jenis, expires_at, user]
+    properties:
+      langkah: { type: string, const: selesai }
+      tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi, reset_password] }
+      token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Simpan di localStorage perangkat ini.' }
+      token_type: { type: string, const: Bearer }
+      token_jenis: { type: string, const: penuh }
+      expires_at: { type: 'null', description: 'Tidak kedaluwarsa; berakhir hanya karena logout/dicabut.' }
+      user: { $ref: '#/components/schemas/AuthUser' }
+    example:
+      langkah: selesai
+      tujuan: perangkat_baru
+      token: '52|penuhQ8Vx...'
+      token_type: Bearer
+      token_jenis: penuh
+      expires_at: null
+      user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 1, sppg_name: SPPG Sukamaju, telegram_username: siti_rahayu, last_login_at: '2026-10-26T07:30:00+07:00', modules: [sppg, jadwal], permissions: { sppg: RU, jadwal: CRUD } }
+  TantanganResponse:
+    type: object
+    required: [langkah, message, tantangan]
+    properties:
+      langkah: { type: string, const: verifikasi_token }
+      message: { type: string }
+      tantangan:
+        type: object
+        required: [id, tujuan, kedaluwarsa_pada, kirim_ulang_tersedia_pada, sisa_kirim_ulang, maks_percobaan]
+        properties:
+          id: { type: string, format: ulid }
+          tujuan: { type: string, enum: [perangkat_baru, aktivasi, reset_password] }
+          kedaluwarsa_pada: { type: string, format: date-time }
+          kirim_ulang_tersedia_pada: { type: [string, 'null'], format: date-time, description: 'null = batas kirim ulang habis.' }
+          sisa_kirim_ulang: { type: integer }
+          maks_percobaan: { type: integer }
+    example:
+      langkah: verifikasi_token
+      message: Token 6 digit telah dikirim bot SiGAP ke chat Telegram Anda.
+      tantangan: { id: '01JBDQ6V9X8Y7Z6W5V4U3T2S1R', tujuan: perangkat_baru, kedaluwarsa_pada: '2026-10-26T08:05:00+07:00', kirim_ulang_tersedia_pada: '2026-10-26T08:01:00+07:00', sisa_kirim_ulang: 3, maks_percobaan: 5 }
+  PermintaanReset:
+    type: object
+    required: [id, status, dibuat_pada, kedaluwarsa_pada]
+    properties:
+      id: { type: string, format: ulid }
+      status: { type: string, enum: [menunggu, disetujui, ditolak, selesai, kedaluwarsa] }
+      dibuat_pada: { type: string, format: date-time }
+      kedaluwarsa_pada: { type: string, format: date-time, description: '24 jam sejak dibuat.' }
+      diputuskan_pada: { type: [string, 'null'], format: date-time }
+      selesai_pada: { type: [string, 'null'], format: date-time }
+      pengguna:
+        type: object
+        description: Hanya pada daftar Admin. Tanpa no telepon/identitas Telegram.
+        properties:
+          id: { type: integer }
+          name: { type: string }
+          username: { type: [string, 'null'] }
+          role: { $ref: '#/components/schemas/Role' }
+          role_label: { type: string }
+          sppg_id: { type: [integer, 'null'] }
+  Sesi:
+    type: object
+    required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, diverifikasi_pada, sesi_ini]
+    properties:
+      id: { type: integer }
+      perangkat: { type: [string, 'null'], description: 'label_perangkat saat login.' }
+      dibuat_pada: { type: [string, 'null'], format: date-time }
+      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time }
+      diverifikasi_pada: { type: [string, 'null'], format: date-time }
+      sesi_ini: { type: boolean }
+responses:
+  AuthForbidden:
+    description: |
+      Token tidak memegang ability yang diwajibkan rute (`alasan: perlu_login_penuh` untuk token
+      pra-login/lama di rute data; `bukan_pra_login` untuk token penuh di rute masuk; `dev_bypass`),
+      atau akun nonaktif.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Silakan masuk dengan username/no telepon dan password terlebih dahulu.', alasan: perlu_login_penuh }
+  AuthTooManyRequests:
+    description: Akun terkunci sementara (`terkunci`), terlalu sering meminta/kirim ulang token (`terlalu_sering`), atau throttle rute.
+    headers:
+      Retry-After:
+        schema: { type: integer }
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Terlalu banyak percobaan masuk yang salah. Akun dikunci sementara, coba lagi dalam 15 menit.', alasan: terkunci, terkunci_sampai: '2026-10-26T08:20:00+07:00' }
+  TokenGagalKirim:
+    description: Bot gagal mengirim token (mis. pengguna memblokir bot). Tantangan dibatalkan.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Token tidak dapat dikirim. Buka chat bot SiGAP di Telegram, tekan Mulai (/start), lalu coba lagi.', alasan: gagal_kirim }

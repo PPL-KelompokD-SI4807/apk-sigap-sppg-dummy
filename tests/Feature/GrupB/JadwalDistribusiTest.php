@@ -13,7 +13,6 @@ use App\Models\PemeriksaanMutu;
 use App\Models\Pengemudi;
 use App\Models\TitikLayanan;
 use App\Models\User;
-use Laravel\Sanctum\Sanctum;
 
 class JadwalDistribusiTest extends GrupBTestCase
 {
@@ -234,7 +233,7 @@ class JadwalDistribusiTest extends GrupBTestCase
         $this->getJson('/api/v1/jadwal/distribusi')->assertForbidden();
         $this->postJson('/api/v1/jadwal/distribusi', $this->payload())->assertForbidden();
 
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
         $this->getJson('/api/v1/jadwal/distribusi')->assertOk();
         $id = $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['jumlah_porsi' => 50]))->assertCreated()
             ->assertJsonPath('data.petugas_id', $relawan->id)->assertJsonPath('data.dibuat_oleh', $relawan->id)->json('data.id');
@@ -323,7 +322,7 @@ class JadwalDistribusiTest extends GrupBTestCase
         $user = $this->user(Role::KepalaSppg);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal', 'payload' => ['_resource' => 'distribusi']]);
         $drafProduksi = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         // Draf jadwal PRODUKSI (tanpa penanda) tidak dapat dikonfirmasi lewat endpoint distribusi.
         $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['ai_draft_id' => $drafProduksi->uuid]))

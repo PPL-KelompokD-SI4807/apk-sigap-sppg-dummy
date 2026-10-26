@@ -13,7 +13,6 @@ use App\Models\PemeriksaanMutu;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
-use Laravel\Sanctum\Sanctum;
 use Tests\Feature\GrupB\GrupBTestCase;
 use Tests\Support\GambarUji;
 
@@ -146,18 +145,18 @@ class LampiranTertundaTest extends GrupBTestCase
         $admin = $this->user(Role::Admin);
         $relawanA = $this->user(Role::Relawan, $this->sppgA, RelawanUnit::Dapur);
 
-        Sanctum::actingAs($relawanB);
+        $this->masukPenuh($relawanB);
         $dariB = $this->idLampiran('keluhan');
 
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $idAdminB = $this->idLampiran('keluhan', ['sppg_id' => $this->sppgB->id]);
 
         // Pengguna SPPG A tidak dapat memakai lampiran SPPG B.
-        Sanctum::actingAs($relawanA);
+        $this->masukPenuh($relawanA);
         $this->postJson('/api/v1/keluhan', $this->keluhan(['lampiran_ids' => [$dariB]]))->assertUnprocessable()->assertJsonValidationErrors(['lampiran_ids']);
 
         // Admin mengunggah untuk SPPG B lalu membuat keluhan SPPG A: SPPG tidak sama -> ditolak.
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->postJson('/api/v1/keluhan', $this->keluhan(['sppg_id' => $this->sppgA->id, 'lampiran_ids' => [$idAdminB]]))
             ->assertUnprocessable()->assertJsonValidationErrors(['lampiran_ids']);
         // SPPG sama -> berhasil.
@@ -212,7 +211,7 @@ class LampiranTertundaTest extends GrupBTestCase
         $this->postJson('/api/v1/keluhan', $this->keluhan(['lampiran_ids' => array_slice($enam, 0, 5)]))->assertCreated()->assertJsonCount(5, 'data.lampiran');
 
         // Penambahan lewat update: total (ada + baru) tetap maksimal 5.
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $keluhan = FeedbackKeluhan::query()->firstOrFail();
         $tambahan = $this->idLampiran('keluhan', ['sppg_id' => $this->sppgA->id]);
         $this->patchJson("/api/v1/keluhan/{$keluhan->id}", ['lampiran_ids' => [$tambahan]])->assertUnprocessable()->assertJsonValidationErrors(['lampiran_ids']);
@@ -237,7 +236,7 @@ class LampiranTertundaTest extends GrupBTestCase
         $this->unggah('keluhan')->assertCreated();
 
         // Setelah diikat, kuota kembali tersedia.
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
         $this->postJson('/api/v1/keluhan', $this->keluhan(['lampiran_ids' => array_slice($ids, 0, 2)]))->assertCreated();
         $this->unggah('keluhan')->assertCreated();
     }
@@ -295,10 +294,10 @@ class LampiranTertundaTest extends GrupBTestCase
         $id = $this->idLampiran('keluhan');
         $this->get("/api/v1/lampiran/{$id}")->assertOk();
 
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->get("/api/v1/lampiran/{$id}")->assertNotFound();
 
-        Sanctum::actingAs($relawanB);
+        $this->masukPenuh($relawanB);
         $this->get("/api/v1/lampiran/{$id}")->assertNotFound();
     }
 
@@ -313,18 +312,18 @@ class LampiranTertundaTest extends GrupBTestCase
         $keluhanId = $this->postJson('/api/v1/keluhan', $this->keluhan(['lampiran_ids' => [$id]]))->assertCreated()->json('data.id');
 
         // Kepala SPPG A boleh (R keluhan), relawan lain hanya keluhan miliknya -> 403, SPPG B -> 404.
-        Sanctum::actingAs($kepalaA);
+        $this->masukPenuh($kepalaA);
         $this->get("/api/v1/lampiran/{$id}")->assertOk();
 
-        Sanctum::actingAs($lainnya);
+        $this->masukPenuh($lainnya);
         $this->assertNotSame($pencatat->id, $lainnya->id);
         $this->get("/api/v1/lampiran/{$id}")->assertForbidden();
 
-        Sanctum::actingAs($kepalaB);
+        $this->masukPenuh($kepalaB);
         $this->get("/api/v1/lampiran/{$id}")->assertNotFound();
 
         // Keluhan terhapus lunak -> lampiran tidak disajikan.
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->deleteJson("/api/v1/keluhan/{$keluhanId}")->assertNoContent();
         $this->get("/api/v1/lampiran/{$id}")->assertNotFound();
     }

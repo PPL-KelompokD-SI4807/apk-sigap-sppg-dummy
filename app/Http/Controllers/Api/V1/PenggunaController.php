@@ -85,7 +85,7 @@ class PenggunaController extends ApiController
     /** @param Builder<User> $query */
     private function applyFilters(Builder $query, Request $request): void
     {
-        $this->applySearch($query, $request, ['name', 'phone', 'telegram_username']);
+        $this->applySearch($query, $request, ['name', 'username', 'phone', 'telegram_username']);
         $this->filterSppg($query, $request);
 
         if (($role = $this->enumQuery($request, 'role', Role::class)) !== null) {

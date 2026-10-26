@@ -204,3 +204,10 @@ a.seg-btn { display: flex; align-items: center; justify-content: center; color: 
 .tbl-row .num.neg { color: var(--danger); }
 .legend-1 { grid-template-columns: 1fr; }
 .section-title { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--hint); margin: 8px 4px 0; }
+
+/* Alur masuk kredensial (R-03) */
+.login .otp { text-align: center; letter-spacing: .5em; font-size: 1.5rem; }
+.pw-rules { list-style: none; margin: 0; padding: 0 4px; display: flex; flex-direction: column; gap: 2px; }
+.pw-rules .ok { color: #1b6e32; }
+.pw-rules .no { color: var(--hint); }
+.lock-count { font-size: 1.1rem; font-weight: 600; text-align: center; margin: 0; }

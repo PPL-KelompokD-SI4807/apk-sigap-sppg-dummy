@@ -9,6 +9,7 @@ use App\Models\Sppg;
 use App\Models\TelegramUpdate;
 use App\Models\TitikLayanan;
 use App\Models\User;
+use App\Services\Auth\SesiService;
 use App\Services\Users\InvalidInvitationException;
 use App\Services\Users\InvitationService;
 use Illuminate\Support\Facades\Log;
@@ -21,14 +22,20 @@ use Throwable;
  * - Hanya chat pribadi; pesan grup/kanal dan pengirim bot diabaikan tanpa balasan.
  * - /start inv_<token>: onboarding lewat InvitationService::consumeAny (pengguna atau PIC).
  * - /start tanpa token: pengguna terdaftar aktif -> tombol Mini App; lainnya -> minta undangan.
- * - Teks/foto/suara dari pengguna terdaftar aktif -> job ProcessAiMessage (Agen AI).
+ * - Teks/foto/suara dari pengguna terdaftar aktif DENGAN sesi login penuh (R-03) -> job
+ *   ProcessAiMessage (Agen AI). Tanpa sesi penuh (belum masuk, logout, sesi dicabut, password
+ *   di-reset) -> arahan masuk lewat Mini App; Agen AI tidak dipanggil.
  * - Data pengirim yang tidak terdaftar TIDAK disimpan: payload update diringkas setelah diproses.
  */
 class TelegramUpdateHandler
 {
+    /** Balasan bila pengguna belum punya sesi login penuh (Agen AI ditolak). */
+    public const PERLU_MASUK = 'Masuk lewat Mini App terlebih dahulu (username/no telepon dan password) sebelum memakai Agen AI di chat ini. Tekan tombol "Buka SiGAP" di bawah.';
+
     public function __construct(
         private readonly TelegramBotService $bot,
         private readonly InvitationService $invitations,
+        private readonly SesiService $sesi,
     ) {}
 
     public function handle(TelegramUpdate $update): void
@@ -84,7 +91,16 @@ class TelegramUpdateHandler
             return;
         }
 
-        if ($text !== null || isset($message['photo']) || isset($message['voice'])) {
+        $untukAi = $text !== null || isset($message['photo']) || isset($message['voice']);
+
+        if ($untukAi && ! $this->sesi->punyaSesiPenuh($user)) {
+            $this->reply($chatId, self::PERLU_MASUK, $this->openAppKeyboard());
+            $this->finish($update, 'ai_tanpa_sesi');
+
+            return;
+        }
+
+        if ($untukAi) {
             // Agen AI di job terpisah (dapat lama). Payload diringkas oleh job tersebut.
             $update->forceFill(['processed_at' => now()])->save();
             ProcessAiMessage::dispatch($update->id, $user->getKey());

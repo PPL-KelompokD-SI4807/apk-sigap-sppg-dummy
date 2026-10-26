@@ -2,7 +2,11 @@ securitySchemes:
   bearerAuth:
     type: http
     scheme: bearer
-    description: Token Sanctum dari POST /auth/telegram (berlaku 480 menit).
+    description: |
+      Token Sanctum. Rute data wajib token LOGIN PENUH (ability auth:penuh) dari
+      POST /auth/masuk atau /auth/token/verifikasi; tidak kedaluwarsa, berakhir hanya karena logout
+      atau pencabutan. Token pra-login dari POST /auth/telegram hanya untuk rute /auth/masuk,
+      /auth/aktivasi, /auth/lupa-password*, /auth/token/*.
 schemas:
   Error:
     type: object
@@ -96,7 +100,9 @@ responses:
         schema: { $ref: '#/components/schemas/Error' }
         example: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' }
   Forbidden:
-    description: Peran tidak memiliki hak (Tabel 5) atau akun nonaktif.
+    description: |
+      Peran tidak memiliki hak (Tabel 5), akun nonaktif, atau token bukan login penuh
+      (body berisi `alasan: perlu_login_penuh`, lihat AuthForbidden).
     content:
       application/json:
         schema: { $ref: '#/components/schemas/Error' }

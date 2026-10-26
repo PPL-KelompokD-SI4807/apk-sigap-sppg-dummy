@@ -8,6 +8,10 @@ import { route, startRouter, navigate, parseHash } from './core/router.js';
 import { api } from './core/api.js';
 import { registerAllRoutes } from './modules/registry.js';
 import { renderHome } from './home.js';
+import { showLoginFlow } from './components/login-flow.js';
+import { renderSesi } from './components/sesi-view.js';
+import { renderUbahPassword } from './components/password-view.js';
+import { detikTerkunci } from './core/kredensial.js';
 
 const view = document.getElementById('view');
 let started = false;
@@ -26,6 +30,8 @@ route('/draf/:uuid', async (ctx) => {
   const target = d.action === 'update' && d.payload?.id ? `/${d.module}/${d.payload.id}/ubah` : `/${d.module}/baru`;
   navigate(`${target}?draft=${encodeURIComponent(d.uuid || ctx.params.uuid)}`, { replace: true });
 }, { title: 'Draf AI' });
+route('/sesi', (ctx) => renderSesi(ctx, { onKeluar: () => { navigate('/', { replace: true }); location.reload(); } }), { title: 'Perangkat & Sesi' });
+route('/password', renderUbahPassword, { title: 'Ubah Password' });
 registerAllRoutes();
 
 async function start() {
@@ -44,14 +50,31 @@ async function start() {
   await doLogin();
 }
 
+let flow = null;
+
 async function doLogin() {
+  flow?.destroy();
+  flow = null;
   showMessage('Masuk...', 'Memverifikasi akun Telegram Anda.');
+  let hasil;
   try {
-    await login();
+    hasil = await login();
   } catch (e) {
+    if (e.status === 429 && e.data?.alasan === 'terkunci') {
+      const menit = Math.ceil(detikTerkunci(e.data) / 60);
+      return showMessage('Akun terkunci sementara', `Terlalu banyak percobaan gagal. Coba lagi ${menit > 0 ? `dalam ${menit} menit` : 'sebentar lagi'}.`, 'Coba lagi', doLogin);
+    }
     const text = e.status === 403 ? 'Akun Telegram Anda belum terdaftar. Hubungi admin SPPG.' : e.message || 'Gagal masuk.';
     return showMessage('Gagal masuk', text, 'Coba lagi', doLogin);
   }
+  if (hasil.langkah === 'sesi_aktif') return masukBeranda();
+  clear(view);
+  flow = showLoginFlow(view, { langkah: hasil.langkah, akun: hasil.akun, onDone: masukBeranda, onRestart: doLogin });
+}
+
+async function masukBeranda() {
+  flow?.destroy();
+  flow = null;
   if (!started) {
     started = true;
     // Deep link draf AI: ?draft=<uuid> atau startapp=draft_<uuid>

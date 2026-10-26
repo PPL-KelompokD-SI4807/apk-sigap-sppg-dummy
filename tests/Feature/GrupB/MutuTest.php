@@ -11,7 +11,6 @@ use App\Models\JadwalDistribusi;
 use App\Models\JadwalProduksi;
 use App\Models\PemeriksaanMutu;
 use Illuminate\Support\Facades\Event;
-use Laravel\Sanctum\Sanctum;
 
 class MutuTest extends GrupBTestCase
 {
@@ -155,16 +154,16 @@ class MutuTest extends GrupBTestCase
             && $e->tindakanKorektif === 'Masak ulang dan periksa ulang' && $e->tanggalProduksi === now()->toDateString());
 
         // Gerbang: kepala tidak dapat memberangkatkan distribusi.
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->patchJson("/api/v1/jadwal/distribusi/{$siap->id}", ['status' => 'berangkat'])->assertUnprocessable()->assertJsonValidationErrors(['status']);
         $this->assertSame('siap', $siap->fresh()->status->value);
 
         // Hasil layak tidak memancarkan event.
-        Sanctum::actingAs($ahli);
+        $this->masukPenuh($ahli);
         Event::fake([MutuTidakLayak::class]);
         $this->postJson('/api/v1/mutu', $this->payload($jadwal))->assertCreated();
         Event::assertNotDispatched(MutuTidakLayak::class);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->patchJson("/api/v1/jadwal/distribusi/{$siap->id}", ['status' => 'berangkat'])->assertOk();
     }
 
@@ -239,7 +238,7 @@ class MutuTest extends GrupBTestCase
         $jadwal = $this->jadwal();
         $user = $this->user(Role::AhliGizi);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'mutu']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         $this->postJson('/api/v1/mutu', $this->payload($jadwal, ['ai_draft_id' => $draf->uuid]))->assertCreated();
         $this->assertSame('confirmed', $draf->fresh()->status->value);

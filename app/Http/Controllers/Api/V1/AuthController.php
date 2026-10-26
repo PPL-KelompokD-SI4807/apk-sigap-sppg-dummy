@@ -4,26 +4,49 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Auth\TelegramLoginRequest;
 use App\Http\Resources\AuthUserResource;
+use App\Services\Auth\AuditAuth;
+use App\Services\Auth\SesiService;
 use App\Services\Telegram\TelegramAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\PersonalAccessToken;
 
+/**
+ * Lapis 1 (initData) + profil/logout sesi login penuh (R-03).
+ */
 class AuthController extends ApiController
 {
-    /** POST /api/v1/auth/telegram — tukar initData dengan token Bearer. */
+    /**
+     * POST /api/v1/auth/telegram — validasi initData setiap Mini App dibuka.
+     * Mengembalikan langkah berikutnya: sesi_aktif | masuk | aktivasi (+ token pra-login).
+     */
     public function telegram(TelegramLoginRequest $request, TelegramAuthService $auth): JsonResponse
     {
-        $result = $auth->login(
+        $hasil = $auth->login(
             (string) $request->validated('init_data'),
-            (string) ($request->validated('device') ?: 'miniapp'),
+            $request->validated('device_id'),
+            $request->bearerToken(),
         );
 
+        $user = $hasil['user'];
+
+        if ($hasil['langkah'] === 'sesi_aktif') {
+            return response()->json([
+                'langkah' => 'sesi_aktif',
+                'user' => (new AuthUserResource($user))->resolve($request),
+            ]);
+        }
+
         return response()->json([
-            'token' => $result['token'],
+            'langkah' => $hasil['langkah'],
+            'token' => $hasil['token'],
             'token_type' => 'Bearer',
-            'expires_at' => $result['expires_at']?->toIso8601String(),
-            'user' => (new AuthUserResource($result['user']))->resolve($request),
+            'token_jenis' => 'pra_login',
+            'expires_at' => $hasil['expires_at']?->toIso8601String(),
+            'akun' => [
+                'nama' => $user->name,
+                'perlu_username' => $user->username === null,
+            ],
         ]);
     }
 
@@ -34,17 +57,20 @@ class AuthController extends ApiController
 
         return response()->json([
             'user' => (new AuthUserResource($request->user()))->resolve($request),
-            'expires_at' => $token instanceof PersonalAccessToken ? $token->expires_at?->toIso8601String() : null,
+            // Sesi login penuh: selalu null (tidak kedaluwarsa).
+            'expires_at' => $token instanceof PersonalAccessToken && $token->exists ? $token->expires_at?->toIso8601String() : null,
         ]);
     }
 
-    /** POST /api/v1/auth/logout — cabut token yang sedang dipakai. */
-    public function logout(Request $request): JsonResponse
+    /** POST /api/v1/auth/logout — akhiri sesi perangkat ini (kepercayaan perangkat ikut dicabut). */
+    public function logout(Request $request, SesiService $sesi): JsonResponse
     {
-        $token = $request->user()->currentAccessToken();
+        $user = $request->user();
+        $token = $user->currentAccessToken();
 
-        if ($token instanceof PersonalAccessToken) {
-            $token->delete();
+        if ($token instanceof PersonalAccessToken && $token->exists) {
+            $sesi->logout($user, $token);
+            AuditAuth::catat($user, AuditAuth::LOGOUT);
         }
 
         return response()->json(['message' => 'Berhasil keluar.']);

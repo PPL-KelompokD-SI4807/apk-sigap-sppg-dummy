@@ -19,7 +19,6 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
-use Laravel\Sanctum\Sanctum;
 
 class BahanBakuTest extends GrupBTestCase
 {
@@ -257,7 +256,7 @@ class BahanBakuTest extends GrupBTestCase
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'bahan-baku']);
         $drafLain = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'module' => 'bahan-baku']);
         $drafKedaluwarsa = AiDraft::factory()->kedaluwarsa()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'bahan-baku']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         $this->postJson('/api/v1/bahan-baku', $this->payload(['ai_draft_id' => $drafLain->uuid]))->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);
         $this->postJson('/api/v1/bahan-baku', $this->payload(['ai_draft_id' => $drafKedaluwarsa->uuid]))->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);

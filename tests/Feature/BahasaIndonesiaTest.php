@@ -8,7 +8,6 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Validator;
-use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /** Pesan baku validator berbahasa Indonesia + nama field domain (lang/id). */
@@ -62,7 +61,7 @@ class BahasaIndonesiaTest extends TestCase
     {
         $sppg = Sppg::factory()->create();
         $kepala = User::factory()->role(Role::KepalaSppg)->create(['sppg_id' => $sppg->id]);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $res = $this->postJson('/api/v1/jadwal', [])->assertUnprocessable();
 

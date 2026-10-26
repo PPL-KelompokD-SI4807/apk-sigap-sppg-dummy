@@ -11,7 +11,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
-use Laravel\Sanctum\Sanctum;
 use Tests\Support\GambarUji;
 use Tests\Support\SkenarioOperasional;
 use Tests\TestCase;
@@ -50,7 +49,7 @@ class UnggahanAmanTest extends TestCase
 
     private function sebagai(Role $role, ?int $sppg = null): void
     {
-        Sanctum::actingAs($this->pengguna($role, $sppg ?? $this->sppgA));
+        $this->masukPenuh($this->pengguna($role, $sppg ?? $this->sppgA));
     }
 
     private function assertTidakAdaBerkas(): void
@@ -62,7 +61,7 @@ class UnggahanAmanTest extends TestCase
     public function test_gambar_valid_tersimpan_privat_dengan_hash_ukuran_dan_pengunggah(): void
     {
         $akuntan = $this->pengguna(Role::Akuntan, $this->sppgA);
-        Sanctum::actingAs($akuntan);
+        $this->masukPenuh($akuntan);
 
         $res = $this->unggah($this->fotoJpeg())
             ->assertCreated()
@@ -285,11 +284,11 @@ class UnggahanAmanTest extends TestCase
         $akuntan = $this->pengguna(Role::Akuntan, $this->sppgA);
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $admin = $this->pengguna(Role::Admin, $this->sppgA);
-        Sanctum::actingAs($akuntan);
+        $this->masukPenuh($akuntan);
         $id = $this->unggah($this->fotoJpeg('rahasia nama asli.jpg'))->json('data.id');
         $isi = Storage::disk('uploads')->get(Lampiran::query()->findOrFail($id)->path);
 
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $res = $this->get("/api/v1/lampiran/{$id}")->assertOk();
 
         $this->assertSame($isi, $res->getContent());
@@ -300,7 +299,7 @@ class UnggahanAmanTest extends TestCase
         $this->assertStringContainsString('private', (string) $res->headers->get('Cache-Control'));
         $this->assertStringNotContainsString('rahasia', (string) $res->headers->get('Content-Disposition'));
 
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->get("/api/v1/lampiran/{$id}")->assertOk();
     }
 
@@ -315,13 +314,13 @@ class UnggahanAmanTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->getJson("/api/v1/lampiran/{$id}")->assertUnauthorized();
 
-        Sanctum::actingAs($akuntanB);
+        $this->masukPenuh($akuntanB);
         $this->getJson("/api/v1/lampiran/{$id}")->assertNotFound();
 
-        Sanctum::actingAs($gudang);
+        $this->masukPenuh($gudang);
         $this->getJson("/api/v1/lampiran/{$id}")->assertForbidden();
 
-        Sanctum::actingAs($gizi);
+        $this->masukPenuh($gizi);
         $this->getJson("/api/v1/lampiran/{$id}")->assertForbidden();
     }
 
@@ -349,11 +348,11 @@ class UnggahanAmanTest extends TestCase
         $akuntan = $this->pengguna(Role::Akuntan, $this->sppgA);
 
         foreach ($pengguna as $u) {
-            Sanctum::actingAs($u);
+            $this->masukPenuh($u);
             $this->unggah($this->fotoJpeg())->assertForbidden();
         }
 
-        Sanctum::actingAs($akuntan);
+        $this->masukPenuh($akuntan);
         $this->unggah($this->fotoJpeg(), $lain->id)->assertNotFound();
         $this->post('/api/v1/lampiran', ['modul' => 'users', 'lampiranable_id' => 1, 'berkas' => $this->fotoJpeg()], ['Accept' => 'application/json'])
             ->assertUnprocessable()->assertJsonValidationErrors('modul');

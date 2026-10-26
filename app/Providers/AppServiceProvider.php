@@ -41,5 +41,14 @@ class AppServiceProvider extends ServiceProvider
         // Tukar initData -> token: 10/menit per IP.
         RateLimiter::for('auth-telegram', fn (Request $request) => Limit::perMinute(10)
             ->by('ip:'.$request->ip()));
+
+        // R-03 rute pra-login (masuk/aktivasi/reset/token): per akun dan per IP. Penguncian akun
+        // dan batas percobaan token ada di KredensialService/TokenSekaliPakaiService.
+        RateLimiter::for('auth-kredensial', fn (Request $request) => [
+            Limit::perMinute(max(1, (int) config('kredensial.throttle.per_pengguna', 10)))
+                ->by('kred:u:'.($request->user()?->getAuthIdentifier() ?? $request->ip())),
+            Limit::perMinute(max(1, (int) config('kredensial.throttle.per_ip', 30)))
+                ->by('kred:ip:'.$request->ip()),
+        ]);
     }
 }

@@ -4,13 +4,14 @@ namespace App\Jobs;
 
 use App\Models\TelegramUpdate;
 use App\Models\User;
+use App\Services\Auth\SesiService;
 use App\Services\Telegram\AiChatHandler;
 use App\Services\Telegram\TelegramUpdateHandler;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
- * Pesan chat pengguna terdaftar -> Agen AI (FR-11). Tidak dicoba ulang otomatis agar tidak
+ * Pesan chat pengguna terdaftar dengan sesi login penuh (R-03) -> Agen AI (FR-11). Tidak dicoba ulang otomatis agar tidak
  * menggandakan draf/biaya LLM; kegagalan dibalas fallback formulir manual oleh AiAgentService.
  */
 class ProcessAiMessage implements ShouldQueue
@@ -26,7 +27,7 @@ class ProcessAiMessage implements ShouldQueue
         public readonly int $userId,
     ) {}
 
-    public function handle(AiChatHandler $handler): void
+    public function handle(AiChatHandler $handler, SesiService $sesi): void
     {
         $update = TelegramUpdate::query()->find($this->telegramUpdateId);
         $user = User::query()->withoutGlobalScopes()->find($this->userId);
@@ -37,6 +38,13 @@ class ProcessAiMessage implements ShouldQueue
 
         if ($user === null || ! $user->canAuthenticate()) {
             TelegramUpdateHandler::finish($update, 'ai_ditolak');
+
+            return;
+        }
+
+        // Sesi bisa dicabut setelah pesan masuk antrean.
+        if (! $sesi->punyaSesiPenuh($user)) {
+            TelegramUpdateHandler::finish($update, 'ai_tanpa_sesi');
 
             return;
         }

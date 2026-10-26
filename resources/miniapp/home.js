@@ -32,5 +32,9 @@ export async function renderHome(ctx) {
       h('span', { class: 'menu-title' }, m.title),
       m.description ? h('span', { class: 'muted small' }, m.description) : null));
   }
+  grid.append(h('a', { class: 'menu-card', href: '#/sesi' },
+    h('span', { class: 'menu-icon', 'aria-hidden': 'true' }, '\u{1F4F1}'),
+    h('span', { class: 'menu-title' }, 'Perangkat & Sesi'),
+    h('span', { class: 'muted small' }, 'Perangkat aktif dan keluar')));
   ctx.el.append(grid);
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature\Auth;
 
 use App\Enums\Role;
 use App\Models\User;
+use App\Services\Auth\SesiService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\CreatesSppg;
 use Tests\TestCase;
@@ -12,9 +13,10 @@ class SessionTest extends TestCase
 {
     use CreatesSppg, RefreshDatabase;
 
-    private function tokenFor(User $user, ?\DateTimeInterface $expiresAt = null): string
+    /** Token login penuh (ability auth:penuh) langsung, tanpa alur login. */
+    private function tokenFor(User $user, ?\DateTimeInterface $expiresAt = null, string $name = 'sesi:1'): string
     {
-        return $user->createToken('miniapp:miniapp', ['role:'.$user->role->value], $expiresAt ?? now()->addHours(8))->plainTextToken;
+        return $user->createToken($name, [SesiService::ABILITY_PENUH, 'role:'.$user->role->value], $expiresAt)->plainTextToken;
     }
 
     private function freshAuth(): void
@@ -36,24 +38,28 @@ class SessionTest extends TestCase
 
     public function test_me_mengembalikan_profil_dan_hak_akses(): void
     {
-        $user = User::factory()->role(Role::Akuntan)->create(['sppg_id' => $this->createSppg('SPPG Mawar')]);
+        $user = User::factory()->role(Role::Akuntan)->create(['sppg_id' => $this->createSppg('SPPG Mawar'), 'username' => 'akuntan.mawar']);
 
         $this->withToken($this->tokenFor($user))->getJson('/api/v1/auth/me')
             ->assertOk()
             ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('expires_at', null)
+            ->assertJsonPath('user.username', 'akuntan.mawar')
             ->assertJsonPath('user.role', 'akuntan')
             ->assertJsonPath('user.role_label', 'Akuntan')
             ->assertJsonPath('user.sppg_name', 'SPPG Mawar')
             ->assertJsonPath('user.permissions.keuangan', 'CRUD')
             ->assertJsonPath('user.permissions.pengguna', 'R*')
-            ->assertJsonMissingPath('user.permissions.menu-gizi');
+            ->assertJsonMissingPath('user.permissions.menu-gizi')
+            ->assertJsonMissingPath('user.phone')
+            ->assertJsonMissingPath('user.password');
     }
 
     public function test_logout_mencabut_token_saat_ini_saja(): void
     {
         $user = User::factory()->create(['sppg_id' => $this->createSppg()]);
         $token = $this->tokenFor($user);
-        $other = $user->createToken('miniapp:hp-lain')->plainTextToken;
+        $other = $this->tokenFor($user, name: 'sesi:2');
 
         $this->withToken($token)->postJson('/api/v1/auth/logout')->assertOk()->assertJsonPath('message', 'Berhasil keluar.');
 
@@ -63,7 +69,7 @@ class SessionTest extends TestCase
         $this->withToken($other)->getJson('/api/v1/auth/me')->assertOk();
     }
 
-    public function test_token_kedaluwarsa_ditolak(): void
+    public function test_token_dengan_expires_at_lewat_ditolak(): void
     {
         $user = User::factory()->create(['sppg_id' => $this->createSppg()]);
         $token = $this->tokenFor($user, now()->addMinutes(10));
@@ -73,14 +79,17 @@ class SessionTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/auth/me')->assertUnauthorized();
     }
 
-    public function test_token_lebih_dari_480_menit_ditolak_meski_expires_at_kosong(): void
+    public function test_sesi_login_penuh_tidak_kedaluwarsa_waktu_maupun_tidak_aktif(): void
     {
+        $this->assertNull(config('sanctum.expiration'));
+
         $user = User::factory()->create(['sppg_id' => $this->createSppg()]);
-        $token = $user->createToken('lama')->plainTextToken;
+        $token = $this->tokenFor($user);
 
-        $this->travel(481)->minutes();
+        // Tidak dipakai selama setahun: tetap berlaku (berakhir hanya karena dicabut).
+        $this->travel(366)->days();
 
-        $this->withToken($token)->getJson('/api/v1/auth/me')->assertUnauthorized();
+        $this->withToken($token)->getJson('/api/v1/auth/me')->assertOk();
     }
 
     public function test_pengguna_dinonaktifkan_setelah_login_kehilangan_akses(): void
@@ -100,7 +109,7 @@ class SessionTest extends TestCase
     {
         $user = User::factory()->create(['sppg_id' => $this->createSppg()]);
         $token = $this->tokenFor($user);
-        $user->createToken('lain');
+        $this->tokenFor($user, name: 'sesi:2');
 
         $user->update(['name' => 'Nama Baru']);
         $this->assertSame(2, $user->tokens()->count());

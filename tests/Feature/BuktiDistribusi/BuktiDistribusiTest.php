@@ -22,7 +22,6 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
-use Laravel\Sanctum\Sanctum;
 use Tests\Support\GambarUji;
 use Tests\Support\SkenarioOperasional;
 use Tests\TestCase;
@@ -95,7 +94,7 @@ class BuktiDistribusiTest extends TestCase
     {
         Event::fake([BuktiDistribusiDicatat::class, DistribusiTerlambat::class]);
         $jadwal = $this->jadwal();
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
 
         $res = $this->kirim($this->payload($jadwal, ['waktu_tiba' => '2026-11-02 08:00:00', 'berita_acara' => $this->berkas($this->bytesPng(), 'ba.png')]))
             ->assertCreated()
@@ -137,7 +136,7 @@ class BuktiDistribusiTest extends TestCase
             'estimasi_tiba' => Carbon::parse(self::HARI.' 09:50:00'),
         ]);
         Carbon::setTestNow(Carbon::parse(self::HARI.' 10:31:00', 'Asia/Jakarta'));
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
 
         $this->kirim($this->payload($jadwal, ['porsi_diterima' => 190, 'catatan_selisih' => '10 porsi tumpah']))
             ->assertCreated()
@@ -161,7 +160,7 @@ class BuktiDistribusiTest extends TestCase
     {
         $jadwal = $this->jadwal();
         $lain = $this->jadwal([], true, $this->sppgB);
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
 
         $this->kirim($this->payload($jadwal, ['foto' => null]))->assertUnprocessable()->assertJsonValidationErrors('foto');
         $this->kirim($this->payload($jadwal, ['porsi_diterima' => 201]))->assertUnprocessable()->assertJsonValidationErrors('porsi_diterima');
@@ -181,7 +180,7 @@ class BuktiDistribusiTest extends TestCase
         $menunggu = $this->jadwal(['status' => StatusJadwalDistribusi::Menunggu]);
         $ditahan = $this->jadwal([], false);
         $kemarin = $this->jadwal(['tanggal_distribusi' => '2026-11-01']);
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
 
         foreach ([$batal, $menunggu, $ditahan, $kemarin] as $j) {
             $this->kirim($this->payload($j))->assertUnprocessable()->assertJsonValidationErrors('jadwal_distribusi_id');
@@ -195,11 +194,11 @@ class BuktiDistribusiTest extends TestCase
     public function test_satu_bukti_per_jadwal_dan_restore_setelah_hapus(): void
     {
         $jadwal = $this->jadwal();
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
         $id = $this->kirim($this->payload($jadwal))->assertCreated()->json('data.id');
         $this->kirim($this->payload($jadwal))->assertUnprocessable()->assertJsonValidationErrors('jadwal_distribusi_id');
 
-        Sanctum::actingAs($this->kepala);
+        $this->masukPenuh($this->kepala);
         $this->deleteJson("/api/v1/bukti-distribusi/{$id}")->assertNoContent();
         $this->assertSoftDeleted('bukti_distribusis', ['id' => $id]);
         $this->assertSame(StatusJadwalDistribusi::Berangkat, $jadwal->fresh()->status);
@@ -220,12 +219,12 @@ class BuktiDistribusiTest extends TestCase
     public function test_restore_tidak_membawa_lampiran_bukti_lama(): void
     {
         $jadwal = $this->jadwal();
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
         $id = $this->kirim($this->payload($jadwal, ['berita_acara' => $this->fotoJpeg('ba.jpg')]))->assertCreated()->json('data.id');
         $lama = Lampiran::query()->where('lampiranable_id', $id)->get();
         $this->assertCount(2, $lama);
 
-        Sanctum::actingAs($this->kepala);
+        $this->masukPenuh($this->kepala);
         $this->deleteJson("/api/v1/bukti-distribusi/{$id}")->assertNoContent();
         $baru = $this->kirim($this->payload($jadwal))->assertCreated()
             ->assertJsonPath('data.id', $id)
@@ -260,15 +259,15 @@ class BuktiDistribusiTest extends TestCase
         $this->kirim($this->payload($jadwal))->assertUnauthorized();
 
         foreach ($tanpaHak as $u) {
-            Sanctum::actingAs($u);
+            $this->masukPenuh($u);
             $this->kirim($this->payload($jadwal))->assertForbidden();
         }
 
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
         $this->kirim($this->payload($milikLain))->assertForbidden();
         $this->assertSame(0, BuktiDistribusi::query()->withoutGlobalScopes()->count());
 
-        Sanctum::actingAs($lainPetugas);
+        $this->masukPenuh($lainPetugas);
         $this->kirim($this->payload($milikLain))->assertCreated();
     }
 
@@ -276,7 +275,7 @@ class BuktiDistribusiTest extends TestCase
     {
         $kurir2 = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
         $jadwal = $this->jadwal();
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
         $id = $this->kirim($this->payload($jadwal))->json('data.id');
 
         $this->patchJson("/api/v1/bukti-distribusi/{$id}", ['nama_pic' => 'Bapak Contoh', 'waktu_tiba' => '2026-11-02 07:00:00'])
@@ -284,13 +283,13 @@ class BuktiDistribusiTest extends TestCase
         $this->patchJson("/api/v1/bukti-distribusi/{$id}", ['jadwal_distribusi_id' => $jadwal->id])->assertUnprocessable();
         $this->deleteJson("/api/v1/bukti-distribusi/{$id}")->assertForbidden();
 
-        Sanctum::actingAs($kurir2);
+        $this->masukPenuh($kurir2);
         $this->patchJson("/api/v1/bukti-distribusi/{$id}", ['nama_pic' => 'X'])->assertForbidden();
         $this->getJson("/api/v1/bukti-distribusi/{$id}")->assertForbidden();
         $this->getJson('/api/v1/bukti-distribusi')->assertOk()->assertJsonCount(0, 'data');
 
         Carbon::setTestNow(Carbon::parse('2026-11-03 08:00:00', 'Asia/Jakarta'));
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
         $this->patchJson("/api/v1/bukti-distribusi/{$id}", ['nama_pic' => 'Besok'])->assertForbidden();
         $this->getJson("/api/v1/bukti-distribusi/{$id}")->assertOk();
     }
@@ -299,12 +298,12 @@ class BuktiDistribusiTest extends TestCase
     {
         Event::fake([DistribusiTerlambat::class]);
         $jadwal = $this->jadwal();
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
         $res = $this->kirim($this->payload($jadwal));
         $id = $res->json('data.id');
         $fotoLama = $res->json('data.foto.lampiran_id');
 
-        Sanctum::actingAs($this->kepala);
+        $this->masukPenuh($this->kepala);
         $baru = $this->post("/api/v1/bukti-distribusi/{$id}", [
             '_method' => 'PUT',
             'foto' => $this->berkas($this->bytesPng(), 'baru.png'),
@@ -337,27 +336,27 @@ class BuktiDistribusiTest extends TestCase
         $b = BuktiDistribusi::factory()->create(['sppg_id' => $this->sppgB, 'jadwal_distribusi_id' => $this->jadwal([], true, $this->sppgB)->id]);
 
         foreach ([$gizi, $akuntan, $this->kepala] as $u) {
-            Sanctum::actingAs($u);
+            $this->masukPenuh($u);
             $this->getJson('/api/v1/bukti-distribusi?per_page=2')->assertOk()->assertJsonCount(2, 'data')
                 ->assertJsonPath('meta.total', 3)->assertJsonPath('meta.per_page', 2);
         }
 
-        Sanctum::actingAs($this->kepala);
+        $this->masukPenuh($this->kepala);
         $this->getJson('/api/v1/bukti-distribusi?terlambat=1')->assertOk()->assertJsonCount(1, 'data');
         $this->getJson("/api/v1/bukti-distribusi/{$b->id}")->assertNotFound();
         $this->patchJson("/api/v1/bukti-distribusi/{$b->id}", ['nama_pic' => 'X'])->assertNotFound();
         $this->deleteJson("/api/v1/bukti-distribusi/{$b->id}")->assertNotFound();
 
-        Sanctum::actingAs($gudang);
+        $this->masukPenuh($gudang);
         $this->getJson('/api/v1/bukti-distribusi')->assertForbidden();
 
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->getJson('/api/v1/bukti-distribusi')->assertOk()->assertJsonPath('meta.total', 4);
         $this->getJson("/api/v1/bukti-distribusi?sppg_id={$this->sppgB}")->assertOk()->assertJsonPath('meta.total', 1);
         $this->getJson("/api/v1/bukti-distribusi/{$b->id}")->assertOk();
         $this->deleteJson("/api/v1/bukti-distribusi/{$b->id}")->assertForbidden();
 
-        Sanctum::actingAs($kepalaB);
+        $this->masukPenuh($kepalaB);
         $this->getJson('/api/v1/bukti-distribusi')->assertOk()->assertJsonPath('meta.total', 1);
     }
 
@@ -366,7 +365,7 @@ class BuktiDistribusiTest extends TestCase
         $jadwal = $this->jadwal();
         $drafLain = AiDraft::factory()->create(['sppg_id' => $this->sppgA, 'user_id' => $this->kepala->id, 'module' => 'bukti-distribusi']);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA, 'user_id' => $this->kurir->id, 'module' => 'bukti-distribusi']);
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
 
         $this->kirim($this->payload($jadwal, ['ai_draft_id' => $drafLain->uuid]))->assertUnprocessable()->assertJsonValidationErrors('ai_draft_id');
         $this->assertSame(0, BuktiDistribusi::query()->count());
@@ -382,7 +381,7 @@ class BuktiDistribusiTest extends TestCase
     {
         Event::fake([BuktiDistribusiDicatat::class]);
         $jadwal = $this->jadwal();
-        Sanctum::actingAs($this->kurir);
+        $this->masukPenuh($this->kurir);
         $kunci = (string) Str::uuid();
         $foto = $this->bytesJpeg(32, 32);
         $data = fn () => $this->payload($jadwal, ['foto' => $this->berkas($foto)]);

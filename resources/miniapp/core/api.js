@@ -86,6 +86,8 @@ export async function request(method, path, { query, body, key, silent = false }
     try { data = await res.json(); } catch { data = null; }
   }
   if (res.ok) return data;
+  const retry = Number(res.headers?.get?.('Retry-After'));
+  if (retry > 0 && data && typeof data === 'object') data.retry_after = retry;
 
   throw failFromResponse(res.status, data, path, silent);
 }
@@ -99,6 +101,10 @@ function failFromResponse(status, data, path, silent) {
   if (status === 401 && path !== '/auth/telegram') {
     setToken(null);
     bus.dispatchEvent(new Event('auth-required'));
+  } else if (status === 403 && data?.alasan === 'perlu_login_penuh') {
+    // Token pra-login/lama di rute data: ulangi alur masuk.
+    setToken(null);
+    bus.dispatchEvent(new Event('auth-required'));
   } else if (status === 403) {
     if (!silent) toast('Anda tidak punya hak akses.', 'error');
   } else if (status === 422) {
@@ -108,7 +114,7 @@ function failFromResponse(status, data, path, silent) {
   } else if (!silent && status !== 401) {
     toast(message, 'error');
   }
-  return new ApiError(status, status === 403 ? 'Anda tidak punya hak akses.' : message, data?.errors ?? null, data);
+  return new ApiError(status, status === 403 && data?.alasan !== 'perlu_login_penuh' ? 'Anda tidak punya hak akses.' : message, data?.errors ?? null, data);
 }
 
 /**
