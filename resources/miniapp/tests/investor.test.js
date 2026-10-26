@@ -91,18 +91,47 @@ test('matriks investor: baca-saja pada modul ber-R, modul lain tertutup', () => 
   assert.equal(userPerms({ role: 'investor', permissions: { keuangan: 'CRUD' } }, 'keuangan').C, false);
 });
 
-test('agregat penerima manfaat', () => {
+test('agregat penerima manfaat: sel tersamar tampil sebagai penanda, bukan 0', () => {
   const a = normalisasiAgregat({ data: {
-    sppg_id: 1, total: 120, aktif: 90,
-    per_kelompok_sasaran: [{ kelompok_sasaran: 'siswa', label: 'Siswa', jumlah: 60 }],
-    per_titik_layanan: [{ titik_layanan_id: 3, nama: 'SDN 1', jumlah: 30 }],
+    sppg_id: 1, total: null, total_penanda: '<5', aktif: 118, aktif_penanda: null,
+    penyamaran: { diterapkan: true, ambang_k: 5, penanda: '<5' },
+    per_kelompok_sasaran: [{ kelompok_sasaran: 'siswa', label: 'Siswa', jumlah: 88, penanda: null }, { kelompok_sasaran: 'ibu_hamil', label: 'Ibu Hamil', jumlah: null, penanda: '<5' }],
+    per_titik_layanan: [{ titik_layanan_id: 7, nama: 'Posyandu Contoh', jumlah: null, penanda: '<5' }],
   } });
-  assert.equal(a.nonaktif, 30);
-  assert.deepEqual(a.kelompok, [{ label: 'Siswa', jumlah: 60, persen: 50 }]);
-  assert.deepEqual(a.titik, [{ label: 'SDN 1', jumlah: 30, persen: 25 }]);
-  assert.deepEqual(normalisasiAgregat(null), { sppgId: null, total: 0, aktif: 0, nonaktif: 0, kelompok: [], titik: [] });
+  assert.equal(a.totalTampil, '<5');
+  assert.equal(a.aktifTampil, '118');
+  assert.equal(a.nonaktif, null);
+  assert.equal(a.disamarkan, true);
+  assert.deepEqual(a.kelompok.map((r) => [r.tampil, r.persen]), [['88', null], ['<5', null]]);
+  assert.equal(a.titik[0].tampil, '<5');
+  const b = normalisasiAgregat({ data: { total: 120, aktif: 90, penyamaran: { diterapkan: false }, per_kelompok_sasaran: [{ label: 'Siswa', jumlah: 60 }], per_titik_layanan: [] } });
+  assert.equal(b.nonaktif, 30);
+  assert.equal(b.disamarkan, false);
+  assert.deepEqual(b.kelompok, [{ label: 'Siswa', jumlah: 60, tampil: '60', persen: 50 }]);
+  assert.equal(normalisasiAgregat(null).totalTampil, '<5');
   assert.deepEqual(queryAgregat({ role: 'admin' }, 4), { sppg_id: 4 });
   assert.equal(queryAgregat({ role: 'investor' }, 4), undefined);
+});
+
+test('agregat: aktif disamarkan tetapi total terlihat -> nonaktif tidak memakai total', () => {
+  const a = normalisasiAgregat({ data: { total: 120, aktif: null, aktif_penanda: '<5', penyamaran: { diterapkan: true }, per_kelompok_sasaran: [], per_titik_layanan: [] } });
+  assert.equal(a.totalTampil, '120');
+  assert.equal(a.aktifTampil, '<5');
+  assert.equal(a.nonaktif, null);
+  assert.equal(a.nonaktifTampil, '<5');
+  assert.notEqual(a.nonaktifTampil, a.totalTampil);
+  assert.equal(normalisasiAgregat({ data: { total: 120, aktif: 90 } }).nonaktifTampil, '30');
+});
+
+test('fetchLampiranBlob mengirim X-SPPG-Id dan 403 lampiran_disembunyikan tidak menghapus pilihan', async () => {
+  const { fetchLampiranBlob } = await import('../components/photo-upload.js');
+  setSppgAktif(6);
+  let hdr;
+  const f = async (_u, init) => { hdr = init.headers; return { ok: false, status: 403, json: async () => ({ alasan: 'lampiran_disembunyikan' }) }; };
+  await assert.rejects(() => fetchLampiranBlob('/api/v1/lampiran/1', { fetchFn: f, token: 't' }), /tidak ditampilkan untuk peran Anda/);
+  assert.equal(hdr['X-SPPG-Id'], '6');
+  assert.equal(getSppgAktif(), 6);
+  hapusSppgAktif();
 });
 
 test('undangan dan form pengguna untuk investor', () => {
@@ -117,4 +146,13 @@ test('undangan dan form pengguna untuk investor', () => {
 test('daftar SPPG yang belum dimiliki', () => {
   assert.deepEqual(sppgBelumDimiliki([{ id: 1 }, { id: 2 }, { id: 3 }], [{ id: 2 }]).map((s) => s.id), [1, 3]);
   assert.deepEqual(sppgBelumDimiliki(null, null), []);
+});
+
+test('lampiran disembunyikan untuk investor atau flag server; legenda penyamaran', async () => {
+  const { lampiranDisembunyikan } = await import('../core/lampiran-uploader.js');
+  const { LEGENDA_PENYAMARAN } = await import('../core/agregat.js');
+  assert.equal(lampiranDisembunyikan({ role: 'investor' }), true);
+  assert.equal(lampiranDisembunyikan({ role: 'kepala_sppg' }, { lampiran_disembunyikan: true }), true);
+  assert.equal(lampiranDisembunyikan({ role: 'kepala_sppg' }, { lampiran: [] }), false);
+  assert.match(LEGENDA_PENYAMARAN, /^<5 = jumlah disamarkan demi privasi/);
 });

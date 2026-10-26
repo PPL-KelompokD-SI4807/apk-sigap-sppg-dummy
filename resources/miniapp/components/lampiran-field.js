@@ -61,7 +61,8 @@ export function uploadLampiran({ modul, recordId, file, kategori = 'foto', key =
  * createLampiranPanel({modul, recordId, kategori, lampiran:[Lampiran], max=5, canAdd, title}) -> Node
  * Setiap foto baru langsung diunggah; status per baris (mengunggah / terunggah / menunggu jaringan / gagal + Coba lagi).
  */
-export function createLampiranPanel({ modul, recordId, kategori = 'foto', lampiran = [], max = 5, canAdd = false, title = 'Lampiran' }) {
+export function createLampiranPanel({ modul, recordId, kategori = 'foto', lampiran = [], max = 5, canAdd = false, title = 'Lampiran', disembunyikan = false }) {
+  if (disembunyikan) return h('section', { class: 'panel stack-tight', 'aria-label': title }, h('h2', { class: 'panel-title' }, title), h('p', { class: 'muted small' }, 'Foto tidak ditampilkan untuk peran Anda.'));
   const rows = [];
   const box = h('div', { class: 'stack-tight' });
   const old = (lampiran || []).filter((l) => l?.url).map((l) => createAuthImage(l, { alt: `Lampiran ${l.kategori || ''}`.trim(), caption: `${l.kategori || 'lampiran'} · ${formatUkuran(l.ukuran)}` }));
