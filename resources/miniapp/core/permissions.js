@@ -27,6 +27,8 @@ export const MATRIX = {
   'keuangan': { admin: 'R', kepala_sppg: 'R', akuntan: 'CRUD', investor: 'R' },
   'keluhan': { admin: 'CRUD', kepala_sppg: 'RU', ahli_gizi: 'RU', relawan: 'CR', investor: 'R' },
   'rekap-harian': { admin: 'R', kepala_sppg: 'CRU', ahli_gizi: 'R', akuntan: 'R', investor: 'R' },
+  // Tambahan R-06b-1 di luar 16 fitur: C = mengajukan menu. Hak memutuskan ada di user.keputusan, bukan huruf matriks.
+  'persetujuan-menu': { admin: 'R', kepala_sppg: 'R', ahli_gizi: 'CR', investor: 'R' },
 };
 
 export const MODULE_ORDER = Object.keys(MATRIX);

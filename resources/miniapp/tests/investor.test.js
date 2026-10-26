@@ -79,7 +79,7 @@ test('tentukanSppgAktif: satu SPPG langsung terpilih, banyak harus memilih', () 
 
 test('matriks investor: baca-saja pada modul ber-R, modul lain tertutup', () => {
   assert.equal(roleLabel('investor'), 'Investor');
-  const boleh = ['sppg', 'bahan-baku', 'mutu', 'keuangan', 'keluhan', 'rekap-harian'];
+  const boleh = ['sppg', 'bahan-baku', 'mutu', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu'];
   for (const slug of MODULE_ORDER) {
     const p = perms('investor', slug);
     if (boleh.includes(slug)) assert.deepEqual([p.R, p.C, p.U, p.D], [true, false, false, false], slug);

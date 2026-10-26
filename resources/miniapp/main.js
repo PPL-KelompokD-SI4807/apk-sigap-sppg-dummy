@@ -10,7 +10,8 @@ import { registerAllRoutes } from './modules/registry.js';
 import { renderHome } from './home.js';
 import { renderPemilihSppg, muatSppgSaya } from './components/sppg-picker.js';
 import { renderAgregatPenerima } from './components/agregat-view.js';
-import { isInvestor } from './core/sppg-aktif.js';
+import { isInvestor, setSppgAktif } from './core/sppg-aktif.js';
+import { parseSppgHint } from './modules/persetujuan-menu/logika.js';
 import { getUser } from './core/auth.js';
 import { showLoginFlow } from './components/login-flow.js';
 import { renderSesi } from './components/sesi-view.js';
@@ -84,6 +85,9 @@ async function masukBeranda() {
   flow = null;
   if (isInvestor(getUser())) {
     // Investor multi-SPPG: pastikan SPPG aktif ada (header X-SPPG-Id) sebelum membuka data.
+    // Deep link bot (?sppg=<id>) hanya petunjuk: dipakai bila ada dalam daftar /sppg-saya; server tetap memvalidasi.
+    const hint = parseSppgHint(location.search, location.hash);
+    if (hint) setSppgAktif(hint);
     let hasil;
     try { hasil = await muatSppgSaya(); } catch (e) {
       return showMessage('Gagal memuat SPPG', e.message || 'Coba lagi.', 'Coba lagi', masukBeranda);
