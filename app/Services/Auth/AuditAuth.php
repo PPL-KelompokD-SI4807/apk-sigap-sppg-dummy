@@ -47,6 +47,9 @@ final class AuditAuth
 
     public const SESI_DICABUT_ADMIN = 'auth.sesi_dicabut_admin';
 
+    /** Aktivasi: no telepon tidak disimpan karena sudah dipakai akun lain (tanpa nomornya). */
+    public const TELEPON_TIDAK_DISIMPAN = 'auth.telepon_tidak_disimpan';
+
     /** Token penuh dikirim bersama initData akun Telegram lain lalu dicabut. */
     public const SESI_DICABUT_AKUN_BERBEDA = 'auth.sesi_dicabut_akun_berbeda';
 

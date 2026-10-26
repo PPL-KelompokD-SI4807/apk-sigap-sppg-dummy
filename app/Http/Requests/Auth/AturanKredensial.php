@@ -4,15 +4,17 @@ namespace App\Http\Requests\Auth;
 
 use App\Rules\NomorTelepon;
 use App\Rules\PasswordKuat;
-use App\Rules\TeleponUnik;
-use Illuminate\Validation\Rule;
+use App\Support\Telepon;
+use Closure;
 use Illuminate\Validation\Rules\Password;
 
 /**
  * Aturan validasi kredensial R-03, didefinisikan sekali dan dipakai semua Form Request auth.
  *
  * - username: 3-32 karakter, huruf kecil/angka/titik/garis bawah, diawali huruf (agar tidak
- *   tertukar dengan no telepon saat login), disimpan huruf kecil, unik (termasuk akun terhapus).
+ *   tertukar dengan no telepon saat login), disimpan huruf kecil. Keunikan TIDAK diperiksa di sini
+ *   (tanpa oracle akun): KredensialService memeriksanya dengan pesan seragam + jatah tantangan.
+ * - phone: hanya format; no telepon milik akun lain tidak ditolak, tetapi tidak disimpan.
  * - device_id: acak dari klien (localStorage), hanya disimpan sebagai HMAC.
  * - password: min 8, huruf besar+kecil, angka, tidak sama dengan username, bukan sandi umum lokal.
  */
@@ -43,20 +45,19 @@ trait AturanKredensial
     }
 
     /** @return list<mixed> */
-    protected function aturanUsername(bool $wajib, ?int $abaikanUserId): array
+    protected function aturanUsername(bool $wajib): array
     {
-        return [
-            $wajib ? 'required' : 'sometimes',
-            'string',
-            'regex:'.self::USERNAME_REGEX,
-            Rule::unique('users', 'username')->ignore($abaikanUserId),
-        ];
+        return [$wajib ? 'required' : 'sometimes', 'string', 'regex:'.self::USERNAME_REGEX];
     }
 
     /** @return list<mixed> */
-    protected function aturanTelepon(?int $abaikanUserId): array
+    protected function aturanTelepon(): array
     {
-        return ['sometimes', 'nullable', 'string', new NomorTelepon, new TeleponUnik($abaikanUserId)];
+        return ['sometimes', 'nullable', 'string', new NomorTelepon, function (string $attribute, mixed $value, Closure $fail): void {
+            if (is_string($value) && Telepon::normalisasi($value) === null) {
+                $fail('No telepon tidak dikenali. Gunakan format 08xx atau +62xx.');
+            }
+        }];
     }
 
     /** @return list<mixed> */
@@ -95,7 +96,6 @@ trait AturanKredensial
     {
         return [
             'username.regex' => 'Username 3-32 karakter, diawali huruf, hanya huruf kecil, angka, titik, atau garis bawah.',
-            'username.unique' => 'Username sudah dipakai. Pilih username lain.',
             'device_id.required' => 'device_id wajib (ID acak perangkat dari Mini App).',
             'device_id.regex' => 'device_id tidak valid.',
             'password.confirmed' => 'Konfirmasi password tidak sama.',

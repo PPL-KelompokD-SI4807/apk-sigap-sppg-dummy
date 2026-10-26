@@ -33,8 +33,8 @@ class AktivasiRequest extends FormRequest
         $username = is_string($this->input('username')) ? $this->input('username') : $user->username;
 
         return [
-            'username' => $this->aturanUsername($user->username === null, $user->getKey()),
-            'phone' => $this->aturanTelepon($user->getKey()),
+            'username' => $this->aturanUsername($user->username === null),
+            'phone' => $this->aturanTelepon(),
             'password' => $this->aturanPassword($username),
             'device_id' => $this->aturanDeviceId(),
             'label_perangkat' => $this->aturanLabelPerangkat(),

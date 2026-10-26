@@ -109,25 +109,56 @@ class AktivasiResetTest extends TestCase
         $this->kirim($penuh, '/api/v1/pengguna', method: 'GET')->assertOk();
     }
 
-    public function test_aktivasi_username_wajib_unik_dan_sesuai_format(): void
+    public function test_aktivasi_username_wajib_sesuai_format(): void
     {
-        User::factory()->denganKredensial('rina.gizi')->create(['sppg_id' => $this->createSppg('SPPG Lain'), 'telegram_id' => 7099998888]);
         $pra = $this->praLogin($this->akunBaru());
 
         $this->aktivasi($pra, [])->assertUnprocessable()->assertJsonValidationErrors(['username']);
-        $this->aktivasi($pra, ['username' => 'Rina.Gizi'])->assertUnprocessable()->assertJsonPath('errors.username.0', 'Username sudah dipakai. Pilih username lain.');
         $this->aktivasi($pra, ['username' => '0812345678'])->assertUnprocessable()->assertJsonValidationErrors(['username']);
         $this->aktivasi($pra, ['username' => 'ab'])->assertUnprocessable()->assertJsonValidationErrors(['username']);
         $this->assertCount(0, $this->telegramCalls('sendMessage'));
     }
 
-    public function test_aktivasi_telepon_milik_akun_lain_ditolak(): void
+    public function test_username_dipakai_pesan_seragam_dan_memakai_jatah_tantangan(): void
     {
-        User::factory()->create(['sppg_id' => $this->createSppg('SPPG Lain'), 'telegram_id' => 7099998888, 'phone' => '081299990000']);
+        User::factory()->denganKredensial('rina.gizi')->create(['sppg_id' => $this->createSppg('SPPG Lain'), 'telegram_id' => 7099998888]);
         $pra = $this->praLogin($this->akunBaru());
 
-        $this->aktivasi($pra, ['username' => 'rina.gizi', 'phone' => '+62 812 9999 0000'])
-            ->assertUnprocessable()->assertJsonPath('errors.phone.0', 'No telepon sudah dipakai akun lain.');
+        // Pesan tidak menyebut "sudah terdaftar/dipakai akun lain".
+        $this->aktivasi($pra, ['username' => 'Rina.Gizi'])->assertUnprocessable()
+            ->assertJsonPath('errors.username.0', 'Username tidak tersedia. Pilih username lain.');
+        $this->assertCount(0, $this->telegramCalls('sendMessage'));
+
+        // Setiap pemeriksaan memakai jatah tantangan (5 per 30 menit): tidak bisa dipakai menebak massal.
+        for ($i = 0; $i < 4; $i++) {
+            $this->aktivasi($pra, ['username' => 'rina.gizi'])->assertUnprocessable();
+        }
+        $this->aktivasi($pra, ['username' => 'nama.bebas'])->assertStatus(429)->assertJsonPath('alasan', 'terlalu_sering');
+    }
+
+    public function test_telepon_milik_akun_lain_tidak_ditolak_dan_tidak_disimpan(): void
+    {
+        $lain = User::factory()->create(['sppg_id' => $this->createSppg('SPPG Lain'), 'telegram_id' => 7099998888, 'phone' => '081299990000']);
+        $user = $this->akunBaru();
+        $pra = $this->praLogin($user);
+
+        // Respons sama persis dengan nomor yang belum dipakai: tidak ada oracle no telepon.
+        $id = $this->aktivasi($pra, ['username' => 'rina.gizi', 'phone' => '+62 812 9999 0000'])->assertStatus(202)->json('tantangan.id');
+        $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $this->kodeTerakhir(7011112222), 'device_id' => self::HP])
+            ->assertOk()->assertJsonMissingPath('user.phone');
+
+        $this->assertNull($user->fresh()->phone);
+        $this->assertSame('+6281299990000', $lain->fresh()->phone);
+        $log = AuditLog::query()->where('event', AuditAuth::TELEPON_TIDAK_DISIMPAN)->sole();
+        $this->assertStringNotContainsString('9999', json_encode($log->new_values));
+    }
+
+    public function test_telepon_tidak_dikenali_ditolak_format(): void
+    {
+        $pra = $this->praLogin($this->akunBaru());
+
+        $this->aktivasi($pra, ['username' => 'rina.gizi', 'phone' => '1234 5678'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['phone']);
     }
 
     public function test_aktivasi_akun_yang_sudah_berpassword_ditolak_409(): void

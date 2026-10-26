@@ -104,7 +104,30 @@ class KredensialService
             $payload['phone'] = $data['phone'] === null ? null : Telepon::normalisasi($data['phone']);
         }
 
-        return $this->token->buat($user, TantanganToken::TUJUAN_AKTIVASI, $deviceHash, $payload);
+        // Ketersediaan username diperiksa setelah jatah tantangan terpakai: pesan seragam dan
+        // maks config('kredensial.token.maks_tantangan') kali per jendela (bukan oracle akun murah).
+        return $this->token->buat($user, TantanganToken::TUJUAN_AKTIVASI, $deviceHash, $payload,
+            fn () => $this->usernameDipakaiAkunLain($user, $payload['username'] ?? null) ? throw self::usernameTidakTersedia() : null);
+    }
+
+    public const USERNAME_TIDAK_TERSEDIA = 'Username tidak tersedia. Pilih username lain.';
+
+    public static function usernameTidakTersedia(): ValidationException
+    {
+        return ValidationException::withMessages(['username' => [self::USERNAME_TIDAK_TERSEDIA]]);
+    }
+
+    private function usernameDipakaiAkunLain(User $user, ?string $username): bool
+    {
+        return $username !== null
+            && DB::table('users')->where('username', $username)->where('id', '!=', $user->getKey())->exists();
+    }
+
+    /** No telepon milik akun lain (termasuk terhapus lunak, sesuai indeks unik). */
+    private function teleponDipakaiAkunLain(User $user, ?string $phone): bool
+    {
+        return $phone !== null
+            && DB::table('users')->where('phone', $phone)->where('id', '!=', $user->getKey())->exists();
     }
 
     /**
@@ -260,7 +283,17 @@ class KredensialService
         }
 
         if (array_key_exists('phone', $payload)) {
-            $data['phone'] = $payload['phone'];
+            // No telepon milik akun lain tidak ditolak (tanpa oracle), hanya tidak disimpan;
+            // Admin melihat kejadiannya di audit dan dapat memperbaiki data.
+            if ($this->teleponDipakaiAkunLain($segar, $payload['phone'])) {
+                AuditAuth::catat($segar, AuditAuth::TELEPON_TIDAK_DISIMPAN, ['alasan' => 'dipakai_akun_lain']);
+            } else {
+                $data['phone'] = $payload['phone'];
+            }
+        }
+
+        if (isset($data['username']) && $this->usernameDipakaiAkunLain($segar, $data['username'])) {
+            throw self::usernameTidakTersedia();
         }
 
         if ($data['password'] === '') {
@@ -274,8 +307,8 @@ class KredensialService
         try {
             $segar->forceFill($data)->save();
         } catch (UniqueConstraintViolationException) {
-            // Balapan: username/no telepon diambil akun lain setelah validasi.
-            throw ValidationException::withMessages(['username' => ['Username atau no telepon sudah dipakai akun lain. Ulangi aktivasi.']]);
+            // Balapan: username/no telepon diambil akun lain setelah pemeriksaan (pesan seragam).
+            throw self::usernameTidakTersedia();
         }
     }
 

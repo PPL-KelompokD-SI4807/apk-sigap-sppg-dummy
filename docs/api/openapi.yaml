@@ -489,8 +489,8 @@ paths:
               type: object
               required: [password, password_confirmation, device_id]
               properties:
-                username: { type: string, pattern: '^[a-z][a-z0-9._]{2,31}$', description: 'Disimpan huruf kecil; awalan @ dibuang; unik.' }
-                phone: { type: [string, 'null'], description: 'Opsional. 08xx/62xx/+62xx, disimpan E.164, unik. Tidak pernah dikirim ke LLM/chat.' }
+                username: { type: string, pattern: '^[a-z][a-z0-9._]{2,31}$', description: 'Disimpan huruf kecil; awalan @ dibuang. Bila sudah dipakai: 422 errors.username "Username tidak tersedia. Pilih username lain." (pesan seragam; tiap pemeriksaan memakai jatah tantangan 5/30 menit).' }
+                phone: { type: [string, 'null'], description: 'Opsional. 08xx/62xx/+62xx, disimpan E.164. Tidak pernah ditolak karena sudah dipakai (tanpa oracle akun): nomor milik akun lain tidak disimpan dan Admin dapat memperbaikinya. Tidak pernah dikirim ke LLM/chat.' }
                 password: { type: string, minLength: 8, maxLength: 64 }
                 password_confirmation: { type: string }
                 device_id: { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$' }

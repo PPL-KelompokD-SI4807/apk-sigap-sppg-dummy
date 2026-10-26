@@ -32,8 +32,10 @@ class TokenSekaliPakaiService
      * Buat tantangan baru dan kirim kodenya ke chat Telegram pengguna.
      *
      * @param  array<string, mixed>  $payload  disimpan terenkripsi sampai tantangan selesai
+     * @param  (Closure(): void)|null  $periksa  dijalankan SETELAH jatah tantangan terpakai (pemeriksaan
+     *                                           yang bisa menjadi oracle, mis. username tersedia)
      */
-    public function buat(User $user, string $tujuan, string $deviceHash, array $payload = []): TantanganToken
+    public function buat(User $user, string $tujuan, string $deviceHash, array $payload = [], ?Closure $periksa = null): TantanganToken
     {
         if ($user->telegram_id === null) {
             throw GalatAuth::respons(422, GalatAuth::TELEGRAM_BELUM_TERHUBUNG, 'Akun belum terhubung ke Telegram. Minta tautan undangan kepada Admin.');
@@ -49,6 +51,10 @@ class TokenSekaliPakaiService
         }
 
         RateLimiter::hit($kunci, max(60, (int) config('kredensial.token.jendela_tantangan_menit', 30) * 60));
+
+        if ($periksa !== null) {
+            $periksa();
+        }
 
         $kode = $this->kodeAcak();
 
