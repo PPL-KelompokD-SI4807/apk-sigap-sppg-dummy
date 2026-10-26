@@ -7,25 +7,26 @@ export const ROLES = {
   akuntan: 'Akuntan',
   staf_gudang: 'Staf Gudang',
   relawan: 'Relawan',
+  investor: 'Investor',
 };
 
 export const MATRIX = {
-  'pengguna': { admin: 'CRUD', kepala_sppg: 'R', ahli_gizi: 'R*', akuntan: 'R*', staf_gudang: 'R*', relawan: 'R*' },
+  'pengguna': { admin: 'CRUD', kepala_sppg: 'R', ahli_gizi: 'R*', akuntan: 'R*', staf_gudang: 'R*', relawan: 'R*', investor: 'R*' },
   'notifikasi-perjalanan': { admin: 'R', kepala_sppg: 'CR', relawan: 'CR' },
-  'sppg': { admin: 'CRUD', kepala_sppg: 'RU', ahli_gizi: 'R', akuntan: 'R', staf_gudang: 'R', relawan: 'R' },
+  'sppg': { admin: 'CRUD', kepala_sppg: 'RU', ahli_gizi: 'R', akuntan: 'R', staf_gudang: 'R', relawan: 'R', investor: 'R' },
   'titik-layanan': { admin: 'CRUD', kepala_sppg: 'CRUD', ahli_gizi: 'R', akuntan: 'R', staf_gudang: 'R', relawan: 'R' },
   'penerima-manfaat': { admin: 'CRUD', kepala_sppg: 'CRU', ahli_gizi: 'R' },
-  'bahan-baku': { admin: 'CRUD', kepala_sppg: 'R', ahli_gizi: 'R', akuntan: 'R', staf_gudang: 'CRUD' },
+  'bahan-baku': { admin: 'CRUD', kepala_sppg: 'R', ahli_gizi: 'R', akuntan: 'R', staf_gudang: 'CRUD', investor: 'R' },
   'pemasok': { admin: 'CRUD', kepala_sppg: 'R', ahli_gizi: 'R', akuntan: 'R', staf_gudang: 'CRU' },
   'menu-gizi': { admin: 'R', kepala_sppg: 'R', ahli_gizi: 'CRUD', staf_gudang: 'R', relawan: 'R' },
   'jadwal': { admin: 'R', kepala_sppg: 'CRUD', ahli_gizi: 'CRU', staf_gudang: 'R', relawan: 'CRU' },
   'log-produksi': { admin: 'R', kepala_sppg: 'RUD', ahli_gizi: 'R', akuntan: 'R', staf_gudang: 'R', relawan: 'CRU' },
-  'mutu': { admin: 'R', kepala_sppg: 'R', ahli_gizi: 'CRUD', relawan: 'R' },
+  'mutu': { admin: 'R', kepala_sppg: 'R', ahli_gizi: 'CRUD', relawan: 'R', investor: 'R' },
   'armada': { admin: 'CRUD', kepala_sppg: 'CRUD', akuntan: 'R', relawan: 'R' },
   'bukti-distribusi': { admin: 'R', kepala_sppg: 'CRUD', ahli_gizi: 'R', akuntan: 'R', relawan: 'CRU' },
-  'keuangan': { admin: 'R', kepala_sppg: 'R', akuntan: 'CRUD' },
-  'keluhan': { admin: 'CRUD', kepala_sppg: 'RU', ahli_gizi: 'RU', relawan: 'CR' },
-  'rekap-harian': { admin: 'R', kepala_sppg: 'CRU', ahli_gizi: 'R', akuntan: 'R' },
+  'keuangan': { admin: 'R', kepala_sppg: 'R', akuntan: 'CRUD', investor: 'R' },
+  'keluhan': { admin: 'CRUD', kepala_sppg: 'RU', ahli_gizi: 'RU', relawan: 'CR', investor: 'R' },
+  'rekap-harian': { admin: 'R', kepala_sppg: 'CRU', ahli_gizi: 'R', akuntan: 'R', investor: 'R' },
 };
 
 export const MODULE_ORDER = Object.keys(MATRIX);

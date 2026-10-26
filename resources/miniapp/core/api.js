@@ -1,6 +1,7 @@
 import { toast } from './ui.js';
 import { enqueue, listQueue, removeItem } from './offline-queue.js';
 import { statusMessage } from './errors.js';
+import { terapkanHeaderSppg, perluPilihUlangSppg, tanpaSppg, hapusSppgAktif, PESAN_PILIH_ULANG, PESAN_TANPA_SPPG } from './sppg-aktif.js';
 
 const BASE = '/api/v1';
 const TOKEN_KEY = 'sigap_token';
@@ -16,6 +17,7 @@ export const getToken = () => token;
 
 const bus = new EventTarget();
 export const onAuthRequired = (fn) => bus.addEventListener('auth-required', fn);
+export const onSppgDiperlukan = (fn) => bus.addEventListener('sppg-diperlukan', fn);
 
 export class ApiError extends Error {
   constructor(status, message, errors = null, data = null) {
@@ -60,6 +62,7 @@ export async function request(method, path, { query, body, key, silent = false }
   const headers = { Accept: 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (key) headers['Idempotency-Key'] = key;
+  terapkanHeaderSppg(headers);
 
   let payload;
   let verb = method;
@@ -105,6 +108,14 @@ function failFromResponse(status, data, path, silent) {
     // Token pra-login/lama di rute data: ulangi alur masuk.
     setToken(null);
     bus.dispatchEvent(new Event('auth-required'));
+  } else if (perluPilihUlangSppg(status, data)) {
+    // Pilihan SPPG aktif belum ada / ditolak server: buang pilihan lokal, arahkan ke pemilih SPPG.
+    hapusSppgAktif();
+    bus.dispatchEvent(new Event('sppg-diperlukan'));
+    return new ApiError(status, PESAN_PILIH_ULANG, null, data);
+  } else if (tanpaSppg(status, data)) {
+    if (!silent) toast(PESAN_TANPA_SPPG, 'error');
+    return new ApiError(status, PESAN_TANPA_SPPG, null, data);
   } else if (status === 403) {
     if (!silent) toast('Anda tidak punya hak akses.', 'error');
   } else if (status === 422) {
@@ -129,6 +140,7 @@ export function uploadMultipart(path, body, { key, onProgress, xhrFactory = () =
     xhr.setRequestHeader('Accept', 'application/json');
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     if (key) xhr.setRequestHeader('Idempotency-Key', key);
+    for (const [k, v] of Object.entries(terapkanHeaderSppg({}))) xhr.setRequestHeader(k, v);
     if (xhr.upload) {
       xhr.upload.onprogress = (e) => {
         if (onProgress && e.lengthComputable && e.total > 0) onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100)));

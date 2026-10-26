@@ -16,7 +16,8 @@ export const statusLabel = (s) => STATUS_PENGGUNA[s]?.label ?? s ?? '-';
 export const statusCls = (s) => STATUS_PENGGUNA[s]?.cls ?? '';
 
 export const needsUnit = (role) => role === 'relawan';
-export const needsSppg = (role) => !!role && role !== 'admin';
+// Admin dan Investor tidak terikat satu SPPG (investor lewat kepemilikan SPPG).
+export const needsSppg = (role) => !!role && role !== 'admin' && role !== 'investor';
 
 /** Form tambah/ubah pengguna (Admin). Unit hanya untuk relawan; SPPG hanya untuk non-admin. */
 export function penggunaFields({ mode }) {
@@ -51,7 +52,7 @@ export const mapPayload = (values, { mode } = {}) => {
   });
   // Konsistensi aturan server: admin tanpa sppg, non-relawan tanpa unit.
   if (out.role && !needsUnit(out.role)) out.unit = null;
-  if (out.role === 'admin') out.sppg_id = null;
+  if (out.role === 'admin' || out.role === 'investor') out.sppg_id = null;
   if (mode === 'create') delete out.is_active;
   return out;
 };
