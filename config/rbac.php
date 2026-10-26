@@ -94,6 +94,20 @@ return [
             'label' => 'Laporan Rekapitulasi Harian Operasional',
             'admin' => 'R', 'kepala_sppg' => 'CRU', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => '', 'relawan' => '', 'investor' => 'R',
         ],
+        // R-06b-1 (tambahan di luar 16 fitur Subbab 5.2): C = mengajukan menu; keputusan lewat 'keputusan'.
+        'persetujuan-menu' => [
+            'label' => 'Persetujuan Menu oleh Investor',
+            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => 'CR', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => '', 'investor' => 'R',
+        ],
+    ],
+
+    /*
+    | Hak KEPUTUSAN (R-06b-1): peran yang boleh memutuskan pengajuan pada modul. Sengaja BUKAN huruf
+    | C/U/D agar investor tetap Rbac::readOnly() (lampiran dan modul lain tetap tertutup). Admin,
+    | kepala, ahli gizi, dan peran lain tidak pernah memutuskan. Lihat Rbac::canDecide().
+    */
+    'keputusan' => [
+        'persetujuan-menu' => ['investor'],
     ],
 
     /*

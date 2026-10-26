@@ -4,6 +4,7 @@ namespace App\Services\Jadwal;
 
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
+use App\Enums\StatusPersetujuanMenu;
 use App\Events\KekuranganBahan;
 use App\Models\JadwalProduksi;
 use App\Models\Menu;
@@ -323,10 +324,17 @@ class ProductionPlanningService
 
     private function pastikanMenuMilikSppg(int $menuId, int $sppgId): void
     {
-        $ada = Menu::withoutGlobalScope(SppgScope::class)->where('sppg_id', $sppgId)->whereKey($menuId)->exists();
+        // R3: kunci baris menu selama transaksi pemanggil (urutan kunci: sppg -> menu; PersetujuanMenuService
+        // memakai menu -> pengajuan, tidak pernah mengunci sppg, jadi tidak ada urutan terbalik).
+        $menu = Menu::withoutGlobalScope(SppgScope::class)->where('sppg_id', $sppgId)->whereKey($menuId)->lockForUpdate()->first();
 
-        if (! $ada) {
+        if ($menu === null) {
             throw ValidationException::withMessages(['menu_id' => ['Menu tidak ditemukan.']]);
+        }
+
+        // R-06b-1: hanya menu yang disetujui investor yang boleh dijadwalkan.
+        if ($menu->status_persetujuan !== StatusPersetujuanMenu::Disetujui) {
+            throw ValidationException::withMessages(['menu_id' => ['Menu belum disetujui investor sehingga belum dapat dijadwalkan.']]);
         }
     }
 }

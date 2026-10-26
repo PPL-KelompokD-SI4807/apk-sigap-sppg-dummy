@@ -55,7 +55,8 @@ class RbacMatrixTest extends TestCase
 
     public function test_config_identik_dengan_tabel_5_dan_urutan_fitur(): void
     {
-        $this->assertSame(array_keys(self::TABEL_5), Rbac::modules());
+        // 16 fitur resmi (urutan tetap) + modul tambahan R-06b-1 di akhir (matriks dicek terpisah).
+        $this->assertSame([...array_keys(self::TABEL_5), 'persetujuan-menu'], Rbac::modules());
 
         foreach (self::TABEL_5 as $module => $cells) {
             foreach (self::ROLES as $i => $role) {

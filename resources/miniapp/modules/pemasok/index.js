@@ -1,13 +1,14 @@
 // Data Pemasok (fitur 7, PBI 7). Mockup: Gambar 24.
 import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
+import { hargaPanel } from './harga.js';
 import { pemasokFields, mapPayload, JENIS_PEMASOK, jenisPemasokLabel } from './schema.js';
 
 export default defineCrudModule({
   slug: 'pemasok',
   title: 'Pemasok',
   icon: '🚚',
-  description: 'Petani, peternak, nelayan, dan UMKM pemasok',
+  description: 'Petani, peternak, nelayan, koperasi, dan UMKM pemasok',
   endpoint: '/pemasok',
   columns: [
     { key: 'nama', primary: true },
@@ -20,6 +21,7 @@ export default defineCrudModule({
   mapPayload,
   searchPlaceholder: 'Cari pemasok...',
   filters: { param: 'jenis', label: 'Jenis pemasok', options: [{ value: '', label: 'Semua' }, ...JENIS_PEMASOK] },
+  detailExtras: (rec, p) => hargaPanel(rec, p),
   renderCard: (r, href) => rowCard({
     href,
     title: r.nama,

@@ -7,7 +7,7 @@
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'
       - $ref: '#/components/parameters/Search'
-      - { name: jenis, in: query, schema: { type: string, enum: [umkm, petani, peternak, nelayan] } }
+      - { name: jenis, in: query, schema: { type: string, enum: [umkm, petani, peternak, nelayan, koperasi] } }
       - { name: is_active, in: query, schema: { type: boolean } }
       - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
     responses:
@@ -119,3 +119,54 @@
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
+/pemasok/{id}/harga:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Pemasok]
+    summary: Riwayat harga bahan dari pemasok (terbaru dulu)
+    description: 'Hak R modul pemasok (Investor tidak punya akses).'
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - { name: bahan_baku_id, in: query, schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/HargaPemasok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+  post:
+    tags: [Pemasok]
+    summary: Catat harga bahan dari pemasok (append-only)
+    description: 'Hak C modul pemasok (Admin, Staf Gudang). Tanpa endpoint ubah/hapus; koreksi = entri baru. Pemasok dan bahan wajib satu SPPG.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/HargaPemasokInput' }
+          example: { bahan_baku_id: 3, harga: 12500, berlaku_mulai: '2026-10-26', catatan: 'Harga koperasi' }
+    responses:
+      '201':
+        description: Dicatat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/HargaPemasok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }

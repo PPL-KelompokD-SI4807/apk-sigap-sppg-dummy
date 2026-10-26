@@ -43,6 +43,7 @@ class AuthUserResource extends JsonResource
             'permissions' => Rbac::permissions($user),
             'baca_saja' => Rbac::readOnly($user),
             'agregat' => Rbac::aggregateOnlyModules($user),
+            'keputusan' => Rbac::decisionModules($user),
         ];
     }
 

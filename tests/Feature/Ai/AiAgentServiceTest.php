@@ -178,7 +178,7 @@ class AiAgentServiceTest extends MasterApiTestCase
         $this->llm->push(LlmResponse::text('ok'));
         $this->agent()->handle($this->admin, AiInput::text('halo'));
         $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
-        $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_'))));
+        $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_') && $n !== 'daftar_pengajuan_menu')));
 
         // Pengguna nonaktif: tidak ada tool, tidak ada panggilan LLM.
         $nonaktif = User::factory()->role(Role::KepalaSppg)->inactive()->create(['sppg_id' => $this->sppgA]);

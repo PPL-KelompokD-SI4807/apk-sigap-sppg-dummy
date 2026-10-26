@@ -7,6 +7,10 @@ import { api } from '../../core/api.js';
 import { toast } from '../../core/ui.js';
 import { GIZI, KELOMPOK, kelompokLabel, menuFields, menuDetailFields, mapPayload, hitungPeringatanGizi, standarFields, standarDetailFields, standarPayload, rentang } from './schema.js';
 import { komposisiField } from './komposisi.js';
+import { statusBadges, persetujuanPanel, rincianBiayaScreen } from './persetujuan.js';
+import { route } from '../../core/router.js';
+import { userPerms } from '../../core/permissions.js';
+import { getUser } from '../../core/auth.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 
@@ -117,14 +121,23 @@ const menuModule = defineCrudModule({
     sub: [kelompokLabel(r.kelompok_sasaran), r.siklus, r.tanggal_sajian ? formatValue(r.tanggal_sajian, 'date') : null, `${r.jumlah_bahan ?? 0} bahan`].filter(Boolean).join(' · '),
     aside: Number(r.energi_kkal ?? 0).toLocaleString('id-ID'),
     asideSub: 'kkal',
+    badges: statusBadges(r),
   }),
   formTop,
   onSaved: ({ res }) => {
     const w = unwrap(res.data)?.peringatan_gizi;
     if (w?.length) toast(`Peringatan gizi: ${w.map((p) => p.pesan).join(' ')}`, 'info', 6000);
   },
-  detailExtras: async (rec) => [komposisiPanel(rec), await ringkasanPanel(rec)],
+  detailExtras: async (rec) => [persetujuanPanel(rec), komposisiPanel(rec), await ringkasanPanel(rec)],
 });
 
+const menuDenganRincian = {
+  ...menuModule,
+  register() {
+    route('/menu-gizi/:id/rincian-biaya', rincianBiayaScreen, { title: 'Rincian Biaya Menu', guard: () => userPerms(getUser(), 'menu-gizi').R });
+    menuModule.register();
+  },
+};
+
 // Standar harus terdaftar sebelum /menu-gizi/:id.
-export default [standarModule, menuModule];
+export default [standarModule, menuDenganRincian];

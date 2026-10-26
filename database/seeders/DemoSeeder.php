@@ -21,6 +21,7 @@ use App\Models\Armada;
 use App\Models\BahanBaku;
 use App\Models\BuktiDistribusi;
 use App\Models\FeedbackKeluhan;
+use App\Models\HargaPemasok;
 use App\Models\JadwalDistribusi;
 use App\Models\JadwalProduksi;
 use App\Models\LogProduksi;
@@ -31,6 +32,7 @@ use App\Models\Pemasok;
 use App\Models\PemeriksaanMutu;
 use App\Models\PencairanDana;
 use App\Models\PenerimaManfaat;
+use App\Models\PengajuanMenu;
 use App\Models\Pengeluaran;
 use App\Models\Pengemudi;
 use App\Models\RekapHarian;
@@ -38,6 +40,7 @@ use App\Models\Sppg;
 use App\Models\StandarGizi;
 use App\Models\TitikLayanan;
 use App\Models\User;
+use App\Services\Persetujuan\BiayaMenuService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -161,6 +164,7 @@ class DemoSeeder extends Seeder
         $bahan = $this->buatBahanDanStok($sppg, $pemasoks, $users['staf_gudang']);
         $this->buatStandarGizi($sppg);
         $menus = $this->buatMenu($sppg, $bahan);
+        $this->buatHargaDanPengajuan($sppg, $pemasoks, $bahan, $users);
         [$armadas, $pengemudis] = $this->buatArmada($sppg);
         $this->buatOperasional($sppg, $p, $users, $titik, $menus, $armadas, $pengemudis);
         $this->buatKeuangan($sppg, $p['pencairan'], $users['akuntan'], $pemasoks);
@@ -257,6 +261,7 @@ class DemoSeeder extends Seeder
             ['Peternakan Ayam Makmur (Demo)', JenisPemasok::Peternak, 'Ayam dan telur'],
             ['Nelayan Bahari (Demo)', JenisPemasok::Nelayan, 'Ikan'],
             ['UMKM Tahu Tempe Sari (Demo)', JenisPemasok::Umkm, 'Tahu dan tempe'],
+            ['Koperasi Desa Sejahtera (Demo)', JenisPemasok::Koperasi, 'Beras dan minyak goreng'],
         ];
 
         return array_map(fn ($d, $i) => Pemasok::factory()->create([
@@ -382,6 +387,71 @@ class DemoSeeder extends Seeder
         }
 
         return $menus;
+    }
+
+    /**
+     * R-06b-1: riwayat harga pemasok (termasuk koperasi) dan satu menu draf yang diajukan ke investor.
+     * Pemasok utama bahan diutamakan; koperasi menyediakan harga beras dan minyak (lebih murah, entri terbaru).
+     *
+     * @param  list<Pemasok>  $pemasoks
+     * @param  array<string, BahanBaku>  $bahan
+     * @param  array<string, User>  $users
+     */
+    private function buatHargaDanPengajuan(Sppg $sppg, array $pemasoks, array $bahan, array $users): void
+    {
+        $harga = [
+            'Beras' => 13000, 'Ayam' => 38000, 'Telur' => 28000, 'Ikan Lele' => 32000, 'Tahu' => 12000,
+            'Tempe' => 14000, 'Bayam' => 9000, 'Wortel' => 11000, 'Pisang' => 15000, 'Minyak Goreng' => 18000,
+        ];
+
+        foreach ($bahan as $nama => $b) {
+            HargaPemasok::factory()->create([
+                'sppg_id' => $sppg->id,
+                'pemasok_id' => $b->pemasok_id,
+                'bahan_baku_id' => $b->id,
+                'harga' => $harga[$nama],
+                'berlaku_mulai' => now()->subDays(20)->toDateString(),
+                'dicatat_oleh' => $users['staf_gudang']->id,
+            ]);
+        }
+
+        $koperasi = end($pemasoks);
+        foreach (['Beras' => 12500, 'Minyak Goreng' => 17500] as $nama => $nilai) {
+            HargaPemasok::factory()->create([
+                'sppg_id' => $sppg->id,
+                'pemasok_id' => $koperasi->id,
+                'bahan_baku_id' => $bahan[$nama]->id,
+                'harga' => $nilai,
+                'berlaku_mulai' => now()->subDays(3)->toDateString(),
+                'catatan' => 'Harga koperasi (contoh)',
+                'dicatat_oleh' => $users['staf_gudang']->id,
+            ]);
+        }
+
+        $menu = Menu::factory()->gizi(630, 23, 18, 91, 8)->diajukan()->create([
+            'sppg_id' => $sppg->id,
+            'nama_menu' => 'Nasi, Ayam Panggang, Sup Wortel (Diajukan)',
+            'kelompok_sasaran' => KelompokSasaran::Siswa,
+            'siklus' => 'Siklus 2',
+        ]);
+        foreach (['Beras' => 90, 'Ayam' => 60, 'Wortel' => 45, 'Minyak Goreng' => 6] as $nama => $gram) {
+            $menu->bahanBakus()->attach($bahan[$nama]->id, ['gram_per_porsi' => $gram]);
+        }
+
+        $hitung = app(BiayaMenuService::class)->hitung($menu->fresh());
+        PengajuanMenu::factory()->create([
+            'sppg_id' => $sppg->id,
+            'menu_id' => $menu->id,
+            'menu_versi' => $menu->versi,
+            'rincian' => ['menu' => ['nama_menu' => $menu->nama_menu, 'kelompok_sasaran' => 'siswa', 'gizi_per_porsi' => []], 'bahan' => $hitung['bahan'], 'tanggal_acuan' => $hitung['tanggal_acuan']],
+            'biaya_per_porsi' => $hitung['biaya_per_porsi'],
+            'jumlah_porsi' => $hitung['jumlah_porsi'],
+            'sumber_porsi' => $hitung['sumber_porsi'],
+            'keterangan_asumsi' => $hitung['keterangan_asumsi'],
+            'total_biaya' => $hitung['total_biaya'],
+            'catatan_pengaju' => 'Contoh pengajuan untuk demo persetujuan investor.',
+            'diajukan_oleh' => $users['ahli_gizi']->id,
+        ]);
     }
 
     /** @return array{0: list<Armada>, 1: list<Pengemudi>} */

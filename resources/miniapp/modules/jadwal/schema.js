@@ -1,5 +1,6 @@
 // Skema Jadwal Produksi + Distribusi (fitur 9). Kontrak: docs/api/paths/jadwal.yaml, components/jadwal.yaml.
 import { buildPayload } from '../../core/schema-helpers.js';
+import { menuDisetujui } from '../persetujuan-menu/logika.js';
 import { notBeforeToday, todayISO } from '../../core/validators.js';
 
 export const STATUS_PRODUKSI = [
@@ -74,7 +75,7 @@ export function sisaPorsiDistribusi(jadwal, jumlahDiubah = 0) {
 export function produksiFields({ mode, record } = {}) {
   const berjalan = mode === 'update' && record && record.status !== 'direncanakan'; // hanya catatan yang dapat diubah
   return [
-    { name: 'menu_id', label: 'Menu', type: 'relasi', required: true, readonly: berjalan, relation: { endpoint: '/menu-gizi', label: 'nama_menu', value: 'id', as: 'menu' } },
+    { name: 'menu_id', label: 'Menu', type: 'relasi', required: true, readonly: berjalan, help: 'Hanya menu yang sudah disetujui investor yang dapat dijadwalkan.', relation: { endpoint: '/menu-gizi', label: 'nama_menu', value: 'id', as: 'menu', filter: (m) => menuDisetujui(m) || (record && m.id === record.menu_id) } },
     { name: 'tanggal_produksi', label: 'Tanggal produksi', type: 'date', required: true, readonly: berjalan, default: todayISO(), validate: (v) => (mode === 'create' ? notBeforeToday(v, 'Tanggal produksi') : '') },
     { name: 'jam_mulai_masak', label: 'Jam mulai masak', type: 'time', readonly: berjalan },
     { name: 'target_porsi', label: 'Target porsi', type: 'number', required: true, min: 1, step: 1, readonly: berjalan, help: 'Dibatasi kapasitas harian SPPG.' },

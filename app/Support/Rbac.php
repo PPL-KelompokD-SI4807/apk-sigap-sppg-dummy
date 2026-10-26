@@ -97,6 +97,34 @@ final class Rbac
     }
 
     /**
+     * Hak memutuskan (config('rbac.keputusan')), terpisah dari huruf C/U/D. Pengguna nonaktif/
+     * terhapus tidak pernah boleh. Tidak memengaruhi readOnly().
+     */
+    public static function canDecide(?User $user, string $module): bool
+    {
+        self::assertModule($module);
+
+        if ($user === null || ! $user->canAuthenticate() || ! $user->role instanceof Role) {
+            return false;
+        }
+
+        return in_array($user->role->value, (array) config("rbac.keputusan.{$module}", []), true);
+    }
+
+    /**
+     * Modul tempat pengguna berhak memutuskan, mis. investor -> ['persetujuan-menu'].
+     *
+     * @return list<string>
+     */
+    public static function decisionModules(?User $user): array
+    {
+        return array_values(array_filter(
+            array_keys((array) config('rbac.keputusan', [])),
+            fn (string $module) => self::hasModule($module) && self::canDecide($user, $module),
+        ));
+    }
+
+    /**
      * True bila pengguna boleh membaca AGREGAT modul (hitungan per kategori tanpa data pribadi):
      * punya hak R penuh (bukan R*) atau perannya tercantum di config('rbac.agregat.<modul>').
      */
@@ -221,6 +249,10 @@ final class Rbac
             foreach (str_split(str_replace('*', '', $letters)) as $letter) {
                 $abilities[] = "{$module}:{$letter}";
             }
+        }
+
+        foreach (self::decisionModules($user) as $module) {
+            $abilities[] = "{$module}:putuskan";
         }
 
         return $abilities;

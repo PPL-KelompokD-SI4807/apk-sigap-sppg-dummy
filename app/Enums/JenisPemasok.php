@@ -8,6 +8,7 @@ enum JenisPemasok: string
     case Petani = 'petani';
     case Peternak = 'peternak';
     case Nelayan = 'nelayan';
+    case Koperasi = 'koperasi';
 
     public function label(): string
     {
@@ -16,6 +17,7 @@ enum JenisPemasok: string
             self::Petani => 'Petani',
             self::Peternak => 'Peternak',
             self::Nelayan => 'Nelayan',
+            self::Koperasi => 'Koperasi',
         };
     }
 

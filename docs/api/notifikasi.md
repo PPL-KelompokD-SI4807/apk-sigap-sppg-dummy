@@ -21,6 +21,8 @@ Listener tunggal `App\Listeners\KirimNotifikasiDomain` didaftarkan oleh `SigapIn
 | `BuktiDistribusiDicatat` | kepala_sppg | terhubung |
 | `DistribusiTerlambat` (bukti dicatat terlambat) | kepala_sppg | terhubung |
 | `AnggaranMencapai80` / `AnggaranMencapai100` / `AnggaranMelampaui` | akuntan, kepala_sppg | terhubung |
+| `MenuDiajukan` (R-06b-1) | investor pemilik SPPG event (via pivot `investor_sppg`, bukan `users.sppg_id`; `is_active`, `telegram_id` terisi) | terhubung; dedup per pengajuan |
+| `MenuDiputuskan` (R-06b-1) | ahli_gizi SPPG event | terhubung; dedup per pengajuan + keputusan |
 | `BuktiDistribusiBelumMasuk` (bukti belum masuk 60 menit setelah jam rencana tiba) | kepala_sppg | **disiapkan** (kelas belum ada; aktif otomatis saat kelas dibuat) |
 
 Pengawas penerima rekap (FR-13 "pengawas terdaftar") belum punya model data; saat ini rekap dikirim ke peran di atas. Admin hanya penerima cadangan untuk event kritis.
@@ -31,6 +33,7 @@ Pengawas penerima rekap (FR-13 "pengawas terdaftar") belum punya model data; saa
 - Dedup per (kunci event, chat) 12 jam via cache (`StokMenipis` per bahan per hari, `Perjalanan*` per perjalanan, `Anggaran*` per periode, rekap per menit agar kirim ulang manual tetap terkirim).
 - Retry: maks 3 galat sementara, jeda 10/30/90 detik, batas 30 menit; 429 mematuhi `retry_after`; 400/403 (chat tidak ada/bot diblokir) tidak diulang. Limiter global `telegram-out` 25 pesan/detik (NFR-03).
 - Isi pesan HTML dengan semua nilai dinamis di-escape; tanpa nomor telepon, chat id, atau NIK. Deskripsi keluhan dipotong 150 karakter. Pesan ke pengguna memuat tombol web_app ke layar modul (`#/<slug>`); pesan ke PIC tanpa tombol.
+- Notifikasi persetujuan menu memuat nama menu, biaya per porsi, jumlah porsi, total, dan (diputuskan) keputusan + catatan (dipotong 300 karakter); tombol "Lihat di Mini App" menuju `/persetujuan-menu/<id>?sppg=<id>`. Parameter `sppg` hanya petunjuk SPPG aktif; server tetap memvalidasi kepemilikan (pivot) dan Policy. Tanpa data pribadi.
 - Log aman `notifikasi.kirim`: jenis, status, kode galat, hash 12 karakter chat id, user_id.
 - Kegagalan notifikasi tidak pernah menggagalkan alur domain (listener menelan galat setelah `report()`).
 
@@ -48,5 +51,7 @@ Properti publik event dibaca berdasarkan nama (camelCase, dengan cadangan snake_
 | Perjalanan* | id, sppgId, titikLayananNama, picTelegramChatId, dialihkanKeKepala, estimasiTiba (+ `notifikasi_perjalanans.pesan`) |
 | RekapHarianDibuat | id, sppgId, tanggal, ringkasan (porsi, mutu, distribusi, keluhan, stok, keuangan, sisa_makanan_kg) |
 | BuktiDistribusiDicatat / DistribusiTerlambat | id, sppgId, jadwalDistribusiId, titikLayananNama, porsiDikirim, porsiDiterima, waktuTiba, acuanTiba, terlambat, menitKeterlambatan |
+| MenuDiajukan | id (pengajuan), sppgId, menuId, namaMenu, biayaPerPorsi, jumlahPorsi, totalBiaya |
+| MenuDiputuskan | id (pengajuan), sppgId, menuId, namaMenu, keputusan, catatan, biayaPerPorsi, jumlahPorsi, totalBiaya |
 | Anggaran* | sppgId, periode, anggaran, terpakai, sisa, persen |
 | BuktiDistribusiBelumMasuk (diharapkan) | sppgId, jadwalDistribusiId, titikLayananId, titikLayananNama, jamRencanaTiba ("HH:MM[:SS]" atau ISO), menitSejakRencana |
