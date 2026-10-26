@@ -98,6 +98,26 @@ class CatalogWriteTool extends WriteDraftTool
         return $this->spec->jenis === null || Rbac::canForJenis($user, $this->module, $this->action, $this->spec->jenis);
     }
 
+    /** `versi` tidak pernah diterima dari LLM. */
+    protected function toPayload(User $user, array $arguments): array
+    {
+        if ($this->spec->berversi) {
+            unset($arguments['versi']);
+        }
+
+        return $arguments;
+    }
+
+    /** Draf ubah record berversi: versi diambil dari record target saat draf dibuat (konfirmasi basi -> 409). */
+    protected function sisipkanDariServer(array $payload, ?Model $target): array
+    {
+        if ($this->spec->berversi && $this->action === 'U' && $target !== null) {
+            $payload['versi'] = (int) $target->getAttribute('versi');
+        }
+
+        return $payload;
+    }
+
     protected function findTarget(User $user, int $id): ?Model
     {
         return SppgBound::apply($this->spec->model::query(), $user, $this->spec->scopeColumn)->whereKey($id)->first();

@@ -70,6 +70,18 @@ abstract class WriteDraftTool extends BaseAiTool
         return [$payload, $confidence];
     }
 
+    /**
+     * Hook opsional: sisipkan nilai yang HARUS berasal dari server (bukan LLM) ke payload, mis. `versi` record
+     * target. Dipanggil setelah argumen terlindungi dibuang dan SEBELUM validasi dry-run.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function sisipkanDariServer(array $payload, ?Model $target): array
+    {
+        return $payload;
+    }
+
     /** Cari record target lewat query ber-SppgScope (null = tidak ditemukan / SPPG lain). */
     protected function findTarget(User $user, int $id): ?Model
     {
@@ -168,6 +180,8 @@ abstract class WriteDraftTool extends BaseAiTool
             (array) config('ai.protected_arguments', []),
         );
 
+        $payload = $this->sisipkanDariServer($payload, $target);
+
         $errors = [];
         $scores = [];
 
@@ -181,6 +195,10 @@ abstract class WriteDraftTool extends BaseAiTool
 
             $errors = $result->errors;
             $scores = $result->confidence;
+            // Hanya kunci yang diatur Form Request yang disimpan di draf (kunci isian server dibuang).
+            $payload = $result->saring($payload);
+            $dipertahankan = array_merge(array_keys($payload), array_map(fn ($k) => explode('.', (string) $k)[0], array_keys($errors)));
+            $scores = array_intersect_key($scores, array_flip($dipertahankan));
         }
 
         [$payload, $scores] = $this->afterValidation($payload, $scores, $errors);

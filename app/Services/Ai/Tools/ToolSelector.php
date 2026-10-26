@@ -39,6 +39,7 @@ class ToolSelector
         'keuangan' => ['keuangan', 'uang', 'dana', 'pencairan', 'pengeluaran', 'belanja', 'biaya', 'nota', 'kuitansi', 'kwitansi', 'struk', 'bayar', 'rp', 'rupiah', 'anggaran', 'saldo'],
         'keluhan' => ['keluhan', 'komplain', 'feedback', 'masukan', 'saran', 'aduan', 'keracunan', 'sakit', 'basi', 'mual'],
         'rekap-harian' => ['rekap', 'ringkasan', 'rangkuman', 'laporan', 'hari ini'],
+        'pembelian-bahan' => ['pembelian', 'beli', 'membeli', 'belanja', 'nota', 'kuitansi', 'struk', 'harga satuan', 'pemasok'],
         'persetujuan-menu' => ['persetujuan', 'pengajuan', 'setuju', 'disetujui', 'approve', 'revisi menu'],
     ];
 
