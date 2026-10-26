@@ -8,7 +8,6 @@ use App\Models\AiDraft;
 use App\Models\AuditLog;
 use App\Models\JadwalProduksi;
 use App\Models\LogProduksi;
-use Laravel\Sanctum\Sanctum;
 
 class LogProduksiTest extends GrupBTestCase
 {
@@ -61,16 +60,16 @@ class LogProduksiTest extends GrupBTestCase
         $relawan = $this->user(Role::Relawan, null, RelawanUnit::Dapur);
         $kepala = $this->user(Role::KepalaSppg);
 
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
         $awal = $this->postJson('/api/v1/log-produksi', $this->payload($jadwal))->assertCreated();
         $this->postJson('/api/v1/log-produksi', $this->payload($jadwal))->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id']);
         $this->assertSame(1, LogProduksi::withTrashed()->count());
 
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->deleteJson('/api/v1/log-produksi/'.$awal->json('data.id'))->assertNoContent();
         $this->assertSoftDeleted('log_produksis', ['id' => $awal->json('data.id')]);
 
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
         $baru = $this->postJson('/api/v1/log-produksi', $this->payload($jadwal, ['realisasi_porsi' => 900]))->assertCreated();
         $this->assertSame($awal->json('data.id'), $baru->json('data.id'));
         $this->assertSame($awal->json('data.kode_batch'), $baru->json('data.kode_batch'));
@@ -148,7 +147,7 @@ class LogProduksiTest extends GrupBTestCase
         $milikLain = LogProduksi::factory()->create(['sppg_id' => $this->sppgA->id, 'jadwal_produksi_id' => $this->jadwal()->id, 'dicatat_oleh' => $lain->id]);
         $kemarin = LogProduksi::factory()->create(['sppg_id' => $this->sppgA->id, 'jadwal_produksi_id' => $this->jadwal()->id, 'dicatat_oleh' => $relawan->id]);
         $kemarin->forceFill(['created_at' => now()->subDay()])->saveQuietly();
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         $this->patchJson("/api/v1/log-produksi/{$milik->id}", ['kendala' => 'Diperbarui'])->assertOk()->assertJsonPath('data.kendala', 'Diperbarui');
         $this->patchJson("/api/v1/log-produksi/{$milikLain->id}", ['kendala' => 'x'])->assertForbidden();
@@ -209,7 +208,7 @@ class LogProduksiTest extends GrupBTestCase
         $jadwal = $this->jadwal();
         $user = $this->user(Role::Relawan, null, RelawanUnit::Dapur);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'log-produksi']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         $this->postJson('/api/v1/log-produksi', $this->payload($jadwal, ['ai_draft_id' => $draf->uuid]))->assertCreated();
         $this->assertSame('confirmed', $draf->fresh()->status->value);

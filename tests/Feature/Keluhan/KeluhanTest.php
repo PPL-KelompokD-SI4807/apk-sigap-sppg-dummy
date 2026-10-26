@@ -16,7 +16,6 @@ use App\Models\TitikLayanan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
-use Laravel\Sanctum\Sanctum;
 use Tests\Support\SkenarioOperasional;
 use Tests\TestCase;
 
@@ -50,7 +49,7 @@ class KeluhanTest extends TestCase
     public function test_relawan_mencatat_keluhan_dengan_prioritas_otomatis(): void
     {
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Dapur);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         foreach (['rasa' => 'rendah', 'kemasan' => 'rendah', 'porsi_kurang' => 'sedang', 'terlambat' => 'sedang'] as $kategori => $prioritas) {
             $this->postJson('/api/v1/keluhan', $this->payload(['kategori' => $kategori, 'sppg_id' => $this->sppgB]))
@@ -71,7 +70,7 @@ class KeluhanTest extends TestCase
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
         $titik = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA, 'nama' => 'SDN Contoh 3']);
         $jadwal = JadwalProduksi::factory()->create(['sppg_id' => $this->sppgA]);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         foreach (['makanan_basi', 'gejala_sakit'] as $kategori) {
             $this->postJson('/api/v1/keluhan', $this->payload(['kategori' => $kategori, 'titik_layanan_id' => $titik->id, 'jadwal_produksi_id' => $jadwal->id]))
@@ -97,7 +96,7 @@ class KeluhanTest extends TestCase
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Dapur);
         $dist = $this->jadwalSiap($this->sppgA, [], ['tanggal_distribusi' => '2026-11-02']);
         $titikTanpaJadwal = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA]);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         // Tanpa batch dan tanpa penyataan -> 422, event tidak dipancarkan.
         $this->postJson('/api/v1/keluhan', $this->payload(['kategori' => 'makanan_basi']))
@@ -120,7 +119,7 @@ class KeluhanTest extends TestCase
     public function test_prioritas_input_hanya_dapat_menaikkan(): void
     {
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Dapur);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         $this->postJson('/api/v1/keluhan', $this->payload(['kategori' => 'rasa', 'prioritas' => 'tinggi']))->assertCreated()->assertJsonPath('data.prioritas', 'tinggi');
         $this->postJson('/api/v1/keluhan', $this->payload(['kategori' => 'makanan_basi', 'prioritas' => 'rendah', 'batch_tidak_diketahui' => true]))->assertCreated()->assertJsonPath('data.prioritas', 'kritis');
@@ -131,7 +130,7 @@ class KeluhanTest extends TestCase
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Dapur);
         $titikLain = TitikLayanan::factory()->create(['sppg_id' => $this->sppgB]);
         $jadwalLain = JadwalProduksi::factory()->create(['sppg_id' => $this->sppgB]);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         $this->postJson('/api/v1/keluhan', [])->assertUnprocessable()->assertJsonValidationErrors(['sumber', 'kategori', 'deskripsi']);
         $this->postJson('/api/v1/keluhan', $this->payload(['kategori' => 'bukan_kategori']))->assertUnprocessable()->assertJsonValidationErrors('kategori');
@@ -148,7 +147,7 @@ class KeluhanTest extends TestCase
         $tanpaHak = [Role::Akuntan, Role::StafGudang];
 
         foreach ($tanpaHak as $role) {
-            Sanctum::actingAs($this->pengguna($role, $this->sppgA));
+            $this->masukPenuh($this->pengguna($role, $this->sppgA));
             $this->getJson('/api/v1/keluhan')->assertForbidden();
             $this->getJson("/api/v1/keluhan/{$keluhan->id}")->assertForbidden();
             $this->postJson('/api/v1/keluhan', $this->payload())->assertForbidden();
@@ -158,7 +157,7 @@ class KeluhanTest extends TestCase
 
         // Kepala dan ahli gizi: RU saja (tidak C, tidak D).
         foreach ([Role::KepalaSppg, Role::AhliGizi] as $role) {
-            Sanctum::actingAs($this->pengguna($role, $this->sppgA));
+            $this->masukPenuh($this->pengguna($role, $this->sppgA));
             $this->postJson('/api/v1/keluhan', $this->payload())->assertForbidden();
             $this->deleteJson("/api/v1/keluhan/{$keluhan->id}")->assertForbidden();
         }
@@ -166,7 +165,7 @@ class KeluhanTest extends TestCase
         // Relawan: CR saja.
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Dapur);
         $milik = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA, 'dicatat_oleh' => $relawan->id]);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
         $this->patchJson("/api/v1/keluhan/{$milik->id}", ['status' => 'diproses'])->assertForbidden();
         $this->deleteJson("/api/v1/keluhan/{$milik->id}")->assertForbidden();
     }
@@ -176,7 +175,7 @@ class KeluhanTest extends TestCase
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
         $milik = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA, 'dicatat_oleh' => $relawan->id]);
         $lain = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA]);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         $this->getJson('/api/v1/keluhan')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $milik->id);
         $this->getJson("/api/v1/keluhan/{$milik->id}")->assertOk();
@@ -189,7 +188,7 @@ class KeluhanTest extends TestCase
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $keluhan = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA]);
         $url = "/api/v1/keluhan/{$keluhan->id}";
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         // baru -> selesai / ditolak langsung tidak valid
         $this->patchJson($url, ['status' => 'selesai', 'tindak_lanjut' => 'x'])->assertUnprocessable()->assertJsonValidationErrors('status');
@@ -221,7 +220,7 @@ class KeluhanTest extends TestCase
     {
         $ahliGizi = $this->pengguna(Role::AhliGizi, $this->sppgA);
         $keluhan = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA, 'status' => StatusKeluhan::Diproses]);
-        Sanctum::actingAs($ahliGizi);
+        $this->masukPenuh($ahliGizi);
 
         $this->patchJson("/api/v1/keluhan/{$keluhan->id}", ['status' => 'ditolak'])->assertUnprocessable()->assertJsonValidationErrors('tindak_lanjut');
         $this->putJson("/api/v1/keluhan/{$keluhan->id}", ['status' => 'ditolak', 'tindak_lanjut' => 'Bukan dari SPPG ini'])->assertOk()
@@ -234,7 +233,7 @@ class KeluhanTest extends TestCase
     {
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $keluhan = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA, 'deskripsi' => 'Asli']);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->patchJson("/api/v1/keluhan/{$keluhan->id}", [
             'deskripsi' => 'Diubah', 'kategori' => 'makanan_basi', 'prioritas' => 'kritis', 'sppg_id' => $this->sppgB, 'tindak_lanjut' => 'Dicek',
@@ -251,7 +250,7 @@ class KeluhanTest extends TestCase
         $admin = $this->pengguna(Role::Admin, $this->sppgA);
         $jadwal = JadwalProduksi::factory()->create(['sppg_id' => $this->sppgB]);
         $titikA = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA]);
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
 
         // sppg_id wajib untuk admin
         $this->postJson('/api/v1/keluhan', $this->payload())->assertUnprocessable()->assertJsonValidationErrors('sppg_id');
@@ -283,14 +282,14 @@ class KeluhanTest extends TestCase
         $keluhan = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA]);
         FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgB]);
 
-        Sanctum::actingAs($kepalaB);
+        $this->masukPenuh($kepalaB);
         $this->getJson("/api/v1/keluhan/{$keluhan->id}")->assertNotFound();
         $this->patchJson("/api/v1/keluhan/{$keluhan->id}", ['status' => 'diproses'])->assertNotFound();
         $this->deleteJson("/api/v1/keluhan/{$keluhan->id}")->assertNotFound();
         $this->getJson('/api/v1/keluhan')->assertOk()->assertJsonCount(1, 'data');
         $this->getJson("/api/v1/keluhan?sppg_id={$this->sppgA}")->assertOk()->assertJsonCount(1, 'data');
 
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->getJson('/api/v1/keluhan')->assertOk()->assertJsonCount(2, 'data');
         $this->getJson("/api/v1/keluhan?sppg_id={$this->sppgA}")->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $keluhan->id);
         $this->getJson("/api/v1/keluhan/{$keluhan->id}")->assertOk();
@@ -302,7 +301,7 @@ class KeluhanTest extends TestCase
         FeedbackKeluhan::factory()->count(3)->create(['sppg_id' => $this->sppgA, 'created_at' => '2026-11-01 08:00:00']);
         FeedbackKeluhan::factory()->kritis()->create(['sppg_id' => $this->sppgA, 'created_at' => '2026-11-03 08:00:00', 'deskripsi' => 'Ayam bau tengik']);
         FeedbackKeluhan::factory()->selesai()->create(['sppg_id' => $this->sppgA, 'created_at' => '2026-11-05 08:00:00']);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->getJson('/api/v1/keluhan')->assertOk()->assertJsonPath('meta.total', 5);
         $this->getJson('/api/v1/keluhan?status=selesai')->assertOk()->assertJsonCount(1, 'data');
@@ -325,7 +324,7 @@ class KeluhanTest extends TestCase
         FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA, 'status' => StatusKeluhan::Ditolak, 'tindak_lanjut' => 'x']);
         FeedbackKeluhan::factory()->kritis()->selesai()->create(['sppg_id' => $this->sppgA]);
         FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgB]);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->getJson('/api/v1/keluhan/ringkasan')->assertOk()->assertExactJson(['data' => [
             'total' => 7,
@@ -345,14 +344,14 @@ class KeluhanTest extends TestCase
         $keluhan = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA]);
         $draf2 = AiDraft::factory()->create(['sppg_id' => $this->sppgA, 'user_id' => $kepala->id, 'module' => 'keluhan', 'action' => 'update', 'target_id' => $keluhan->id]);
 
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
         // draf modul lain ditolak dan tidak ada keluhan yang tersimpan (transaksi dibatalkan)
         $this->postJson('/api/v1/keluhan', $this->payload(['ai_draft_id' => $drafLain->uuid]))->assertUnprocessable()->assertJsonValidationErrors('ai_draft_id');
         $this->assertSame(1, FeedbackKeluhan::query()->count());
         $this->postJson('/api/v1/keluhan', $this->payload(['ai_draft_id' => $draf1->uuid]))->assertCreated();
         $this->assertSame(StatusAiDraft::Confirmed, $draf1->fresh()->status);
 
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->patchJson("/api/v1/keluhan/{$keluhan->id}", ['status' => 'diproses', 'ai_draft_id' => $draf2->uuid])->assertOk();
         $this->assertSame(StatusAiDraft::Confirmed, $draf2->fresh()->status);
     }
@@ -360,7 +359,7 @@ class KeluhanTest extends TestCase
     public function test_skema_kritis_wajib_batch_tidak_mempengaruhi_keluhan_non_kritis(): void
     {
         $relawan = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Dapur);
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         $this->postJson('/api/v1/keluhan', $this->payload(['kategori' => 'rasa']))->assertCreated()->assertJsonPath('data.jadwal_produksi_id', null);
         $this->assertSame(PrioritasKeluhan::Rendah, FeedbackKeluhan::query()->first()->prioritas);

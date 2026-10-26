@@ -28,7 +28,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Laravel\Sanctum\Sanctum;
 use Tests\Support\SkenarioOperasional;
 use Tests\TestCase;
 
@@ -147,7 +146,7 @@ class RekapHarianTest extends TestCase
     {
         $this->isiHari($this->sppgA);
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson('/api/v1/rekap-harian', ['tanggal' => self::HARI, 'catatan' => 'Hujan deras'])
             ->assertCreated()
@@ -175,7 +174,7 @@ class RekapHarianTest extends TestCase
     public function test_susun_tanpa_tanggal_memakai_hari_ini_wib_dan_tidak_boleh_masa_depan(): void
     {
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson('/api/v1/rekap-harian')->assertCreated()->assertJsonPath('data.tanggal', self::HARI);
         $this->postJson('/api/v1/rekap-harian', ['tanggal' => '2026-11-03'])->assertUnprocessable()->assertJsonValidationErrors('tanggal');
@@ -187,7 +186,7 @@ class RekapHarianTest extends TestCase
     {
         Event::fake([RekapHarianDibuat::class]);
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson('/api/v1/rekap-harian', ['tanggal' => self::HARI])->assertCreated();
         Event::assertNotDispatched(RekapHarianDibuat::class);
@@ -202,7 +201,7 @@ class RekapHarianTest extends TestCase
 
         // R saja: admin, ahli_gizi, akuntan
         foreach ([Role::Admin, Role::AhliGizi, Role::Akuntan] as $role) {
-            Sanctum::actingAs($this->pengguna($role, $this->sppgA));
+            $this->masukPenuh($this->pengguna($role, $this->sppgA));
             $this->getJson('/api/v1/rekap-harian')->assertOk();
             $this->getJson("/api/v1/rekap-harian/{$rekap->id}")->assertOk();
             $this->postJson('/api/v1/rekap-harian', ['tanggal' => self::HARI])->assertForbidden();
@@ -212,7 +211,7 @@ class RekapHarianTest extends TestCase
 
         // tanpa akses: staf_gudang, relawan (unit apa pun)
         foreach ([[Role::StafGudang, null], [Role::Relawan, RelawanUnit::Dapur], [Role::Relawan, RelawanUnit::Distribusi]] as [$role, $unit]) {
-            Sanctum::actingAs($this->pengguna($role, $this->sppgA, $unit));
+            $this->masukPenuh($this->pengguna($role, $this->sppgA, $unit));
             $this->getJson('/api/v1/rekap-harian')->assertForbidden();
             $this->getJson("/api/v1/rekap-harian/{$rekap->id}")->assertForbidden();
             $this->getJson('/api/v1/rekap-harian/ringkasan')->assertForbidden();
@@ -226,7 +225,7 @@ class RekapHarianTest extends TestCase
     {
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $rekap = RekapHarian::factory()->create(['sppg_id' => $this->sppgA, 'catatan' => null]);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->patchJson("/api/v1/rekap-harian/{$rekap->id}", [])->assertUnprocessable()->assertJsonValidationErrors('catatan');
         $this->patchJson("/api/v1/rekap-harian/{$rekap->id}", ['catatan' => 'Distribusi lancar'])->assertOk()->assertJsonPath('data.catatan', 'Distribusi lancar');
@@ -239,7 +238,7 @@ class RekapHarianTest extends TestCase
         Event::fake([RekapHarianDibuat::class]);
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $rekap = RekapHarian::factory()->create(['sppg_id' => $this->sppgA, 'status_kirim' => StatusKirim::Terkirim, 'dikirim_pada' => now()]);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson("/api/v1/rekap-harian/{$rekap->id}/kirim-ulang")->assertOk()->assertJsonPath('data.status_kirim', 'menunggu')->assertJsonPath('data.dikirim_pada', null);
         Event::assertDispatched(RekapHarianDibuat::class, fn (RekapHarianDibuat $e) => $e->id === $rekap->id && $e->sppgId === $this->sppgA);
@@ -252,7 +251,7 @@ class RekapHarianTest extends TestCase
         $rekapA = RekapHarian::factory()->create(['sppg_id' => $this->sppgA]);
         RekapHarian::factory()->create(['sppg_id' => $this->sppgB, 'tanggal' => '2026-11-01']);
 
-        Sanctum::actingAs($kepalaB);
+        $this->masukPenuh($kepalaB);
         $this->getJson("/api/v1/rekap-harian/{$rekapA->id}")->assertNotFound();
         $this->patchJson("/api/v1/rekap-harian/{$rekapA->id}", ['catatan' => 'x'])->assertNotFound();
         $this->postJson("/api/v1/rekap-harian/{$rekapA->id}/kirim-ulang")->assertNotFound();
@@ -260,7 +259,7 @@ class RekapHarianTest extends TestCase
         // sppg_id di body/query diabaikan untuk non-admin: rekap milik SPPG B, bukan A.
         $this->postJson('/api/v1/rekap-harian', ['tanggal' => self::HARI, 'sppg_id' => $this->sppgA])->assertCreated()->assertJsonPath('data.sppg_id', $this->sppgB);
 
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->getJson('/api/v1/rekap-harian')->assertOk()->assertJsonCount(3, 'data');
         $this->getJson("/api/v1/rekap-harian?sppg_id={$this->sppgA}")->assertOk()->assertJsonCount(1, 'data');
         $this->getJson("/api/v1/rekap-harian/{$rekapA->id}")->assertOk();
@@ -272,7 +271,7 @@ class RekapHarianTest extends TestCase
         foreach (['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02'] as $tgl) {
             RekapHarian::factory()->create(['sppg_id' => $this->sppgA, 'tanggal' => $tgl]);
         }
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->getJson('/api/v1/rekap-harian')->assertOk()->assertJsonPath('data.0.tanggal', '2026-11-02')->assertJsonPath('meta.total', 4);
         $this->getJson('/api/v1/rekap-harian?from=2026-10-31&to=2026-11-01')->assertOk()->assertJsonCount(2, 'data');
@@ -286,15 +285,15 @@ class RekapHarianTest extends TestCase
         $akuntan = $this->pengguna(Role::Akuntan, $this->sppgA);
         $admin = $this->pengguna(Role::Admin, $this->sppgA);
 
-        Sanctum::actingAs($akuntan);
+        $this->masukPenuh($akuntan);
         $this->getJson('/api/v1/rekap-harian/ringkasan?tanggal='.self::HARI)->assertOk()->assertJsonPath('data.porsi.realisasi', 570)->assertJsonPath('data.distribusi.terlambat', 1);
         $this->assertSame(0, RekapHarian::query()->count(), 'ringkasan dasbor tidak menyimpan');
 
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->getJson('/api/v1/rekap-harian/ringkasan')->assertOk()->assertJsonPath('data.tanggal', self::HARI)->assertJsonPath('data.sppg_id', $this->sppgA);
         $this->getJson('/api/v1/rekap-harian/ringkasan?tanggal=2026-12-01')->assertUnprocessable()->assertJsonValidationErrors('tanggal');
 
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->getJson('/api/v1/rekap-harian/ringkasan')->assertUnprocessable()->assertJsonValidationErrors('sppg_id');
         $this->getJson("/api/v1/rekap-harian/ringkasan?sppg_id={$this->sppgA}")->assertOk()->assertJsonPath('data.porsi.target', 1000);
     }
@@ -303,7 +302,7 @@ class RekapHarianTest extends TestCase
     {
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA, 'user_id' => $kepala->id, 'module' => 'rekap-harian']);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson('/api/v1/rekap-harian', ['ai_draft_id' => (string) Str::uuid()])->assertUnprocessable()->assertJsonValidationErrors('ai_draft_id');
         $this->assertSame(0, RekapHarian::query()->count());

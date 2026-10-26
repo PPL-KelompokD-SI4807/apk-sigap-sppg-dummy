@@ -18,7 +18,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Laravel\Sanctum\Sanctum;
 use Tests\Support\SkenarioOperasional;
 use Tests\TestCase;
 
@@ -49,7 +48,7 @@ class NotifikasiPerjalananTest extends TestCase
         $kurir = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
         $jadwal = $this->jadwalSiap($this->sppgA, ['jarak_km' => 5, 'pic_telegram_chat_id' => 900000123, 'nama' => 'SDN Contoh 3']);
         Carbon::setTestNow(Carbon::parse('2026-11-02 08:30:00', 'Asia/Jakarta'));
-        Sanctum::actingAs($kurir);
+        $this->masukPenuh($kurir);
 
         // 5 km / 30 km/jam = 10 menit + buffer 5 = 15 menit.
         $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id, 'sppg_id' => $this->sppgB])
@@ -83,7 +82,7 @@ class NotifikasiPerjalananTest extends TestCase
     {
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $jadwal = $this->jadwalSiap($this->sppgA);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id])
             ->assertCreated()
@@ -96,7 +95,7 @@ class NotifikasiPerjalananTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-11-02 08:31:00', 'Asia/Jakarta'));
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $jadwal = $this->jadwalSiap($this->sppgA);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         // 01:30 UTC = 08:30 WIB
         $this->postJson('/api/v1/notifikasi-perjalanan', [
@@ -115,7 +114,7 @@ class NotifikasiPerjalananTest extends TestCase
         Event::fake([PerjalananDimulai::class]);
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $jadwal = $this->jadwalSiap($this->sppgA);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson('/api/v1/notifikasi-perjalanan/pratinjau', ['jadwal_distribusi_id' => $jadwal->id])
             ->assertOk()
@@ -134,7 +133,7 @@ class NotifikasiPerjalananTest extends TestCase
         $tidakLayak = $this->jadwalSiap($this->sppgA, [], [], layak: false);
         $siap = $this->jadwalSiap($this->sppgA);
         $lain = $this->jadwalSiap($this->sppgB);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->postJson('/api/v1/notifikasi-perjalanan', [])->assertUnprocessable()->assertJsonValidationErrors('jadwal_distribusi_id');
         $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $menunggu->id])->assertUnprocessable()->assertJsonValidationErrors('jadwal_distribusi_id');
@@ -160,13 +159,13 @@ class NotifikasiPerjalananTest extends TestCase
         ];
 
         foreach ($penolak as $user) {
-            Sanctum::actingAs($user);
+            $this->masukPenuh($user);
             $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id])->assertForbidden();
             $this->postJson('/api/v1/notifikasi-perjalanan/pratinjau', ['jadwal_distribusi_id' => $jadwal->id])->assertForbidden();
         }
 
         foreach (array_slice($penolak, 1) as $user) {
-            Sanctum::actingAs($user);
+            $this->masukPenuh($user);
             $this->getJson('/api/v1/notifikasi-perjalanan')->assertForbidden();
         }
     }
@@ -176,7 +175,7 @@ class NotifikasiPerjalananTest extends TestCase
         Event::fake([PerjalananDimulai::class, PerjalananTiba::class]);
         $kurir = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
         $jadwal = $this->jadwalSiap($this->sppgA);
-        Sanctum::actingAs($kurir);
+        $this->masukPenuh($kurir);
 
         $id = $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id])->json('data.id');
         $url = "/api/v1/notifikasi-perjalanan/{$id}/status";
@@ -202,7 +201,7 @@ class NotifikasiPerjalananTest extends TestCase
     {
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $jadwal = $this->jadwalSiap($this->sppgA);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $id = $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id])->json('data.id');
         $url = "/api/v1/notifikasi-perjalanan/{$id}/status";
@@ -226,14 +225,14 @@ class NotifikasiPerjalananTest extends TestCase
         $n1 = NotifikasiPerjalanan::factory()->create(['sppg_id' => $this->sppgA, 'jadwal_distribusi_id' => $j1->id, 'dipicu_oleh' => $kurir1->id]);
         $n2 = NotifikasiPerjalanan::factory()->create(['sppg_id' => $this->sppgA, 'jadwal_distribusi_id' => $j2->id, 'dipicu_oleh' => $kurir2->id]);
 
-        Sanctum::actingAs($kurir1);
+        $this->masukPenuh($kurir1);
         $this->getJson('/api/v1/notifikasi-perjalanan')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $n1->id);
         $this->getJson("/api/v1/notifikasi-perjalanan/{$n1->id}")->assertOk();
         $this->getJson("/api/v1/notifikasi-perjalanan/{$n2->id}")->assertForbidden();
         $this->postJson("/api/v1/notifikasi-perjalanan/{$n2->id}/status", ['status' => 'dalam_perjalanan'])->assertForbidden();
         $this->assertSame(StatusPerjalanan::Berangkat, $n2->fresh()->status_perjalanan);
 
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->getJson('/api/v1/notifikasi-perjalanan')->assertOk()->assertJsonCount(2, 'data');
         $this->postJson("/api/v1/notifikasi-perjalanan/{$n2->id}/status", ['status' => 'dalam_perjalanan'])->assertOk();
     }
@@ -245,12 +244,12 @@ class NotifikasiPerjalananTest extends TestCase
         $jadwal = $this->jadwalSiap($this->sppgA);
         $n = NotifikasiPerjalanan::factory()->create(['sppg_id' => $this->sppgA, 'jadwal_distribusi_id' => $jadwal->id]);
 
-        Sanctum::actingAs($kepalaB);
+        $this->masukPenuh($kepalaB);
         $this->getJson("/api/v1/notifikasi-perjalanan/{$n->id}")->assertNotFound();
         $this->postJson("/api/v1/notifikasi-perjalanan/{$n->id}/status", ['status' => 'dalam_perjalanan'])->assertNotFound();
         $this->getJson('/api/v1/notifikasi-perjalanan')->assertOk()->assertJsonCount(0, 'data');
 
-        Sanctum::actingAs($admin);
+        $this->masukPenuh($admin);
         $this->getJson("/api/v1/notifikasi-perjalanan/{$n->id}")->assertOk()->assertJsonPath('data.sppg_id', $this->sppgA);
         $this->getJson('/api/v1/notifikasi-perjalanan')->assertOk()->assertJsonCount(1, 'data');
         $this->postJson("/api/v1/notifikasi-perjalanan/{$n->id}/status", ['status' => 'dalam_perjalanan'])->assertForbidden();
@@ -268,7 +267,7 @@ class NotifikasiPerjalananTest extends TestCase
         }
         $kemarin = $this->jadwalSiap($this->sppgA);
         NotifikasiPerjalanan::factory()->tiba()->create(['sppg_id' => $this->sppgA, 'jadwal_distribusi_id' => $kemarin->id, 'titik_layanan_id' => $titik, 'waktu_berangkat' => '2026-11-02 07:00:00', 'estimasi_tiba' => '2026-11-02 07:30:00']);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->getJson('/api/v1/notifikasi-perjalanan')->assertOk()->assertJsonCount(3, 'data')->assertJsonPath('meta.total', 3);
         $this->getJson('/api/v1/notifikasi-perjalanan?tanggal=2026-11-02')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.status', 'tiba');
@@ -284,7 +283,7 @@ class NotifikasiPerjalananTest extends TestCase
         $jadwal = $this->jadwalSiap($this->sppgA);
         NotifikasiPerjalanan::factory()->tiba()->create(['sppg_id' => $this->sppgA, 'jadwal_distribusi_id' => $jadwal->id, 'waktu_berangkat' => now()->subHours(3)]);
         $terbaru = NotifikasiPerjalanan::factory()->dalamPerjalanan()->create(['sppg_id' => $this->sppgA, 'jadwal_distribusi_id' => $jadwal->id, 'waktu_berangkat' => now()->subHour()]);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->getJson("/api/v1/notifikasi-perjalanan/terakhir?jadwal_distribusi_id={$jadwal->id}")
             ->assertOk()->assertJsonPath('data.id', $terbaru->id)->assertJsonPath('data.status', 'dalam_perjalanan');
@@ -296,7 +295,7 @@ class NotifikasiPerjalananTest extends TestCase
         $kurir = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
         $jadwal = $this->jadwalSiap($this->sppgA);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA, 'user_id' => $kurir->id, 'module' => 'notifikasi-perjalanan']);
-        Sanctum::actingAs($kurir);
+        $this->masukPenuh($kurir);
 
         $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id, 'ai_draft_id' => (string) Str::uuid()])
             ->assertUnprocessable()->assertJsonValidationErrors('ai_draft_id');
@@ -339,7 +338,7 @@ class NotifikasiPerjalananTest extends TestCase
     {
         $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
         $n = NotifikasiPerjalanan::factory()->estimasiLewat()->create(['sppg_id' => $this->sppgA]);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
 
         $this->getJson("/api/v1/notifikasi-perjalanan/{$n->id}")->assertOk()->assertJsonPath('data.terlambat', true);
     }
