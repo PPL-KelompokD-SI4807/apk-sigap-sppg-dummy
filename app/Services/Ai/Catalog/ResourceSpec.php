@@ -38,6 +38,8 @@ final class ResourceSpec
      * @param  list<string>  $exclude  kolom form yang tidak ditawarkan ke LLM
      * @param  list<string>  $initials  nama kolom hasil ($list/$detail) yang disajikan sebagai inisial
      *                                  (nama orang, mis. anak penerima manfaat; UU PDP)
+     * @param  list<string>  $personalText  kolom teks bebas yang dapat memuat data pribadi; disamarkan
+     *                                      RecordPresenter::redactPersonal() dan dipotong sebelum ke LLM
      */
     public function __construct(
         public readonly string $key,
@@ -62,6 +64,7 @@ final class ResourceSpec
         public readonly array $hints = [],
         public readonly array $exclude = [],
         public readonly array $initials = [],
+        public readonly array $personalText = [],
     ) {}
 
     public function toolName(string $letter): string

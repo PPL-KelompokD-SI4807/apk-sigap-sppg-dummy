@@ -1,5 +1,6 @@
 import { api, setToken, getToken, ApiError } from './api.js';
 import { getTg } from './telegram.js';
+import { hapusSppgAktif } from './sppg-aktif.js';
 
 let user = null;
 export const getUser = () => user;
@@ -130,6 +131,7 @@ export async function logout() {
 export function bersihkanSesi() {
   setToken(null);
   setJenis(null);
+  hapusSppgAktif();
   user = null;
 }
 export const isLoggedIn = () => !!getToken() && !!user;

@@ -68,13 +68,16 @@ return [
      |  - 'rbac'     : slug modul pada config/rbac.php untuk hak unggah tertunda.
      |  - 'kategori' : daftar kategori yang diizinkan (kategori kosong -> kategori pertama).
      |  - 'maks'     : jumlah maksimum lampiran per record (default 5).
+     |  - 'sembunyikan_dari_peran' : peran yang boleh membaca record induk tetapi TIDAK boleh melihat
+     |                 lampirannya (R06a-S-05: foto keluhan/mutu dapat memuat wajah/nama anak). Lampiran
+     |                 dikosongkan di resource dan GET /lampiran/{id} membalas 403 `lampiran_disembunyikan`.
      */
     'modul' => [
         'bukti-distribusi' => ['model' => BuktiDistribusi::class, 'ability' => 'update'],
         'keuangan-pencairan' => ['model' => PencairanDana::class, 'ability' => 'update'],
         'keuangan-pengeluaran' => ['model' => Pengeluaran::class, 'ability' => 'update'],
-        'keluhan' => ['model' => FeedbackKeluhan::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'keluhan', 'kategori' => ['foto'], 'maks' => 5],
-        'mutu' => ['model' => PemeriksaanMutu::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'mutu', 'kategori' => ['foto'], 'maks' => 5],
+        'keluhan' => ['model' => FeedbackKeluhan::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'keluhan', 'kategori' => ['foto'], 'maks' => 5, 'sembunyikan_dari_peran' => ['investor']],
+        'mutu' => ['model' => PemeriksaanMutu::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'mutu', 'kategori' => ['foto'], 'maks' => 5, 'sembunyikan_dari_peran' => ['investor']],
         'log-produksi' => ['model' => LogProduksi::class, 'ability' => 'update', 'tertunda' => true, 'rbac' => 'log-produksi', 'kategori' => ['foto'], 'maks' => 5],
     ],
 

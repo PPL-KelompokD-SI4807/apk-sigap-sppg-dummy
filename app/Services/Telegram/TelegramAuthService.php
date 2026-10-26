@@ -152,7 +152,7 @@ class TelegramAuthService
             'telegram_username' => $key,
             'role' => $role,
             'unit' => $unit,
-            'sppg_id' => $role === Role::Admin ? null : $this->demoSppgId(),
+            'sppg_id' => $role->tanpaSppgId() ? null : $this->demoSppgId(),
             'is_active' => true,
         ]);
     }

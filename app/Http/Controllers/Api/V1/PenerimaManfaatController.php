@@ -10,11 +10,14 @@ use App\Http\Resources\PenerimaManfaat\PenerimaManfaatResource;
 use App\Models\PenerimaManfaat;
 use App\Models\TitikLayanan;
 use App\Services\Ai\AiDraftConfirmer;
+use App\Services\PenerimaManfaat\AgregatPenerimaService;
+use App\Support\Rbac;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /**
  * Modul 5 Penerima Manfaat (Admin CRUD, Kepala SPPG CRU, Ahli Gizi R). Tanpa NIK.
@@ -48,6 +51,31 @@ class PenerimaManfaatController extends ApiController
         }
 
         return PenerimaManfaatResource::collection($this->paginate($query, $request));
+    }
+
+    /**
+     * GET /penerima-manfaat/agregat (R-06a): jumlah penerima AKTIF per kelompok sasaran dan per
+     * titik layanan untuk SPPG aktif. HANYA hitungan: tanpa nama, kelas, catatan alergi, atau ID
+     * penerima. Admin wajib ?sppg_id=; peran lain memakai SPPG aktif (investor: header X-SPPG-Id).
+     * Peran yang hanya punya hak agregat (investor) menerima sel kecil tersamar (R06a-S-02).
+     */
+    public function agregat(Request $request, AgregatPenerimaService $agregat): JsonResponse
+    {
+        $this->authorize('viewAgregat', PenerimaManfaat::class);
+
+        $user = $request->user();
+        $data = $request->validate([
+            'sppg_id' => $user->isAdmin()
+                ? ['required', 'integer', Rule::exists('sppgs', 'id')->whereNull('deleted_at')]
+                : ['exclude'],
+        ]);
+
+        $sppgId = $user->isAdmin() ? (int) $data['sppg_id'] : (int) $user->sppgAktifId();
+        abort_if($sppgId === 0, 403);
+
+        $samarkan = in_array('penerima-manfaat', Rbac::aggregateOnlyModules($user), true);
+
+        return response()->json(['data' => $agregat->hitung($sppgId, $samarkan)]);
     }
 
     public function show(PenerimaManfaat $penerimaManfaat): PenerimaManfaatResource

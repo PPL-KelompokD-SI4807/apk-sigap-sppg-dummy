@@ -6,6 +6,7 @@ import { rowCard } from '../../components/row-card.js';
 import { h } from '../../core/dom.js';
 import { api } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
+import { lampiranDisembunyikan } from '../../core/lampiran-uploader.js';
 import { resolve } from '../../core/router.js';
 import { tanggalJamWIB } from '../../core/waktu.js';
 import {
@@ -129,7 +130,7 @@ export default defineCrudModule({
     if (p.U && transisiValid(rec.status).length && getUser()?.role !== 'admin') {
       nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/keluhan/${rec.id}/ubah` }, rec.status === 'baru' ? 'Proses keluhan' : 'Selesaikan / tolak dengan catatan'));
     }
-    if ((rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto keluhan' }));
+    if (lampiranDisembunyikan(getUser(), rec) || (rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ disembunyikan: lampiranDisembunyikan(getUser(), rec), modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto keluhan' }));
     return nodes;
   },
 });

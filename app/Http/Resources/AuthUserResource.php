@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\DB;
 /**
  * Profil pengguna login + hak akses efektif (dipakai Mini App untuk menu & tombol).
  *
+ * R-06a: `sppg_aktif_id` = SPPG tempat data dibatasi pada permintaan ini (investor: dari header
+ * X-SPPG-Id tervalidasi / SPPG satu-satunya; null = belum dipilih atau admin). `multi_sppg` = true
+ * bila pengguna wajib memilih SPPG aktif lewat GET /sppg-saya. `baca_saja` = tanpa hak C/U/D di
+ * modul mana pun. `agregat` = modul yang hanya boleh dibaca agregatnya (mis. penerima-manfaat).
+ *
  * @mixin User
  */
 class AuthUserResource extends JsonResource
@@ -30,20 +35,26 @@ class AuthUserResource extends JsonResource
             'unit' => $user->unit?->value,
             'sppg_id' => $user->sppg_id,
             'sppg_name' => $this->sppgName($user),
+            'sppg_aktif_id' => $user->sppgAktifId(),
+            'multi_sppg' => $user->isInvestor(),
             'telegram_username' => $user->telegram_username,
             'last_login_at' => $user->last_login_at?->toIso8601String(),
             'modules' => Rbac::allowedModules($user),
             'permissions' => Rbac::permissions($user),
+            'baca_saja' => Rbac::readOnly($user),
+            'agregat' => Rbac::aggregateOnlyModules($user),
         ];
     }
 
     private function sppgName(User $user): ?string
     {
-        if ($user->sppg_id === null) {
+        $sppgId = $user->sppgAktifId();
+
+        if ($sppgId === null) {
             return null;
         }
 
-        $name = DB::table('sppgs')->where('id', $user->sppg_id)->value('nama');
+        $name = DB::table('sppgs')->where('id', $sppgId)->value('nama');
 
         return $name === null ? null : (string) $name;
     }

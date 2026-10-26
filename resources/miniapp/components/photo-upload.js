@@ -3,6 +3,7 @@
 // Bagian murni (tanpa DOM) diekspor agar dapat diuji dengan node --test.
 import { h } from '../core/dom.js';
 import { getToken, newKey } from '../core/api.js';
+import { terapkanHeaderSppg, getSppgAktif } from '../core/sppg-aktif.js';
 
 export const MAX_SIDE = 1600;
 export const QUALITY = 0.8;
@@ -119,13 +120,19 @@ function trackUrl(url) {
 const release = (url) => { if (url && tracked.delete(url)) URL.revokeObjectURL(url); };
 
 /** Ambil gambar privat: fetch + Authorization -> Blob. Galat memuat pesan Indonesia. */
-export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token = getToken() } = {}) {
+export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token = getToken(), sppgId = getSppgAktif() } = {}) {
   if (!lampiranPath(path)) throw new Error('Alamat berkas tidak valid.');
   let res;
   try {
-    res = await fetchFn(path, { headers: { Accept: 'image/*', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+    res = await fetchFn(path, { headers: terapkanHeaderSppg({ Accept: 'image/*', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, sppgId) });
   } catch { throw new Error('Tidak ada koneksi internet.'); }
   if (!res.ok) {
+    // 403 lampiran_disembunyikan (Investor) bukan galat SPPG aktif: pilihan SPPG tidak dihapus.
+    if (res.status === 403) {
+      let alasan = null;
+      try { alasan = (await res.json())?.alasan; } catch { /* bukan JSON */ }
+      if (alasan === 'lampiran_disembunyikan') throw new Error('Foto tidak ditampilkan untuk peran Anda.');
+    }
     throw new Error(res.status === 404 ? 'Berkas tidak ditemukan.' : res.status === 403 ? 'Anda tidak punya hak akses ke berkas ini.' : `Berkas gagal dimuat (${res.status}).`);
   }
   const blob = await res.blob();
@@ -150,7 +157,7 @@ export function createAuthImage(berkas, { alt = 'Foto', caption = null } = {}) {
       fig.insertBefore(img, fig.firstChild);
       state.hidden = true;
     } catch (e) {
-      state.replaceChildren(`${e.message} `, h('button', { class: 'link', type: 'button', onclick: load }, 'Coba lagi'));
+      state.replaceChildren(`${e.message} `, /hak akses/.test(e.message) ? null : h('button', { class: 'link', type: 'button', onclick: load }, 'Coba lagi'));
     }
   }
   if (path) load(); else state.textContent = 'Foto tidak tersedia.';

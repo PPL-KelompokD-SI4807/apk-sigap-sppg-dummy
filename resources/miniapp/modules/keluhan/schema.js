@@ -145,7 +145,7 @@ export function keluhanFields({ mode, user, record }) {
       help: 'Bila diketahui. Wajib untuk keluhan kritis kecuali titik layanan dipilih atau batch tidak diketahui.',
       validate: mode === 'create' ? (v, all) => validasiBatch(all) : undefined,
     },
-    { name: 'deskripsi', label: 'Deskripsi', type: 'textarea', required: true, maxlength: 2000 },
+    { name: 'deskripsi', label: 'Deskripsi', type: 'textarea', required: true, maxlength: 2000, help: 'Jangan menulis nama anak atau nomor telepon.' },
   ];
   if (mode === 'create') return isi;
   // Admin ubah: semua kolom + prioritas + tindak lanjut

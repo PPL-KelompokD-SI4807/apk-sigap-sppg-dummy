@@ -61,6 +61,43 @@ class DemoSeeder extends Seeder
 
             DB::transaction(fn () => $this->buatSppg($indeks + 1, $profil));
         }
+
+        DB::transaction(fn () => $this->investorDemo());
+    }
+
+    /**
+     * R-06a: investor fiktif. "Investor Satu" memiliki SPPG-DEMO-01 dan -02; "Investor Dua" hanya
+     * memiliki SPPG-DEMO-03 (SPPG ringkas tanpa data operasional) untuk uji akses lintas investor.
+     * Investor selalu sppg_id null; kepemilikan hanya lewat pivot investor_sppg.
+     */
+    private function investorDemo(): void
+    {
+        $ketiga = Sppg::firstOrCreate(['kode' => 'SPPG-DEMO-03'], [
+            'nama' => 'SPPG Anggrek Demo',
+            'alamat' => 'Jl. Uji Coba No. 3, Kota Contoh',
+            'mitra_yayasan' => 'Yayasan Contoh Lestari',
+            'telepon' => '0812-0000-0300',
+            'kapasitas_porsi_harian' => 1000,
+            'status_operasional' => 'aktif',
+        ]);
+
+        $milik = [
+            [9_000_000_901, 'investor_satu_demo', 'Investor Satu (Demo)', '0812-0000-0901', ['SPPG-DEMO-01', 'SPPG-DEMO-02']],
+            [9_000_000_902, 'investor_dua_demo', 'Investor Dua (Demo)', '0812-0000-0902', [$ketiga->kode]],
+        ];
+
+        foreach ($milik as [$telegramId, $username, $nama, $telepon, $kode]) {
+            $investor = User::withoutGlobalScopes()->where('telegram_id', $telegramId)->first()
+                ?? User::factory()->role(Role::Investor)->create([
+                    'sppg_id' => null,
+                    'telegram_id' => $telegramId,
+                    'telegram_username' => $username,
+                    'name' => $nama,
+                    'phone' => $telepon,
+                ]);
+
+            $investor->sppgDimiliki()->syncWithoutDetaching(Sppg::whereIn('kode', $kode)->pluck('id')->all());
+        }
     }
 
     /** @return list<array<string, mixed>> */

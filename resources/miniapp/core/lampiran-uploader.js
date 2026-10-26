@@ -127,3 +127,6 @@ export function bodyUnggahTertunda({ modul, kategori, file, sppgId }) {
 
 /** `lampiran_ids` untuk payload store/update: undefined bila kosong (tidak dikirim). */
 export const lampiranIdsPayload = (ids) => (Array.isArray(ids) && ids.length ? [...new Set(ids.map(Number))] : undefined);
+
+/** Investor tidak boleh melihat/mengunggah lampiran foto (backend 403): sembunyikan seluruh bagian lampiran. */
+export const lampiranDisembunyikan = (user, rec = null) => user?.role === 'investor' || rec?.lampiran_disembunyikan === true;

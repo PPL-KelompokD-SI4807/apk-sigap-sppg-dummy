@@ -49,7 +49,7 @@ class RekapHarianController extends ApiController
                 : ['exclude'],
         ]);
 
-        $sppgId = $user->isAdmin() ? (int) $data['sppg_id'] : (int) $user->sppg_id;
+        $sppgId = $user->isAdmin() ? (int) $data['sppg_id'] : (int) $user->sppgAktifId();
         abort_if($sppgId === 0, 403);
 
         return response()->json(['data' => $this->service->hitung($sppgId, $data['tanggal'] ?? null)]);

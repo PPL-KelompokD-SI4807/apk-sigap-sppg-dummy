@@ -4,6 +4,7 @@ namespace App\Http\Resources\Mutu;
 
 use App\Http\Resources\LampiranResource;
 use App\Models\PemeriksaanMutu;
+use App\Support\LampiranTersembunyi;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -16,6 +17,7 @@ class PemeriksaanMutuResource extends JsonResource
         /** @var PemeriksaanMutu $m */
         $m = $this->resource;
         $jadwal = $m->relationLoaded('jadwalProduksi') ? $m->jadwalProduksi : null;
+        $lampiranTersembunyi = LampiranTersembunyi::untuk($request->user(), 'mutu');
 
         return [
             'id' => $m->id,
@@ -45,7 +47,9 @@ class PemeriksaanMutuResource extends JsonResource
             'hasil' => $m->hasil?->value,
             'hasil_label' => $m->hasil?->label(),
             'tindakan_korektif' => $m->tindakan_korektif,
-            'lampiran' => LampiranResource::collection($this->whenLoaded('lampirans', fn () => $m->lampirans, [])),
+            // R06a-S-05: foto pemeriksaan mutu disembunyikan dari investor; data mutu tetap terlihat.
+            'lampiran' => $lampiranTersembunyi ? [] : LampiranResource::collection($this->whenLoaded('lampirans', fn () => $m->lampirans, [])),
+            'lampiran_disembunyikan' => $lampiranTersembunyi,
             'catatan_koreksi' => $m->catatan_koreksi,
             'dikoreksi_pada' => $m->dikoreksi_pada?->toIso8601String(),
             'dikoreksi_oleh' => $m->dikoreksi_oleh,

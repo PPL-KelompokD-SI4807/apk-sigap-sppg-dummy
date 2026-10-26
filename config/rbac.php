@@ -20,6 +20,10 @@
 |   "CRU (dapur)" hanya unit dapur. Relawan hanya boleh mengubah data buatannya sendiri
 |   pada hari yang sama ('owner_rules').
 |
+| - Investor (R-06a, pemilik SPPG): HANYA baca (tanpa C/U/D di modul mana pun). Satu investor dapat
+|   memiliki banyak SPPG (pivot investor_sppg); data selalu dibatasi ke SATU SPPG aktif (header
+|   X-SPPG-Id, App\Support\SppgAktif). Penerima manfaat hanya lewat agregat ('agregat' di bawah).
+|
 | Agen AI mewarisi matriks ini: tool untuk sel kosong tidak pernah ditawarkan ke LLM.
 */
 
@@ -28,67 +32,67 @@ return [
     'modules' => [
         'pengguna' => [
             'label' => 'Data Pengguna (Login Akun)',
-            'admin' => 'CRUD', 'kepala_sppg' => 'R', 'ahli_gizi' => 'R*', 'akuntan' => 'R*', 'staf_gudang' => 'R*', 'relawan' => 'R*',
+            'admin' => 'CRUD', 'kepala_sppg' => 'R', 'ahli_gizi' => 'R*', 'akuntan' => 'R*', 'staf_gudang' => 'R*', 'relawan' => 'R*', 'investor' => 'R*',
         ],
         'notifikasi-perjalanan' => [
             'label' => 'Notifikasi Perjalanan Mobil ke Tujuan',
-            'admin' => 'R', 'kepala_sppg' => 'CR', 'ahli_gizi' => '', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => 'CR',
+            'admin' => 'R', 'kepala_sppg' => 'CR', 'ahli_gizi' => '', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => 'CR', 'investor' => '',
         ],
         'sppg' => [
             'label' => 'Data SPPG',
-            'admin' => 'CRUD', 'kepala_sppg' => 'RU', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'R', 'relawan' => 'R',
+            'admin' => 'CRUD', 'kepala_sppg' => 'RU', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'R', 'relawan' => 'R', 'investor' => 'R',
         ],
         'titik-layanan' => [
             'label' => 'Titik Layanan',
-            'admin' => 'CRUD', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'R', 'relawan' => 'R',
+            'admin' => 'CRUD', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'R', 'relawan' => 'R', 'investor' => '',
         ],
         'penerima-manfaat' => [
             'label' => 'Penerima Manfaat',
-            'admin' => 'CRUD', 'kepala_sppg' => 'CRU', 'ahli_gizi' => 'R', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => '',
+            'admin' => 'CRUD', 'kepala_sppg' => 'CRU', 'ahli_gizi' => 'R', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => '', 'investor' => '',
         ],
         'bahan-baku' => [
             'label' => 'Bahan Baku (+ mutasi stok)',
-            'admin' => 'CRUD', 'kepala_sppg' => 'R', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'CRUD', 'relawan' => '',
+            'admin' => 'CRUD', 'kepala_sppg' => 'R', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'CRUD', 'relawan' => '', 'investor' => 'R',
         ],
         'pemasok' => [
             'label' => 'Pemasok',
-            'admin' => 'CRUD', 'kepala_sppg' => 'R', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'CRU', 'relawan' => '',
+            'admin' => 'CRUD', 'kepala_sppg' => 'R', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'CRU', 'relawan' => '', 'investor' => '',
         ],
         'menu-gizi' => [
             'label' => 'Menu dan Gizi',
-            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => 'CRUD', 'akuntan' => '', 'staf_gudang' => 'R', 'relawan' => 'R',
+            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => 'CRUD', 'akuntan' => '', 'staf_gudang' => 'R', 'relawan' => 'R', 'investor' => '',
         ],
         'jadwal' => [
             'label' => 'Jadwal Produksi dan Distribusi',
-            'admin' => 'R', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => 'CRU', 'akuntan' => '', 'staf_gudang' => 'R', 'relawan' => 'CRU',
+            'admin' => 'R', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => 'CRU', 'akuntan' => '', 'staf_gudang' => 'R', 'relawan' => 'CRU', 'investor' => '',
         ],
         'log-produksi' => [
             'label' => 'Log Produksi Harian',
-            'admin' => 'R', 'kepala_sppg' => 'RUD', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'R', 'relawan' => 'CRU',
+            'admin' => 'R', 'kepala_sppg' => 'RUD', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => 'R', 'relawan' => 'CRU', 'investor' => '',
         ],
         'mutu' => [
             'label' => 'Pemeriksaan Mutu dan Keamanan Pangan',
-            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => 'CRUD', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => 'R',
+            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => 'CRUD', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => 'R', 'investor' => 'R',
         ],
         'armada' => [
             'label' => 'Armada dan Pengemudi',
-            'admin' => 'CRUD', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => '', 'akuntan' => 'R', 'staf_gudang' => '', 'relawan' => 'R',
+            'admin' => 'CRUD', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => '', 'akuntan' => 'R', 'staf_gudang' => '', 'relawan' => 'R', 'investor' => '',
         ],
         'bukti-distribusi' => [
             'label' => 'Bukti Distribusi',
-            'admin' => 'R', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => '', 'relawan' => 'CRU',
+            'admin' => 'R', 'kepala_sppg' => 'CRUD', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => '', 'relawan' => 'CRU', 'investor' => '',
         ],
         'keuangan' => [
             'label' => 'Data Keuangan (Pencairan Dana & Pengeluaran)',
-            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => '', 'akuntan' => 'CRUD', 'staf_gudang' => '', 'relawan' => '',
+            'admin' => 'R', 'kepala_sppg' => 'R', 'ahli_gizi' => '', 'akuntan' => 'CRUD', 'staf_gudang' => '', 'relawan' => '', 'investor' => 'R',
         ],
         'keluhan' => [
             'label' => 'Feedback dan Keluhan',
-            'admin' => 'CRUD', 'kepala_sppg' => 'RU', 'ahli_gizi' => 'RU', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => 'CR',
+            'admin' => 'CRUD', 'kepala_sppg' => 'RU', 'ahli_gizi' => 'RU', 'akuntan' => '', 'staf_gudang' => '', 'relawan' => 'CR', 'investor' => 'R',
         ],
         'rekap-harian' => [
             'label' => 'Laporan Rekapitulasi Harian Operasional',
-            'admin' => 'R', 'kepala_sppg' => 'CRU', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => '', 'relawan' => '',
+            'admin' => 'R', 'kepala_sppg' => 'CRU', 'ahli_gizi' => 'R', 'akuntan' => 'R', 'staf_gudang' => '', 'relawan' => '', 'investor' => 'R',
         ],
     ],
 
@@ -108,6 +112,25 @@ return [
                 'jenis' => ['dapur' => 'produksi', 'distribusi' => 'distribusi'],
             ],
         ],
+    ],
+
+    /*
+    | Akses agregat saja (hitungan per kategori, tanpa nama/data pribadi) untuk peran yang selnya
+    | kosong di matriks. Peran dengan hak R (bukan R*) pada modul juga boleh membaca agregat.
+    | Lihat Rbac::canAggregate().
+    */
+    'agregat' => [
+        'penerima-manfaat' => ['investor'],
+    ],
+
+    /*
+    | Ambang sel kecil agregat (R06a-S-02, docs/decisions/2026-10-26-ambang-agregat-k5.md). Untuk peran
+    | yang HANYA punya hak agregat (Rbac::aggregateOnlyModules), setiap hitungan 1..k-1 disamarkan menjadi
+    | null + penanda, termasuk sel pelengkap (suppression sekunder) agar tidak dapat dihitung dari
+    | total/aktif. Peran ber-hak R penuh tetap melihat angka asli. Nilai k minimal 2.
+    */
+    'agregat_ambang' => [
+        'k' => 5,
     ],
 
     /*

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Lampiran;
 
 use App\Models\Sppg;
+use App\Support\Rbac;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -17,9 +18,10 @@ use Illuminate\Validation\Rule;
  */
 class StoreLampiranRequest extends FormRequest
 {
+    /** Pengguna baca saja (investor, R-06a) tidak pernah mengunggah; sisanya diputuskan controller. */
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        return $this->user() !== null && ! Rbac::readOnly($this->user());
     }
 
     /** @return array<string, mixed> */

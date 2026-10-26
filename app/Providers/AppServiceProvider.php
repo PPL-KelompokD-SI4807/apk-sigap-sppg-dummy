@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Services\Telegram\InitDataValidator;
+use App\Support\SppgAktif;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -16,6 +17,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // Dibuat ulang tiap resolve agar perubahan config (tes) langsung berlaku.
         $this->app->bind(InitDataValidator::class, fn () => InitDataValidator::fromConfig());
+
+        // SPPG aktif (R-06a): satu instance per permintaan/job, tidak terbawa ke permintaan lain.
+        $this->app->scoped(SppgAktif::class);
     }
 
     public function boot(): void

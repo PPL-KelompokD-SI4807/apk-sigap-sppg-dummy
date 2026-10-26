@@ -3,11 +3,15 @@ import { h, clear } from './core/dom.js';
 import { getTg, isNative } from './core/telegram.js';
 import { initTheme } from './core/theme.js';
 import { login } from './core/auth.js';
-import { onAuthRequired, flushQueue } from './core/api.js';
+import { onAuthRequired, onSppgDiperlukan, flushQueue } from './core/api.js';
 import { route, startRouter, navigate, parseHash } from './core/router.js';
 import { api } from './core/api.js';
 import { registerAllRoutes } from './modules/registry.js';
 import { renderHome } from './home.js';
+import { renderPemilihSppg, muatSppgSaya } from './components/sppg-picker.js';
+import { renderAgregatPenerima } from './components/agregat-view.js';
+import { isInvestor } from './core/sppg-aktif.js';
+import { getUser } from './core/auth.js';
 import { showLoginFlow } from './components/login-flow.js';
 import { renderSesi } from './components/sesi-view.js';
 import { renderUbahPassword } from './components/password-view.js';
@@ -31,6 +35,9 @@ route('/draf/:uuid', async (ctx) => {
   navigate(`${target}?draft=${encodeURIComponent(d.uuid || ctx.params.uuid)}`, { replace: true });
 }, { title: 'Draf AI' });
 route('/sesi', (ctx) => renderSesi(ctx, { onKeluar: () => { navigate('/', { replace: true }); location.reload(); } }), { title: 'Perangkat & Sesi' });
+route('/pilih-sppg', (ctx) => renderPemilihSppg(ctx.el, { onPilih: () => { navigate('/', { replace: true }); location.reload(); } }),
+  { title: 'Pilih SPPG', guard: () => isInvestor(getUser()) });
+route('/penerima-manfaat-agregat', renderAgregatPenerima, { title: 'Ringkasan Penerima Manfaat', guard: () => isInvestor(getUser()) });
 route('/password', renderUbahPassword, { title: 'Ubah Password' });
 registerAllRoutes();
 
@@ -75,6 +82,17 @@ async function doLogin() {
 async function masukBeranda() {
   flow?.destroy();
   flow = null;
+  if (isInvestor(getUser())) {
+    // Investor multi-SPPG: pastikan SPPG aktif ada (header X-SPPG-Id) sebelum membuka data.
+    let hasil;
+    try { hasil = await muatSppgSaya(); } catch (e) {
+      return showMessage('Gagal memuat SPPG', e.message || 'Coba lagi.', 'Coba lagi', masukBeranda);
+    }
+    if (hasil.langkah !== 'siap') {
+      clear(view);
+      return renderPemilihSppg(view, { onPilih: masukBeranda });
+    }
+  }
   if (!started) {
     started = true;
     // Deep link draf AI: ?draft=<uuid> atau startapp=draft_<uuid>
@@ -90,5 +108,6 @@ async function masukBeranda() {
 }
 
 onAuthRequired(() => showMessage('Sesi berakhir', 'Silakan masuk kembali.', 'Masuk ulang', doLogin));
+onSppgDiperlukan(() => { if (started) navigate('/pilih-sppg', { replace: true }); });
 window.addEventListener('online', flushQueue);
 start();

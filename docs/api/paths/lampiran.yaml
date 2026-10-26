@@ -50,6 +50,8 @@
       record induk (Policy modul induk); lampiran belum terikat: hanya pengunggah (lainnya 404);
       lampiran/induk SPPG lain atau induk terhapus -> 404;
       berkas yang berubah di luar aplikasi (sha256 tidak cocok) -> 404.
+      Foto keluhan/mutu untuk investor (R06a-S-05) -> 403 dengan `alasan: lampiran_disembunyikan`
+      (Mini App tidak perlu memanggilnya: resource induk memuat `lampiran: []` + `lampiran_disembunyikan: true`).
       Header: `Content-Type` dari MIME tersimpan, `X-Content-Type-Options: nosniff`,
       `Content-Disposition: inline; filename="lampiran.<ext>"`, `Cache-Control: private, no-store`,
       `Content-Security-Policy: default-src 'none'; sandbox`.
@@ -77,5 +79,15 @@
           image/webp:
             schema: { type: string, format: binary }
       '401': { $ref: '#/components/responses/Unauthorized' }
-      '403': { $ref: '#/components/responses/Forbidden' }
+      '403':
+        description: Tanpa hak `view` pada record induk, atau foto keluhan/mutu untuk investor (`lampiran_disembunyikan`).
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string }
+                alasan: { type: string, enum: [lampiran_disembunyikan] }
+            example: { message: 'Foto lampiran tidak ditampilkan untuk peran Anda.', alasan: lampiran_disembunyikan }
       '404': { $ref: '#/components/responses/NotFound' }

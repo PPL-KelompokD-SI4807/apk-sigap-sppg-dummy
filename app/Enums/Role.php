@@ -14,6 +14,8 @@ enum Role: string
     case Akuntan = 'akuntan';
     case StafGudang = 'staf_gudang';
     case Relawan = 'relawan';
+    /** Pemilik SPPG (R-06a): baca saja, dapat memiliki banyak SPPG lewat pivot investor_sppg. */
+    case Investor = 'investor';
 
     public function label(): string
     {
@@ -24,6 +26,7 @@ enum Role: string
             self::Akuntan => 'Akuntan',
             self::StafGudang => 'Staf Gudang',
             self::Relawan => 'Relawan',
+            self::Investor => 'Investor',
         };
     }
 
@@ -31,6 +34,15 @@ enum Role: string
     public function isCrossSppg(): bool
     {
         return $this === self::Admin;
+    }
+
+    /**
+     * Peran yang users.sppg_id-nya WAJIB null: Admin (lintas SPPG) dan Investor (SPPG dari pivot
+     * investor_sppg, satu SPPG aktif per permintaan; lihat App\Support\SppgAktif).
+     */
+    public function tanpaSppgId(): bool
+    {
+        return $this === self::Admin || $this === self::Investor;
     }
 
     /** @return list<string> */

@@ -223,5 +223,5 @@ test('enum skema sama dengan docs/api/components', () => {
   assert.deepEqual(vals(armada.STATUS_ARMADA), enumOf(api('armada'), 'status'));
   assert.deepEqual(vals(sppg.STATUS_OPERASIONAL), enumOf(api('sppg'), 'status_operasional'));
   assert.deepEqual(vals(pengguna.STATUS_UNDANGAN), ['aktif', 'terpakai', 'kedaluwarsa', 'dicabut']);
-  assert.deepEqual(vals(pengguna.ROLE_OPTIONS), ['admin', 'kepala_sppg', 'ahli_gizi', 'akuntan', 'staf_gudang', 'relawan']);
+  assert.deepEqual(vals(pengguna.ROLE_OPTIONS), ['admin', 'kepala_sppg', 'ahli_gizi', 'akuntan', 'staf_gudang', 'relawan', 'investor']);
 });

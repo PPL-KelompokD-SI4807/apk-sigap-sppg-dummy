@@ -7,6 +7,7 @@ import { rowCard } from '../../components/row-card.js';
 import { showInviteLink } from '../../components/invite-dialog.js';
 import { renderPermintaanReset } from '../../components/permintaan-reset-view.js';
 import { renderSesiPengguna } from '../../components/sesi-view.js';
+import { kepemilikanSppgPanel } from '../../components/kepemilikan-sppg.js';
 import { h } from '../../core/dom.js';
 import { api } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
@@ -62,6 +63,7 @@ const base = defineCrudModule({
   detailExtras: (rec, p) => {
     if (!canInvite()) return null;
     const out = [akunKredensial(rec)];
+    if (rec.role === 'investor') out.push(kepemilikanSppgPanel(rec));
     if (rec.status !== 'menunggu_telegram') return out;
     const btn =h('button', { class: 'btn btn-primary btn-block', type: 'button' }, 'Buat tautan undangan Telegram');
     btn.addEventListener('click', async () => {

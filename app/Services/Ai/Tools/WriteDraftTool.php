@@ -105,10 +105,13 @@ abstract class WriteDraftTool extends BaseAiTool
         return ['type' => 'object', 'properties' => $properties, 'required' => $required, 'additionalProperties' => false];
     }
 
-    /** Draf butuh SPPG (ai_drafts.sppg_id wajib): pengguna tanpa SPPG (Admin) memakai Mini App langsung. */
+    /**
+     * Draf butuh SPPG (ai_drafts.sppg_id wajib): pengguna tanpa SPPG (Admin) memakai Mini App langsung.
+     * Investor (R-06a) baca saja: tidak pernah ditawari tool tulis walau matriks salah isi.
+     */
     public function isAvailableFor(User $user): bool
     {
-        return $user->sppg_id !== null && parent::isAvailableFor($user);
+        return $user->sppg_id !== null && ! $user->isInvestor() && parent::isAvailableFor($user);
     }
 
     /**
