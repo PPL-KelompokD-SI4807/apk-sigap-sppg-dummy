@@ -133,7 +133,9 @@
     summary: Agregat penerima manfaat SPPG aktif (tanpa data pribadi)
     description: |
       Investor dan peran ber-hak R penerima manfaat (Admin, Kepala SPPG, Ahli Gizi). Admin wajib
-      `sppg_id`; peran lain memakai SPPG aktif. Hanya hitungan per kelompok sasaran dan titik layanan.
+      `sppg_id`; peran lain memakai SPPG aktif. Hanya hitungan per kelompok sasaran dan titik layanan
+      (tanpa tabel silang). Untuk investor, sel 1..4 dan sel pelengkapnya disamarkan menjadi
+      `jumlah: null` + `penanda: "<5"` (lihat skema PenerimaManfaatAgregat). Titik layanan terhapus tidak tampil.
     parameters:
       - $ref: '#/components/parameters/SppgAktif'
       - { name: sppg_id, in: query, description: 'Wajib untuk Admin; diabaikan peran lain.', schema: { type: integer } }
@@ -146,18 +148,47 @@
               type: object
               properties:
                 data: { $ref: '#/components/schemas/PenerimaManfaatAgregat' }
-            example:
-              data:
-                sppg_id: 1
-                total: 120
-                aktif: 118
-                per_kelompok_sasaran:
-                  - { kelompok_sasaran: siswa, label: Siswa, jumlah: 90 }
-                  - { kelompok_sasaran: balita, label: Balita, jumlah: 20 }
-                  - { kelompok_sasaran: ibu_hamil, label: Ibu Hamil, jumlah: 5 }
-                  - { kelompok_sasaran: ibu_menyusui, label: Ibu Menyusui, jumlah: 3 }
-                per_titik_layanan:
-                  - { titik_layanan_id: 4, nama: SDN Contoh 1, jumlah: 60 }
+            examples:
+              investor:
+                summary: Investor (penyamaran sel kecil diterapkan)
+                value:
+                  data:
+                    sppg_id: 1
+                    total: null
+                    total_penanda: '<5'
+                    aktif: 118
+                    aktif_penanda: null
+                    penyamaran: { diterapkan: true, ambang_k: 5, penanda: '<5' }
+                    per_kelompok_sasaran:
+                      - { kelompok_sasaran: siswa, label: Siswa, jumlah: 88, penanda: null }
+                      - { kelompok_sasaran: balita, label: Balita, jumlah: 25, penanda: null }
+                      - { kelompok_sasaran: ibu_hamil, label: Ibu Hamil, jumlah: null, penanda: '<5' }
+                      - { kelompok_sasaran: ibu_menyusui, label: Ibu Menyusui, jumlah: null, penanda: '<5' }
+                    per_titik_layanan:
+                      - { titik_layanan_id: 7, nama: Posyandu Contoh, jumlah: null, penanda: '<5' }
+                      - { titik_layanan_id: 8, nama: Posyandu Kecil, jumlah: null, penanda: '<5' }
+                      - { titik_layanan_id: 4, nama: SDN Contoh 1, jumlah: 60, penanda: null }
+                      - { titik_layanan_id: 5, nama: SDN Contoh 2, jumlah: 28, penanda: null }
+              kepala:
+                summary: Kepala SPPG / Ahli Gizi / Admin (angka asli)
+                value:
+                  data:
+                    sppg_id: 1
+                    total: 120
+                    total_penanda: null
+                    aktif: 118
+                    aktif_penanda: null
+                    penyamaran: { diterapkan: false, ambang_k: null, penanda: null }
+                    per_kelompok_sasaran:
+                      - { kelompok_sasaran: siswa, label: Siswa, jumlah: 88, penanda: null }
+                      - { kelompok_sasaran: balita, label: Balita, jumlah: 25, penanda: null }
+                      - { kelompok_sasaran: ibu_hamil, label: Ibu Hamil, jumlah: 3, penanda: null }
+                      - { kelompok_sasaran: ibu_menyusui, label: Ibu Menyusui, jumlah: 2, penanda: null }
+                    per_titik_layanan:
+                      - { titik_layanan_id: 7, nama: Posyandu Contoh, jumlah: 28, penanda: null }
+                      - { titik_layanan_id: 8, nama: Posyandu Kecil, jumlah: 2, penanda: null }
+                      - { titik_layanan_id: 4, nama: SDN Contoh 1, jumlah: 60, penanda: null }
+                      - { titik_layanan_id: 5, nama: SDN Contoh 2, jumlah: 28, penanda: null }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/SppgAktifDitolak' }
       '409': { $ref: '#/components/responses/SppgAktifBelumDipilih' }

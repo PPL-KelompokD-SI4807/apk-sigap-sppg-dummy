@@ -2060,6 +2060,8 @@ paths:
         record induk (Policy modul induk); lampiran belum terikat: hanya pengunggah (lainnya 404);
         lampiran/induk SPPG lain atau induk terhapus -> 404;
         berkas yang berubah di luar aplikasi (sha256 tidak cocok) -> 404.
+        Foto keluhan/mutu untuk investor (R06a-S-05) -> 403 dengan `alasan: lampiran_disembunyikan`
+        (Mini App tidak perlu memanggilnya: resource induk memuat `lampiran: []` + `lampiran_disembunyikan: true`).
         Header: `Content-Type` dari MIME tersimpan, `X-Content-Type-Options: nosniff`,
         `Content-Disposition: inline; filename="lampiran.<ext>"`, `Cache-Control: private, no-store`,
         `Content-Security-Policy: default-src 'none'; sandbox`.
@@ -2087,7 +2089,17 @@ paths:
             image/webp:
               schema: { type: string, format: binary }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: Tanpa hak `view` pada record induk, atau foto keluhan/mutu untuk investor (`lampiran_disembunyikan`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+                  alasan: { type: string, enum: [lampiran_disembunyikan] }
+              example: { message: 'Foto lampiran tidak ditampilkan untuk peran Anda.', alasan: lampiran_disembunyikan }
         '404': { $ref: '#/components/responses/NotFound' }
   /log-produksi:
     get:
@@ -3726,7 +3738,9 @@ paths:
       summary: Agregat penerima manfaat SPPG aktif (tanpa data pribadi)
       description: |
         Investor dan peran ber-hak R penerima manfaat (Admin, Kepala SPPG, Ahli Gizi). Admin wajib
-        `sppg_id`; peran lain memakai SPPG aktif. Hanya hitungan per kelompok sasaran dan titik layanan.
+        `sppg_id`; peran lain memakai SPPG aktif. Hanya hitungan per kelompok sasaran dan titik layanan
+        (tanpa tabel silang). Untuk investor, sel 1..4 dan sel pelengkapnya disamarkan menjadi
+        `jumlah: null` + `penanda: "<5"` (lihat skema PenerimaManfaatAgregat). Titik layanan terhapus tidak tampil.
       parameters:
         - $ref: '#/components/parameters/SppgAktif'
         - { name: sppg_id, in: query, description: 'Wajib untuk Admin; diabaikan peran lain.', schema: { type: integer } }
@@ -3739,18 +3753,47 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/PenerimaManfaatAgregat' }
-              example:
-                data:
-                  sppg_id: 1
-                  total: 120
-                  aktif: 118
-                  per_kelompok_sasaran:
-                    - { kelompok_sasaran: siswa, label: Siswa, jumlah: 90 }
-                    - { kelompok_sasaran: balita, label: Balita, jumlah: 20 }
-                    - { kelompok_sasaran: ibu_hamil, label: Ibu Hamil, jumlah: 5 }
-                    - { kelompok_sasaran: ibu_menyusui, label: Ibu Menyusui, jumlah: 3 }
-                  per_titik_layanan:
-                    - { titik_layanan_id: 4, nama: SDN Contoh 1, jumlah: 60 }
+              examples:
+                investor:
+                  summary: Investor (penyamaran sel kecil diterapkan)
+                  value:
+                    data:
+                      sppg_id: 1
+                      total: null
+                      total_penanda: '<5'
+                      aktif: 118
+                      aktif_penanda: null
+                      penyamaran: { diterapkan: true, ambang_k: 5, penanda: '<5' }
+                      per_kelompok_sasaran:
+                        - { kelompok_sasaran: siswa, label: Siswa, jumlah: 88, penanda: null }
+                        - { kelompok_sasaran: balita, label: Balita, jumlah: 25, penanda: null }
+                        - { kelompok_sasaran: ibu_hamil, label: Ibu Hamil, jumlah: null, penanda: '<5' }
+                        - { kelompok_sasaran: ibu_menyusui, label: Ibu Menyusui, jumlah: null, penanda: '<5' }
+                      per_titik_layanan:
+                        - { titik_layanan_id: 7, nama: Posyandu Contoh, jumlah: null, penanda: '<5' }
+                        - { titik_layanan_id: 8, nama: Posyandu Kecil, jumlah: null, penanda: '<5' }
+                        - { titik_layanan_id: 4, nama: SDN Contoh 1, jumlah: 60, penanda: null }
+                        - { titik_layanan_id: 5, nama: SDN Contoh 2, jumlah: 28, penanda: null }
+                kepala:
+                  summary: Kepala SPPG / Ahli Gizi / Admin (angka asli)
+                  value:
+                    data:
+                      sppg_id: 1
+                      total: 120
+                      total_penanda: null
+                      aktif: 118
+                      aktif_penanda: null
+                      penyamaran: { diterapkan: false, ambang_k: null, penanda: null }
+                      per_kelompok_sasaran:
+                        - { kelompok_sasaran: siswa, label: Siswa, jumlah: 88, penanda: null }
+                        - { kelompok_sasaran: balita, label: Balita, jumlah: 25, penanda: null }
+                        - { kelompok_sasaran: ibu_hamil, label: Ibu Hamil, jumlah: 3, penanda: null }
+                        - { kelompok_sasaran: ibu_menyusui, label: Ibu Menyusui, jumlah: 2, penanda: null }
+                      per_titik_layanan:
+                        - { titik_layanan_id: 7, nama: Posyandu Contoh, jumlah: 28, penanda: null }
+                        - { titik_layanan_id: 8, nama: Posyandu Kecil, jumlah: 2, penanda: null }
+                        - { titik_layanan_id: 4, nama: SDN Contoh 1, jumlah: 60, penanda: null }
+                        - { titik_layanan_id: 5, nama: SDN Contoh 2, jumlah: 28, penanda: null }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/SppgAktifDitolak' }
         '409': { $ref: '#/components/responses/SppgAktifBelumDipilih' }
@@ -4756,8 +4799,11 @@ components:
         tindak_lanjut: { type: [string, 'null'] }
         lampiran:
           type: array
-          description: 'Foto keluhan terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+          description: 'Foto keluhan terlampir (urut id). Ambil isinya lewat `url` + Authorization. Selalu `[]` untuk investor (R06a-S-05).'
           items: { $ref: '#/components/schemas/Lampiran' }
+        lampiran_disembunyikan:
+          type: boolean
+          description: 'true = foto tidak ditampilkan untuk peran pengguna (investor); teks keluhan tetap terlihat. GET /lampiran/{id} -> 403 `lampiran_disembunyikan`.'
         dicatat_oleh:
           type: [object, 'null']
           properties:
@@ -5153,8 +5199,11 @@ components:
         tindakan_korektif: { type: [string, 'null'] }
         lampiran:
           type: array
-          description: 'Foto terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+          description: 'Foto terlampir (urut id). Ambil isinya lewat `url` + Authorization. Selalu `[]` untuk investor (R06a-S-05).'
           items: { $ref: '#/components/schemas/Lampiran' }
+        lampiran_disembunyikan:
+          type: boolean
+          description: 'true = foto tidak ditampilkan untuk peran pengguna (investor); data mutu tetap terlihat. GET /lampiran/{id} -> 403 `lampiran_disembunyikan`.'
         catatan_koreksi: { type: [string, 'null'] }
         dikoreksi_pada: { type: [string, 'null'], format: date-time }
         dikoreksi_oleh: { type: [integer, 'null'] }
@@ -5574,30 +5623,50 @@ components:
               nama: { type: string }
     PenerimaManfaatAgregat:
       type: object
-      required: [sppg_id, total, aktif, per_kelompok_sasaran, per_titik_layanan]
-      description: Hanya hitungan. Tidak pernah memuat nama, kelas, catatan alergi, atau ID penerima.
+      required: [sppg_id, total, total_penanda, aktif, aktif_penanda, penyamaran, per_kelompok_sasaran, per_titik_layanan]
+      description: |
+        Hanya hitungan. Tidak pernah memuat nama, kelas, catatan alergi, atau ID penerima, dan tidak pernah
+        menyilangkan titik layanan x kelompok sasaran.
+        Penyamaran sel kecil (R06a-S-02, docs/decisions/2026-10-26-ambang-agregat-k5.md) berlaku untuk peran
+        yang hanya punya hak agregat (investor): hitungan 1..k-1 (k = 5) menjadi `null` + `penanda: "<5"`,
+        termasuk sel pelengkap agar sel kecil tidak dapat dihitung dari `aktif`/`total`. Jadi "<5" berarti
+        "disamarkan", bukan selalu "kurang dari 5". Nol tetap 0, kecuali bila `aktif` sendiri < k (seluruh
+        rincian disamarkan). Peran ber-hak R penuh (Admin, Kepala SPPG, Ahli Gizi): angka asli, penanda null.
       properties:
         sppg_id: { type: integer }
-        total: { type: integer, description: 'Seluruh penerima terdaftar (aktif + nonaktif, tanpa yang dihapus).' }
-        aktif: { type: integer }
+        total: { type: [integer, 'null'], description: 'Seluruh penerima terdaftar (aktif + nonaktif, tanpa yang dihapus). null bila disamarkan.' }
+        total_penanda: { type: [string, 'null'], examples: ['<5'] }
+        aktif: { type: [integer, 'null'], description: 'null bila disamarkan.' }
+        aktif_penanda: { type: [string, 'null'], examples: ['<5'] }
+        penyamaran:
+          type: object
+          required: [diterapkan, ambang_k, penanda]
+          properties:
+            diterapkan: { type: boolean }
+            ambang_k: { type: [integer, 'null'], examples: [5] }
+            penanda: { type: [string, 'null'], examples: ['<5'] }
         per_kelompok_sasaran:
           type: array
           description: Selalu memuat keempat kelompok (jumlah 0 bila kosong); hanya penerima aktif.
           items:
             type: object
+            required: [kelompok_sasaran, label, jumlah, penanda]
             properties:
               kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
               label: { type: string }
-              jumlah: { type: integer }
+              jumlah: { type: [integer, 'null'] }
+              penanda: { type: [string, 'null'], description: 'Terisi ("<5") bila jumlah disamarkan.' }
         per_titik_layanan:
           type: array
-          description: Hanya titik layanan yang memiliki penerima aktif.
+          description: Hanya titik layanan (belum dihapus) yang memiliki penerima aktif. Nama titik boleh dilihat investor.
           items:
             type: object
+            required: [titik_layanan_id, nama, jumlah, penanda]
             properties:
               titik_layanan_id: { type: integer }
               nama: { type: string }
-              jumlah: { type: integer }
+              jumlah: { type: [integer, 'null'] }
+              penanda: { type: [string, 'null'] }
     Sppg:
       type: object
       properties:
@@ -5704,8 +5773,10 @@ components:
       description: |
         SPPG aktif (R-06a), divalidasi server di setiap permintaan login penuh. Investor: wajib bila
         memiliki >1 SPPG dan harus SPPG miliknya. Peran lain: opsional, harus sama dengan SPPG sendiri.
-        Admin: diabaikan.
-      schema: { type: integer, minimum: 1 }
+        Admin: diabaikan. Format: bilangan bulat positif tanpa nol di depan, maks. 17 digit; selain itu
+        403 `sppg_aktif_ditolak` (dicatat log `sppg_aktif.ditolak`). Header dievaluasi SETELAH pemeriksaan
+        akun aktif dan ability token: token pra-login selalu mendapat 403 `perlu_login_penuh` apa pun headernya.
+      schema: { type: integer, minimum: 1, maximum: 99999999999999999 }
   responses:
     Unauthorized:
       description: Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
