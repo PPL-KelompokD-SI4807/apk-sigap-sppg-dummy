@@ -47,3 +47,29 @@ export const LABEL_TUJUAN = {
 
 /** Alasan token yang mengharuskan mengulang dari awal. */
 export const ALASAN_ULANG = new Set(['token_dipakai', 'token_hangus', 'token_tidak_valid']);
+
+/** Status permintaan reset password -> label, kelas badge, dan penjelasan untuk pemohon. */
+export const STATUS_RESET = {
+  menunggu: { label: 'Menunggu persetujuan', cls: 'badge-info', teks: 'Permintaan sudah dikirim ke Admin. Admin akan memastikan identitas Anda lebih dulu. Periksa lagi beberapa saat lagi.' },
+  disetujui: { label: 'Disetujui', cls: 'badge-ok', teks: 'Admin menyetujui permintaan Anda. Tentukan password baru, lalu masukkan kode 6 digit dari bot Telegram.' },
+  ditolak: { label: 'Ditolak', cls: 'badge-danger', teks: 'Admin menolak permintaan terakhir Anda. Hubungi Admin SPPG bila perlu, atau ajukan permintaan baru.' },
+  kedaluwarsa: { label: 'Kedaluwarsa', cls: 'badge-warn', teks: 'Permintaan sudah melewati batas 24 jam. Ajukan permintaan baru.' },
+  selesai: { label: 'Selesai', cls: 'badge-ok', teks: 'Permintaan sebelumnya sudah selesai. Ajukan permintaan baru bila masih perlu.' },
+};
+export const infoStatusReset = (status) => STATUS_RESET[status] || { label: String(status || '-'), cls: 'badge-info', teks: '' };
+
+/** Permintaan baru boleh diajukan bila belum ada, atau yang terakhir sudah tidak aktif. */
+export const bisaAjukanReset = (p) => !p || ['ditolak', 'kedaluwarsa', 'selesai'].includes(p.status);
+
+/** Akun terkunci: 429 `terkunci` (kontrak) atau 423 (cadangan). */
+export const isTerkunci = (e) => !!e && (e.status === 423 || (e.status === 429 && e.data?.alasan === 'terkunci'));
+
+/** Pesan galat umum untuk layar terautentikasi (ubah password, sesi, admin). null bila tidak dikenal. */
+export function pesanGalatAkun(e) {
+  if (!e) return null;
+  if (e.status === 0) return 'Tidak ada koneksi internet.';
+  if (isTerkunci(e)) return `Akun terkunci sementara. Coba lagi dalam ${durasiRamah(detikTerkunci(e.data))}.`;
+  if (e.status === 401) return 'Sesi berakhir. Silakan masuk kembali.';
+  if (e.status === 403) return 'Anda tidak punya hak akses.';
+  return null;
+}

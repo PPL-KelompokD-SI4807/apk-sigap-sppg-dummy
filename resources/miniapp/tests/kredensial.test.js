@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aturanPassword, passwordValid, sisaDetik, formatMenit, durasiRamah, detikTerkunci, kodeValid } from '../core/kredensial.js';
+import { aturanPassword, passwordValid, sisaDetik, formatMenit, durasiRamah, detikTerkunci, kodeValid, infoStatusReset, bisaAjukanReset, isTerkunci, pesanGalatAkun } from '../core/kredensial.js';
 
 test('aturan password', () => {
   assert.equal(passwordValid('Abcdefg1'), true);
@@ -28,4 +28,25 @@ test('kode 6 digit', () => {
   assert.equal(kodeValid('123456'), true);
   assert.equal(kodeValid('12345'), false);
   assert.equal(kodeValid('12a456'), false);
+});
+
+test('status permintaan reset', () => {
+  for (const st of ['menunggu', 'disetujui', 'ditolak', 'kedaluwarsa', 'selesai']) assert.ok(infoStatusReset(st).label);
+  assert.equal(infoStatusReset('aneh').label, 'aneh');
+  assert.equal(bisaAjukanReset(null), true);
+  assert.equal(bisaAjukanReset({ status: 'ditolak' }), true);
+  assert.equal(bisaAjukanReset({ status: 'kedaluwarsa' }), true);
+  assert.equal(bisaAjukanReset({ status: 'menunggu' }), false);
+  assert.equal(bisaAjukanReset({ status: 'disetujui' }), false);
+});
+
+test('galat akun 401/403/423/429', () => {
+  assert.equal(isTerkunci({ status: 423 }), true);
+  assert.equal(isTerkunci({ status: 429, data: { alasan: 'terkunci' } }), true);
+  assert.equal(isTerkunci({ status: 429, data: { alasan: 'terlalu_sering' } }), false);
+  assert.match(pesanGalatAkun({ status: 423, data: { retry_after: 900 } }), /terkunci.*15 menit/);
+  assert.match(pesanGalatAkun({ status: 401 }), /Sesi berakhir/);
+  assert.match(pesanGalatAkun({ status: 403 }), /hak akses/);
+  assert.match(pesanGalatAkun({ status: 0 }), /koneksi/);
+  assert.equal(pesanGalatAkun({ status: 422 }), null);
 });
