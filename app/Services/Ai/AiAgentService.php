@@ -8,12 +8,16 @@ use App\Models\User;
 use App\Services\Ai\Drafts\DraftLimitException;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmException;
+use App\Services\Ai\Llm\LlmResponse;
+use App\Services\Ai\Llm\SupportsVision;
 use App\Services\Ai\Llm\ToolCall;
+use App\Services\Ai\Tools\AiTool;
 use App\Services\Ai\Tools\ArgumentValidator;
 use App\Services\Ai\Tools\ToolContext;
 use App\Services\Ai\Tools\ToolException;
 use App\Services\Ai\Tools\ToolRegistry;
 use App\Services\Ai\Tools\ToolResult;
+use App\Services\Ai\Tools\ToolSelector;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -23,11 +27,14 @@ use Throwable;
  * Orkestrator Agen AI (FR-11). Alur per pesan:
  *   1. pengguna aktif + rate limit (per menit & per jam, NFR-12);
  *   2. masukan dibersihkan, dipotong, dibungkus sebagai data tak tepercaya (IntentParser);
- *   3. loop tool-calling maks config ai.agent.max_iterations; tiap tool call:
- *      nama dikenal? -> tool milik peran pengguna? -> argumen terlindungi dibuang ->
- *      skema argumen valid? -> eksekusi (baca: langsung ber-scope; tulis: hanya AiDraft);
- *   4. jawaban teks polos dipotong; seluruh jejak dicatat di ai_interactions (tanpa isi pesan).
- * LLM gagal/tidak tersedia/terlalu lama -> fallback formulir manual.
+ *      foto pada klien SupportsVision: tahap 1 model vision tanpa tool -> teks hasil baca = data (D6);
+ *   3. tool disaring per peran (forUser) lalu, bila aktif, dipilih sesuai niat (ToolSelector, subset);
+ *   4. loop tool-calling maks config ai.agent.max_iterations; tiap panggilan melewati pelindung token
+ *      global (TokenBudget); tiap tool call: nama dikenal? -> tool milik peran pengguna? -> ditawarkan?
+ *      -> argumen JSON sah? -> argumen terlindungi dibuang -> skema argumen valid? -> eksekusi
+ *      (baca: langsung ber-scope; tulis: hanya AiDraft);
+ *   5. jawaban teks polos dipotong; jejak + jumlah token (angka) dicatat di ai_interactions (tanpa isi pesan).
+ * LLM gagal/tidak tersedia/terlalu lama -> balasan ramah per kategori + fallback formulir manual.
  */
 class AiAgentService
 {
@@ -36,7 +43,19 @@ class AiAgentService
         private readonly ToolRegistry $registry,
         private readonly IntentParser $parser,
         private readonly ArgumentValidator $validator,
+        private readonly ToolSelector $selector,
+        private readonly TokenBudget $budget,
     ) {}
+
+    /**
+     * False bila klien aktif membaca gambar lewat model vision terpisah yang belum dikonfigurasi
+     * (LLM_VISION_MODEL kosong): AiChatHandler membalas ramah SEBELUM mengunduh foto (D6).
+     * Klien tanpa SupportsVision (Anthropic, Fake) menerima gambar langsung (perilaku lama).
+     */
+    public function acceptsImages(): bool
+    {
+        return ! $this->llm instanceof SupportsVision || $this->llm->supportsVision();
+    }
 
     public function handle(User $user, AiInput $input): AiReply
     {
@@ -88,8 +107,9 @@ class AiAgentService
                 return $this->loop($user, $input, $text, $interaction, $started, $log);
             });
         } catch (LlmException $e) {
-            return $this->finish($interaction, $started, $log, HasilAi::Fallback, $e->getMessage(), new AiReply(
-                'Agen AI sedang tidak tersedia. Silakan isi lewat formulir di Mini App.',
+            // Hanya kategori + status HTTP + kode detail yang dicatat (tanpa isi respons/kunci, D5).
+            return $this->finish($interaction, $started, $log, HasilAi::Fallback, $e->logLabel(), new AiReply(
+                $e->friendlyMessage(),
                 fallback: true,
                 interactionId: $interaction->id,
             ));
@@ -109,18 +129,34 @@ class AiAgentService
      */
     private function loop(User $user, AiInput $input, string $text, AiInteraction $interaction, float $started, array &$log): AiReply
     {
-        $tools = $this->registry->forUser($user);
-        $schemas = $this->registry->schemasFor($user);
+        $budget = (float) config('ai.agent.time_budget_seconds', 25);
+        $deadline = $started + $budget;
         $nonce = $this->parser->nonce();
-        $system = $this->parser->systemPrompt($user, array_keys($tools), $nonce);
-        $messages = [$this->parser->userMessage($input, $text, $nonce)];
+
+        // D6: klien dengan model vision terpisah -> tahap 1 baca gambar tanpa tool; hasilnya data.
+        $imageText = $input->images !== [] && $this->llm instanceof SupportsVision
+            ? $this->readImages($this->llm, $input, $deadline, $log)
+            : null;
+
+        // D7: subset tool milik peran yang relevan (selalu subset forUser()).
+        $selection = $this->selector->select($this->registry->forUser($user), trim($text.' '.($imageText ?? '')), $input->type);
+        $tools = $selection->tools;
+        $schemas = $selection->schemas;
+        $log['tool_ditawarkan'] = count($tools);
+
+        if ($selection->active) {
+            $log['tool_dipilih'] = true;
+        }
+
+        $system = $this->parser->systemPrompt($user, array_keys($tools), $nonce, $selection->active ? $selection->otherModules : []);
+        $messages = [$this->parser->userMessage($input, $text, $nonce, $imageText)];
         $context = new ToolContext($interaction->id, $input->type);
 
         $maxIterations = max(1, (int) config('ai.agent.max_iterations', 4));
         $maxCalls = max(1, (int) config('ai.agent.max_tool_calls_per_turn', 5));
-        $budget = (float) config('ai.agent.time_budget_seconds', 25);
         $drafts = [];
         $final = null;
+        $model = $this->llm->modelName();
 
         for ($i = 0; $i < $maxIterations; $i++) {
             if (microtime(true) - $started > $budget) {
@@ -128,7 +164,10 @@ class AiAgentService
             }
 
             $log['iterasi'] = $i + 1;
-            $response = $this->llm->chat($messages, $schemas, ['system' => $system]);
+            $estimate = TokenBudget::estimateRequest($system, $messages, $schemas);
+            $this->budget->check($model, $estimate);
+            $response = $this->llm->chat($messages, $schemas, ['system' => $system, 'deadline' => $deadline]);
+            $this->recordUsage($model, $response, $estimate, $log);
 
             if (! $response->hasToolCalls()) {
                 $final = $response->text;
@@ -143,7 +182,7 @@ class AiAgentService
 
             foreach ($response->toolCalls as $n => $call) {
                 $result = $n < $maxCalls
-                    ? $this->runTool($user, $call, $context, $log)
+                    ? $this->runTool($user, $call, $context, $log, $tools)
                     : $this->record($log, $call->name, ToolResult::denied('Terlalu banyak pemanggilan tool dalam satu langkah.'), []);
 
                 if ($result->draft !== null) {
@@ -190,8 +229,9 @@ class AiAgentService
 
     /**
      * @param  array<string, mixed>  $log
+     * @param  array<string, AiTool>  $offered  tool yang ditawarkan pada pesan ini (subset forUser())
      */
-    private function runTool(User $user, ToolCall $call, ToolContext $context, array &$log): ToolResult
+    private function runTool(User $user, ToolCall $call, ToolContext $context, array &$log, array $offered): ToolResult
     {
         try {
             $tool = $this->registry->resolveFor($user, $call->name);
@@ -201,6 +241,11 @@ class AiAgentService
             return $this->record($log, $call->name, $e->reason === ToolException::UNKNOWN
                 ? ToolResult::invalid('Tool tidak dikenal.')
                 : ToolResult::denied(), []);
+        }
+
+        // Pemilihan tool dinamis: hanya tool yang ditawarkan yang boleh dijalankan (skemanya dikenal model).
+        if (! isset($offered[$tool->name()])) {
+            return $this->record($log, $call->name, ToolResult::invalid('Tool tidak ditawarkan untuk pesan ini. Minta pengguna menyebut modulnya dengan jelas.'), []);
         }
 
         if (! $call->argumentsValid) {
@@ -278,6 +323,61 @@ class AiAgentService
         }
 
         return $out;
+    }
+
+    /**
+     * Tahap 1 vision (D6): model vision TANPA tool menyalin teks gambar. Hasilnya data tak tepercaya
+     * (dibersihkan & dibungkus nonce oleh IntentParser::userMessage). Gagal -> LlmException ramah.
+     *
+     * @param  array<string, mixed>  $log
+     *
+     * @throws LlmException
+     */
+    private function readImages(SupportsVision $vision, AiInput $input, float $deadline, array &$log): string
+    {
+        if (! $vision->supportsVision()) {
+            throw LlmException::visionUnsupported();
+        }
+
+        $model = (string) $vision->visionModelName();
+        $estimate = TokenBudget::estimate($this->parser->visionInstruction()) + count($input->images) * TokenBudget::IMAGE_TOKENS;
+        $this->budget->check($model, $estimate);
+
+        try {
+            $response = $vision->readImages($input->images, $this->parser->visionInstruction(), ['deadline' => $deadline]);
+        } catch (LlmException $e) {
+            // Sibuk/kuota/konfigurasi/terlalu besar tetap informatif; galat lain = foto tidak terbaca.
+            throw in_array($e->category, [LlmException::SIBUK, LlmException::KUOTA, LlmException::KONFIGURASI, LlmException::TERLALU_BESAR], true)
+                ? $e
+                : LlmException::visionFailed($e);
+        }
+
+        $this->recordUsage($model, $response, $estimate, $log, 'token_vision');
+        $text = $this->parser->sanitize($response->text, (int) config('ai.agent.max_input_chars', 2000));
+        $log['panjang_hasil_baca'] = mb_strlen($text);
+
+        if ($text === '') {
+            throw LlmException::visionFailed();
+        }
+
+        return $text;
+    }
+
+    /**
+     * Catat pemakaian token (angka saja, tanpa isi prompt) ke log interaksi dan pelindung token global.
+     *
+     * @param  array<string, mixed>  $log
+     */
+    private function recordUsage(string $model, LlmResponse $response, int $estimate, array &$log, string $key = 'token'): void
+    {
+        $used = $response->inputTokens + $response->outputTokens;
+        $this->budget->record($model, $used > 0 ? $used : $estimate);
+
+        $log[$key] = [
+            'masuk' => (int) ($log[$key]['masuk'] ?? 0) + $response->inputTokens,
+            'keluar' => (int) ($log[$key]['keluar'] ?? 0) + $response->outputTokens,
+            'estimasi' => (int) ($log[$key]['estimasi'] ?? 0) + $estimate,
+        ];
     }
 
     private function withinRateLimit(User $user): bool

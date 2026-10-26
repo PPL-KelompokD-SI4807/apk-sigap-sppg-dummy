@@ -120,7 +120,10 @@ Data sensitif tidak masuk spesifikasi: `no_sim`, `no_hp`, telepon/kontak, `teleg
 | Draf orang lain | GET/DELETE hanya pemilik + SPPG sama (lainnya 404) | `AiDraftApiTest` |
 | Loop tool tak berujung | Maks iterasi + maks tool call per langkah + anggaran waktu | `test_loop_*`, `test_jumlah_tool_call_*` |
 | Keluaran model berisi HTML/Markdown | Dikirim tanpa `parse_mode` (teks polos), dipotong `max_output_chars` | `TelegramWebhookTest::test_pesan_teks_*` |
-| Biaya/penyalahgunaan | Rate limit 20/menit + 30/jam per pengguna (NFR-12) | `test_rate_limit_*` |
+| Biaya/penyalahgunaan | Rate limit 20/menit + 30/jam per pengguna (NFR-12) + pelindung token global per model (`AI_TOKEN_PER_*`) | `test_rate_limit_*`, `OpenAiCompatAgentTest::test_pelindung_token_*` |
+| Teks di foto berisi perintah (provider `openai_compat`) | Vision dua tahap: model vision tanpa tool; hasil baca dibersihkan + dibungkus `<data_pengguna_{nonce}>`; tool tetap per peran | `OpenAiCompatAgentTest::test_foto_dua_tahap_*` |
+| Argumen tool-call JSON rusak / field `reasoning` | Tool tidak dijalankan (`invalid`); penalaran tidak diteruskan/di-log | `OpenAiCompatibleLlmClientTest::test_argumen_*` |
+| SSRF/kebocoran kunci via adapter | `LLM_BASE_URL` hanya dari config, https, tanpa redirect; galat tanpa body/kunci | `OpenAiCompatibleLlmClientTest::test_base_url_*`, `test_redirect_*`, `UjiLlmCommandTest` |
 
 `ai_interactions` mencatat jenis input, panjang masukan, tool + status + argumen (dipotong, kunci rahasia disamarkan, argumen terlindungi yang dibuang), model, latensi, hasil. **Isi pesan pengguna tidak disimpan.**
 
@@ -128,13 +131,48 @@ Data sensitif tidak masuk spesifikasi: `no_sim`, `no_hp`, telepon/kontak, `teleg
 
 | Env | Default | Keterangan |
 |---|---|---|
-| `LLM_PROVIDER` | kosong | `anthropic`, kosong = AI nonaktif (fallback formulir manual). `fake` hanya untuk tes, ditolak di production |
-| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` | - , `claude-sonnet-4-5`, `https://api.anthropic.com` | Kunci hanya di env server |
-| `LLM_TIMEOUT` | 20 | detik (NFR-11) |
+| `LLM_PROVIDER` | kosong | `anthropic` \| `openai_compat` (Groq/DeepSeek/dll.), kosong = AI nonaktif (fallback formulir manual). `fake` hanya untuk tes, ditolak di production |
+| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` | - , (anthropic: `claude-sonnet-4-5`, `https://api.anthropic.com`; openai_compat: TANPA default) | Kunci hanya di env server. Dipakai bersama; hanya blok provider aktif yang dibaca |
+| `LLM_VISION_MODEL` | kosong | hanya `openai_compat`; kosong = foto tidak didukung (balasan ramah sebelum unduh) |
+| `LLM_MAX_TOKENS` / `LLM_TIMEOUT` | 1024 / 20 | token keluaran per panggilan / detik per panggilan (NFR-11) |
 | `AI_MAX_ITERATIONS` | 4 | iterasi tool-calling |
 | `AI_RATE_PER_MINUTE` / `AI_RATE_PER_HOUR` | 20 / 30 | per pengguna |
+| `AI_TOKEN_PER_MINUTE` / `AI_TOKEN_PER_DAY` | 0 / 0 (nonaktif) | pelindung token GLOBAL per model; Groq gratis disarankan `7000` / `190000` |
+| `AI_TOOL_SELECTION` | `auto` | `auto` (aktif untuk `openai_compat`) \| `on` \| `off` |
+| `AI_TOOL_TOKEN_THRESHOLD` / `AI_TOOL_MAX` / `AI_TOOL_MAX_TOKENS` | 2500 / 10 / 2500 | pemilihan aktif bila estimasi token tool peran > ambang; batas jumlah & token tool terpilih |
 | `AI_DRAFT_TTL_MINUTES` / `AI_DRAFT_MAX_PENDING` | 30 / 10 | masa berlaku & batas draf |
-| `STT_DRIVER`, `STT_URL`, `STT_API_KEY`, `STT_MODEL` | kosong | `http` = endpoint bergaya OpenAI `/audio/transcriptions` (HTTPS) |
+| `STT_DRIVER`, `STT_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_TIMEOUT` | kosong, -, -, `whisper-1`, 20 | `http` = endpoint bergaya OpenAI `/audio/transcriptions` (HTTPS, tanpa redirect) |
+
+## Penyedia kompatibel OpenAI (`LLM_PROVIDER=openai_compat`, Tahap 5a)
+
+Contoh `.env` (kunci diisi sendiri, JANGAN di-commit):
+
+```dotenv
+LLM_PROVIDER=openai_compat
+LLM_BASE_URL=https://api.groq.com/openai/v1   # DeepSeek: https://api.deepseek.com
+LLM_API_KEY=
+LLM_MODEL=openai/gpt-oss-120b
+LLM_VISION_MODEL=                              # mis. qwen/qwen3.8-27b (preview, belum terverifikasi); kosong = foto tidak didukung
+STT_DRIVER=http
+STT_URL=https://api.groq.com/openai/v1/audio/transcriptions
+STT_API_KEY=                                   # kunci Groq yang sama, diisi eksplisit
+STT_MODEL=whisper-large-v3-turbo
+AI_TOKEN_PER_MINUTE=7000
+AI_TOKEN_PER_DAY=190000
+```
+
+| Aspek | Perilaku |
+|---|---|
+| Endpoint | `{LLM_BASE_URL}/chat/completions`, `Authorization: Bearer`. URL hanya dari config: wajib `https://`, tanpa userinfo/query/fragmen, redirect tidak diikuti. Tidak valid -> "belum dikonfigurasi" tanpa permintaan |
+| Body | hanya `model`, `messages`, `max_tokens`, `tools` (tanpa parameter khusus vendor) |
+| Pemetaan | `system` -> pesan `system`; tool call -> `tool_calls[{id,type:function,function:{name,arguments:string JSON}}]`; hasil tool -> `{role:tool,tool_call_id,content}` dengan konten tetap dibungkus `<hasil_tool_{nonce}>`; galat tool ditandai `[galat_tool]` di DALAM blok |
+| Balasan | `choices[0].message`; `reasoning`/`reasoning_content`/`<think>` dibuang; argumen bukan objek JSON sah -> tool tidak dijalankan (`invalid`) |
+| Galat | 401/403/404 konfigurasi, 402 kuota, 413 terlalu besar, 429 sibuk (Retry-After > 60 dtk = kuota), 5xx/timeout/redirect tidak tersedia. Balasan ramah + tombol formulir; `ai_interactions.error` hanya `llm:<kategori> http=<status> (<kode>)` |
+| Retry | maks 1 (koneksi/429/5xx); `Retry-After` hanya ditunggu bila <= 3 dtk dan masih dalam anggaran 25 dtk per pesan |
+| Foto | dua tahap: model vision TANPA tool (data URI base64, maks 4 MB base64, 1 gambar) -> teks hasil baca dibungkus `<data_pengguna_{nonce}>` -> model teks dengan tool peran. Gagal -> "Foto tidak dapat dibaca... formulir" |
+| Token | `usage` dicatat sebagai angka di `ai_interactions.argumen.token` (`masuk`, `keluar`, `estimasi`) dan penghitung global (Cache). Pemilihan tool dinamis = subset `forUser()`; tool yang tidak ditawarkan ditolak (`invalid`) walau masih hak peran |
+
+Uji koneksi (tidak mencetak kunci/URL/body): `php artisan sigap:llm-uji` (balasan "siap"), `--stt=<berkas audio fiktif>`, `--vision=<berkas gambar fiktif>`, `--ukur [--teks="..."]` (offline: estimasi token per peran).
 
 ## Tes
 
