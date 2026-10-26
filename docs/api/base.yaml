@@ -4,8 +4,11 @@ info:
   version: 1.0.0
   description: |
     REST API backend SiGAP SPPG untuk Telegram Mini App.
-    Autentikasi: tukar Telegram.WebApp.initData dengan token Bearer (Sanctum, 8 jam) melalui
-    POST /auth/telegram, lalu kirim header `Authorization: Bearer <token>`.
+    Autentikasi dua lapis (R-03): (1) setiap Mini App dibuka, POST /auth/telegram memvalidasi
+    initData dan memberi token pra-login (atau `sesi_aktif`); (2) POST /auth/masuk dengan
+    username/no telepon + password (+ token 6 digit dari bot untuk perangkat baru, aktivasi, reset)
+    menghasilkan token login penuh (ability auth:penuh, tanpa kedaluwarsa). Kirim header
+    `Authorization: Bearer <token>`.
     Otorisasi mengikuti matriks CRUD Tabel 5 (config/rbac.php) dan dibatasi SPPG pengguna
     (kecuali Admin). Galat selalu berbentuk `{message, errors?}`.
     BERKAS INI DIHASILKAN oleh docs/api/build-openapi.php — jangan diedit langsung.

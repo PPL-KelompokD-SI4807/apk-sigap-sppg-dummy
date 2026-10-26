@@ -12,6 +12,8 @@ schemas:
       phone: { type: [string, 'null'] }
       telegram_username: { type: [string, 'null'] }
       telegram_terhubung: { type: boolean }
+      username: { type: [string, 'null'], description: 'Username login (R-03); null = belum aktivasi.' }
+      password_diatur: { type: boolean, description: 'Penanda saja; password/hash tidak pernah dikirim.' }
       is_active: { type: boolean }
       status: { type: string, enum: [aktif, nonaktif, menunggu_telegram] }
       last_login_at: { type: [string, 'null'], format: date-time }
@@ -27,6 +29,8 @@ schemas:
       phone: '0812-0000-1234'
       telegram_username: null
       telegram_terhubung: false
+      username: null
+      password_diatur: false
       is_active: true
       status: menunggu_telegram
       last_login_at: null

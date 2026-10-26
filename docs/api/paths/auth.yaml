@@ -1,13 +1,24 @@
 /auth/telegram:
   post:
     tags: [Auth]
-    summary: Tukar initData Telegram dengan token Bearer
+    summary: Lapis 1 - validasi initData setiap Mini App dibuka
     description: |
-      Memvalidasi HMAC-SHA256 initData (secret = HMAC_SHA256("WebAppData", bot_token)),
-      auth_date (maks TELEGRAM_INIT_DATA_MAX_AGE detik, tidak boleh >60 dtk di masa depan),
-      lalu mencocokkan user.id dengan akun aktif. Token lama untuk `device` yang sama dicabut.
+      Memvalidasi HMAC-SHA256 initData (secret = HMAC_SHA256("WebAppData", bot_token)), auth_date
+      (maks TELEGRAM_INIT_DATA_MAX_AGE detik, tidak boleh >60 dtk di masa depan), lalu mencocokkan
+      user.id dengan akun aktif. Panggil SETIAP kali Mini App dibuka.
+
+      - Bila klien menyimpan token login penuh, kirim di header `Authorization: Bearer <token>`
+        beserta `device_id` yang sama: bila sesi itu milik akun Telegram yang sama dan perangkat yang
+        sama, respons `langkah: sesi_aktif` (tanpa token baru).
+      - Selain itu diterbitkan token PRA-LOGIN (ability `auth:pra-login`, 15 menit) yang hanya berlaku
+        untuk /auth/masuk, /auth/aktivasi, /auth/reset-password, /auth/token/*. Semua rute lain
+        menolaknya dengan 403 `alasan: perlu_login_penuh`.
+      - `langkah: aktivasi` bila akun belum punya password (undangan baru, sigap:buat-admin, atau
+        password di-reset Admin); `langkah: masuk` bila sudah.
+
       Batas laju 10/menit per IP. Bypass dev `init_data=dev_role=<role>` hanya di APP_ENV
-      local/testing dengan TELEGRAM_DEV_BYPASS=true.
+      local/testing dengan TELEGRAM_DEV_BYPASS=true dan hanya menerbitkan token pra-login (tidak
+      pernah login penuh).
     security: []
     requestBody:
       required: true
@@ -21,35 +32,45 @@
                 type: string
                 maxLength: 8192
                 description: Telegram.WebApp.initData apa adanya (query string).
-              device:
+              device_id:
                 type: string
-                maxLength: 64
-                pattern: '^[A-Za-z0-9._-]+$'
-                default: miniapp
+                pattern: '^[A-Za-z0-9_-]{22,128}$'
+                description: |
+                  ID acak perangkat buatan Mini App (mis. 32 byte acak base64url), disimpan di
+                  localStorage (BUKAN CloudStorage). Server hanya menyimpan HMAC-nya.
           example:
             init_data: 'query_id=AAH...&user=%7B%22id%22%3A7012345678%2C%22first_name%22%3A%22Siti%22%7D&auth_date=1793000000&signature=...&hash=5f2c...'
+            device_id: 'Qm9va1NpR0FQLWRldmljZS0xMjM0NTY3OA'
     responses:
       '200':
-        description: Login berhasil
+        description: initData sah. Lihat `langkah`.
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/LoginResponse' }
-            example:
-              token: '1|q8VxS2...'
-              token_type: Bearer
-              expires_at: '2026-10-26T15:30:00+07:00'
-              user:
-                id: 12
-                name: Siti Rahayu
-                role: kepala_sppg
-                role_label: Kepala SPPG
-                unit: null
-                sppg_id: 1
-                sppg_name: SPPG Sukamaju
-                telegram_username: siti_rahayu
-                last_login_at: '2026-10-26T07:30:00+07:00'
-                modules: [pengguna, notifikasi-perjalanan, sppg, titik-layanan, penerima-manfaat, bahan-baku, pemasok, menu-gizi, jadwal, log-produksi, mutu, armada, bukti-distribusi, keuangan, keluhan, rekap-harian]
-                permissions: { pengguna: R, sppg: RU, jadwal: CRUD, keuangan: R }
+            schema:
+              oneOf:
+                - { $ref: '#/components/schemas/PraLoginResponse' }
+                - { $ref: '#/components/schemas/SesiAktifResponse' }
+            examples:
+              masuk:
+                value:
+                  langkah: masuk
+                  token: '41|pra8Vx...'
+                  token_type: Bearer
+                  token_jenis: pra_login
+                  expires_at: '2026-10-26T08:15:00+07:00'
+                  akun: { nama: Siti Rahayu, perlu_username: false }
+              aktivasi:
+                value:
+                  langkah: aktivasi
+                  token: '42|pra9Qa...'
+                  token_type: Bearer
+                  token_jenis: pra_login
+                  expires_at: '2026-10-26T08:15:00+07:00'
+                  akun: { nama: Admin Fiktif, perlu_username: true }
+              sesi_aktif:
+                value:
+                  langkah: sesi_aktif
+                  user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 1, sppg_name: SPPG Sukamaju, telegram_username: siti_rahayu, last_login_at: '2026-10-26T07:30:00+07:00', modules: [sppg, jadwal], permissions: { sppg: RU, jadwal: CRUD } }
       '401':
         description: initData tidak sah, kedaluwarsa, atau waktu di masa depan.
         content:
@@ -68,10 +89,217 @@
               inactive: { value: { message: 'Akun Anda nonaktif. Hubungi Admin SPPG.' } }
       '422': { $ref: '#/components/responses/ValidationFailed' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
+/auth/masuk:
+  post:
+    tags: [Auth]
+    summary: Lapis 2 - masuk dengan username ATAU no telepon + password (token pra-login)
+    description: |
+      Identitas HANYA dicocokkan dengan akun pemilik token pra-login (akun Telegram dari initData).
+      Identitas milik akun lain ditolak dengan pesan yang sama seperti password salah (dan dicatat
+      di audit). 5 kali salah -> akun dikunci 15 menit (429 `alasan: terkunci`).
+      Perangkat dengan sesi aktif -> 200 login penuh langsung; perangkat/sesi baru -> 202, token 6 digit
+      dikirim bot ke chat Telegram pengguna, lanjut POST /auth/token/verifikasi.
+      Throttle 10/menit per akun dan 30/menit per IP (semua rute pra-login).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [identitas, password, device_id]
+            properties:
+              identitas: { type: string, minLength: 3, maxLength: 32, description: 'Username (diawali huruf, boleh dengan @) atau no telepon (08xx / 62xx / +62xx).' }
+              password: { type: string, maxLength: 64 }
+              device_id: { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$' }
+              label_perangkat: { type: [string, 'null'], maxLength: 120, description: 'Nama perangkat untuk daftar sesi, mis. "Android · Telegram".' }
+          example: { identitas: siti.dapur, password: 'Rahasia123x', device_id: 'Qm9va1NpR0FQLWRldmljZS0xMjM0NTY3OA', label_perangkat: 'Android · Telegram' }
+    responses:
+      '200':
+        description: Perangkat tepercaya dengan sesi aktif - login penuh langsung.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginPenuhResponse' }
+      '202':
+        description: Password benar; token 6 digit dikirim bot.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TantanganResponse' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+      '409':
+        description: Akun belum diaktivasi (belum punya password) - gunakan /auth/aktivasi.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+            example: { message: 'Akun belum diaktivasi. Atur username dan password terlebih dahulu.', alasan: perlu_aktivasi, langkah: aktivasi }
+      '422':
+        description: Validasi gagal, atau identitas/password salah (`alasan: kredensial_salah`).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+            example: { message: 'Username/no telepon atau password salah.', errors: { identitas: ['Username/no telepon atau password salah.'] }, alasan: kredensial_salah, sisa_percobaan: 4 }
+      '429': { $ref: '#/components/responses/AuthTooManyRequests' }
+      '503': { $ref: '#/components/responses/TokenGagalKirim' }
+/auth/aktivasi:
+  post:
+    tags: [Auth]
+    summary: Aktivasi / atur password pertama (token pra-login)
+    description: |
+      Untuk akun tanpa password: akun dari undangan 72 jam (sudah /start di bot), akun
+      sigap:buat-admin, atau setelah password di-reset Admin. `username` wajib bila akun belum punya
+      username (`akun.perlu_username` dari /auth/telegram). Data baru berlaku SETELAH token 6 digit
+      dikonfirmasi lewat POST /auth/token/verifikasi (respons login penuh).
+      Password: min 8, huruf besar + kecil, angka, tidak sama dengan username, bukan sandi umum.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [password, password_confirmation, device_id]
+            properties:
+              username: { type: string, pattern: '^[a-z][a-z0-9._]{2,31}$', description: 'Disimpan huruf kecil; awalan @ dibuang; unik.' }
+              phone: { type: [string, 'null'], description: 'Opsional. 08xx/62xx/+62xx, disimpan E.164, unik. Tidak pernah dikirim ke LLM/chat.' }
+              password: { type: string, minLength: 8, maxLength: 64 }
+              password_confirmation: { type: string }
+              device_id: { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$' }
+              label_perangkat: { type: [string, 'null'], maxLength: 120 }
+          example: { username: rina.gizi, phone: '0857 1234 5678', password: 'Rahasia123x', password_confirmation: 'Rahasia123x', device_id: 'Qm9va1NpR0FQLWRldmljZS0xMjM0NTY3OA' }
+    responses:
+      '202':
+        description: Token 6 digit dikirim bot.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TantanganResponse' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+      '409':
+        description: Akun sudah punya password.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+            example: { message: 'Akun sudah memiliki password. Gunakan Masuk atau Lupa password.', alasan: sudah_aktivasi, langkah: masuk }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/AuthTooManyRequests' }
+      '503': { $ref: '#/components/responses/TokenGagalKirim' }
+/auth/reset-password:
+  post:
+    tags: [Auth]
+    summary: Lupa password - password baru via token bot (token pra-login)
+    description: |
+      Identitas harus milik akun Telegram yang sama. Password baru berlaku setelah token 6 digit
+      dikonfirmasi; saat itu SEMUA sesi & perangkat lama dicabut dan perangkat ini mendapat sesi baru.
+      Alternatif: minta Admin mereset (POST /pengguna/{id}/reset-password), lalu aktivasi ulang.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [identitas, password, password_confirmation, device_id]
+            properties:
+              identitas: { type: string, minLength: 3, maxLength: 32 }
+              password: { type: string, minLength: 8, maxLength: 64 }
+              password_confirmation: { type: string }
+              device_id: { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$' }
+              label_perangkat: { type: [string, 'null'], maxLength: 120 }
+          example: { identitas: '081234567890', password: 'BaruSekali9z', password_confirmation: 'BaruSekali9z', device_id: 'Qm9va1NpR0FQLWRldmljZS0xMjM0NTY3OA' }
+    responses:
+      '202':
+        description: Token 6 digit dikirim bot.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TantanganResponse' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+      '409':
+        description: Akun belum diaktivasi.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+      '422':
+        description: Validasi gagal, atau identitas tidak cocok dengan akun Telegram ini (`alasan: kredensial_salah`).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+      '429': { $ref: '#/components/responses/AuthTooManyRequests' }
+      '503': { $ref: '#/components/responses/TokenGagalKirim' }
+/auth/token/verifikasi:
+  post:
+    tags: [Auth]
+    summary: Konfirmasi token 6 digit -> token login penuh (token pra-login)
+    description: |
+      Token berlaku 5 menit, sekali pakai, terikat ke akun + device_id (Mini App boleh dibuka ulang
+      di perangkat yang sama; simpan `tantangan.id`). 5 kali salah -> tantangan hangus.
+      Respons sukses berisi token login penuh (ability `auth:penuh`, `expires_at: null`). Token
+      pra-login yang dipakai otomatis dicabut.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [tantangan_id, kode, device_id]
+            properties:
+              tantangan_id: { type: string, format: ulid }
+              kode: { type: string, pattern: '^\d{6}$' }
+              device_id: { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$' }
+          example: { tantangan_id: '01JBDQ6V9X8Y7Z6W5V4U3T2S1R', kode: '493817', device_id: 'Qm9va1NpR0FQLWRldmljZS0xMjM0NTY3OA' }
+    responses:
+      '200':
+        description: Login penuh.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginPenuhResponse' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+      '422':
+        description: |
+          Validasi gagal atau token ditolak. `alasan`: token_salah (+ sisa_percobaan),
+          token_kedaluwarsa (boleh kirim ulang), token_dipakai, token_hangus, token_tidak_valid
+          (tantangan tidak ada / milik akun atau perangkat lain) - tiga terakhir: ulangi dari awal.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+            examples:
+              salah: { value: { message: 'Token salah. Sisa percobaan: 4.', errors: { kode: ['Token salah. Sisa percobaan: 4.'] }, alasan: token_salah, sisa_percobaan: 4 } }
+              kedaluwarsa: { value: { message: 'Token kedaluwarsa. Minta kirim ulang token.', errors: { kode: ['Token kedaluwarsa. Minta kirim ulang token.'] }, alasan: token_kedaluwarsa } }
+              hangus: { value: { message: 'Token tidak berlaku lagi karena terlalu banyak percobaan salah. Ulangi dari awal untuk meminta token baru.', errors: { kode: ['...'] }, alasan: token_hangus } }
+      '429': { $ref: '#/components/responses/AuthTooManyRequests' }
+/auth/token/kirim-ulang:
+  post:
+    tags: [Auth]
+    summary: Kirim ulang token 6 digit (token pra-login)
+    description: Kode baru (kode lama tidak berlaku), masa berlaku 5 menit lagi. Jeda 60 detik, maks 3 kali per tantangan.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [tantangan_id, device_id]
+            properties:
+              tantangan_id: { type: string, format: ulid }
+              device_id: { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$' }
+    responses:
+      '202':
+        description: Token baru dikirim bot.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TantanganResponse' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+      '422':
+        description: Tantangan tidak berlaku lagi (`alasan: token_tidak_valid`).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+      '429': { $ref: '#/components/responses/AuthTooManyRequests' }
+      '503': { $ref: '#/components/responses/TokenGagalKirim' }
 /auth/me:
   get:
     tags: [Auth]
-    summary: Profil pengguna login dan hak akses efektif
+    summary: Profil pengguna login dan hak akses efektif (login penuh)
     responses:
       '200':
         description: OK
@@ -82,14 +310,15 @@
               required: [user]
               properties:
                 user: { $ref: '#/components/schemas/AuthUser' }
-                expires_at: { type: [string, 'null'], format: date-time }
+                expires_at: { type: 'null', description: 'Selalu null: sesi login penuh tidak kedaluwarsa.' }
       '401': { $ref: '#/components/responses/Unauthorized' }
-      '403': { $ref: '#/components/responses/Forbidden' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
 /auth/logout:
   post:
     tags: [Auth]
-    summary: Cabut token yang sedang dipakai
+    summary: Keluar dari perangkat ini
+    description: Token dicabut dan kepercayaan perangkat ini dicabut (masuk berikutnya wajib token bot).
     responses:
       '200':
         description: Token dicabut
@@ -98,3 +327,43 @@
             schema: { $ref: '#/components/schemas/Error' }
             example: { message: 'Berhasil keluar.' }
       '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+/auth/sesi:
+  get:
+    tags: [Auth]
+    summary: Daftar sesi/perangkat aktif milik sendiri
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: array
+                  items: { $ref: '#/components/schemas/Sesi' }
+            example:
+              data:
+                - { id: 51, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: true }
+                - { id: 47, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+/auth/keluar-semua:
+  post:
+    tags: [Auth]
+    summary: Keluar dari semua perangkat (termasuk perangkat ini)
+    responses:
+      '200':
+        description: Semua sesi & kepercayaan perangkat dicabut.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+                jumlah_sesi: { type: integer }
+            example: { message: 'Berhasil keluar dari semua perangkat. Silakan masuk kembali.', jumlah_sesi: 2 }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
