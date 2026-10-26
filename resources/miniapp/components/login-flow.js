@@ -1,11 +1,11 @@
 // Alur masuk kredensial (R-03): masuk, aktivasi, lupa password, token 6 digit, terkunci.
 // Password dan kode token hanya hidup di kolom formulir; tidak disimpan di storage maupun variabel modul.
-import { h, clear } from '../core/dom.js';
-import { masuk, aktivasi, resetPassword, verifikasiToken, kirimUlangToken } from '../core/auth.js';
+import { h, clear, formatValue } from '../core/dom.js';
+import { masuk, aktivasi, statusReset, ajukanReset, lanjutReset, verifikasiToken, kirimUlangToken } from '../core/auth.js';
 import { hideMainButton, toast } from '../core/ui.js';
 import { mapValidationErrors } from '../core/errors.js';
 import {
-  aturanPassword, passwordValid, sisaDetik, formatMenit, durasiRamah, detikTerkunci, kodeValid, LABEL_TUJUAN, ALASAN_ULANG,
+  aturanPassword, passwordValid, sisaDetik, formatMenit, durasiRamah, detikTerkunci, kodeValid, LABEL_TUJUAN, ALASAN_ULANG, infoStatusReset, bisaAjukanReset, isTerkunci,
 } from '../core/kredensial.js';
 
 /**
@@ -68,8 +68,9 @@ export function showLoginFlow(el, { langkah, akun = {}, onDone, onRestart }) {
   /** Galat umum dari pemanggilan kredensial. Mengembalikan true bila sudah ditangani. */
   function galatUmum(e, formErr) {
     const alasan = e.data?.alasan;
-    if (e.status === 401 || alasan === 'bukan_pra_login') { onRestart?.(); return true; }
-    if (e.status === 429 && alasan === 'terkunci') { layarTerkunci(detikTerkunci(e.data)); return true; }
+    if (e.status === 401 || alasan === 'bukan_pra_login' || alasan === 'perlu_login_penuh') { onRestart?.(); return true; }
+    if (e.status === 403) { setFormError(formErr, 'Anda tidak punya hak akses. Hubungi admin SPPG.'); return true; }
+    if (isTerkunci(e)) { layarTerkunci(detikTerkunci(e.data)); return true; }
     if (e.status === 409 && alasan === 'perlu_aktivasi') { toast('Akun Anda belum diaktivasi.', 'info'); layarAktivasi(); return true; }
     if (e.status === 409 && alasan === 'sudah_aktivasi') { toast('Akun sudah diaktivasi. Silakan masuk.', 'info'); layarMasuk(); return true; }
     if (alasan === 'telegram_belum_terhubung') { setFormError(formErr, 'Akun Telegram Anda belum terhubung. Hubungi admin SPPG.'); return true; }
@@ -90,7 +91,7 @@ export function showLoginFlow(el, { langkah, akun = {}, onDone, onRestart }) {
     const btn = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Masuk');
     const form = h('form', { class: 'form', novalidate: true },
       field('Username atau no telepon', idEl, e1), field('Password', pwEl, e2), fe, btn,
-      h('button', { class: 'link', type: 'button', onclick: layarLupa }, 'Lupa password?'));
+      h('button', { class: 'link', type: 'button', onclick: layarLupa }, 'Lupa password? Minta reset ke Admin'));
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       setFormError(fe, '');
@@ -162,43 +163,83 @@ export function showLoginFlow(el, { langkah, akun = {}, onDone, onRestart }) {
     (unEl || phEl).focus();
   }
 
-  // ---------- Lupa password / reset ----------
+  // ---------- Minta reset ke Admin ----------
   function layarLupa() {
-    const idEl = input({ type: 'text', name: 'identitas', autocomplete: 'username', autocapitalize: 'none', placeholder: 'Username atau no telepon' });
-    const pwEl = input({ type: 'password', name: 'password', autocomplete: 'new-password' });
-    const pcEl = input({ type: 'password', name: 'password_confirmation', autocomplete: 'new-password' });
-    const boxes = { identitas: errBox(), password: errBox(), password_confirmation: errBox() };
     const fe = formError();
-    const cl = checklist(() => pwEl.value, () => idEl.value);
-    pwEl.addEventListener('input', cl.update);
-    idEl.addEventListener('input', cl.update);
-    const btn = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Kirim kode verifikasi');
-    const form = h('form', { class: 'form', novalidate: true },
-      field('Username atau no telepon', idEl, boxes.identitas),
-      field('Password baru', pwEl, boxes.password), cl.ul,
-      field('Ulangi password', pcEl, boxes.password_confirmation), fe, btn,
-      h('button', { class: 'link', type: 'button', onclick: layarMasuk }, 'Kembali ke halaman masuk'));
-    form.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
+    const badgeBox = h('div', { class: 'stack' });
+    const aksi = h('div', { class: 'stack' });
+    const infoEl = h('p', { class: 'muted small', role: 'status' }, 'Memuat status permintaan...');
+    const kembali = h('button', { class: 'link', type: 'button', onclick: layarMasuk }, 'Kembali ke halaman masuk');
+    screen('Minta reset password ke Admin', infoEl, badgeBox, fe, aksi, kembali);
+
+    const tampil = (p) => {
+      clear(badgeBox); clear(aksi);
       setFormError(fe, '');
-      const identitas = idEl.value.trim();
-      const local = {};
-      if (!identitas) local.identitas = 'Wajib diisi.';
-      if (!passwordValid(pwEl.value, identitas)) local.password = 'Password belum memenuhi aturan di atas.';
-      if (pcEl.value !== pwEl.value) local.password_confirmation = 'Konfirmasi password tidak sama.';
-      if (showErrors(boxes, local)) return;
-      await guarded(btn, 'Kirim kode verifikasi', async () => {
-        try {
-          lanjut(await resetPassword({ identitas, password: pwEl.value, password_confirmation: pcEl.value }));
-        } catch (e) {
-          if (galatUmum(e, fe)) return;
-          if (e.status === 422 && !showErrors(boxes, mapValidationErrors(e.errors))) setFormError(fe, e.message);
-          else if (e.status !== 422) setFormError(fe, e.message || 'Gagal mengatur ulang password.');
-        }
+      const info = p ? infoStatusReset(p.status) : null;
+      infoEl.textContent = info ? info.teks : 'Anda tidak dapat menerima kode reset sendiri. Kirim permintaan ke Admin SPPG; setelah Admin memastikan identitas Anda dan menyetujui, Anda dapat menetapkan password baru.';
+      if (info) {
+        badgeBox.append(h('p', {}, 'Status: ', h('span', { class: `badge ${info.cls}` }, info.label)),
+          p.kedaluwarsa_pada ? h('p', { class: 'muted small' }, `Berlaku hingga ${formatValue(p.kedaluwarsa_pada, 'datetime')}`) : null);
+      }
+      if (p?.status === 'disetujui') return aksi.append(formBaru());
+      if (p?.status === 'menunggu') {
+        const cek = h('button', { class: 'btn btn-block', type: 'button' }, 'Periksa status');
+        cek.addEventListener('click', () => guarded(cek, 'Periksa status', muat));
+        aksi.append(cek);
+      }
+      if (bisaAjukanReset(p)) {
+        const kirim = h('button', { class: 'btn btn-primary btn-block', type: 'button' }, 'Kirim permintaan ke Admin');
+        kirim.addEventListener('click', () => guarded(kirim, 'Kirim permintaan ke Admin', async () => {
+          try {
+            const baru = await ajukanReset();
+            toast('Permintaan dikirim ke Admin.', 'success');
+            tampil(baru);
+          } catch (e) { if (!galatUmum(e, fe)) setFormError(fe, e.status === 409 && e.data?.alasan === 'tidak_ada_pemutus' ? 'Tidak ada Admin lain yang dapat menyetujui. Hubungi pengelola sistem.' : e.message || 'Gagal mengirim permintaan.'); }
+        }));
+        aksi.append(kirim);
+      }
+    };
+
+    async function muat() {
+      try { tampil(await statusReset()); }
+      catch (e) {
+        infoEl.textContent = '';
+        if (!galatUmum(e, fe)) setFormError(fe, e.message || 'Gagal memuat status permintaan.');
+      }
+    }
+
+    function formBaru() {
+      const pwEl = input({ type: 'password', name: 'password', autocomplete: 'new-password' });
+      const pcEl = input({ type: 'password', name: 'password_confirmation', autocomplete: 'new-password' });
+      const boxes = { password: errBox(), password_confirmation: errBox() };
+      const cl = checklist(() => pwEl.value, () => '');
+      pwEl.addEventListener('input', cl.update);
+      const btn = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Kirim kode verifikasi');
+      const form = h('form', { class: 'form', novalidate: true },
+        field('Password baru', pwEl, boxes.password), cl.ul,
+        field('Ulangi password', pcEl, boxes.password_confirmation), btn);
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        setFormError(fe, '');
+        const local = {};
+        if (!passwordValid(pwEl.value, '')) local.password = 'Password belum memenuhi aturan di atas.';
+        if (pcEl.value !== pwEl.value) local.password_confirmation = 'Konfirmasi password tidak sama.';
+        if (showErrors(boxes, local)) return;
+        await guarded(btn, 'Kirim kode verifikasi', async () => {
+          try {
+            lanjut(await lanjutReset({ password: pwEl.value, password_confirmation: pcEl.value }));
+          } catch (e) {
+            if (e.status === 409 && e.data?.alasan === 'reset_belum_disetujui') { toast('Permintaan tidak berlaku lagi.', 'error'); return muat(); }
+            if (galatUmum(e, fe)) return;
+            if (e.status === 422 && !showErrors(boxes, mapValidationErrors(e.errors))) setFormError(fe, e.message);
+            else if (e.status !== 422) setFormError(fe, e.message || 'Gagal mengatur password baru.');
+          }
+        });
       });
-    });
-    screen('Lupa password', h('p', { class: 'muted small' }, 'Tentukan password baru. Password baru berlaku setelah Anda memasukkan kode verifikasi dari bot Telegram.'), form);
-    idEl.focus();
+      return form;
+    }
+
+    muat();
   }
 
   // ---------- Token 6 digit ----------
@@ -254,7 +295,7 @@ export function showLoginFlow(el, { langkah, akun = {}, onDone, onRestart }) {
           toast(e.data?.message || 'Kode tidak berlaku lagi. Ulangi dari awal.', 'error');
           return layarMasuk();
         }
-        if (e.status === 429 && alasan === 'terkunci') return layarTerkunci(detikTerkunci(e.data));
+        if (isTerkunci(e)) return layarTerkunci(detikTerkunci(e.data));
         if (alasan === 'token_salah') {
           if (Number.isInteger(e.data?.sisa_percobaan)) sisaPercobaan = e.data.sisa_percobaan;
           showErrors({ kode: eKode }, { kode: 'Kode salah.' });
@@ -281,7 +322,7 @@ export function showLoginFlow(el, { langkah, akun = {}, onDone, onRestart }) {
         const alasan = e.data?.alasan;
         if (e.status === 401 || alasan === 'bukan_pra_login') return onRestart?.();
         if (ALASAN_ULANG.has(alasan) || (e.status === 422 && !alasan)) return mulaiUlang();
-        if (e.status === 429 && alasan === 'terkunci') return layarTerkunci(detikTerkunci(e.data));
+        if (isTerkunci(e)) return layarTerkunci(detikTerkunci(e.data));
         setFormError(fe, e.status === 429 ? (e.data?.message || 'Terlalu sering meminta kode. Tunggu sebentar.') : e.status === 0 ? 'Tidak ada koneksi internet.' : e.message || 'Gagal mengirim ulang kode.');
       }
       refresh();

@@ -93,8 +93,12 @@ export const masuk = async ({ identitas, password }) =>
   tangani(await api.post('/auth/masuk', { identitas, password, label_perangkat: labelPerangkat(), ...dev() }, opts));
 export const aktivasi = async (body) =>
   tangani(await api.post('/auth/aktivasi', { ...body, label_perangkat: labelPerangkat(), ...dev() }, opts));
-export const resetPassword = async (body) =>
-  tangani(await api.post('/auth/reset-password', { ...body, ...dev() }, opts));
+
+// Lupa password = permintaan ke Admin (token pra-login). Status: null | {id, status, ...}.
+export const statusReset = async () => (await api.get('/auth/lupa-password', undefined, opts)).data ?? null;
+export const ajukanReset = async () => (await api.post('/auth/lupa-password', {}, opts)).data;
+export const lanjutReset = async (body) =>
+  tangani(await api.post('/auth/lupa-password/lanjut', { ...body, label_perangkat: labelPerangkat(), ...dev() }, opts));
 export async function verifikasiToken(tantanganId, kode) {
   const res = await api.post('/auth/token/verifikasi', { tantangan_id: tantanganId, kode, ...dev() }, opts);
   simpanPenuh(res);
@@ -105,6 +109,18 @@ export const kirimUlangToken = async (tantanganId) =>
 
 export const daftarSesi = async () => (await api.get('/auth/sesi')).data ?? [];
 export const keluarSemua = () => api.post('/auth/keluar-semua', {}, opts);
+export const hapusSesi = (id) => api.del(`/auth/sesi/${encodeURIComponent(id)}`, opts);
+export const ubahPassword = (body) => api.put('/auth/password', body, opts);
+
+// Admin (scope ditegakkan server).
+const unwrapData = (r) => r?.data ?? r;
+export const daftarPermintaanReset = async (status = 'menunggu') =>
+  (await api.get('/pengguna/permintaan-reset', { status, per_page: 50 }, opts)).data ?? [];
+export const putuskanReset = async (id, setuju) =>
+  unwrapData(await api.post(`/pengguna/permintaan-reset/${encodeURIComponent(id)}/${setuju ? 'setujui' : 'tolak'}`, {}, opts));
+export const daftarSesiPengguna = async (userId) => (await api.get(`/pengguna/${encodeURIComponent(userId)}/sesi`, undefined, opts)).data ?? [];
+export const cabutSesiPengguna = (userId, sesiId) => api.del(`/pengguna/${encodeURIComponent(userId)}/sesi/${encodeURIComponent(sesiId)}`, opts);
+export const cabutSemuaSesiPengguna = (userId) => api.del(`/pengguna/${encodeURIComponent(userId)}/sesi`, opts);
 
 /** Keluar dari perangkat ini: cabut token di server (kegagalan jaringan diabaikan), lalu bersihkan lokal. */
 export async function logout() {
