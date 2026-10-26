@@ -17,10 +17,11 @@
 | `TELEGRAM_MINIAPP_URL` | `https://sigap.example.id/miniapp/` | wajib HTTPS (tombol web_app); default `APP_URL/miniapp/` |
 | `APP_URL` | `https://sigap.example.id` | dasar URL webhook |
 | `TELEGRAM_INIT_DATA_MAX_AGE` | `3600` | NFR-04 |
-| `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL` | `anthropic`, (rahasia), `claude-sonnet-4-5` | Agen AI; kosong = nonaktif |
-| `STT_DRIVER`, `STT_URL`, `STT_API_KEY` | `http`, `https://.../audio/transcriptions` | opsional; kosong = "pesan suara belum didukung" |
+| `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL` | `anthropic` atau `openai_compat`, (rahasia), `claude-sonnet-4-5` / `openai/gpt-oss-120b` | Agen AI; kosong = nonaktif. `openai_compat` wajib `LLM_BASE_URL` (lihat `ai-tools.md`) |
+| `LLM_VISION_MODEL` | kosong | `openai_compat`: kosong = foto dibalas "belum didukung" + tombol formulir, foto tidak diunduh |
+| `STT_DRIVER`, `STT_URL`, `STT_API_KEY`, `STT_MODEL` | `http`, `https://api.groq.com/openai/v1/audio/transcriptions`, (rahasia), `whisper-large-v3-turbo` | opsional; kosong = "pesan suara belum didukung" |
 
-Variabel baru yang belum ada di `.env.example`: `TELEGRAM_MINIAPP_URL`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_TIMEOUT`, `AI_*`, `STT_*` (lihat `config/ai.php`, `config/telegram.php`).
+Variabel baru yang belum ada di `.env.example`: `TELEGRAM_MINIAPP_URL`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_VISION_MODEL`, `LLM_TIMEOUT`, `AI_*` (termasuk `AI_TOKEN_PER_MINUTE`, `AI_TOKEN_PER_DAY`, `AI_TOOL_SELECTION`), `STT_*` (lihat `config/ai.php`, `config/telegram.php`). Uji koneksi: `php artisan sigap:llm-uji`.
 
 ## 3. Daftarkan webhook
 
