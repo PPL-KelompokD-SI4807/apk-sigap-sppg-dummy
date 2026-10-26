@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
  *
  * Aturan:
  * - Non-admin hanya boleh mengakses model dengan sppg_id sama dengan miliknya; admin lintas SPPG.
+ *   Investor: sama dengan SATU SPPG aktif tervalidasi (User::sppgAktifId(), wajib miliknya).
  * - Huruf bertanda "*" (R*) hanya berlaku untuk record milik sendiri; viewAny ditolak.
  * - Relawan (owner_rules): update/delete hanya record buatannya sendiri ($ownerColumn) dan
  *   dibuat hari ini (zona waktu aplikasi). Bila kolom pemilik tidak ada di model -> ditolak.
@@ -101,8 +102,9 @@ abstract class BaseSppgPolicy
         }
 
         $sppgId = $this->sppgIdOf($model);
+        $aktif = $user->sppgAktifId();
 
-        return $user->sppg_id !== null && $sppgId !== null && (int) $sppgId === (int) $user->sppg_id;
+        return $aktif !== null && $sppgId !== null && $sppgId === $aktif;
     }
 
     protected function sppgIdOf(Model $model): ?int

@@ -31,7 +31,9 @@ class SppgController extends ApiController
         $query = Sppg::query()->search($request->query('q'))->orderBy('nama')->orderBy('id');
 
         if (! $user->isAdmin()) {
-            $user->sppg_id === null ? $query->whereRaw('1 = 0') : $query->whereKey($user->sppg_id);
+            // Investor: hanya SPPG aktif tervalidasi (bukan seluruh SPPG miliknya); lihat /sppg-saya.
+            $sppgId = $user->sppgAktifId();
+            $sppgId === null ? $query->whereRaw('1 = 0') : $query->whereKey($sppgId);
         }
 
         if (($status = $this->enumQuery($request, 'status_operasional', StatusOperasional::class)) !== null) {

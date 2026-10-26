@@ -6,10 +6,12 @@ use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
+use App\Support\SppgAktif;
 use App\Support\Telepon;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -124,9 +126,35 @@ class User extends Authenticatable
         $this->tantanganToken()->terbuka()->update(['hangus_pada' => now(), 'payload' => null]);
     }
 
+    /**
+     * SPPG milik investor (R-06a). Hanya bermakna untuk peran investor; dikelola Admin.
+     * Pakai SppgAktif untuk keputusan akses (SPPG terhapus tidak dihitung).
+     */
+    public function sppgDimiliki(): BelongsToMany
+    {
+        return $this->belongsToMany(Sppg::class, 'investor_sppg', 'user_id', 'sppg_id')
+            ->withPivot('created_by')
+            ->withTimestamps();
+    }
+
     public function isAdmin(): bool
     {
         return $this->role === Role::Admin;
+    }
+
+    public function isInvestor(): bool
+    {
+        return $this->role === Role::Investor;
+    }
+
+    /**
+     * SPPG tempat data pengguna dibatasi pada permintaan ini: users.sppg_id untuk peran satu-SPPG,
+     * SPPG aktif tervalidasi (header X-SPPG-Id) untuk investor, null untuk admin/tidak ada.
+     * Untuk MENULIS data tetap pakai users.sppg_id (investor null -> selalu fail closed).
+     */
+    public function sppgAktifId(): ?int
+    {
+        return app(SppgAktif::class)->id($this);
     }
 
     public function hasRole(Role ...$roles): bool

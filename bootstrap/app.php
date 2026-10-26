@@ -2,12 +2,14 @@
 
 use App\Http\Middleware\ApiSecurityHeaders;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\ResolveSppgAktif;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -21,6 +23,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(ApiSecurityHeaders::class);
         $middleware->alias(['active' => EnsureUserIsActive::class]);
+        // SPPG aktif (R-06a) harus tervalidasi sebelum route model binding ber-SppgScope.
+        $middleware->prependToPriorityList(SubstituteBindings::class, ResolveSppgAktif::class);
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');
     })
     ->withExceptions(function (Exceptions $exceptions): void {

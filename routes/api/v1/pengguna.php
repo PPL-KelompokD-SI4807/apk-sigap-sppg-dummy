@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\PenggunaController;
+use App\Http\Controllers\Api\V1\PenggunaKepemilikanController;
 use App\Http\Controllers\Api\V1\PenggunaKredensialController;
 use App\Http\Controllers\Api\V1\PenggunaUndanganController;
 use App\Http\Controllers\Api\V1\PermintaanResetController;
@@ -28,5 +29,15 @@ Route::delete('pengguna/{user}/sesi', [PenggunaKredensialController::class, 'cab
     ->whereNumber('user')->name('pengguna.sesi.destroy');
 Route::delete('pengguna/{user}/sesi/{sesi}', [PenggunaKredensialController::class, 'cabutSatuSesi'])
     ->whereNumber(['user', 'sesi'])->name('pengguna.sesi.destroy-satu');
+
+// R-06a: kepemilikan SPPG investor (pivot investor_sppg), hanya Admin.
+Route::get('pengguna/{user}/kepemilikan-sppg', [PenggunaKepemilikanController::class, 'show'])
+    ->whereNumber('user')->name('pengguna.kepemilikan-sppg.show');
+Route::put('pengguna/{user}/kepemilikan-sppg', [PenggunaKepemilikanController::class, 'update'])
+    ->whereNumber('user')->name('pengguna.kepemilikan-sppg.update');
+Route::post('pengguna/{user}/kepemilikan-sppg', [PenggunaKepemilikanController::class, 'store'])
+    ->whereNumber('user')->name('pengguna.kepemilikan-sppg.store');
+Route::delete('pengguna/{user}/kepemilikan-sppg/{sppg}', [PenggunaKepemilikanController::class, 'destroy'])
+    ->whereNumber(['user', 'sppg'])->name('pengguna.kepemilikan-sppg.destroy');
 
 Route::apiResource('pengguna', PenggunaController::class)->parameters(['pengguna' => 'user'])->whereNumber('user');

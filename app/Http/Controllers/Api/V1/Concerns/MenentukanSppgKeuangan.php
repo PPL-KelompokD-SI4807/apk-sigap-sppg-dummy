@@ -35,6 +35,6 @@ trait MenentukanSppgKeuangan
             return is_string($id) && ctype_digit($id) ? (int) $id : null;
         }
 
-        return SppgScope::currentUser()?->sppg_id;
+        return SppgScope::currentUser()?->sppgAktifId();
     }
 }
