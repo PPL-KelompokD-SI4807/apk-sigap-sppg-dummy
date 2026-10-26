@@ -32,6 +32,9 @@ class PenggunaResource extends JsonResource
             'phone' => $user->phone,
             'telegram_username' => $user->telegram_username,
             'telegram_terhubung' => $terhubung,
+            // R-03: username login dan penanda password sudah diatur (password tidak pernah tampil).
+            'username' => $user->username,
+            'password_diatur' => $user->punyaPassword(),
             'is_active' => $user->is_active,
             'status' => ! $user->is_active ? 'nonaktif' : ($terhubung ? 'aktif' : 'menunggu_telegram'),
             'last_login_at' => $user->last_login_at?->toIso8601String(),

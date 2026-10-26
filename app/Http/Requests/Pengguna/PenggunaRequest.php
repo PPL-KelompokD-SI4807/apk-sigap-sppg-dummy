@@ -7,6 +7,7 @@ use App\Enums\Role;
 use App\Http\Requests\Concerns\HasAiDraftId;
 use App\Models\User;
 use App\Rules\NomorTelepon;
+use App\Rules\TeleponUnik;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -37,7 +38,8 @@ abstract class PenggunaRequest extends FormRequest
             'role' => [$req, Rule::enum(Role::class)],
             'unit' => ['nullable', Rule::enum(RelawanUnit::class)],
             'sppg_id' => ['nullable', 'integer', Rule::exists('sppgs', 'id')->whereNull('deleted_at')],
-            'phone' => ['nullable', new NomorTelepon],
+            // Unik dalam bentuk normal E.164: no telepon adalah identitas login (R-03).
+            'phone' => ['nullable', new NomorTelepon, new TeleponUnik($this->target()?->getKey())],
             'is_active' => ['sometimes', 'boolean'],
         ] + $this->aiDraftRules();
     }

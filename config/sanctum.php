@@ -52,7 +52,10 @@ return [
     */
 
     // FR-01/NFR-04: token sesi berlaku 8 jam (480 menit).
-    'expiration' => (int) env('SANCTUM_EXPIRATION', 480),
+    // R-03: null = tidak ada kedaluwarsa global. Sesi login penuh berakhir hanya karena logout atau
+    // pencabutan (password/peran/SPPG/status berubah, nonaktif, dicabut Admin). Token pra-login
+    // membawa expires_at sendiri (config('kredensial.pra_login_menit')). Sengaja tidak dari env.
+    'expiration' => null,
 
     /*
     |--------------------------------------------------------------------------

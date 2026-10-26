@@ -6,35 +6,62 @@ use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Models\Scopes\SppgScope;
 use App\Models\User;
-use App\Support\Rbac;
+use App\Services\Auth\AuditAuth;
+use App\Services\Auth\SesiService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 
 /**
- * Menukar initData Telegram dengan token Sanctum (FR-01).
+ * Lapis 1 login R-03 (FR-01): initData Telegram divalidasi setiap Mini App dibuka.
+ *
+ * Hasil `langkah`:
+ * - `sesi_aktif` : klien mengirim token login penuh miliknya (header Authorization) untuk akun
+ *                  Telegram yang sama dan perangkat (device_id) yang sama; tidak ada token baru.
+ * - `masuk`      : token pra-login diterbitkan; lanjut username/no telepon + password.
+ * - `aktivasi`   : token pra-login diterbitkan; akun belum punya password (undangan baru,
+ *                  sigap:buat-admin, atau di-reset Admin) wajib atur password dulu.
+ * Token pra-login hanya ber-ability auth:pra-login dan tidak pernah membuka data. Bypass dev
+ * hanya menerbitkan token pra-login bertanda auth:dev (tidak pernah bisa menjadi login penuh).
  */
 class TelegramAuthService
 {
     public const DEV_PATTERN = '/^dev_role=([a-z_]{3,20})(?:&dev_unit=([a-z]{3,20}))?$/';
 
-    public function __construct(private readonly InitDataValidator $validator) {}
+    public function __construct(
+        private readonly InitDataValidator $validator,
+        private readonly SesiService $sesi,
+    ) {}
 
     /**
-     * @return array{token: string, expires_at: Carbon|null, user: User}
+     * @return array{langkah: string, token: string|null, expires_at: Carbon|null, user: User}
      */
-    public function login(string $initData, string $device = 'miniapp'): array
+    public function login(string $initData, ?string $deviceId = null, ?string $bearer = null): array
     {
-        $user = $this->devBypassAllowed() && preg_match(self::DEV_PATTERN, $initData, $m) === 1
-            ? $this->devUser($m[1], $m[2] ?? null)
-            : $this->resolveTelegramUser($initData);
+        $dev = $this->devBypassAllowed() && preg_match(self::DEV_PATTERN, $initData, $m) === 1;
+        $user = $dev ? $this->devUser($m[1], $m[2] ?? null) : $this->resolveTelegramUser($initData);
 
         if (! $user->canAuthenticate()) {
             throw new AccessDeniedHttpException('Akun Anda nonaktif. Hubungi Admin SPPG.');
         }
 
-        return $this->issueToken($user, $device);
+        $deviceHash = $deviceId === null || $deviceId === '' ? null : SesiService::hashPerangkat($deviceId);
+
+        if (! $dev && $this->sesi->sesiAktifUntuk($user, $bearer, $deviceHash)) {
+            return ['langkah' => 'sesi_aktif', 'token' => null, 'expires_at' => null, 'user' => $user];
+        }
+
+        $pra = $this->sesi->terbitkanPraLogin($user, $deviceHash, $dev);
+        $langkah = $user->punyaPassword() ? 'masuk' : 'aktivasi';
+
+        AuditAuth::catat($user, AuditAuth::PRA_LOGIN, array_filter([
+            'langkah' => $langkah,
+            'perangkat' => AuditAuth::sidik($deviceHash),
+            'dev' => $dev ?: null,
+        ], fn ($v) => $v !== null));
+
+        return ['langkah' => $langkah, 'token' => $pra['token'], 'expires_at' => $pra['expires_at'], 'user' => $user];
     }
 
     /**
@@ -94,31 +121,6 @@ class TelegramAuthService
         }
 
         return $user;
-    }
-
-    /**
-     * @return array{token: string, expires_at: Carbon|null, user: User}
-     */
-    private function issueToken(User $user, string $device): array
-    {
-        $name = 'miniapp:'.$device;
-        $minutes = (int) config('sanctum.expiration');
-        $expiresAt = $minutes > 0 ? now()->addMinutes($minutes) : null;
-
-        return DB::transaction(function () use ($user, $name, $expiresAt) {
-            // Satu token per perangkat; sekalian bersihkan token kedaluwarsa.
-            $user->tokens()
-                ->where(fn ($q) => $q->where('name', $name)->orWhere('expires_at', '<', now()))
-                ->delete();
-
-            $token = $user->createToken($name, Rbac::abilities($user), $expiresAt);
-
-            $now = now();
-            User::withoutGlobalScopes()->whereKey($user->getKey())->update(['last_login_at' => $now]);
-            $user->setRawAttributes(array_merge($user->getAttributes(), ['last_login_at' => $now]), true);
-
-            return ['token' => $token->plainTextToken, 'expires_at' => $expiresAt, 'user' => $user];
-        });
     }
 
     private function devUser(string $roleValue, ?string $unitValue): User
