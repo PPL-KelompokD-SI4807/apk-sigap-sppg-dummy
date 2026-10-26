@@ -196,6 +196,138 @@ class SesiAdminTest extends TestCase
         $this->kirim($admin, '/api/v1/pengguna/999999/reset-password')->assertNotFound();
     }
 
+    // ---------------------------------------------------------------- ubah password (S-3)
+
+    public function test_ubah_password_mempertahankan_sesi_ini_dan_mencabut_sesi_lain(): void
+    {
+        $hp = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::HP);
+        $tablet = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::TABLET);
+
+        $this->kirim($hp, '/api/v1/auth/password', [
+            'password_lama' => self::PASSWORD, 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z',
+        ], 'PUT')->assertOk()->assertJsonPath('jumlah_sesi_dicabut', 1);
+
+        $this->kirim($hp, '/api/v1/auth/me', method: 'GET')->assertOk();
+        $this->kirim($tablet, '/api/v1/auth/me', method: 'GET')->assertUnauthorized();
+        $this->assertTrue(Hash::check('BaruSekali9z', $this->siti->fresh()->password));
+        $sesi = app(SesiService::class);
+        $this->assertNotNull($sesi->perangkatAktif($this->siti, SesiService::hashPerangkat(self::HP)));
+        $this->assertNull($sesi->perangkatAktif($this->siti, SesiService::hashPerangkat(self::TABLET)));
+
+        $log = AuditLog::query()->where('event', AuditAuth::PASSWORD_DIUBAH)->sole();
+        $this->assertStringNotContainsString('BaruSekali9z', $log->toJson());
+        $this->assertStringNotContainsString(self::PASSWORD, AuditLog::query()->get()->toJson());
+    }
+
+    public function test_ubah_password_lama_salah_ikut_penguncian_dan_aturan_password(): void
+    {
+        $hp = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::HP);
+        $salah = ['password_lama' => 'SalahSekali1', 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z'];
+
+        $this->kirim($hp, '/api/v1/auth/password', ['password_lama' => self::PASSWORD, 'password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD], 'PUT')
+            ->assertUnprocessable()->assertJsonValidationErrors(['password']);
+        $this->kirim($hp, '/api/v1/auth/password', ['password_lama' => self::PASSWORD, 'password' => 'Password123', 'password_confirmation' => 'Password123'], 'PUT')
+            ->assertUnprocessable()->assertJsonValidationErrors(['password']);
+
+        for ($sisa = 4; $sisa >= 1; $sisa--) {
+            $this->kirim($hp, '/api/v1/auth/password', $salah, 'PUT')
+                ->assertUnprocessable()->assertJsonPath('errors.password_lama.0', 'Password lama salah.')->assertJsonPath('sisa_percobaan', $sisa);
+        }
+
+        $this->kirim($hp, '/api/v1/auth/password', $salah, 'PUT')->assertStatus(429)->assertJsonPath('alasan', 'terkunci');
+        // Password lama yang benar pun ditolak selama terkunci; sesi ini sendiri tetap berlaku.
+        $this->kirim($hp, '/api/v1/auth/password', [...$salah, 'password_lama' => self::PASSWORD], 'PUT')->assertStatus(429);
+        $this->kirim($hp, '/api/v1/auth/me', method: 'GET')->assertOk();
+        $this->assertTrue(Hash::check(self::PASSWORD, $this->siti->fresh()->password));
+    }
+
+    public function test_ubah_password_butuh_login_penuh(): void
+    {
+        $pra = $this->praLogin($this->siti);
+
+        $this->kirim($pra, '/api/v1/auth/password', ['password_lama' => self::PASSWORD, 'password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z'], 'PUT')
+            ->assertForbidden()->assertJsonPath('alasan', 'perlu_login_penuh');
+    }
+
+    // ---------------------------------------------------------------- cabut satu sesi (S-3)
+
+    public function test_cabut_satu_sesi_milik_sendiri(): void
+    {
+        $hp = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::HP);
+        $tablet = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::TABLET);
+        $idTablet = collect($this->kirim($hp, '/api/v1/auth/sesi', method: 'GET')->json('data'))->firstWhere('sesi_ini', false)['id'];
+
+        $this->kirim($hp, "/api/v1/auth/sesi/{$idTablet}", method: 'DELETE')->assertOk()->assertJsonPath('sesi_ini', false);
+
+        $this->kirim($tablet, '/api/v1/auth/me', method: 'GET')->assertUnauthorized();
+        $this->kirim($hp, '/api/v1/auth/me', method: 'GET')->assertOk();
+        $this->assertNull(app(SesiService::class)->perangkatAktif($this->siti, SesiService::hashPerangkat(self::TABLET)));
+        $this->assertSame(1, AuditLog::query()->where('event', AuditAuth::SESI_DICABUT)->count());
+    }
+
+    public function test_cabut_sesi_milik_akun_lain_404_tanpa_efek(): void
+    {
+        $hpSiti = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::HP);
+        $budi = User::factory()->role(Role::StafGudang)->denganKredensial('budi.gudang', self::PASSWORD)
+            ->create(['sppg_id' => $this->sppgA, 'telegram_id' => 7012340000]);
+        $hpBudi = $this->loginPenuh($budi, 'budi.gudang', self::PASSWORD, self::HP);
+        $idBudi = $this->kirim($hpBudi, '/api/v1/auth/sesi', method: 'GET')->json('data.0.id');
+        $praSiti = $budi->tokens()->count();
+
+        // IDOR: id sesi Budi dari akun Siti -> 404, id tak ada -> 404.
+        $this->kirim($hpSiti, "/api/v1/auth/sesi/{$idBudi}", method: 'DELETE')->assertNotFound();
+        $this->kirim($hpSiti, '/api/v1/auth/sesi/999999', method: 'DELETE')->assertNotFound();
+
+        $this->kirim($hpBudi, '/api/v1/auth/me', method: 'GET')->assertOk();
+        $this->assertSame($praSiti, $budi->tokens()->count());
+    }
+
+    // ---------------------------------------------------------------- sesi pengguna untuk Admin (S-3)
+
+    public function test_admin_melihat_dan_mencabut_satu_sesi_pengguna(): void
+    {
+        $hp = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::HP);
+        $tablet = $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::TABLET);
+        [$adminUser, $admin] = $this->adminDenganSesi();
+
+        $daftar = $this->kirim($admin, "/api/v1/pengguna/{$this->siti->id}/sesi", method: 'GET')->assertOk()->assertJsonCount(2, 'data');
+        $this->assertFalse(collect($daftar->json('data'))->contains('sesi_ini', true));
+        $this->assertStringNotContainsString(SesiService::hashPerangkat(self::HP), $daftar->getContent());
+
+        $idHp = $this->kirim($hp, '/api/v1/auth/sesi', method: 'GET')->json('data.0.id');
+        $this->kirim($admin, "/api/v1/pengguna/{$this->siti->id}/sesi/{$idHp}", method: 'DELETE')->assertOk();
+
+        $this->kirim($hp, '/api/v1/auth/me', method: 'GET')->assertUnauthorized();
+        $this->kirim($tablet, '/api/v1/auth/me', method: 'GET')->assertOk();
+        $log = AuditLog::query()->where('event', AuditAuth::SESI_DICABUT_ADMIN)->sole();
+        $this->assertSame($adminUser->id, $log->user_id);
+        $this->assertSame($this->siti->id, $log->auditable_id);
+
+        // Sesi milik pengguna lain lewat path pengguna ini: 404 (cegah IDOR).
+        $idAdmin = collect($this->kirim($admin, '/api/v1/auth/sesi', method: 'GET')->json('data'))->firstWhere('sesi_ini', true)['id'];
+        $this->kirim($admin, "/api/v1/pengguna/{$this->siti->id}/sesi/{$idAdmin}", method: 'DELETE')->assertNotFound();
+        $this->kirim($admin, '/api/v1/auth/me', method: 'GET')->assertOk();
+    }
+
+    public function test_sesi_pengguna_hanya_untuk_admin_dalam_scope(): void
+    {
+        // Dibuat sebelum login: setelah request, guard tes masih memegang Siti dan BelongsToSppg
+        // akan memaksa sppg_id pengguna baru ke SPPG Siti.
+        $kepalaA = User::factory()->role(Role::KepalaSppg)->create(['sppg_id' => $this->sppgA]);
+        $kepalaB = User::factory()->role(Role::KepalaSppg)->create(['sppg_id' => $this->createSppg('SPPG Lain')]);
+        $this->loginPenuh($this->siti, 'siti.gudang', self::PASSWORD, self::HP);
+        $id = $this->siti->tokens()->where('name', 'like', 'sesi:%')->value('id');
+        $sitiLain = $this->beriSesiPenuh($this->siti, 'perangkat-lain-siti-zzzzzzzzzzzz');
+
+        // Token sungguhan (bukan Sanctum::actingAs) agar sama dengan jalur produksi.
+        foreach ([[$this->beriSesiPenuh($kepalaA), 403], [$sitiLain, 403], [$this->beriSesiPenuh($kepalaB), 404]] as [$token, $status]) {
+            $this->kirim($token, "/api/v1/pengguna/{$this->siti->id}/sesi", method: 'GET')->assertStatus($status);
+            $this->kirim($token, "/api/v1/pengguna/{$this->siti->id}/sesi/{$id}", method: 'DELETE')->assertStatus($status);
+        }
+
+        $this->assertSame(2, $this->siti->tokens()->where('name', 'like', 'sesi:%')->count());
+    }
+
     public function test_pemeriksaan_sesi_untuk_bot(): void
     {
         $sesi = app(SesiService::class);

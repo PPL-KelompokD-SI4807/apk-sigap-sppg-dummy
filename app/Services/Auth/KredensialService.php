@@ -185,6 +185,55 @@ class KredensialService
         AuditAuth::catat($target, AuditAuth::PASSWORD_DIRESET_ADMIN, $aktor === null ? ['oleh' => 'perintah_server'] : [], $aktor);
     }
 
+    /**
+     * Ubah password oleh pemilik (sesi login penuh): password lama wajib benar dan ikut penguncian
+     * yang sama dengan masuk (token penuh yang bocor tidak bisa dipakai menebak password). Sesi &
+     * perangkat ini dipertahankan; semua sesi, perangkat tepercaya, dan tantangan lain dicabut.
+     *
+     * @return int jumlah sesi login penuh lain yang dicabut
+     */
+    public function ubahPassword(User $user, string $passwordLama, string $passwordBaru, PersonalAccessToken $tokenIni): int
+    {
+        $perangkatId = $tokenIni->getAttribute('perangkat_tepercaya_id');
+        $deviceHash = (string) $user->perangkatTepercaya()->whereKey($perangkatId)->value('device_hash');
+
+        $this->reservasiPercobaan($user, $deviceHash);
+
+        if (! Hash::check($passwordLama, (string) $user->password)) {
+            $maks = $this->maksGagal();
+            $gagal = (int) User::withoutGlobalScopes()->whereKey($user->getKey())->value('failed_login_attempts');
+            AuditAuth::catat($user, AuditAuth::UBAH_PASSWORD_GAGAL, ['gagal_ke' => $gagal, 'perangkat' => AuditAuth::sidik($deviceHash ?: null)]);
+
+            if ($gagal >= $maks) {
+                $this->kunci($user);
+            }
+
+            $pesan = 'Password lama salah.';
+
+            throw GalatAuth::respons(422, GalatAuth::KREDENSIAL_SALAH, $pesan, ['password_lama' => [$pesan]], ['sisa_percobaan' => $maks - $gagal]);
+        }
+
+        $jumlah = DB::transaction(function () use ($user, $passwordBaru, $tokenIni, $perangkatId): int {
+            $jumlah = $user->tokens()->where('name', 'like', SesiService::PREFIX_SESI.'%')->whereKeyNot($tokenIni->getKey())->count();
+
+            // saveQuietly: event updated (cabut SEMUA sesi) tidak boleh mencabut sesi perangkat ini.
+            $user->forceFill([
+                'password' => Hash::make($passwordBaru),
+                'password_changed_at' => now(),
+                'failed_login_attempts' => 0,
+                'locked_until' => null,
+            ])->saveQuietly();
+
+            $user->cabutSemuaSesi($tokenIni->getKey(), $perangkatId === null ? null : (int) $perangkatId);
+
+            return $jumlah;
+        });
+
+        AuditAuth::catat($user, AuditAuth::PASSWORD_DIUBAH, ['jumlah_sesi_dicabut' => $jumlah, 'perangkat' => AuditAuth::sidik($deviceHash ?: null)]);
+
+        return $jumlah;
+    }
+
     /** Cabut semua sesi pengguna oleh Admin. Mengembalikan jumlah sesi login penuh yang dicabut. */
     public function cabutSesiOlehAdmin(User $admin, User $target): int
     {

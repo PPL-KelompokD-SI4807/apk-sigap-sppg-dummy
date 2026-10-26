@@ -159,6 +159,27 @@
 /pengguna/{id}/sesi:
   parameters:
     - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Pengguna]
+    summary: Daftar sesi login pengguna (Admin)
+    description: |
+      Hanya Admin (hak ubah pengguna, Policy UserPolicy::kelolaSesi); peran lain 403, pengguna di
+      luar scope 404. Isi sama dengan GET /auth/sesi tanpa device_id/hash; `sesi_ini` selalu false.
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: array
+                  items: { $ref: '#/components/schemas/Sesi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
   delete:
     tags: [Pengguna]
     summary: Cabut semua sesi pengguna (Admin)
@@ -174,6 +195,30 @@
                 message: { type: string }
                 jumlah_sesi: { type: integer }
             example: { message: 'Semua sesi pengguna dicabut.', jumlah_sesi: 2 }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/pengguna/{id}/sesi/{sesi}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+    - { name: sesi, in: path, required: true, schema: { type: integer }, description: 'id dari GET /pengguna/{id}/sesi.' }
+  delete:
+    tags: [Pengguna]
+    summary: Cabut satu sesi pengguna (Admin)
+    description: |
+      Token sesi itu dan kepercayaan perangkatnya dicabut; password tidak berubah. Sesi yang bukan
+      milik pengguna {id} -> 404 (tanpa efek). Hanya Admin (403 untuk peran lain). Dicatat di log audit.
+    responses:
+      '200':
+        description: Sesi dicabut
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+                jumlah_sesi: { type: integer }
+            example: { message: 'Sesi pengguna dicabut.', jumlah_sesi: 1 }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }

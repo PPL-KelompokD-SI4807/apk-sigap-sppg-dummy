@@ -643,6 +643,73 @@ paths:
                   - { id: 47, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AuthForbidden' }
+  /auth/sesi/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer }, description: 'id dari GET /auth/sesi.' }
+    delete:
+      tags: [Auth]
+      summary: Cabut satu sesi milik sendiri
+      description: |
+        Token sesi itu dihapus dan kepercayaan perangkatnya dicabut (masuk berikutnya di perangkat itu
+        wajib token bot). Id sesi milik akun lain atau tidak ada -> 404 (tanpa efek). Bila id = sesi
+        ini (`sesi_ini: true`), klien wajib membuang tokennya. Dicatat di log audit.
+      responses:
+        '200':
+          description: Sesi dicabut
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, sesi_ini]
+                properties:
+                  message: { type: string }
+                  sesi_ini: { type: boolean }
+              example: { message: 'Sesi perangkat dicabut.', sesi_ini: false }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AuthForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /auth/password:
+    put:
+      tags: [Auth]
+      summary: Ubah password (login penuh)
+      description: |
+        Password lama wajib benar dan ikut penguncian akun yang sama dengan Masuk (5 salah -> 429
+        `alasan: terkunci` 15 menit; sesi ini tetap berlaku). Password baru mengikuti aturan aktivasi
+        dan harus berbeda dari password lama. Sesi perangkat ini dipertahankan; semua sesi, perangkat
+        tepercaya, dan tantangan token lain dicabut. Throttle 10/menit per akun.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password_lama, password, password_confirmation]
+              properties:
+                password_lama: { type: string, maxLength: 64 }
+                password: { type: string, minLength: 8, maxLength: 64 }
+                password_confirmation: { type: string }
+            example: { password_lama: 'Rahasia123x', password: 'BaruSekali9z', password_confirmation: 'BaruSekali9z' }
+      responses:
+        '200':
+          description: Password diubah
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, jumlah_sesi_dicabut]
+                properties:
+                  message: { type: string }
+                  jumlah_sesi_dicabut: { type: integer }
+              example: { message: 'Password diubah. Sesi di perangkat lain telah dicabut.', jumlah_sesi_dicabut: 1 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AuthForbidden' }
+        '422':
+          description: Validasi gagal, atau password lama salah (`alasan: kredensial_salah`, `errors.password_lama`, `sisa_percobaan`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthError' }
+              example: { message: 'Password lama salah.', errors: { password_lama: ['Password lama salah.'] }, alasan: kredensial_salah, sisa_percobaan: 4 }
+        '429': { $ref: '#/components/responses/AuthTooManyRequests' }
   /auth/keluar-semua:
     post:
       tags: [Auth]
@@ -3038,6 +3105,27 @@ paths:
   /pengguna/{id}/sesi:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Pengguna]
+      summary: Daftar sesi login pengguna (Admin)
+      description: |
+        Hanya Admin (hak ubah pengguna, Policy UserPolicy::kelolaSesi); peran lain 403, pengguna di
+        luar scope 404. Isi sama dengan GET /auth/sesi tanpa device_id/hash; `sesi_ini` selalu false.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Sesi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [Pengguna]
       summary: Cabut semua sesi pengguna (Admin)
@@ -3053,6 +3141,30 @@ paths:
                   message: { type: string }
                   jumlah_sesi: { type: integer }
               example: { message: 'Semua sesi pengguna dicabut.', jumlah_sesi: 2 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /pengguna/{id}/sesi/{sesi}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: sesi, in: path, required: true, schema: { type: integer }, description: 'id dari GET /pengguna/{id}/sesi.' }
+    delete:
+      tags: [Pengguna]
+      summary: Cabut satu sesi pengguna (Admin)
+      description: |
+        Token sesi itu dan kepercayaan perangkatnya dicabut; password tidak berubah. Sesi yang bukan
+        milik pengguna {id} -> 404 (tanpa efek). Hanya Admin (403 untuk peran lain). Dicatat di log audit.
+      responses:
+        '200':
+          description: Sesi dicabut
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  jumlah_sesi: { type: integer }
+              example: { message: 'Sesi pengguna dicabut.', jumlah_sesi: 1 }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

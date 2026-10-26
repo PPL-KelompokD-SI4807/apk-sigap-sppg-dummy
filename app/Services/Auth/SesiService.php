@@ -221,6 +221,26 @@ class SesiService
         });
     }
 
+    /**
+     * Cabut satu sesi login penuh MILIK $pemilik (token + kepercayaan perangkatnya). Id sesi milik
+     * akun lain diperlakukan sama dengan tidak ada (null -> 404 di controller, cegah IDOR).
+     */
+    public function cabutSatu(User $pemilik, int $sesiId): ?PersonalAccessToken
+    {
+        $token = $pemilik->tokens()
+            ->where('name', 'like', self::PREFIX_SESI.'%')
+            ->whereKey($sesiId)
+            ->first();
+
+        if (! $token instanceof PersonalAccessToken) {
+            return null;
+        }
+
+        $this->logout($pemilik, $token);
+
+        return $token;
+    }
+
     /** Keluar dari semua perangkat (termasuk perangkat ini). Mengembalikan jumlah sesi penuh yang dicabut. */
     public function keluarSemua(User $user): int
     {

@@ -47,6 +47,13 @@ final class AuditAuth
 
     public const SESI_DICABUT_ADMIN = 'auth.sesi_dicabut_admin';
 
+    public const PASSWORD_DIUBAH = 'auth.password_diubah';
+
+    public const UBAH_PASSWORD_GAGAL = 'auth.ubah_password_gagal';
+
+    /** Satu sesi dicabut pemiliknya dari daftar sesi. */
+    public const SESI_DICABUT = 'auth.sesi_dicabut';
+
     /** Aktivasi: no telepon tidak disimpan karena sudah dipakai akun lain (tanpa nomornya). */
     public const TELEPON_TIDAK_DISIMPAN = 'auth.telepon_tidak_disimpan';
 

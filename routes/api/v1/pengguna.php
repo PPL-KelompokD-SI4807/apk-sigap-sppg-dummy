@@ -11,10 +11,14 @@ Route::post('pengguna/undangan', [PenggunaUndanganController::class, 'store'])->
 Route::delete('pengguna/undangan/{invitation}', [PenggunaUndanganController::class, 'destroy'])
     ->whereNumber('invitation')->name('pengguna.undangan.destroy');
 
-// R-03: Admin mereset password (dikosongkan, tidak pernah dilihat) dan mencabut semua sesi pengguna.
+// R-03: Admin mereset password (dikosongkan, tidak pernah dilihat), melihat, dan mencabut sesi pengguna.
 Route::post('pengguna/{user}/reset-password', [PenggunaKredensialController::class, 'resetPassword'])
     ->whereNumber('user')->name('pengguna.reset-password');
+Route::get('pengguna/{user}/sesi', [PenggunaKredensialController::class, 'daftarSesi'])
+    ->whereNumber('user')->name('pengguna.sesi.index');
 Route::delete('pengguna/{user}/sesi', [PenggunaKredensialController::class, 'cabutSesi'])
     ->whereNumber('user')->name('pengguna.sesi.destroy');
+Route::delete('pengguna/{user}/sesi/{sesi}', [PenggunaKredensialController::class, 'cabutSatuSesi'])
+    ->whereNumber(['user', 'sesi'])->name('pengguna.sesi.destroy-satu');
 
 Route::apiResource('pengguna', PenggunaController::class)->parameters(['pengguna' => 'user'])->whereNumber('user');
