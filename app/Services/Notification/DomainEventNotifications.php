@@ -25,6 +25,7 @@ class DomainEventNotifications
         'PerjalananDimulai', 'PerjalananTiba', 'PerjalananTerlambat', 'RekapHarianDibuat',
         'BuktiDistribusiDicatat', 'DistribusiTerlambat', 'BuktiDistribusiBelumMasuk',
         'AnggaranMencapai80', 'AnggaranMencapai100', 'AnggaranMelampaui',
+        'MenuDiajukan', 'MenuDiputuskan',
     ];
 
     /** Peran penerima per event (PIC titik layanan untuk perjalanan ditangani khusus). */
@@ -44,6 +45,9 @@ class DomainEventNotifications
         'AnggaranMencapai80' => [Role::Akuntan, Role::KepalaSppg],
         'AnggaranMencapai100' => [Role::Akuntan, Role::KepalaSppg],
         'AnggaranMelampaui' => [Role::Akuntan, Role::KepalaSppg],
+        // Investor dicari lewat pivot investor_sppg (NotificationService), bukan users.sppg_id.
+        'MenuDiajukan' => [Role::Investor],
+        'MenuDiputuskan' => [Role::AhliGizi],
     ];
 
     /** Event kritis: bila tidak ada penerima peran, kirim ke Admin (Risiko 10 proposal). */
@@ -84,6 +88,8 @@ class DomainEventNotifications
             'BuktiDistribusiDicatat' => $this->buktiDistribusi($name, $sppgId, $p),
             'DistribusiTerlambat' => $this->distribusiTerlambat($name, $sppgId, $p),
             'BuktiDistribusiBelumMasuk' => $this->buktiBelumMasuk($name, $sppgId, $p),
+            'MenuDiajukan' => $this->menuDiajukan($name, $sppgId, $p),
+            'MenuDiputuskan' => $this->menuDiputuskan($name, $sppgId, $p),
             default => $this->anggaran($name, $sppgId, $p),
         };
     }
@@ -327,6 +333,48 @@ class DomainEventNotifications
         $key = "bukti_belum_masuk:{$sppgId}:".$this->int($p, 'jadwalDistribusiId', 'jadwal_distribusi_id', 'id');
 
         return $this->message($name, $sppgId, $key, $html, 'Buka Bukti Distribusi', '/bukti-distribusi');
+    }
+
+    /** @param array<string, mixed> $p */
+    private function menuDiajukan(string $name, int $sppgId, array $p): NotificationMessage
+    {
+        $id = (int) $this->int($p, 'id');
+
+        $html = sprintf(
+            "<b>Menu menunggu persetujuan</b>\n%s\nBiaya per porsi Rp %s x %s porsi = total Rp %s.",
+            $this->e($this->str($p, 'namaMenu', 'nama_menu')),
+            $this->e($this->num($p, 'biayaPerPorsi', 'biaya_per_porsi')),
+            $this->e($this->num($p, 'jumlahPorsi', 'jumlah_porsi')),
+            $this->e($this->num($p, 'totalBiaya', 'total_biaya')),
+        );
+
+        return $this->message($name, $sppgId, "menu_diajukan:{$sppgId}:{$id}", $html, 'Lihat di Mini App', "/persetujuan-menu/{$id}?sppg={$sppgId}");
+    }
+
+    /** @param array<string, mixed> $p */
+    private function menuDiputuskan(string $name, int $sppgId, array $p): NotificationMessage
+    {
+        $id = (int) $this->int($p, 'id');
+        $keputusan = $this->str($p, 'keputusan');
+        $label = match ($keputusan) {
+            'disetujui' => 'DISETUJUI',
+            'ditolak' => 'DITOLAK',
+            'perlu_revisi' => 'PERLU REVISI',
+            default => 'DIPUTUSKAN',
+        };
+        $catatan = mb_substr($this->str($p, 'catatan'), 0, 300);
+
+        $html = sprintf(
+            "<b>Menu %s</b>\n%s (Rp %s per porsi, %s porsi, total Rp %s).%s",
+            $label,
+            $this->e($this->str($p, 'namaMenu', 'nama_menu')),
+            $this->e($this->num($p, 'biayaPerPorsi', 'biaya_per_porsi')),
+            $this->e($this->num($p, 'jumlahPorsi', 'jumlah_porsi')),
+            $this->e($this->num($p, 'totalBiaya', 'total_biaya')),
+            $catatan !== '' ? "\nCatatan investor: ".$this->e($catatan) : '',
+        );
+
+        return $this->message($name, $sppgId, "menu_diputuskan:{$sppgId}:{$id}:{$keputusan}", $html, 'Lihat di Mini App', "/persetujuan-menu/{$id}?sppg={$sppgId}");
     }
 
     /** @param array<string, mixed> $p */
