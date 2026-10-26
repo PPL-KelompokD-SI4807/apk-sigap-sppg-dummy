@@ -5,6 +5,8 @@ import { createListView } from '../../components/list-view.js';
 import { createFormView } from '../../components/form-view.js';
 import { rowCard } from '../../components/row-card.js';
 import { showInviteLink } from '../../components/invite-dialog.js';
+import { renderPermintaanReset } from '../../components/permintaan-reset-view.js';
+import { renderSesiPengguna } from '../../components/sesi-view.js';
 import { h } from '../../core/dom.js';
 import { api } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
@@ -53,6 +55,7 @@ const base = defineCrudModule({
   }),
   listTop: (p) => (p.C ? h('div', { class: 'stack' },
     h('a', { class: 'btn btn-block', href: '#/pengguna/undangan' }, 'Kelola tautan undangan'),
+    h('a', { class: 'btn btn-block', href: '#/pengguna/permintaan-reset' }, 'Permintaan reset password'),
     h('p', { class: 'notice' }, 'Tautan undangan Telegram berlaku sekali pakai dan kedaluwarsa dalam 72 jam. Akun Telegram terhubung otomatis saat tautan dibuka. Buat akun, lalu buka detailnya untuk menerbitkan tautan.')) : null),
   // Admin tidak boleh menghapus akunnya sendiri (422 di server): sembunyikan tombol hapus.
   rowPerms: (rec, p) => (rec.id === getUser()?.id ? { ...p, D: false } : p),
@@ -96,6 +99,7 @@ function akunKredensial(rec) {
       message: `Reset password ${rec.name}? Semua sesinya dicabut dan ia wajib mengatur password baru saat membuka Mini App.`,
       run: () => api.post(`/pengguna/${rec.id}/reset-password`, {}, { silent: true }),
     }),
+    h('a', { class: 'btn btn-block', href: `#/pengguna/${encodeURIComponent(rec.id)}/sesi` }, 'Lihat sesi & perangkat'),
     aksi('Cabut semua sesi', 'btn-danger', {
       title: 'Cabut sesi', okText: 'Cabut', sukses: 'Sesi dicabut.',
       message: `Keluarkan ${rec.name} dari semua perangkat? Password tidak berubah.`,
@@ -137,6 +141,9 @@ function registerUndangan() {
     });
     ctx.el.append(h('p', { class: 'muted small' }, 'Token tidak dapat ditampilkan ulang. Bila tautan hilang, buat undangan baru (undangan aktif sebelumnya otomatis dicabut).'), lv.el);
   }, { title: 'Undangan Telegram', guard: canInvite });
+
+  route('/pengguna/permintaan-reset', renderPermintaanReset, { title: 'Permintaan Reset Password', guard: canInvite });
+  route('/pengguna/:id/sesi', renderSesiPengguna, { title: 'Sesi Pengguna', guard: canInvite });
 
   route('/pengguna/undangan/baru', (ctx) => {
     const fv = createFormView({
