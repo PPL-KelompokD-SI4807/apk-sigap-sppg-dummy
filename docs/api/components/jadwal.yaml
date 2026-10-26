@@ -85,7 +85,7 @@ schemas:
       titik_layanan_id: { type: integer }
       armada_id: { type: [integer, 'null'] }
       pengemudi_id: { type: [integer, 'null'] }
-      petugas_id: { type: [integer, 'null'], description: 'Pengguna SPPG yang sama; default pembuat bila relawan' }
+      petugas_id: { type: [integer, 'null'], description: 'Relawan unit distribusi yang aktif di SPPG yang sama (selain itu 422); default pembuat bila relawan' }
       tanggal_distribusi: { type: string, format: date, description: 'Default = tanggal produksi; tidak boleh sebelum tanggal produksi' }
       jam_berangkat: { type: [string, 'null'], examples: ['08:30'], description: 'HH:MM; wajib bila armada/pengemudi diisi' }
       jam_rencana_tiba: { type: [string, 'null'], examples: ['09:15'], description: 'Harus setelah jam_berangkat' }

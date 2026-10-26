@@ -148,13 +148,13 @@ class PemasokTest extends MasterApiTestCase
     public function test_pencarian_filter_dan_paginasi(): void
     {
         $this->pemasok($this->sppgA, ['nama' => 'Peternakan Sumber', 'jenis' => 'peternak', 'jenis_bahan' => 'Telur ayam']);
-        $this->pemasok($this->sppgA, ['nama' => 'Nelayan Pantai', 'jenis' => 'nelayan', 'is_active' => false]);
-        $this->pemasok($this->sppgA, ['nama' => 'UMKM Tempe', 'jenis' => 'umkm']);
+        $this->pemasok($this->sppgA, ['nama' => 'Nelayan Pantai', 'jenis' => 'nelayan', 'jenis_bahan' => 'Ikan laut', 'is_active' => false]);
+        $this->pemasok($this->sppgA, ['nama' => 'UMKM Tempe', 'jenis' => 'umkm', 'jenis_bahan' => 'Tempe']);
 
         $this->as($this->stafGudangA);
         $this->getJson('/api/v1/pemasok?jenis=nelayan')->assertOk()->assertJsonPath('meta.total', 1);
         $this->getJson('/api/v1/pemasok?is_active=false')->assertOk()->assertJsonPath('data.0.nama', 'Nelayan Pantai');
-        $this->getJson('/api/v1/pemasok?q=telur')->assertOk()->assertJsonPath('data.0.nama', 'Peternakan Sumber');
+        $this->getJson('/api/v1/pemasok?q=telur')->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.nama', 'Peternakan Sumber');
         $this->getJson('/api/v1/pemasok?q=%25')->assertOk()->assertJsonPath('meta.total', 0);
         $this->getJson('/api/v1/pemasok?per_page=2')->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('meta.last_page', 2);
     }
