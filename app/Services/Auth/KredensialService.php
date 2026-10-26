@@ -6,6 +6,7 @@ use App\Models\TantanganToken;
 use App\Models\User;
 use App\Support\Telepon;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -21,8 +22,8 @@ use Laravel\Sanctum\PersonalAccessToken;
  *   seperti password salah (tidak ada oracle akun) dan dicatat di audit.
  * - Password selalu diperiksa dengan Hash::check (juga saat identitas tidak cocok) agar waktu
  *   respons tidak membocorkan apa pun.
- * - Penguncian sementara per akun setelah salah berulang. Karena identitas wajib milik akun
- *   Telegram yang sama, orang lain tidak dapat mengunci akun ini (bukan vektor DoS).
+ * - Penguncian sementara per akun setelah salah berulang, atomik terhadap request paralel
+ *   (reservasiPercobaan). Identitas wajib milik akun Telegram yang sama.
  * - Token pra-login dari bypass dev tidak pernah ditukar menjadi login penuh.
  * - Tidak ada reset password mandiri (pemegang Telegram tidak boleh melewati lapis password,
  *   termasuk saat akun terkunci). Reset hanya oleh Admin dalam scope-nya (Policy) atau
@@ -46,11 +47,7 @@ class KredensialService
             throw GalatAuth::perluAktivasi();
         }
 
-        if ($user->terkunci()) {
-            AuditAuth::catat($user, AuditAuth::DITOLAK_TERKUNCI, ['perangkat' => AuditAuth::sidik($deviceHash)]);
-
-            throw GalatAuth::terkunci($user->locked_until);
-        }
+        $this->reservasiPercobaan($user, $deviceHash);
 
         $cocok = $this->identitasCocok($user, $identitas);
         $passwordBenar = Hash::check($password, (string) $user->password);
@@ -217,11 +214,39 @@ class KredensialService
         return preg_match('/^@?[A-Za-z]/', trim($identitas)) === 1 ? 'username' : 'telepon';
     }
 
+    /**
+     * Penguncian atomik: setiap percobaan password MEMESAN satu slot (UPDATE bersyarat) sebelum
+     * Hash::check, sehingga request paralel tidak bisa melebihi maks_gagal per siklus kunci. Slot
+     * dikembalikan (penghitung = 0) bila password benar. Penghitung dibiarkan = maks selama terkunci
+     * dan baru dinolkan saat kunci kedaluwarsa.
+     */
+    private function reservasiPercobaan(User $user, string $deviceHash): void
+    {
+        $maks = $this->maksGagal();
+        $query = fn () => User::withoutGlobalScopes()->whereKey($user->getKey());
+
+        // Kunci kedaluwarsa: buka dan mulai siklus baru (atomik, aman bila beberapa request bersamaan).
+        $query()->whereNotNull('locked_until')->where('locked_until', '<=', now())
+            ->update(['locked_until' => null, 'failed_login_attempts' => 0]);
+
+        $dipesan = $query()->whereNull('locked_until')->where('failed_login_attempts', '<', $maks)
+            ->update(['failed_login_attempts' => DB::raw('failed_login_attempts + 1')]);
+
+        if ($dipesan === 1) {
+            return;
+        }
+
+        // Terkunci, atau semua slot sedang dipakai request paralel yang belum selesai.
+        $sampai = $query()->value('locked_until');
+        AuditAuth::catat($user, AuditAuth::DITOLAK_TERKUNCI, ['perangkat' => AuditAuth::sidik($deviceHash)]);
+
+        throw GalatAuth::terkunci($sampai === null ? now()->addMinute() : Carbon::parse($sampai));
+    }
+
+    /** Setelah slot dipesan dan password/identitas salah: catat, kunci bila slot habis. */
     private function catatGagal(User $user, string $identitas, bool $cocok, string $deviceHash): never
     {
-        $maks = max(1, (int) config('kredensial.penguncian.maks_gagal', 5));
-
-        User::withoutGlobalScopes()->whereKey($user->getKey())->increment('failed_login_attempts');
+        $maks = $this->maksGagal();
         $gagal = (int) User::withoutGlobalScopes()->whereKey($user->getKey())->value('failed_login_attempts');
 
         if ($cocok) {
@@ -231,14 +256,30 @@ class KredensialService
         }
 
         if ($gagal >= $maks) {
-            $sampai = now()->addMinutes(max(1, (int) config('kredensial.penguncian.kunci_menit', 15)));
-            User::withoutGlobalScopes()->whereKey($user->getKey())->update(['failed_login_attempts' => 0, 'locked_until' => $sampai]);
-            AuditAuth::catat($user, AuditAuth::AKUN_TERKUNCI, ['sampai' => $sampai->toIso8601String()]);
-
-            throw GalatAuth::terkunci($sampai);
+            $this->kunci($user);
         }
 
         throw GalatAuth::kredensialSalah($maks - $gagal);
+    }
+
+    private function kunci(User $user): never
+    {
+        $sampai = now()->addMinutes(max(1, (int) config('kredensial.penguncian.kunci_menit', 15)));
+        $baru = User::withoutGlobalScopes()->whereKey($user->getKey())->whereNull('locked_until')->update(['locked_until' => $sampai]);
+
+        if ($baru === 1) {
+            AuditAuth::catat($user, AuditAuth::AKUN_TERKUNCI, ['sampai' => $sampai->toIso8601String()]);
+        } else {
+            // Request paralel lain sudah mengunci lebih dulu.
+            $sampai = Carbon::parse(User::withoutGlobalScopes()->whereKey($user->getKey())->value('locked_until') ?? $sampai);
+        }
+
+        throw GalatAuth::terkunci($sampai);
+    }
+
+    private function maksGagal(): int
+    {
+        return max(1, (int) config('kredensial.penguncian.maks_gagal', 5));
     }
 
     private function catatIdentitasAsing(User $user, string $identitas, string $deviceHash, string $proses, ?int $gagal = null): void

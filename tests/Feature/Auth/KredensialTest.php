@@ -194,6 +194,41 @@ class KredensialTest extends TestCase
             ->assertStatus(202);
     }
 
+    public function test_penguncian_atomik_slot_habis_oleh_request_paralel_menolak_password_benar(): void
+    {
+        $pra = $this->praLogin($this->siti);
+        $benar = ['identitas' => 'siti.dapur', 'password' => self::PASSWORD, 'device_id' => self::HP];
+
+        // Keadaan saat 5 request paralel sudah memesan slot dan belum selesai (belum terkunci).
+        User::withoutGlobalScopes()->whereKey($this->siti->id)->update(['failed_login_attempts' => 5, 'locked_until' => null]);
+        $this->kirim($pra, '/api/v1/auth/masuk', $benar)->assertStatus(429)->assertJsonPath('alasan', 'terkunci');
+        $this->assertCount(0, $this->telegramCalls('sendMessage'), 'Password tidak sempat diuji, tidak ada token bot.');
+        $this->assertSame(5, (int) $this->siti->fresh()->failed_login_attempts);
+
+        // Satu slot tersisa: password benar memakai slot itu lalu penghitung dinolkan.
+        User::withoutGlobalScopes()->whereKey($this->siti->id)->update(['failed_login_attempts' => 4]);
+        $this->kirim($pra, '/api/v1/auth/masuk', $benar)->assertStatus(202);
+        $this->assertSame(0, (int) $this->siti->fresh()->failed_login_attempts);
+    }
+
+    public function test_penguncian_kedaluwarsa_membuka_siklus_baru_dan_penghitung_bertahan_selama_terkunci(): void
+    {
+        $pra = $this->praLogin($this->siti);
+        $salah = ['identitas' => 'siti.dapur', 'password' => 'SalahSekali1', 'device_id' => self::HP];
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->kirim($pra, '/api/v1/auth/masuk', $salah);
+        }
+
+        $this->assertNotNull($this->siti->fresh()->locked_until);
+        $this->assertSame(5, (int) $this->siti->fresh()->failed_login_attempts);
+
+        $this->travel(16)->minutes();
+        $pra = $this->praLogin($this->siti);
+        $this->kirim($pra, '/api/v1/auth/masuk', $salah)->assertUnprocessable()->assertJsonPath('sisa_percobaan', 4);
+        $this->assertNull($this->siti->fresh()->locked_until);
+    }
+
     // ---------------------------------------------------------------- token 6 digit
 
     /** @return array{0: string, 1: string} [token pra-login, id tantangan] */
