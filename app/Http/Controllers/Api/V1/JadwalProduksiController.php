@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
+use App\Enums\StatusPersetujuanMenu;
 use App\Http\Requests\Jadwal\StoreJadwalProduksiRequest;
 use App\Http\Requests\Jadwal\UpdateJadwalProduksiRequest;
 use App\Http\Resources\Jadwal\JadwalProduksiResource;
@@ -32,7 +33,7 @@ class JadwalProduksiController extends ApiController
         $this->authorize('viewAny', JadwalProduksi::class);
 
         $query = JadwalProduksi::query()
-            ->with(['menu:id,nama_menu,kelompok_sasaran', 'pemeriksaanTerbaru'])
+            ->with(['menu:id,nama_menu,kelompok_sasaran,status_persetujuan', 'pemeriksaanTerbaru'])
             ->withSum(['jadwalDistribusis as porsi_terjadwal_distribusi' => fn ($q) => $q->where('status', '!=', StatusJadwalDistribusi::Dibatalkan->value)], 'jumlah_porsi');
 
         $term = mb_substr(trim((string) $request->query('q', '')), 0, 100);
@@ -53,6 +54,10 @@ class JadwalProduksiController extends ApiController
 
         if (is_numeric($request->query('menu_id'))) {
             $query->where('menu_id', (int) $request->query('menu_id'));
+        }
+
+        if ($request->boolean('menu_belum_disetujui')) {
+            $query->whereDoesntHave('menu', fn ($m) => $m->where('status_persetujuan', StatusPersetujuanMenu::Disetujui->value));
         }
 
         if ($request->user()->isAdmin() && is_numeric($request->query('sppg_id'))) {
@@ -161,7 +166,7 @@ class JadwalProduksiController extends ApiController
 
     private function muat(JadwalProduksi $jadwal): JadwalProduksi
     {
-        return $jadwal->load(['menu:id,nama_menu,kelompok_sasaran', 'pemeriksaanTerbaru'])
+        return $jadwal->load(['menu:id,nama_menu,kelompok_sasaran,status_persetujuan', 'pemeriksaanTerbaru'])
             ->loadSum(['jadwalDistribusis as porsi_terjadwal_distribusi' => fn ($q) => $q->where('status', '!=', StatusJadwalDistribusi::Dibatalkan->value)], 'jumlah_porsi');
     }
 }
