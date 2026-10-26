@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,18 +11,20 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LogProduksi extends Model
 {
-    use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'log_produksis';
 
     /** @var list<string> */
-    protected array $searchable = ['kendala'];
+    protected array $searchable = ['kendala', 'kode_batch'];
 
     /** @var list<string> */
     protected $fillable = [
         'jadwal_produksi_id',
         'dicatat_oleh',
+        'kode_batch',
         'realisasi_porsi',
+        'waktu_mulai',
         'sisa_makanan_kg',
         'jam_selesai',
         'kendala',

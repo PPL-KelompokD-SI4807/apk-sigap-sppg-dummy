@@ -1,0 +1,129 @@
+schemas:
+  KelompokSasaran:
+    type: string
+    enum: [siswa, balita, ibu_hamil, ibu_menyusui]
+  PeringatanGizi:
+    type: object
+    properties:
+      kolom: { type: string, enum: [energi_kkal, protein_g, lemak_g, karbohidrat_g, serat_g] }
+      label: { type: string, examples: ['Protein'] }
+      status: { type: string, enum: [kurang, lebih] }
+      nilai: { type: number }
+      minimum: { type: number }
+      maksimum: { type: number }
+      pesan: { type: string, examples: ['Protein 15 g di bawah standar minimum 18 g.'] }
+  KomposisiBahan:
+    type: object
+    properties:
+      bahan_baku_id: { type: integer }
+      nama: { type: string }
+      satuan: { type: string }
+      gram_per_porsi: { type: number }
+  Menu:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      nama_menu: { type: string }
+      kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+      kelompok_sasaran_label: { type: string }
+      tanggal_sajian: { type: [string, 'null'], format: date }
+      siklus: { type: [string, 'null'] }
+      energi_kkal: { type: number }
+      protein_g: { type: number }
+      lemak_g: { type: number }
+      karbohidrat_g: { type: number }
+      serat_g: { type: number }
+      catatan: { type: [string, 'null'] }
+      jumlah_bahan: { type: integer, description: 'Hanya pada daftar' }
+      bahan:
+        type: array
+        description: 'Komposisi; hanya pada detail/simpan'
+        items: { $ref: '#/components/schemas/KomposisiBahan' }
+      peringatan_gizi:
+        type: array
+        description: 'Kosong bila sesuai standar atau standar belum dikonfigurasi; hanya pada detail/simpan'
+        items: { $ref: '#/components/schemas/PeringatanGizi' }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  MenuInput:
+    type: object
+    required: [nama_menu, kelompok_sasaran]
+    properties:
+      nama_menu: { type: string, maxLength: 255 }
+      kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+      tanggal_sajian: { type: [string, 'null'], format: date }
+      siklus: { type: [string, 'null'], maxLength: 50 }
+      energi_kkal: { type: number, minimum: 0, maximum: 99999 }
+      protein_g: { type: number, minimum: 0, maximum: 99999 }
+      lemak_g: { type: number, minimum: 0, maximum: 99999 }
+      karbohidrat_g: { type: number, minimum: 0, maximum: 99999 }
+      serat_g: { type: number, minimum: 0, maximum: 99999 }
+      catatan: { type: [string, 'null'], maxLength: 2000 }
+      bahan:
+        type: array
+        maxItems: 50
+        items:
+          type: object
+          required: [bahan_baku_id, gram_per_porsi]
+          properties:
+            bahan_baku_id: { type: integer, description: 'Bahan SPPG yang sama; tidak boleh ganda' }
+            gram_per_porsi: { type: number, exclusiveMinimum: 0, maximum: 100000 }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  StandarGizi:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+      energi_min: { type: number }
+      energi_max: { type: number }
+      protein_min: { type: number }
+      protein_max: { type: number }
+      lemak_min: { type: number }
+      lemak_max: { type: number }
+      karbohidrat_min: { type: number }
+      karbohidrat_max: { type: number }
+      serat_min: { type: number }
+      serat_max: { type: number }
+      updated_at: { type: string, format: date-time }
+  StandarGiziInput:
+    type: object
+    required: [kelompok_sasaran, energi_min, energi_max, protein_min, protein_max, lemak_min, lemak_max, karbohidrat_min, karbohidrat_max, serat_min, serat_max]
+    properties:
+      kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+      energi_min: { type: number, minimum: 0 }
+      energi_max: { type: number, description: '>= energi_min' }
+      protein_min: { type: number, minimum: 0 }
+      protein_max: { type: number }
+      lemak_min: { type: number, minimum: 0 }
+      lemak_max: { type: number }
+      karbohidrat_min: { type: number, minimum: 0 }
+      karbohidrat_max: { type: number }
+      serat_min: { type: number, minimum: 0 }
+      serat_max: { type: number }
+  RingkasanGizi:
+    type: object
+    properties:
+      menu_id: { type: integer }
+      nama_menu: { type: string }
+      kelompok_sasaran: { $ref: '#/components/schemas/KelompokSasaran' }
+      sumber_gizi: { type: string, enum: [input_menu] }
+      per_porsi:
+        type: object
+        properties:
+          energi_kkal: { type: number }
+          protein_g: { type: number }
+          lemak_g: { type: number }
+          karbohidrat_g: { type: number }
+          serat_g: { type: number }
+      total_gram_per_porsi: { type: number, description: 'Jumlah gram_per_porsi seluruh bahan' }
+      komposisi:
+        type: array
+        items: { $ref: '#/components/schemas/KomposisiBahan' }
+      standar: { oneOf: [{ $ref: '#/components/schemas/StandarGizi' }, { type: 'null' }] }
+      standar_tersedia: { type: boolean }
+      sesuai_standar: { type: [boolean, 'null'], description: 'null bila standar belum dikonfigurasi' }
+      peringatan:
+        type: array
+        items: { $ref: '#/components/schemas/PeringatanGizi' }

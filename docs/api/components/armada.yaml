@@ -1,0 +1,46 @@
+schemas:
+  Armada:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      plat_nomor: { type: string, examples: ['B 1234 XY'] }
+      jenis: { type: string }
+      kapasitas_box: { type: integer }
+      status: { type: string, enum: [tersedia, bertugas, servis] }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  ArmadaInput:
+    type: object
+    required: [plat_nomor, jenis]
+    properties:
+      sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+      plat_nomor: { type: string, maxLength: 20 }
+      jenis: { type: string, maxLength: 50 }
+      kapasitas_box: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+      status: { type: string, enum: [tersedia, bertugas, servis], default: tersedia }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  Pengemudi:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      nama: { type: string }
+      no_hp: { type: [string, 'null'] }
+      no_sim: { type: [string, 'null'], description: 'Hanya untuk peran yang boleh mengubah (Admin, Kepala SPPG); tidak ada di respons peran lain.' }
+      sim_berlaku_hingga: { type: [string, 'null'], format: date, description: 'Sama seperti no_sim: disembunyikan dari peran R.' }
+      sim_status: { type: [string, 'null'], enum: [berlaku, segera_berakhir, kedaluwarsa, null], description: 'segera_berakhir = <= 30 hari; null bila SIM tidak dicatat.' }
+      is_active: { type: boolean }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  PengemudiInput:
+    type: object
+    required: [nama]
+    properties:
+      sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+      nama: { type: string, maxLength: 255 }
+      no_hp: { type: [string, 'null'], maxLength: 30 }
+      no_sim: { type: [string, 'null'], maxLength: 30 }
+      sim_berlaku_hingga: { type: [string, 'null'], format: date }
+      is_active: { type: boolean, default: true }
+      ai_draft_id: { type: [string, 'null'], format: uuid }

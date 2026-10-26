@@ -1,0 +1,119 @@
+/sppg:
+  get:
+    tags: [SPPG]
+    summary: Daftar SPPG
+    description: 'Admin: semua SPPG. Peran lain: hanya SPPG sendiri (satu elemen).'
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: status_operasional, in: query, schema: { type: string, enum: [aktif, libur, nonaktif] } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/Sppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+  post:
+    tags: [SPPG]
+    summary: Tambah SPPG
+    description: 'Hanya Admin. `kode` unik (termasuk yang terhapus lunak). `kapasitas_porsi_harian` wajib > 0.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SppgInput' }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Sppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/sppg/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [SPPG]
+    summary: Detail SPPG
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Sppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [SPPG]
+    summary: Ubah SPPG
+    description: 'Admin: semua field. Kepala SPPG: hanya SPPG sendiri dan tidak dapat mengubah `kode`. `kapasitas_porsi_harian` wajib > 0.'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SppgInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Sppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [SPPG]
+    summary: Ubah sebagian SPPG
+    description: Sama dengan PUT; field yang tidak dikirim tidak berubah.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SppgInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Sppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [SPPG]
+    summary: Hapus lunak SPPG
+    description: 'Hanya Admin. Ditolak (422) bila SPPG masih memiliki pengguna atau titik layanan aktif.'
+    responses:
+      '204': { description: Dihapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

@@ -1,0 +1,266 @@
+/menu-gizi:
+  get:
+    tags: [Menu dan Gizi]
+    summary: Daftar menu
+    description: |
+      Hak R (admin, kepala_sppg, ahli_gizi, staf_gudang, relawan). Filter: `q` (nama_menu/siklus),
+      `kelompok_sasaran`, `from`/`to` (tanggal_sajian), `sppg_id` (hanya Admin).
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - $ref: '#/components/parameters/Search'
+      - { name: kelompok_sasaran, in: query, schema: { $ref: '#/components/schemas/KelompokSasaran' } }
+      - $ref: '#/components/parameters/DateFrom'
+      - $ref: '#/components/parameters/DateTo'
+      - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/Menu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Menu dan Gizi]
+    summary: Tambah menu beserta komposisi bahan
+    description: |
+      Hak C (ahli_gizi). Respons memuat `peringatan_gizi` bila nilai di luar rentang standar kelompok
+      sasaran (peringatan, tidak memblokir penyimpanan). Menerima `ai_draft_id` opsional.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/MenuInput' }
+          example:
+            nama_menu: 'Nasi Ayam Sayur Bayam'
+            kelompok_sasaran: siswa
+            tanggal_sajian: '2026-11-02'
+            siklus: 'Siklus 1'
+            energi_kkal: 620
+            protein_g: 22
+            lemak_g: 18
+            karbohidrat_g: 90
+            serat_g: 7
+            bahan:
+              - { bahan_baku_id: 4, gram_per_porsi: 120 }
+              - { bahan_baku_id: 9, gram_per_porsi: 60 }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Menu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/menu-gizi/standar-gizi:
+  get:
+    tags: [Menu dan Gizi]
+    summary: Daftar standar gizi per kelompok sasaran
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Paginated'
+                - properties:
+                    data:
+                      type: array
+                      items: { $ref: '#/components/schemas/StandarGizi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Menu dan Gizi]
+    summary: Tambah standar gizi (satu per kelompok sasaran per SPPG)
+    description: Hak C (ahli_gizi). Standar yang sebelumnya dihapus lunak untuk kelompok yang sama dipulihkan dan diperbarui.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StandarGiziInput' }
+    responses:
+      '201':
+        description: Dibuat
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/StandarGizi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/menu-gizi/standar-gizi/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Menu dan Gizi]
+    summary: Detail standar gizi
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/StandarGizi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Menu dan Gizi]
+    summary: Ubah standar gizi
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StandarGiziInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/StandarGizi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Menu dan Gizi]
+    summary: Ubah sebagian standar gizi
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StandarGiziInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/StandarGizi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Menu dan Gizi]
+    summary: Hapus lunak standar gizi
+    responses:
+      '204': { description: Terhapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/menu-gizi/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Menu dan Gizi]
+    summary: Detail menu (komposisi bahan + peringatan gizi)
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Menu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Menu dan Gizi]
+    summary: Ubah menu (`bahan` bila dikirim menggantikan seluruh komposisi)
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/MenuInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Menu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [Menu dan Gizi]
+    summary: Ubah sebagian menu
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/MenuInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Menu' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  delete:
+    tags: [Menu dan Gizi]
+    summary: Hapus lunak menu
+    description: Ditolak (422) bila masih dipakai jadwal produksi berstatus direncanakan/dimasak.
+    responses:
+      '204': { description: Terhapus }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/menu-gizi/{id}/ringkasan-gizi:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  get:
+    tags: [Menu dan Gizi]
+    summary: Ringkasan gizi per porsi dan perbandingan dengan standar
+    description: |
+      Gizi per porsi diambil dari nilai yang diinput pada menu (data bahan baku tidak memuat kandungan
+      gizi). Dibandingkan dengan standar kelompok sasaran menu (`StandarGizi::peringatanUntuk`).
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/RingkasanGizi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }

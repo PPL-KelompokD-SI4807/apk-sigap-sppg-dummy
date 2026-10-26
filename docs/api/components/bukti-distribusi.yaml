@@ -1,0 +1,81 @@
+schemas:
+  BuktiDistribusiInput:
+    type: object
+    required: [jadwal_distribusi_id, porsi_diterima, nama_pic, foto]
+    properties:
+      jadwal_distribusi_id: { type: integer, description: 'Jadwal distribusi SPPG sendiri; satu bukti per jadwal.' }
+      porsi_diterima: { type: integer, minimum: 0, description: 'Maks = jumlah porsi jadwal.' }
+      nama_pic: { type: string, maxLength: 100, description: 'Nama penerima di titik layanan (berita acara).' }
+      no_berita_acara: { type: [string, 'null'], maxLength: 50 }
+      catatan_selisih: { type: [string, 'null'], maxLength: 1000, description: 'Wajib bila porsi_diterima < porsi dikirim.' }
+      catatan: { type: [string, 'null'], maxLength: 2000 }
+      waktu_tiba: { type: [string, 'null'], format: date-time, description: 'Hanya Kepala SPPG (koreksi). Relawan: selalu waktu server.' }
+      waktu_berangkat: { type: [string, 'null'], format: date-time, description: 'Default: waktu berangkat perjalanan terakhir.' }
+      waktu_ambil_foto: { type: [string, 'null'], format: date-time, description: Informasi pendukung dari klien. }
+      latitude: { type: [number, 'null'], minimum: -90, maximum: 90 }
+      longitude: { type: [number, 'null'], minimum: -180, maximum: 180 }
+      foto: { type: string, format: binary, description: 'Foto serah terima (JPEG/PNG/WebP, maks 5 MB).' }
+      berita_acara: { type: string, format: binary, description: 'Opsional: foto berita acara bertanda tangan.' }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  BuktiDistribusiUpdateInput:
+    type: object
+    description: Semua field opsional; `jadwal_distribusi_id` tidak dapat diubah (422).
+    properties:
+      porsi_diterima: { type: integer, minimum: 0 }
+      nama_pic: { type: string, maxLength: 100 }
+      no_berita_acara: { type: [string, 'null'] }
+      catatan_selisih: { type: [string, 'null'] }
+      catatan: { type: [string, 'null'] }
+      waktu_tiba: { type: [string, 'null'], format: date-time, description: 'Hanya Kepala SPPG; menghitung ulang keterlambatan.' }
+      waktu_berangkat: { type: [string, 'null'], format: date-time }
+      waktu_ambil_foto: { type: [string, 'null'], format: date-time }
+      latitude: { type: [number, 'null'] }
+      longitude: { type: [number, 'null'] }
+      foto: { type: string, format: binary }
+      berita_acara: { type: string, format: binary }
+      _method: { type: string, enum: [PUT], description: 'Wajib saat mengirim multipart lewat POST.' }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  BuktiDistribusi:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      jadwal_distribusi:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          tanggal_distribusi: { type: string, format: date }
+          jam_rencana_tiba: { type: [string, 'null'], examples: ['09:45'] }
+          status: { type: string, enum: [menunggu, siap, berangkat, diterima, dibatalkan] }
+          titik_layanan:
+            type: [object, 'null']
+            properties:
+              id: { type: integer }
+              nama: { type: string }
+      porsi_dikirim: { type: [integer, 'null'] }
+      porsi_diterima: { type: integer }
+      selisih_porsi: { type: [integer, 'null'] }
+      nama_pic: { type: string }
+      no_berita_acara: { type: [string, 'null'] }
+      catatan_selisih: { type: [string, 'null'] }
+      catatan: { type: [string, 'null'] }
+      waktu_berangkat: { type: [string, 'null'], format: date-time }
+      waktu_tiba: { type: string, format: date-time }
+      acuan_tiba: { type: [string, 'null'], format: date-time, description: 'Estimasi tiba perjalanan atau jam rencana tiba.' }
+      waktu_ambil_foto: { type: [string, 'null'], format: date-time }
+      terlambat: { type: boolean }
+      menit_keterlambatan: { type: [integer, 'null'], description: 'Menit setelah acuan (null bila tepat waktu/lebih awal).' }
+      latitude: { type: [number, 'null'] }
+      longitude: { type: [number, 'null'] }
+      foto: { $ref: '#/components/schemas/BerkasRingkas' }
+      berita_acara: { $ref: '#/components/schemas/BerkasRingkas' }
+      lampiran:
+        type: array
+        items: { $ref: '#/components/schemas/Lampiran' }
+      dicatat_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }

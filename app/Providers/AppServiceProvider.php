@@ -34,6 +34,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
             ->by('u:'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
 
+        // Unggah berkas (NFR-06): per pengguna, di atas batas umum 'api'.
+        RateLimiter::for('unggah', fn (Request $request) => Limit::perMinute(max(1, (int) config('unggahan.rate_limit_per_menit', 20)))
+            ->by('unggah:'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
+
         // Tukar initData -> token: 10/menit per IP.
         RateLimiter::for('auth-telegram', fn (Request $request) => Limit::perMinute(10)
             ->by('ip:'.$request->ip()));

@@ -40,12 +40,25 @@ class TelegramAuthService
     /**
      * Bypass hanya untuk pengembangan lokal/tes. Dicek terhadap environment aplikasi,
      * bukan hanya konfigurasi, sehingga TELEGRAM_DEV_BYPASS=true di production tidak berefek.
+     * Di 'local', APP_URL juga harus host pengembangan: server publik yang salah diberi
+     * APP_ENV=local tetap tidak dapat dimasuki dengan dev_role=admin.
      */
     public function devBypassAllowed(): bool
     {
-        return config('telegram.dev_bypass') === true
-            && app()->environment(['local', 'testing'])
-            && ! app()->isProduction();
+        if (config('telegram.dev_bypass') !== true || app()->isProduction()) {
+            return false;
+        }
+
+        return app()->environment('testing')
+            || (app()->environment('local') && self::isDevelopmentHost((string) parse_url((string) config('app.url'), PHP_URL_HOST)));
+    }
+
+    public static function isDevelopmentHost(string $host): bool
+    {
+        $host = strtolower(trim($host, '[]'));
+
+        return in_array($host, ['localhost', '127.0.0.1', '::1'], true)
+            || preg_match('/\.(localhost|test|local)$/', $host) === 1;
     }
 
     private function resolveTelegramUser(string $initData): User

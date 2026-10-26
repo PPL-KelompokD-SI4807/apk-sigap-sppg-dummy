@@ -1,0 +1,31 @@
+schemas:
+  TitikLayanan:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      nama: { type: string }
+      jenis: { type: string, enum: [sekolah, paud, posyandu, lainnya] }
+      alamat: { type: string }
+      jarak_km: { type: string, description: 'decimal(6,2) sebagai string', examples: ['3.50'] }
+      jumlah_sasaran: { type: integer }
+      pic_nama: { type: string }
+      pic_telepon: { type: [string, 'null'] }
+      pic_terhubung: { type: boolean, description: 'PIC sudah menautkan Telegram (chat id tidak diekspos).' }
+      is_active: { type: boolean }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  TitikLayananInput:
+    type: object
+    required: [nama, jenis, alamat, pic_nama]
+    properties:
+      sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
+      nama: { type: string, maxLength: 255 }
+      jenis: { type: string, enum: [sekolah, paud, posyandu, lainnya] }
+      alamat: { type: string, maxLength: 255 }
+      jarak_km: { type: number, minimum: 0, maximum: 9999.99, default: 0 }
+      jumlah_sasaran: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+      pic_nama: { type: string, maxLength: 255 }
+      pic_telepon: { type: [string, 'null'], maxLength: 30 }
+      is_active: { type: boolean, default: true }
+      ai_draft_id: { type: [string, 'null'], format: uuid }

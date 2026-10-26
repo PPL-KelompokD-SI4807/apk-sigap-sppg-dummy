@@ -1,0 +1,43 @@
+schemas:
+  AiDraft:
+    type: object
+    description: |
+      Draf hasil Agen AI (FR-11) untuk prefill formulir Mini App. Data BELUM tersimpan:
+      simpan dengan memanggil endpoint modul (POST/PUT) beserta `ai_draft_id` = `uuid`.
+      Kolom pada `perlu_dicek` (keyakinan < 0,7 atau gagal validasi) diberi label "Perlu dicek".
+    properties:
+      uuid: { type: string, format: uuid }
+      module: { type: string, description: 'Slug modul config/rbac.php, mis. titik-layanan.', example: titik-layanan }
+      module_label: { type: string, example: Titik Layanan }
+      action: { type: string, enum: [create, update, delete] }
+      target_id: { type: [integer, 'null'], description: 'ID record untuk update/delete.' }
+      payload:
+        type: object
+        additionalProperties: true
+        description: 'Nilai kolom form modul (nama field = field Form Request). Untuk update memuat `id`.'
+      confidence:
+        type: object
+        additionalProperties: { type: number, minimum: 0, maximum: 1 }
+      perlu_dicek: { type: array, items: { type: string } }
+      errors:
+        type: object
+        additionalProperties: { type: array, items: { type: string } }
+        description: 'Hasil validasi dry-run Form Request terkini (kosong = siap disimpan). Hanya di GET detail.'
+      status: { type: string, enum: [pending, confirmed, discarded, expired] }
+      expires_at: { type: string, format: date-time }
+      created_at: { type: string, format: date-time }
+      form: { type: string, description: 'Rute Mini App tujuan, mis. /titik-layanan/baru.', example: /titik-layanan/baru }
+    example:
+      uuid: 3f6c1d2e-8a4b-4c1d-9e2f-0a1b2c3d4e5f
+      module: titik-layanan
+      module_label: Titik Layanan
+      action: create
+      target_id: null
+      payload: { nama: SDN 2 Sukamaju, jenis: sekolah, alamat: Jl. Fiktif No. 2, jarak_km: 3.5, jumlah_sasaran: 240, pic_nama: Bu Rina }
+      confidence: { nama: 0.95, jenis: 0.9, alamat: 0.0, jarak_km: 0.85, jumlah_sasaran: 0.9, pic_nama: 0.6 }
+      perlu_dicek: [alamat, pic_nama]
+      errors: {}
+      status: pending
+      expires_at: '2026-11-02T08:30:00+07:00'
+      created_at: '2026-11-02T08:00:00+07:00'
+      form: /titik-layanan/baru
