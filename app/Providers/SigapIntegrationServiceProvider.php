@@ -7,6 +7,7 @@ use App\Services\Ai\Llm\AnthropicLlmClient;
 use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\NullLlmClient;
+use App\Services\Ai\Llm\OpenAiCompatibleLlmClient;
 use App\Services\Ai\Speech\HttpSpeechToText;
 use App\Services\Ai\Speech\NullSpeechToText;
 use App\Services\Ai\Speech\SpeechToTextService;
@@ -22,7 +23,7 @@ use Illuminate\Support\ServiceProvider;
 /**
  * Integrasi Telegram Bot + Agen AI + notifikasi terpusat.
  *
- * - LlmClient dipilih dari config('ai.provider'): anthropic | fake (non-production) | '' (Null).
+ * - LlmClient dipilih dari config('ai.provider'): anthropic | openai_compat | fake (non-production) | '' (Null).
  * - SpeechToTextService dari config('ai.stt.driver'): http | '' (Null).
  * - Listener KirimNotifikasiDomain hanya didaftarkan untuk kelas event yang ada saat boot.
  * - Rate limiter: telegram-webhook (per IP) dan telegram-out (kirim keluar, NFR-03).
@@ -36,6 +37,7 @@ class SigapIntegrationServiceProvider extends ServiceProvider
         $this->app->bind(LlmClient::class, function ($app) {
             return match ((string) config('ai.provider')) {
                 'anthropic' => AnthropicLlmClient::fromConfig(),
+                'openai_compat' => OpenAiCompatibleLlmClient::fromConfig(),
                 'fake' => $app->isProduction() ? new NullLlmClient : $app->make(FakeLlmClient::class),
                 default => new NullLlmClient,
             };

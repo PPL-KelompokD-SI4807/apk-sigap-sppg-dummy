@@ -86,7 +86,7 @@ class AnthropicLlmClient implements LlmClient
                 )
                 ->post('/v1/messages', $body);
         } catch (ConnectionException) {
-            throw new LlmException('Layanan LLM tidak dapat dihubungi (timeout/koneksi).');
+            throw LlmException::timeout();
         } catch (Throwable $e) {
             throw new LlmException('Permintaan ke layanan LLM gagal ('.class_basename($e).').');
         }
@@ -170,13 +170,13 @@ class AnthropicLlmClient implements LlmClient
     {
         if (! $response->successful()) {
             // Body galat penyedia tidak diteruskan (bisa memuat potongan prompt).
-            throw new LlmException('Layanan LLM menolak permintaan (HTTP '.$response->status().').');
+            throw LlmException::fromStatus($response->status());
         }
 
         $json = $response->json();
 
         if (! is_array($json) || ! is_array($json['content'] ?? null)) {
-            throw new LlmException('Respons layanan LLM tidak dapat dibaca.');
+            throw LlmException::invalidResponse();
         }
 
         $text = [];
