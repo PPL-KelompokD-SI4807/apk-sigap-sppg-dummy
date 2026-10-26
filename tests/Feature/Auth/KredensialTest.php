@@ -342,6 +342,31 @@ class KredensialTest extends TestCase
         $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kodeBaru, 'device_id' => self::HP])->assertOk();
     }
 
+    public function test_kirim_ulang_tidak_mereset_hitungan_percobaan(): void
+    {
+        [$pra, $id] = $this->mulaiMasuk();
+        $salahLama = $this->kodeTerakhir(7012345678) === '000000' ? '111111' : '000000';
+
+        for ($sisa = 4; $sisa >= 2; $sisa--) {
+            $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $salahLama, 'device_id' => self::HP])
+                ->assertJsonPath('sisa_percobaan', $sisa);
+        }
+
+        $this->travel(61)->seconds();
+        $this->kirim($pra, '/api/v1/auth/token/kirim-ulang', ['tantangan_id' => $id, 'device_id' => self::HP])->assertStatus(202);
+        $kodeBaru = $this->kodeTerakhir(7012345678);
+        $salah = $kodeBaru === '000000' ? '111111' : '000000';
+
+        // Hitungan berlanjut dari 3 salah: satu salah lagi -> sisa 1, berikutnya hangus.
+        $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $salah, 'device_id' => self::HP])
+            ->assertJsonPath('alasan', 'token_salah')->assertJsonPath('sisa_percobaan', 1);
+        $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $salah, 'device_id' => self::HP])
+            ->assertJsonPath('alasan', 'token_hangus');
+        $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $kodeBaru, 'device_id' => self::HP])
+            ->assertJsonPath('alasan', 'token_hangus');
+        $this->assertSame(5, TantanganToken::query()->find($id)->percobaan);
+    }
+
     public function test_batas_kirim_ulang(): void
     {
         [$pra, $id] = $this->mulaiMasuk();

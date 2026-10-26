@@ -559,7 +559,9 @@ paths:
     post:
       tags: [Auth]
       summary: Kirim ulang token 6 digit (token pra-login)
-      description: Kode baru (kode lama tidak berlaku), masa berlaku 5 menit lagi. Jeda 60 detik, maks 3 kali per tantangan.
+      description: |
+        Kode baru (kode lama tidak berlaku), masa berlaku 5 menit lagi. Jeda 60 detik, maks 3 kali per
+        tantangan. Hitungan percobaan salah TIDAK di-reset (`sisa_percobaan` berlanjut; total 5 per tantangan).
       requestBody:
         required: true
         content:

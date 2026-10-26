@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\RateLimiter;
  * - Kode acak kriptografis (random_int), hanya disimpan sebagai HMAC-SHA256(app key, id|kode).
  * - Dikirim bot HANYA ke users.telegram_id dari basis data (tidak pernah ke chat dari input).
  * - Kedaluwarsa config('kredensial.token.berlaku_menit') (5), sekali pakai (klaim atomik),
- *   hangus setelah maks_percobaan salah, kirim ulang dibatasi jeda & jumlah, tantangan baru per
+ *   hangus setelah maks_percobaan salah (total per tantangan, termasuk setelah kirim ulang), kirim ulang dibatasi jeda & jumlah, tantangan baru per
  *   pengguna dibatasi per jendela waktu.
  * - Terikat ke pengguna + perangkat (device_hash); tantangan milik pengguna/perangkat lain
  *   diperlakukan sama dengan tidak ada (tanpa membedakan pesan).
@@ -86,7 +86,10 @@ class TokenSekaliPakaiService
         return $tantangan;
     }
 
-    /** Kirim ulang: kode baru (kode lama tidak berlaku), masa berlaku & percobaan diperbarui. */
+    /**
+     * Kirim ulang: kode baru (kode lama tidak berlaku) dan masa berlaku diperbarui. Hitungan percobaan
+     * salah TIDAK di-reset: total tebakan per tantangan tetap maks_percobaan.
+     */
     public function kirimUlang(User $user, string $tantanganId, string $deviceHash): TantanganToken
     {
         $tantangan = $this->milik($user, $tantanganId, $deviceHash);
@@ -114,7 +117,6 @@ class TokenSekaliPakaiService
             ->where('kirim_ulang', $tantangan->kirim_ulang)
             ->update([
                 'kode_hash' => self::hashKode($tantangan->id, $kode),
-                'percobaan' => 0,
                 'kirim_ulang' => $tantangan->kirim_ulang + 1,
                 'terkirim_pada' => now(),
                 'kedaluwarsa_pada' => $this->kedaluwarsa(),
