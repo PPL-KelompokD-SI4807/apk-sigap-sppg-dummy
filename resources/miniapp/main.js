@@ -10,6 +10,7 @@ import { registerAllRoutes } from './modules/registry.js';
 import { renderHome } from './home.js';
 import { showLoginFlow } from './components/login-flow.js';
 import { renderSesi } from './components/sesi-view.js';
+import { renderUbahPassword } from './components/password-view.js';
 import { detikTerkunci } from './core/kredensial.js';
 
 const view = document.getElementById('view');
@@ -30,6 +31,7 @@ route('/draf/:uuid', async (ctx) => {
   navigate(`${target}?draft=${encodeURIComponent(d.uuid || ctx.params.uuid)}`, { replace: true });
 }, { title: 'Draf AI' });
 route('/sesi', (ctx) => renderSesi(ctx, { onKeluar: () => { navigate('/', { replace: true }); location.reload(); } }), { title: 'Perangkat & Sesi' });
+route('/password', renderUbahPassword, { title: 'Ubah Password' });
 registerAllRoutes();
 
 async function start() {
