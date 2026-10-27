@@ -40,7 +40,7 @@ Command mengirim `secret_token`, `allowed_updates=["message","callback_query"]`,
 
 - Endpoint `POST /api/v1/telegram/webhook`: verifikasi header `X-Telegram-Bot-Api-Secret-Token` (hash_equals), idempoten `update_id`, balas 200 cepat, proses di antrean. Limiter `telegram-webhook` 600/menit per IP (throttle login 10/menit tidak berlaku).
 - Hanya chat pribadi. Grup/kanal/pengirim bot diabaikan.
-- `/start inv_<token>`: undangan pengguna -> akun ditautkan, sapaan nama + peran + SPPG + tombol "Buka SiGAP"; undangan PIC -> chat ditautkan ke titik layanan. Undangan tidak valid/kedaluwarsa/dicabut/terpakai -> pesan ramah sesuai alasan.
+- `/start inv_<token>`: undangan pengguna -> akun ditautkan, tanpa sesi login penuh: salam netral tanpa nama/peran/SPPG + satu tombol "Masuk lewat Mini App"; dengan sesi: sapaan peran + SPPG + menu; undangan PIC -> chat ditautkan ke titik layanan. Undangan tidak valid/kedaluwarsa/dicabut/terpakai -> pesan ramah sesuai alasan.
 - `/start` tanpa token: terdaftar aktif -> tombol Mini App; selain itu -> diminta menghubungi Admin SPPG. Data pengirim tak terdaftar tidak disimpan; payload `telegram_updates` diringkas setelah diproses.
 - Teks/foto/suara dari pengguna aktif -> Agen AI (`docs/api/ai-tools.md`). Balasan AI selalu teks polos.
 - Notifikasi berbasis peran: `docs/api/notifikasi.md`.

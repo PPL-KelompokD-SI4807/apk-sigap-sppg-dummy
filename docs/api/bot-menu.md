@@ -7,7 +7,7 @@ Kode: `app/Services/Telegram/Bot/*`, router di `TelegramUpdateHandler`, tabel `b
 | Perintah | Perilaku |
 |---|---|
 | `/menu` | Keyboard inline per peran (pintasan Mini App, maks. 6) + "Menunggu keputusan" (hanya yang berhak memutuskan) + "Buka SiGAP". |
-| `/start`, `/bantuan` | Pengguna dengan sesi login penuh mendapat keyboard menu yang sama; tanpa sesi: salam netral + tombol "Buka SiGAP". Ringkasan peran/SPPG di sapaan hanya untuk yang sudah punya sesi penuh. |
+| `/start`, `/bantuan` | Pengguna dengan sesi login penuh mendapat keyboard menu yang sama; tanpa sesi (semua peran, semua jalur termasuk callback dan balasan catatan): hanya teks netral tanpa data/nama + satu tombol "Masuk lewat Mini App". Ringkasan peran/SPPG di sapaan hanya untuk yang sudah punya sesi penuh. |
 | `/batal` | Membatalkan jendela balasan alasan penolakan yang terbuka. |
 
 Semua jalur (perintah menu, callback, balasan alasan) mewajibkan `SesiService::punyaSesiPenuh`. Tanpa sesi penuh balasannya hanya `TelegramUpdateHandler::PERLU_MASUK` + tombol web_app ke akar Mini App: tanpa data, tanpa daftar tombol data, token tidak dihabiskan, jendela alasan penolakan ditutup. Pengguna tidak terdaftar/nonaktif: perilaku lama (tanpa menu).

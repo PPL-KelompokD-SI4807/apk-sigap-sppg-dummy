@@ -35,7 +35,13 @@ use Throwable;
 class TelegramUpdateHandler
 {
     /** Balasan bila pengguna belum punya sesi login penuh (Agen AI ditolak). */
-    public const PERLU_MASUK = 'Masuk lewat Mini App terlebih dahulu (username/no telepon dan password) sebelum memakai Agen AI di chat ini. Tekan tombol "Buka SiGAP" di bawah.';
+    public const PERLU_MASUK = 'Masuk lewat Mini App terlebih dahulu (username/no telepon dan password) sebelum memakai bot ini. Tekan tombol "Masuk lewat Mini App" di bawah.';
+
+    /** Label satu-satunya tombol bot untuk pengguna tanpa sesi login penuh. */
+    public const LABEL_MASUK = 'Masuk lewat Mini App';
+
+    /** Salam netral /start tanpa sesi penuh: tanpa nama pengguna, peran, atau SPPG. */
+    public const SALAM_TANPA_SESI = 'Selamat datang di SiGAP SPPG. Masuk lewat Mini App untuk melanjutkan.';
 
     public function __construct(
         private readonly TelegramBotService $bot,
@@ -112,7 +118,7 @@ class TelegramUpdateHandler
         if (($untukAi || $perintah !== null) && ! $this->sesi->punyaSesiPenuh($user)) {
             // Sesi dicabut di tengah alur: jendela balasan alasan penolakan ikut ditutup.
             $this->callbacks->tutupProsesTanpaSesi($user);
-            $this->reply($chatId, self::PERLU_MASUK, $this->openAppKeyboard());
+            $this->reply($chatId, self::PERLU_MASUK, $this->masukKeyboard());
             $this->finish($update, $perintah !== null ? 'bot_tanpa_sesi' : 'ai_tanpa_sesi');
 
             return;
@@ -187,7 +193,9 @@ class TelegramUpdateHandler
             $consumed = $this->invitations->consumeAny($token, $telegramUser);
         } catch (InvalidInvitationException $e) {
             $user = $e->reason === InvalidInvitationException::TELEGRAM_SUDAH_TERDAFTAR ? $this->findUser($from['id']) : null;
-            $markup = $user !== null && $user->canAuthenticate() ? $this->openAppKeyboard() : null;
+            $markup = $user !== null && $user->canAuthenticate()
+                ? ($this->sesi->punyaSesiPenuh($user) ? $this->openAppKeyboard() : $this->masukKeyboard())
+                : null;
             $this->reply($chatId, $e->getMessage(), $markup);
 
             return;
@@ -199,7 +207,7 @@ class TelegramUpdateHandler
         }
 
         if ($consumed->tipe === TipeUndangan::Pengguna && $consumed->user !== null) {
-            $this->greet($chatId, $consumed->user, 'Akun Anda berhasil terhubung');
+            $this->greet($chatId, $consumed->user, 'Akun Anda berhasil terhubung', baru: true);
 
             return;
         }
@@ -211,17 +219,15 @@ class TelegramUpdateHandler
         ), html: true);
     }
 
-    private function greet(int $chatId, User $user, string $opening): void
+    private function greet(int $chatId, User $user, string $opening, bool $baru = false): void
     {
-        // R-02 (A3): tanpa sesi login penuh hanya salam netral + tombol masuk; peran/SPPG hanya untuk yang sudah masuk.
+        // R-02: tanpa sesi login penuh hanya salam netral (tanpa nama/peran/SPPG) + satu tombol masuk.
         if (! $this->sesi->punyaSesiPenuh($user)) {
-            $html = sprintf(
-                "%s, <b>%s</b>!\nMasuk lewat Mini App (username/no telepon dan password) dengan tombol di bawah untuk memakai SiGAP SPPG.",
-                TelegramBotService::escapeHtml($opening),
-                TelegramBotService::escapeHtml($user->name),
+            $this->reply(
+                $chatId,
+                $baru ? 'Selamat datang di SiGAP SPPG. Akun Anda berhasil terhubung. Masuk lewat Mini App untuk melanjutkan.' : self::SALAM_TANPA_SESI,
+                $this->masukKeyboard(),
             );
-
-            $this->reply($chatId, $html, $this->openAppKeyboard(), html: true);
 
             return;
         }
@@ -249,16 +255,20 @@ class TelegramUpdateHandler
     private function help(int $chatId, ?User $user): void
     {
         $aktif = $user !== null && $user->canAuthenticate();
+
+        // R-02: tanpa sesi login penuh hanya petunjuk masuk + tombol masuk (tanpa bantuan fitur) untuk SEMUA peran.
+        if ($aktif && ! $this->sesi->punyaSesiPenuh($user)) {
+            $this->reply($chatId, self::PERLU_MASUK, $this->masukKeyboard());
+
+            return;
+        }
+
         $text = $aktif
             ? "Cara memakai SiGAP SPPG:\n- Tombol \"Buka SiGAP\" membuka Mini App.\n- Ketik /menu untuk pintasan layar sesuai peran Anda.\n- Ketik permintaan biasa, mis. \"cari titik layanan SD\".\n- Kirim foto nota/surat jalan untuk dibuatkan draf.\n- Setiap draf wajib diperiksa dan disimpan di Mini App."
             : 'Bot SiGAP SPPG hanya untuk pengguna terdaftar. Minta tautan undangan kepada Admin SPPG.';
 
-        // Menu tombol hanya untuk pengguna dengan sesi login penuh (R-02); lainnya cukup tombol masuk.
-        $markup = match (true) {
-            ! $aktif => null,
-            $this->sesi->punyaSesiPenuh($user) => $this->menu->keyboard($user, $chatId) ?? $this->openAppKeyboard(),
-            default => $this->openAppKeyboard(),
-        };
+        // Menu tombol hanya untuk pengguna aktif dengan sesi login penuh (dijamin oleh pemeriksaan di atas).
+        $markup = $aktif ? ($this->menu->keyboard($user, $chatId) ?? $this->openAppKeyboard()) : null;
 
         $this->reply($chatId, $text, $markup);
     }
@@ -292,6 +302,12 @@ class TelegramUpdateHandler
     private function findUser(int $telegramId): ?User
     {
         return User::query()->withoutGlobalScopes()->where('telegram_id', $telegramId)->first();
+    }
+
+    /** Satu-satunya tombol untuk pengguna tanpa sesi login penuh. */
+    private function masukKeyboard(): ?array
+    {
+        return TelegramBotService::inlineKeyboard([TelegramBotService::webAppButton(self::LABEL_MASUK, $this->bot->miniAppUrl())]);
     }
 
     private function openAppKeyboard(): ?array

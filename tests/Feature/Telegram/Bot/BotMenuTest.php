@@ -14,13 +14,13 @@ use App\Support\Rbac;
 /** Menu tombol Bot per peran (R-02): disaring dari config/rbac.php, tanpa sesi penuh hanya petunjuk masuk. */
 class BotMenuTest extends BotTestCase
 {
-    /** @return list<string> label web_app (tanpa "Buka SiGAP") pada layar terakhir */
+    /** @return list<string> label web_app (tanpa "Buka SiGAP"/"Masuk lewat Mini App") pada layar terakhir */
     private function labelPintasan(User $user): array
     {
         $label = [];
 
         foreach ($this->tombolLayar((int) $user->telegram_id) as $t) {
-            if (isset($t['web_app']) && $t['text'] !== 'Buka SiGAP') {
+            if (isset($t['web_app']) && ! in_array($t['text'], ['Buka SiGAP', TelegramUpdateHandler::LABEL_MASUK], true)) {
                 $label[] = $t['text'];
             }
         }
@@ -144,7 +144,7 @@ class BotMenuTest extends BotTestCase
         $this->assertSame(TelegramUpdateHandler::PERLU_MASUK, $balasan['text']);
         $tombol = $this->tombolLayar((int) $this->investorAB->telegram_id);
         $this->assertCount(1, $tombol);
-        $this->assertSame('Buka SiGAP', $tombol[0]['text']);
+        $this->assertSame('Masuk lewat Mini App', $tombol[0]['text']);
         $this->assertSame(0, BotAksi::query()->count());
     }
 
@@ -168,7 +168,7 @@ class BotMenuTest extends BotTestCase
         $this->ketik($this->ahliGiziA, '/start');
         $this->ketik($this->ahliGiziA, '/bantuan');
         foreach ($this->messagesTo($uid) as $kirim) {
-            $this->assertCount(1, $this->markupOf($kirim)['inline_keyboard'], 'tanpa sesi: satu baris (Buka SiGAP)');
+            $this->assertCount(1, $this->markupOf($kirim)['inline_keyboard'], 'tanpa sesi: satu baris (Masuk lewat Mini App)');
         }
 
         $this->sesiPenuh($this->ahliGiziA);
