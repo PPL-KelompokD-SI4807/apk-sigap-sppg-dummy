@@ -14,6 +14,7 @@
       - $ref: '#/components/parameters/DateFrom'
       - $ref: '#/components/parameters/DateTo'
       - { name: menu_id, in: query, schema: { type: integer } }
+      - { name: menu_belum_disetujui, in: query, description: 'true = hanya jadwal yang menunya sekarang bukan `disetujui` (R-06b-2).', schema: { type: boolean } }
       - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
     responses:
       '200':
@@ -261,6 +262,8 @@
     description: |
       Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
       mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      R-06b-2 (S2): `status=dimasak` ditolak 422 (field `status`) bila menu jadwal saat ini bukan `disetujui`
+      ("Menu jadwal ini belum disetujui investor; ajukan ulang menu sebelum memasak."). `selesai` dan `dibatalkan` tetap diizinkan.
     requestBody:
       required: true
       content:

@@ -16,6 +16,9 @@ use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusKeluhan;
 use App\Enums\StatusKirim;
+use App\Enums\StatusPembelianBahan;
+use App\Enums\StatusPengajuanPengeluaran;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Enums\SumberKeluhan;
 use App\Models\Armada;
 use App\Models\BahanBaku;
@@ -29,12 +32,14 @@ use App\Models\Menu;
 use App\Models\MutasiStok;
 use App\Models\NotifikasiPerjalanan;
 use App\Models\Pemasok;
+use App\Models\PembelianBahan;
 use App\Models\PemeriksaanMutu;
 use App\Models\PencairanDana;
 use App\Models\PenerimaManfaat;
 use App\Models\PengajuanMenu;
 use App\Models\Pengeluaran;
 use App\Models\Pengemudi;
+use App\Models\PersetujuanPengeluaran;
 use App\Models\RekapHarian;
 use App\Models\Sppg;
 use App\Models\StandarGizi;
@@ -168,6 +173,7 @@ class DemoSeeder extends Seeder
         [$armadas, $pengemudis] = $this->buatArmada($sppg);
         $this->buatOperasional($sppg, $p, $users, $titik, $menus, $armadas, $pengemudis);
         $this->buatKeuangan($sppg, $p['pencairan'], $users['akuntan'], $pemasoks);
+        $this->buatPembelianDanPersetujuan($sppg, $users, $bahan);
     }
 
     /**
@@ -719,5 +725,88 @@ class DemoSeeder extends Seeder
             'uraian' => 'Bahan bakar armada distribusi (demo)',
             'nominal' => $sisa,
         ]);
+    }
+
+    /**
+     * R-06b-2: contoh pembelian bahan (diajukan/terverifikasi/ditolak) dari pemasok fiktif, serta pengeluaran
+     * non-menu berstatus diajukan dan ditolak investor lengkap dengan riwayat persetujuan. Semua fiktif.
+     *
+     * @param  array<string, User>  $users
+     * @param  array<string, BahanBaku>  $bahan
+     */
+    private function buatPembelianDanPersetujuan(Sppg $sppg, array $users, array $bahan): void
+    {
+        $pemasok = Pemasok::factory()->create([
+            'sppg_id' => $sppg->id,
+            'nama' => 'UD Sumber Pangan Fiktif (Demo)',
+            'jenis' => JenisPemasok::Umkm,
+            'jenis_bahan' => 'Beras dan telur',
+            'kontak' => sprintf('0812-0000-7%03d', $sppg->id),
+        ]);
+
+        $contoh = [
+            [$bahan['Beras'], 50, 12500, StatusPembelianBahan::Diajukan, 0, null],
+            [$bahan['Telur'], 20, 28000, StatusPembelianBahan::Terverifikasi, 1, null],
+            [$bahan['Beras'], 30, 21000, StatusPembelianBahan::Ditolak, 2, 'Harga melebihi harga pemasok (demo)'],
+        ];
+
+        foreach ($contoh as [$b, $jumlah, $harga, $status, $hariLalu, $alasan]) {
+            $pembelian = PembelianBahan::factory()->create([
+                'sppg_id' => $sppg->id,
+                'bahan_baku_id' => $b->id,
+                'pemasok_id' => $pemasok->id,
+                'tanggal_beli' => now()->subDays($hariLalu)->toDateString(),
+                'jumlah' => $jumlah,
+                'satuan' => $b->satuan,
+                'harga_satuan' => $harga,
+                'total' => $jumlah * $harga,
+                'catatan' => 'Pembelian contoh (demo)',
+                'status' => $status,
+                'dicatat_oleh' => $users['staf_gudang']->id,
+                'diverifikasi_oleh' => $status === StatusPembelianBahan::Diajukan ? null : $users['akuntan']->id,
+                'diverifikasi_pada' => $status === StatusPembelianBahan::Diajukan ? null : now(),
+                'alasan_penolakan' => $alasan,
+            ]);
+
+            if ($status === StatusPembelianBahan::Terverifikasi) {
+                $pengeluaran = Pengeluaran::factory()->create([
+                    'sppg_id' => $sppg->id,
+                    'pemasok_id' => $pemasok->id,
+                    'dicatat_oleh' => $users['akuntan']->id,
+                    'tanggal' => $pembelian->tanggal_beli->toDateString(),
+                    'kategori' => KategoriPengeluaran::BahanBaku,
+                    'uraian' => 'Pembelian '.$b->nama.' '.$jumlah.' '.$b->satuan,
+                    'nominal' => $jumlah * $harga,
+                ]);
+                $pengeluaran->forceFill(['pembelian_bahan_id' => $pembelian->id])->save();
+                $pembelian->forceFill(['pengeluaran_id' => $pengeluaran->id])->save();
+            }
+        }
+
+        // Pengeluaran non-menu: satu menunggu investor, satu ditolak investor (riwayat lengkap).
+        $nonMenu = [
+            [KategoriPengeluaran::Energi, 'Isi ulang gas elpiji (demo)', 750_000, StatusPersetujuanPengeluaran::Diajukan, StatusPengajuanPengeluaran::Diajukan, null],
+            [KategoriPengeluaran::Transportasi, 'Servis mobil distribusi (demo)', 2_400_000, StatusPersetujuanPengeluaran::Ditolak, StatusPengajuanPengeluaran::Ditolak, 'Tunda sampai bulan depan (demo)'],
+        ];
+
+        foreach ($nonMenu as [$kategori, $uraian, $nominal, $statusPengeluaran, $statusPengajuan, $catatan]) {
+            $pengeluaran = Pengeluaran::factory()->status($statusPengeluaran)->create([
+                'sppg_id' => $sppg->id,
+                'dicatat_oleh' => $users['akuntan']->id,
+                'tanggal' => now()->toDateString(),
+                'kategori' => $kategori,
+                'uraian' => $uraian,
+                'nominal' => $nominal,
+            ]);
+
+            PersetujuanPengeluaran::factory()->status($statusPengajuan, $catatan)->create([
+                'sppg_id' => $sppg->id,
+                'pengeluaran_id' => $pengeluaran->id,
+                'kategori' => $kategori->value,
+                'nominal' => $nominal,
+                'tanggal' => $pengeluaran->tanggal->toDateString(),
+                'diajukan_oleh' => $users['akuntan']->id,
+            ]);
+        }
     }
 }

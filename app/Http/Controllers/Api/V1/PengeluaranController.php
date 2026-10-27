@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\KategoriPengeluaran;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Http\Controllers\Api\V1\Concerns\MenanganiUnggahan;
 use App\Http\Controllers\Api\V1\Concerns\MenentukanSppgKeuangan;
+use App\Http\Requests\Keuangan\KeputusanPengeluaranRequest;
 use App\Http\Requests\Keuangan\StorePengeluaranRequest;
 use App\Http\Requests\Keuangan\UpdatePengeluaranRequest;
 use App\Http\Resources\Keuangan\PengeluaranResource;
 use App\Models\Pengeluaran;
 use App\Services\Ai\AiDraftConfirmer;
 use App\Services\Keuangan\BudgetService;
+use App\Services\Persetujuan\PersetujuanPengeluaranService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -26,7 +29,12 @@ class PengeluaranController extends ApiController
 
     private const RELASI = ['pencatat', 'pemasok', 'lampirans'];
 
-    public function __construct(private readonly BudgetService $budget) {}
+    private const RELASI_DETAIL = ['pencatat', 'pemasok', 'lampirans', 'persetujuans.pengaju', 'persetujuans.pemutus'];
+
+    public function __construct(
+        private readonly BudgetService $budget,
+        private readonly PersetujuanPengeluaranService $persetujuan,
+    ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -37,6 +45,7 @@ class PengeluaranController extends ApiController
             'pemasok_id' => ['nullable', 'integer'],
             'pencairan_dana_id' => ['nullable', 'integer'],
             'melebihi_anggaran' => ['nullable', 'boolean'],
+            'status_persetujuan' => ['nullable', Rule::enum(StatusPersetujuanPengeluaran::class)],
             'sppg_id' => ['nullable', 'integer'],
         ]);
 
@@ -47,7 +56,7 @@ class PengeluaranController extends ApiController
             $query->whereDate('tanggal', '>=', $awal->toDateString())->whereDate('tanggal', '<=', $awal->copy()->endOfMonth()->toDateString());
         }
 
-        foreach (['kategori', 'pemasok_id', 'pencairan_dana_id'] as $kolom) {
+        foreach (['kategori', 'pemasok_id', 'pencairan_dana_id', 'status_persetujuan'] as $kolom) {
             if ($request->filled($kolom)) {
                 $query->where($kolom, $request->query($kolom));
             }
@@ -77,14 +86,14 @@ class PengeluaranController extends ApiController
             return $baru;
         });
 
-        return (new PengeluaranResource($pengeluaran->fresh(self::RELASI)))->response()->setStatusCode(201);
+        return (new PengeluaranResource($pengeluaran->fresh(self::RELASI_DETAIL)))->response()->setStatusCode(201);
     }
 
     public function show(Pengeluaran $pengeluaran): PengeluaranResource
     {
         $this->authorize('view', $pengeluaran);
 
-        return new PengeluaranResource($pengeluaran->load(self::RELASI));
+        return new PengeluaranResource($pengeluaran->load(self::RELASI_DETAIL));
     }
 
     public function update(UpdatePengeluaranRequest $request, Pengeluaran $pengeluaran, AiDraftConfirmer $confirmer): PengeluaranResource
@@ -94,13 +103,23 @@ class PengeluaranController extends ApiController
         $user = $request->user();
 
         $hasil = DB::transaction(function () use ($user, $pengeluaran, $data, $nota, $confirmer) {
-            $diperbarui = $this->budget->ubahPengeluaran($user, $pengeluaran, $data, $nota);
+            $diperbarui = $this->budget->ubahPengeluaran($user, $pengeluaran, $data, (int) $data['versi'], $nota);
             $confirmer->confirm($data['ai_draft_id'] ?? null, $user, 'keuangan', (int) $diperbarui->id, resource: 'pengeluaran');
 
             return $diperbarui;
         });
 
-        return new PengeluaranResource($hasil->fresh(self::RELASI));
+        return new PengeluaranResource($hasil->fresh(self::RELASI_DETAIL));
+    }
+
+    /** Keputusan investor (R-06b-2): setujui/tolak pengajuan pengeluaran; satu-satunya tulis investor. */
+    public function keputusan(KeputusanPengeluaranRequest $request, Pengeluaran $pengeluaran): PengeluaranResource
+    {
+        $data = $request->validated();
+
+        $hasil = $this->persetujuan->putuskan($request->user(), $pengeluaran, $data['keputusan'], $data['catatan'] ?? null, (int) $data['versi']);
+
+        return new PengeluaranResource($hasil->fresh(self::RELASI_DETAIL));
     }
 
     public function destroy(Pengeluaran $pengeluaran): Response

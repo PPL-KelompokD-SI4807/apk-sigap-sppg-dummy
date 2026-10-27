@@ -38,6 +38,8 @@ final class ResourceSpec
      * @param  list<string>  $exclude  kolom form yang tidak ditawarkan ke LLM
      * @param  list<string>  $initials  nama kolom hasil ($list/$detail) yang disajikan sebagai inisial
      *                                  (nama orang, mis. anak penerima manfaat; UU PDP)
+     * @param  bool  $berversi  record memakai kunci optimistik `versi`: draf ubah menyalin versi record target saat
+     *                          draf dibuat (diisi server, bukan LLM) sehingga konfirmasi draf basi -> 409
      * @param  list<string>  $personalText  kolom teks bebas yang dapat memuat data pribadi; disamarkan
      *                                      RecordPresenter::redactPersonal() dan dipotong sebelum ke LLM
      */
@@ -65,6 +67,7 @@ final class ResourceSpec
         public readonly array $exclude = [],
         public readonly array $initials = [],
         public readonly array $personalText = [],
+        public readonly bool $berversi = false,
     ) {}
 
     public function toolName(string $letter): string

@@ -2,8 +2,8 @@ import { h, clear, formatValue } from '../core/dom.js';
 import { api, submitWithQueue, request, newKey } from '../core/api.js';
 import { getUser } from '../core/auth.js';
 import { userPerms } from '../core/permissions.js';
-import { errorMessage } from '../core/errors.js';
-import { navigate, route } from '../core/router.js';
+import { errorMessage, ringkasGalatAksi } from '../core/errors.js';
+import { navigate, route, resolve } from '../core/router.js';
 import { toast, showConfirm, setMainButton } from '../core/ui.js';
 import { createListView } from './list-view.js';
 import { createFormView } from './form-view.js';
@@ -56,15 +56,17 @@ export function defineCrudModule(def) {
   const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill } = def;
   // Opsi tambahan (aditif): extraGuard(user)->bool (penyaring selain matriks, mis. unit relawan), searchable=false,
   // queueOffline=false (tanpa antrian offline), beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
-  const { extraGuard, searchable = true, queueOffline = true, beforeSave } = def;
+  // sertakanVersi (R-06b-2): kunci optimistik; saat ubah, body memuat `versi` = versi draf AI (dari server) atau versi record yang dimuat.
+  const { extraGuard, searchable = true, queueOffline = true, beforeSave, sertakanVersi = false } = def;
   const me = (s) => (extraGuard && !extraGuard(getUser()) ? NONE : userPerms(getUser(), s));
   const fieldsFor = (mode, record) => (typeof fieldsDef === 'function' ? fieldsDef({ mode, user: getUser(), record }) : fieldsDef);
   const base = `/${slug}`;
   const recTitle = (rec) => (itemTitle ? itemTitle(rec) : rec[(columns.find((c) => c.primary) || columns[0]).key] ?? `#${rec.id}`);
 
   // Simpan: POST (baru) atau PUT (ubah), sertakan ai_draft_id bila dari draf AI.
-  async function save({ mode, id, values, draftId }) {
+  async function save({ mode, id, values, draftId, versi = null }) {
     const body = { ...(mapPayload ? mapPayload(values, { mode }) : values) };
+    if (sertakanVersi && mode === 'update' && versi != null) body.versi = Math.trunc(Number(versi));
     if (draftId) body.ai_draft_id = draftId;
     if (beforeSave && !(await beforeSave(body, { mode }))) return;
     const res = await (queueOffline ? submitWithQueue : (m, p, b) => submitDirect(m, p, b))(mode === 'create' ? 'POST' : 'PUT', mode === 'create' ? endpoint : `${endpoint}/${id}`, body, { label: title });
@@ -94,14 +96,27 @@ export function defineCrudModule(def) {
     const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}), ...(draft?.payload || {}) };
     clear(ctx.el);
     if (draft) ctx.el.append(h('div', { class: 'notice' }, 'Diisi otomatis oleh Agen AI. Periksa kolom bertanda "Perlu dicek", lalu simpan.'));
+    const konflik = h('div', { 'aria-live': 'assertive' });
+    const versi = draft?.payload?.versi ?? record?.versi ?? null;
+    // 409 versi/status: data di layar basi. Draf AI basi tidak boleh dikirim ulang, jadi arahkan ke data terbaru tanpa draf.
+    function tampilkanKonflik(e) {
+      const g = ringkasGalatAksi(e);
+      if (!g.konflik) return;
+      const pesan = draft ? `${g.pesan} Draf AI ini sudah basi.` : g.pesan;
+      konflik.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, pesan, ' ',
+        h('button', { class: 'btn', type: 'button', onclick: () => (draft && record?.id ? navigate(`${base}/${record.id}`, { replace: true }) : resolve()) }, draft ? 'Buka data terbaru' : 'Muat ulang data')));
+    }
     const fv = createFormView({
       fields: fieldsFor(mode, record),
       values,
       confidence: draft?.confidence || {},
       submitText: mode === 'create' ? 'Simpan' : 'Simpan perubahan',
-      onSubmit: (v) => save({ mode, id: record?.id, values: v, draftId: draft ? draft.uuid || draftUuid : null }),
+      onSubmit: async (v) => {
+        konflik.replaceChildren();
+        try { await save({ mode, id: record?.id, values: v, draftId: draft ? draft.uuid || draftUuid : null, versi }); } catch (e) { tampilkanKonflik(e); throw e; }
+      },
     });
-    ctx.el.append(fv.el);
+    ctx.el.append(konflik, fv.el);
     // formTop({mode, record, form, collect}) -> Node (disisipkan di atas formulir), mis. sisa kapasitas / ringkasan gizi.
     const top = formTop ? formTop({ mode, record, form: fv.el, collect: fv.collect, values }) : null;
     if (top) ctx.el.insertBefore(top, fv.el);

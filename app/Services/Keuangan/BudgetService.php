@@ -3,6 +3,7 @@
 namespace App\Services\Keuangan;
 
 use App\Enums\KategoriPengeluaran;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Events\AnggaranEvent;
 use App\Events\AnggaranMelampaui;
 use App\Events\AnggaranMencapai100;
@@ -12,6 +13,8 @@ use App\Models\Pengeluaran;
 use App\Models\PeringatanAnggaran;
 use App\Models\Scopes\SppgScope;
 use App\Models\User;
+use App\Services\Auth\GalatAuth;
+use App\Services\Persetujuan\PersetujuanPengeluaranService;
 use App\Services\Storage\GambarSiap;
 use App\Services\Storage\SecureUploadService;
 use Carbon\CarbonInterface;
@@ -25,7 +28,8 @@ use Illuminate\Validation\ValidationException;
  * Definisi (konsisten dengan DailySummaryService):
  *   periode   = bulan 'YYYY-MM'
  *   anggaran  = Sum(pencairan_danas.nominal) dengan periode tsb
- *   terpakai  = Sum(pengeluarans.nominal) dengan tanggal di bulan tsb
+ *   terpakai  = Sum(pengeluarans.nominal) dengan tanggal di bulan tsb DAN status_persetujuan = disetujui
+ *               (R-06b-2: pengeluaran yang masih menunggu/ditolak investor tidak dihitung)
  *   sisa      = anggaran - terpakai; persen = terpakai / anggaran * 100 (null bila anggaran 0)
  *
  * Keputusan FR-09: pengeluaran yang melebihi sisa anggaran TETAP DICATAT (data berasal dari
@@ -46,6 +50,10 @@ class BudgetService
 
     public const MODUL_PENGELUARAN = 'keuangan-pengeluaran';
 
+    public const ALASAN_VERSI = 'versi_tidak_cocok';
+
+    public const ALASAN_DARI_PEMBELIAN = 'pengeluaran_dari_pembelian';
+
     public const POLA_PERIODE = '/^\d{4}-(0[1-9]|1[0-2])$/';
 
     public function __construct(private readonly SecureUploadService $unggahan) {}
@@ -63,6 +71,7 @@ class BudgetService
     /**
      * @return array{periode: string, anggaran: int, terpakai: int, sisa: int, persen: float|null, status: string,
      *               jumlah_pencairan: int, jumlah_pengeluaran: int, jumlah_melebihi_anggaran: int,
+     *               menunggu_persetujuan: array{jumlah: int, nominal: int},
      *               per_kategori: list<array{kategori: string, label: string, nominal: int, jumlah: int, persen: float|null}>}
      */
     public function ringkasan(int $sppgId, string $periode): array
@@ -71,8 +80,11 @@ class BudgetService
 
         $pencairan = PencairanDana::query()->withoutGlobalScope(SppgScope::class)
             ->where('sppg_id', $sppgId)->where('periode', $periode);
-        $pengeluaran = fn () => Pengeluaran::query()->withoutGlobalScope(SppgScope::class)
+        $semua = fn () => Pengeluaran::query()->withoutGlobalScope(SppgScope::class)
             ->where('sppg_id', $sppgId)->whereDate('tanggal', '>=', $awal)->whereDate('tanggal', '<=', $akhir);
+        // R-06b-2: hanya pengeluaran yang sudah disetujui yang dihitung ke serapan anggaran.
+        $pengeluaran = fn () => $semua()->where('status_persetujuan', StatusPersetujuanPengeluaran::Disetujui->value);
+        $menunggu = fn () => $semua()->where('status_persetujuan', StatusPersetujuanPengeluaran::Diajukan->value);
 
         $anggaran = $this->rupiah((clone $pencairan)->sum('nominal'));
         $terpakai = $this->rupiah($pengeluaran()->sum('nominal'));
@@ -101,6 +113,10 @@ class BudgetService
             'jumlah_pencairan' => (clone $pencairan)->count(),
             'jumlah_pengeluaran' => $pengeluaran()->count(),
             'jumlah_melebihi_anggaran' => $pengeluaran()->where('melebihi_anggaran', true)->count(),
+            'menunggu_persetujuan' => [
+                'jumlah' => $menunggu()->count(),
+                'nominal' => $this->rupiah($menunggu()->sum('nominal')),
+            ],
             'per_kategori' => $perKategori,
         ];
     }
@@ -163,42 +179,53 @@ class BudgetService
         });
     }
 
-    /** @param array<string, mixed> $data hasil validasi StorePengeluaranRequest */
+    /**
+     * Catat pengeluaran langsung akuntan. `nominal >= ambang` -> `diajukan` + pengajuan ke investor;
+     * di bawah ambang (hanya bila ambang > 0) -> langsung `disetujui` (cek sisa + ambang 80/100% saat itu).
+     *
+     * @param  array<string, mixed>  $data  hasil validasi StorePengeluaranRequest
+     */
     public function catatPengeluaran(User $pencatat, int $sppgId, array $data, ?GambarSiap $nota = null): Pengeluaran
     {
         return DB::transaction(function () use ($pencatat, $sppgId, $data, $nota) {
             $this->kunciSppg($sppgId);
             $nominal = (int) $data['nominal'];
-            $periode = $this->periodeDari((string) $data['tanggal']);
-            $r = $this->ringkasan($sppgId, $periode);
-            $melebihi = $this->cekSisa($nominal, $r['anggaran'] - $r['terpakai']);
 
             $pengeluaran = new Pengeluaran;
-            $pengeluaran->forceFill(['sppg_id' => $sppgId]);
+            $pengeluaran->forceFill([
+                'sppg_id' => $sppgId,
+                'status_persetujuan' => StatusPersetujuanPengeluaran::Diajukan,
+                'versi' => 1,
+            ]);
             $pengeluaran->fill($this->ambil($data, ['pencairan_dana_id', 'pemasok_id', 'tanggal', 'kategori', 'uraian']) + [
                 'dicatat_oleh' => $pencatat->getKey(),
                 'nominal' => $nominal,
-                'melebihi_anggaran' => $melebihi,
+                'melebihi_anggaran' => false,
             ]);
             $pengeluaran->save();
 
             $this->lampirkan($pengeluaran, $nota, self::MODUL_PENGELUARAN, 'nota', 'nota_path', $pencatat);
-            $this->evaluasiAmbang($sppgId, $periode, false);
+            $this->ajukanAtauSetujui($pencatat, $pengeluaran, $nominal);
 
             return $pengeluaran;
         });
     }
 
-    /** @param array<string, mixed> $data hasil validasi UpdatePengeluaranRequest (key yang dikirim) */
-    public function ubahPengeluaran(User $pengguna, Pengeluaran $pengeluaran, array $data, ?GambarSiap $nota = null): Pengeluaran
+    /**
+     * Ubah pengeluaran (kunci optimistik `versi`). Perubahan apa pun menaikkan versi, mengembalikan status ke
+     * `diajukan` (pengajuan lama yang masih menunggu dibatalkan, pengajuan baru dibuat). Pengeluaran hasil
+     * verifikasi pembelian tidak dapat diubah lewat sini.
+     *
+     * @param  array<string, mixed>  $data  hasil validasi UpdatePengeluaranRequest (key yang dikirim)
+     */
+    public function ubahPengeluaran(User $pengguna, Pengeluaran $pengeluaran, array $data, int $versi, ?GambarSiap $nota = null): Pengeluaran
     {
-        return DB::transaction(function () use ($pengguna, $pengeluaran, $data, $nota) {
+        return DB::transaction(function () use ($pengguna, $pengeluaran, $data, $versi, $nota) {
             $sppgId = (int) $pengeluaran->sppg_id;
             $this->kunciSppg($sppgId);
             $pengeluaran = Pengeluaran::query()->whereKey($pengeluaran->getKey())->lockForUpdate()->firstOrFail();
 
-            $periodeLama = $this->periodeDari($pengeluaran->tanggal);
-            $nominalLama = $this->rupiah($pengeluaran->nominal);
+            $this->pastikanBisaDiubah($pengeluaran, $versi);
 
             $pengeluaran->fill($this->ambil($data, ['pencairan_dana_id', 'pemasok_id', 'tanggal', 'kategori', 'uraian']));
 
@@ -206,21 +233,16 @@ class BudgetService
                 $pengeluaran->nominal = (int) $data['nominal'];
             }
 
-            $periodeBaru = $this->periodeDari($pengeluaran->tanggal);
-            $nominalBaru = $this->rupiah($pengeluaran->nominal);
-
-            if ($nominalBaru !== $nominalLama || $periodeBaru !== $periodeLama) {
-                $r = $this->ringkasan($sppgId, $periodeBaru);
-                $terpakaiLain = $r['terpakai'] - ($periodeBaru === $periodeLama ? $nominalLama : 0);
-                $pengeluaran->melebihi_anggaran = $this->cekSisa($nominalBaru, $r['anggaran'] - $terpakaiLain);
-            }
-
+            $pengeluaran->forceFill([
+                'versi' => (int) $pengeluaran->versi + 1,
+                'status_persetujuan' => StatusPersetujuanPengeluaran::Diajukan,
+                'melebihi_anggaran' => false,
+            ]);
             $pengeluaran->save();
-            $this->lampirkan($pengeluaran, $nota, self::MODUL_PENGELUARAN, 'nota', 'nota_path', $pengguna);
 
-            foreach (array_unique([$periodeLama, $periodeBaru]) as $periode) {
-                $this->evaluasiAmbang($sppgId, $periode, false);
-            }
+            $this->persetujuan()->batalkanMenunggu($pengeluaran, PersetujuanPengeluaranService::CATATAN_DIUBAH);
+            $this->lampirkan($pengeluaran, $nota, self::MODUL_PENGELUARAN, 'nota', 'nota_path', $pengguna);
+            $this->ajukanAtauSetujui($pengguna, $pengeluaran, $this->rupiah($pengeluaran->getAttributes()['nominal']));
 
             return $pengeluaran;
         });
@@ -230,8 +252,70 @@ class BudgetService
     {
         DB::transaction(function () use ($pengeluaran) {
             $this->kunciSppg((int) $pengeluaran->sppg_id);
-            Pengeluaran::query()->whereKey($pengeluaran->getKey())->lockForUpdate()->firstOrFail()->delete();
+            $kunci = Pengeluaran::query()->whereKey($pengeluaran->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($kunci->pembelian_bahan_id !== null) {
+                throw GalatAuth::respons(409, self::ALASAN_DARI_PEMBELIAN, 'Pengeluaran ini berasal dari pembelian bahan terverifikasi dan tidak dapat dihapus.');
+            }
+
+            $this->persetujuan()->batalkanMenunggu($kunci, PersetujuanPengeluaranService::CATATAN_DIHAPUS);
+            $kunci->delete();
         });
+    }
+
+    /**
+     * Setujui pengeluaran (keputusan investor, verifikasi pembelian, atau di bawah ambang): hitung
+     * `melebihi_anggaran` terhadap sisa anggaran (hanya pengeluaran disetujui lain) lalu evaluasi ambang
+     * 80/100%. Pemanggil WAJIB sudah mengunci sppgs + baris pengeluaran di transaksi yang sama, dan status
+     * tersimpan pengeluaran belum `disetujui`.
+     */
+    public function setujuiPengeluaran(Pengeluaran $pengeluaran): void
+    {
+        $sppgId = (int) $pengeluaran->sppg_id;
+        $periode = $this->periodeDari($pengeluaran->tanggal);
+        $nominal = $this->rupiah($pengeluaran->getAttributes()['nominal']);
+        $r = $this->ringkasan($sppgId, $periode);
+        $melebihi = $this->cekSisa($nominal, $r['anggaran'] - $r['terpakai']);
+
+        $pengeluaran->forceFill([
+            'status_persetujuan' => StatusPersetujuanPengeluaran::Disetujui,
+            'melebihi_anggaran' => $melebihi,
+        ])->save();
+
+        $this->evaluasiAmbang($sppgId, $periode, false);
+    }
+
+    /** True bila pengeluaran bernominal ini wajib disetujui investor (nominal >= ambang; ambang 0 = semua). */
+    public function perluPersetujuan(int $nominal): bool
+    {
+        return $nominal >= max(0, (int) config('operasional.keuangan.ambang_persetujuan_pengeluaran', 0));
+    }
+
+    private function ajukanAtauSetujui(User $pengaju, Pengeluaran $pengeluaran, int $nominal): void
+    {
+        if ($this->perluPersetujuan($nominal)) {
+            $this->persetujuan()->ajukan($pengaju, $pengeluaran, $nominal);
+
+            return;
+        }
+
+        $this->setujuiPengeluaran($pengeluaran);
+    }
+
+    private function pastikanBisaDiubah(Pengeluaran $pengeluaran, int $versi): void
+    {
+        if ($pengeluaran->pembelian_bahan_id !== null) {
+            throw GalatAuth::respons(409, self::ALASAN_DARI_PEMBELIAN, 'Pengeluaran ini berasal dari pembelian bahan terverifikasi dan tidak dapat diubah.');
+        }
+
+        if ((int) $pengeluaran->versi !== $versi) {
+            throw GalatAuth::respons(409, self::ALASAN_VERSI, 'Pengeluaran sudah berubah. Muat ulang lalu ubah kembali.', tambahan: ['versi_server' => (int) $pengeluaran->versi]);
+        }
+    }
+
+    private function persetujuan(): PersetujuanPengeluaranService
+    {
+        return app(PersetujuanPengeluaranService::class);
     }
 
     /**
@@ -357,7 +441,8 @@ class BudgetService
         return [$awal->toDateString(), $awal->copy()->endOfMonth()->toDateString()];
     }
 
-    private function kunciSppg(int $sppgId): void
+    /** Mutex per SPPG (urutan kunci pertama untuk semua tulis keuangan). */
+    public function kunciSppg(int $sppgId): void
     {
         DB::table('sppgs')->where('id', $sppgId)->lockForUpdate()->first(['id']);
     }

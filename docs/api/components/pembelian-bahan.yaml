@@ -1,0 +1,94 @@
+schemas:
+  StatusPembelianBahan:
+    type: string
+    enum: [diajukan, terverifikasi, ditolak]
+    description: |
+      diajukan -> terverifikasi (final) | ditolak (alasan wajib); ditolak -> diajukan lagi bila staf gudang
+      mengubah data (versi naik, alasan lama dikosongkan).
+  PembelianBahanInput:
+    type: object
+    required: [bahan_baku_id, pemasok_id, tanggal_beli, jumlah, harga_satuan, lampiran_ids]
+    description: |
+      `total`, `satuan`, `status`, `versi`, `sppg_id`, `dicatat_oleh` diisi server (dikirim klien = diabaikan).
+      Saat ubah (PATCH) semua field opsional kecuali `versi` (wajib).
+    properties:
+      bahan_baku_id: { type: integer, description: Bahan baku SPPG sendiri. }
+      pemasok_id: { type: integer, description: Pemasok aktif SPPG sendiri. }
+      tanggal_beli: { type: string, format: date, description: Tidak boleh di masa depan. }
+      jumlah: { type: number, exclusiveMinimum: 0, maximum: 999999999, description: 'Dalam satuan bahan baku; maks 3 desimal.' }
+      harga_satuan: { type: number, exclusiveMinimum: 0, maximum: 99999999999, description: 'Rupiah per satuan bahan; maks 2 desimal.' }
+      catatan: { type: [string, 'null'], maxLength: 500 }
+      lampiran_ids:
+        type: array
+        minItems: 1
+        maxItems: 3
+        items: { type: integer }
+        description: 'Foto nota: id hasil POST /lampiran (modul `pembelian-bahan`, kategori `nota`, tertunda). Wajib minimal 1 saat buat.'
+      versi: { type: integer, minimum: 1, description: 'Hanya PATCH (wajib): versi record yang dimuat klien.' }
+      ai_draft_id: { type: [string, 'null'], format: uuid }
+  PembelianBahan:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      tanggal_beli: { type: string, format: date }
+      bahan_baku:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          nama: { type: string }
+          satuan: { type: string }
+      pemasok:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          nama: { type: string }
+      jumlah: { type: number }
+      satuan: { type: string, description: Disalin dari bahan baku saat simpan. }
+      harga_satuan: { type: number }
+      total: { type: integer, description: 'round(jumlah x harga_satuan) rupiah bulat, dihitung server (bcmath).' }
+      catatan: { type: [string, 'null'] }
+      status: { $ref: '#/components/schemas/StatusPembelianBahan' }
+      status_label: { type: string }
+      versi: { type: integer }
+      alasan_penolakan: { type: [string, 'null'] }
+      pengeluaran_id: { type: [integer, 'null'], description: Terisi setelah terverifikasi. }
+      dicatat_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      diverifikasi_oleh:
+        type: [object, 'null']
+        properties:
+          id: { type: integer }
+          name: { type: string }
+      diverifikasi_pada: { type: [string, 'null'], format: date-time }
+      lampirans:
+        type: array
+        items: { $ref: '#/components/schemas/Lampiran' }
+      harga_referensi:
+        type: [object, 'null']
+        description: 'Hanya pada detail. Harga pemasok terkini (informatif); null bila belum ada entri harga. Kunci tidak ada pada daftar.'
+        properties:
+          harga: { type: number }
+          berlaku_mulai: { type: string, format: date }
+          selisih_persen: { type: [number, 'null'], description: '(harga_satuan - harga) / harga x 100.' }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+  VerifikasiPembelianInput:
+    type: object
+    required: [keputusan, versi]
+    properties:
+      keputusan: { type: string, enum: [disetujui, ditolak] }
+      alasan: { type: string, minLength: 5, maxLength: 500, description: Wajib bila ditolak. }
+      versi: { type: integer, minimum: 1 }
+responses:
+  KonflikVersi:
+    description: |
+      Konflik versi/status. Body berisi `alasan`: `versi_tidak_cocok` (+ `versi_server`), `status_tidak_valid`
+      (+ `status`; keputusan ganda), `pembelian_sudah_diverifikasi`, atau `pengeluaran_dari_pembelian`.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/Error' }
+        example: { message: 'Pembelian sudah berubah. Muat ulang lalu ubah kembali.', alasan: versi_tidak_cocok, versi_server: 2 }

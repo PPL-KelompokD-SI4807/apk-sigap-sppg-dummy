@@ -199,7 +199,7 @@ class PersetujuanLainTest extends PersetujuanTestCase
 
         $this->sebagai($this->investorAB, $this->sppgA)->getJson('/api/v1/auth/me')->assertOk()
             ->assertJsonPath('user.baca_saja', true)
-            ->assertJsonPath('user.keputusan', ['persetujuan-menu']);
+            ->assertJsonPath('user.keputusan', ['persetujuan-menu', 'keuangan']);
         $this->sebagai($this->kepalaA)->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('user.keputusan', []);
 
         $this->sebagai($this->investorAB, $this->sppgA);

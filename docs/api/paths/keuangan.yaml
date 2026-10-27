@@ -42,7 +42,9 @@
   get:
     tags: [Keuangan]
     summary: Daftar pencairan dana
-    description: Hak R (akuntan, kepala_sppg, admin lintas SPPG). Peran lain 403.
+    description: |
+      Hak R: akuntan, kepala_sppg, admin lintas SPPG, **investor** (SPPG aktif via `X-SPPG-Id`, hanya baca + keputusan).
+      Peran lain 403. Setiap baris memuat `status_persetujuan` dan `versi`; detail memuat `riwayat_persetujuan`.
     parameters:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'
@@ -169,6 +171,7 @@
       - { name: pemasok_id, in: query, schema: { type: integer } }
       - { name: pencairan_dana_id, in: query, schema: { type: integer } }
       - { name: melebihi_anggaran, in: query, schema: { type: boolean } }
+      - { name: status_persetujuan, in: query, description: 'Status persetujuan investor (R-06b-2).', schema: { $ref: '#/components/schemas/StatusPersetujuanPengeluaran' } }
       - { name: sppg_id, in: query, description: 'Hanya Admin.', schema: { type: integer } }
     responses:
       '200':
@@ -190,6 +193,11 @@
     summary: Catat pengeluaran operasional
     description: |
       Hak C: akuntan. Nominal rupiah bulat > 0; nota opsional (multipart `nota`, SecureUploadService).
+      R-06b-2: SEMUA pengeluaran yang dicatat langsung akuntan (kategori apa pun, termasuk `bahan_baku`) wajib disetujui
+      investor bila `nominal >= ambang` (`SIGAP_AMBANG_PERSETUJUAN_PENGELUARAN`, bawaan 0 = semua): status awal
+      `diajukan` + baris pengajuan + notifikasi bot ke investor (tanpa `uraian`). Di bawah ambang -> langsung `disetujui`.
+      Hanya pengeluaran `disetujui` dihitung ke `terpakai`/rekap; pengecekan `melebihi_anggaran` dan event ambang 80/100%
+      dijalankan SAAT disetujui (keputusan investor), bukan saat dicatat. Belanja bahan untuk menu masuk lewat Pembelian Bahan.
       Keputusan FR-09: pengeluaran yang melebihi sisa anggaran periode tetap DICATAT dan ditandai
       `melebihi_anggaran=true` (config `operasional.keuangan.tolak_melebihi_anggaran=true` -> 422).
       Event sekali per (SPPG, periode): `AnggaranMencapai80` (>=80%), `AnggaranMencapai100` (>=100%),
@@ -240,9 +248,10 @@
     tags: [Keuangan]
     summary: Ubah pengeluaran operasional (akuntan)
     description: |
-      Field opsional. Ganti nota: multipart POST dengan `_method=PUT`. PATCH = alias.
-      Perubahan nominal/tanggal menghitung ulang `melebihi_anggaran`; edit tidak pernah memancarkan ulang
-      event ambang yang sudah terkirim. Perubahan nominal tercatat di audit_logs (nilai lama/baru).
+      Field opsional KECUALI `versi` (WAJIB, kunci optimistik; beda -> 409 `versi_tidak_cocok` + `versi_server`).
+      Ganti nota: multipart POST dengan `_method=PUT`. PATCH = alias. Perubahan apa pun menaikkan `versi`, mengembalikan
+      status ke `diajukan`, membatalkan pengajuan yang masih menunggu, dan membuat pengajuan baru (investor diberi tahu).
+      Pengeluaran hasil pembelian bahan -> 409 `pengeluaran_dari_pembelian`. Perubahan tercatat di audit_logs tanpa teks bebas.
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     requestBody:
@@ -264,6 +273,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/UploadRejected' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
   delete:
@@ -276,3 +286,36 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+/keuangan/pengeluaran/{id}/keputusan:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  post:
+    tags: [Keuangan]
+    summary: Putuskan pengajuan pengeluaran (investor)
+    description: |
+      Hanya Investor pemilik SPPG pengeluaran (pivot + `X-SPPG-Id`); admin, kepala, akuntan, dan peran lain -> 403;
+      pengeluaran SPPG lain -> 404. Satu-satunya tulis investor selain keputusan menu. `disetujui`: pengeluaran
+      dihitung ke anggaran (`melebihi_anggaran` dihitung, event 80/100% dievaluasi; 422 `nominal` bila
+      `tolak_melebihi_anggaran=true`). `ditolak`: `catatan` wajib (5..500). Tidak ada `perlu_revisi`: akuntan
+      memperbaiki lewat PATCH (otomatis diajukan ulang). 409 `status_tidak_valid` (sudah diputuskan / investor kedua /
+      pengajuan dibatalkan) atau `versi_tidak_cocok` (+ `versi_server`). Kunci baris: sppgs -> pengeluarans -> persetujuan.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/KeputusanPengeluaranInput' }
+          example: { keputusan: ditolak, catatan: 'Tunda sampai bulan depan.', versi: 1 }
+    responses:
+      '200':
+        description: Diputuskan
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Pengeluaran' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

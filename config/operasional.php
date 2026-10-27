@@ -51,6 +51,13 @@ return [
          */
         'tolak_melebihi_anggaran' => (bool) env('SIGAP_TOLAK_MELEBIHI_ANGGARAN', false),
         'ambang_peringatan_persen' => 80,
+
+        /*
+         | R-06b-2: pengeluaran yang dicatat langsung akuntan wajib disetujui investor bila
+         | nominal >= ambang (rupiah). 0 = SEMUA pengeluaran perlu persetujuan. Nilai negatif dianggap 0.
+         | Tidak dapat diubah lewat API. Catatan: ambang > 0 membuka celah pemecahan nominal.
+         */
+        'ambang_persetujuan_pengeluaran' => max(0, (int) env('SIGAP_AMBANG_PERSETUJUAN_PENGELUARAN', 0)),
     ],
 
     'rekap' => [

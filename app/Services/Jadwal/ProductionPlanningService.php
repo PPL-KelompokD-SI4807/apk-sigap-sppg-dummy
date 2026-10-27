@@ -88,6 +88,12 @@ class ProductionPlanningService
                 $this->validasiTransisi($jadwal->status, $statusBaru);
             }
 
+            // R-06b-2 (S2): menu yang kembali ke draf/diajukan/ditolak setelah dijadwalkan tidak boleh dimasak.
+            // Urutan kunci sppg -> jadwal -> menu (sama dengan pastikanMenuMilikSppg).
+            if ($statusBaru === StatusJadwalProduksi::Dimasak && $jadwal->status !== $statusBaru) {
+                $this->pastikanMenuMasihDisetujui((int) ($data['menu_id'] ?? $jadwal->menu_id), $sppg->id);
+            }
+
             if ($statusBaru !== StatusJadwalProduksi::Dibatalkan
                 && (in_array('tanggal_produksi', $berubah, true) || in_array('target_porsi', $berubah, true))) {
                 $this->validasiKapasitas(
@@ -320,6 +326,17 @@ class ProductionPlanningService
     private function kunciSppg(int $sppgId): Sppg
     {
         return Sppg::query()->whereKey($sppgId)->lockForUpdate()->firstOrFail();
+    }
+
+    private function pastikanMenuMasihDisetujui(int $menuId, int $sppgId): void
+    {
+        $menu = Menu::withoutGlobalScope(SppgScope::class)->where('sppg_id', $sppgId)->whereKey($menuId)->lockForUpdate()->first();
+
+        if ($menu === null || $menu->status_persetujuan !== StatusPersetujuanMenu::Disetujui) {
+            throw ValidationException::withMessages([
+                'status' => ['Menu jadwal ini belum disetujui investor; ajukan ulang menu sebelum memasak.'],
+            ]);
+        }
     }
 
     private function pastikanMenuMilikSppg(int $menuId, int $sppgId): void

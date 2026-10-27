@@ -3,6 +3,7 @@
 namespace App\Services\Notification;
 
 use App\Enums\KategoriKeluhan;
+use App\Enums\KategoriPengeluaran;
 use App\Enums\Role;
 use App\Models\NotifikasiPerjalanan;
 use App\Services\Telegram\TelegramBotService;
@@ -25,7 +26,7 @@ class DomainEventNotifications
         'PerjalananDimulai', 'PerjalananTiba', 'PerjalananTerlambat', 'RekapHarianDibuat',
         'BuktiDistribusiDicatat', 'DistribusiTerlambat', 'BuktiDistribusiBelumMasuk',
         'AnggaranMencapai80', 'AnggaranMencapai100', 'AnggaranMelampaui',
-        'MenuDiajukan', 'MenuDiputuskan',
+        'MenuDiajukan', 'MenuDiputuskan', 'PengeluaranDiajukan',
     ];
 
     /** Peran penerima per event (PIC titik layanan untuk perjalanan ditangani khusus). */
@@ -34,7 +35,8 @@ class DomainEventNotifications
         'BahanAkanKedaluwarsa' => [Role::StafGudang, Role::KepalaSppg],
         'KekuranganBahan' => [Role::StafGudang, Role::KepalaSppg],
         'MutuTidakLayak' => [Role::KepalaSppg, Role::AhliGizi],
-        'KeluhanKritis' => [Role::KepalaSppg, Role::AhliGizi],
+        // Investor (R-06b-2) menerima varian TANPA deskripsi keluhan (teks bebas pelapor).
+        'KeluhanKritis' => [Role::KepalaSppg, Role::AhliGizi, Role::Investor],
         'PerjalananDimulai' => [Role::KepalaSppg],
         'PerjalananTiba' => [Role::KepalaSppg],
         'PerjalananTerlambat' => [Role::KepalaSppg],
@@ -42,12 +44,14 @@ class DomainEventNotifications
         'BuktiDistribusiDicatat' => [Role::KepalaSppg],
         'DistribusiTerlambat' => [Role::KepalaSppg],
         'BuktiDistribusiBelumMasuk' => [Role::KepalaSppg],
-        'AnggaranMencapai80' => [Role::Akuntan, Role::KepalaSppg],
-        'AnggaranMencapai100' => [Role::Akuntan, Role::KepalaSppg],
+        'AnggaranMencapai80' => [Role::Akuntan, Role::KepalaSppg, Role::Investor],
+        'AnggaranMencapai100' => [Role::Akuntan, Role::KepalaSppg, Role::Investor],
+        // Tidak ke investor: selalu terpancar bersamaan dengan 100% (notifikasi ganda).
         'AnggaranMelampaui' => [Role::Akuntan, Role::KepalaSppg],
         // Investor dicari lewat pivot investor_sppg (NotificationService), bukan users.sppg_id.
         'MenuDiajukan' => [Role::Investor],
         'MenuDiputuskan' => [Role::AhliGizi],
+        'PengeluaranDiajukan' => [Role::Investor],
     ];
 
     /** Event kritis: bila tidak ada penerima peran, kirim ke Admin (Risiko 10 proposal). */
@@ -60,6 +64,30 @@ class DomainEventNotifications
             array_map(fn (string $name) => 'App\\Events\\'.$name, self::EVENTS),
             fn (string $class) => class_exists($class),
         ));
+    }
+
+    /**
+     * Semua pesan untuk satu event (satu per varian isi). KeluhanKritis: varian lengkap untuk kepala/ahli gizi dan
+     * varian tanpa deskripsi untuk investor; dedup keduanya terpisah.
+     *
+     * @return list<NotificationMessage>
+     */
+    public function buildAll(object $event): array
+    {
+        $utama = $this->build($event);
+
+        if ($utama === null) {
+            return [];
+        }
+
+        if (class_basename($event) === 'KeluhanKritis') {
+            $p = get_object_vars($event);
+            $sppgId = (int) $this->int($p, 'sppgId', 'sppg_id');
+
+            return [$utama, $this->keluhanKritisInvestor('KeluhanKritis', $sppgId, $p)];
+        }
+
+        return [$utama];
     }
 
     public function build(object $event): ?NotificationMessage
@@ -90,6 +118,7 @@ class DomainEventNotifications
             'BuktiDistribusiBelumMasuk' => $this->buktiBelumMasuk($name, $sppgId, $p),
             'MenuDiajukan' => $this->menuDiajukan($name, $sppgId, $p),
             'MenuDiputuskan' => $this->menuDiputuskan($name, $sppgId, $p),
+            'PengeluaranDiajukan' => $this->pengeluaranDiajukan($name, $sppgId, $p),
             default => $this->anggaran($name, $sppgId, $p),
         };
     }
@@ -196,7 +225,45 @@ class DomainEventNotifications
             $this->e(mb_substr($this->str($p, 'deskripsi'), 0, 150)),
         );
 
-        return $this->message($name, $sppgId, "keluhan:{$sppgId}:".$this->int($p, 'id'), $html, 'Buka Keluhan', '/keluhan');
+        return new NotificationMessage(
+            type: $name,
+            dedupKey: "keluhan:{$sppgId}:".$this->int($p, 'id'),
+            sppgId: $sppgId,
+            html: $html,
+            roles: $this->tanpaInvestor(self::RECIPIENTS[$name]),
+            buttonLabel: 'Buka Keluhan',
+            buttonPath: '/keluhan?sppg='.$sppgId,
+            fallbackToAdmin: true,
+        );
+    }
+
+    /**
+     * Varian investor: hanya kategori + titik layanan; TANPA deskripsi (teks bebas pelapor, dapat memuat
+     * nama anak/kontak). Dedup terpisah dari varian lengkap.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function keluhanKritisInvestor(string $name, int $sppgId, array $p): NotificationMessage
+    {
+        $kategori = $this->str($p, 'kategori');
+        $label = KategoriKeluhan::tryFrom($kategori)?->label() ?? $kategori;
+        $titik = $this->str($p, 'titikLayananNama', 'titik_layanan_nama');
+
+        $html = sprintf(
+            "<b>Keluhan KRITIS</b>: %s%s\nKepala SPPG sedang menindaklanjuti. Lihat ringkasan di Mini App.",
+            $this->e($label),
+            $titik !== '' ? ' di '.$this->e($titik) : '',
+        );
+
+        return new NotificationMessage(
+            type: $name,
+            dedupKey: "keluhan_investor:{$sppgId}:".$this->int($p, 'id'),
+            sppgId: $sppgId,
+            html: $html,
+            roles: [Role::Investor],
+            buttonLabel: 'Buka Keluhan',
+            buttonPath: '/keluhan?sppg='.$sppgId,
+        );
     }
 
     /** @param array<string, mixed> $p */
@@ -377,6 +444,35 @@ class DomainEventNotifications
         return $this->message($name, $sppgId, "menu_diputuskan:{$sppgId}:{$id}:{$keputusan}", $html, 'Lihat di Mini App', "/persetujuan-menu/{$id}?sppg={$sppgId}");
     }
 
+    /**
+     * Pengeluaran menunggu persetujuan investor. TANPA `uraian` (teks bebas): kategori, nominal, tanggal,
+     * serapan/sisa anggaran periode. Dedup per pengeluaran + versi (pengajuan ulang setelah diubah tetap terkirim).
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function pengeluaranDiajukan(string $name, int $sppgId, array $p): NotificationMessage
+    {
+        $id = (int) $this->int($p, 'id');
+        $versi = (int) ($this->int($p, 'versi') ?? 1);
+        $kategori = $this->str($p, 'kategori');
+        $label = KategoriPengeluaran::tryFrom($kategori)?->label() ?? $kategori;
+        $anggaran = (int) ($this->int($p, 'anggaran') ?? 0);
+        $terpakai = (int) ($this->int($p, 'terpakai') ?? 0);
+        $serapan = $anggaran > 0
+            ? sprintf('Periode %s: serapan %s%% (Rp %s dari Rp %s), sisa Rp %s.', $this->e($this->str($p, 'periode')), $this->e($this->fmt(round($terpakai * 100 / $anggaran, 2))), $this->e($this->fmt($terpakai)), $this->e($this->fmt($anggaran)), $this->e($this->fmt($anggaran - $terpakai)))
+            : sprintf('Periode %s: belum ada dana yang dicairkan.', $this->e($this->str($p, 'periode')));
+
+        $html = sprintf(
+            "<b>Pengeluaran menunggu persetujuan</b>\n%s Rp %s (%s).\n%s",
+            $this->e($label),
+            $this->e($this->num($p, 'nominal')),
+            $this->e($this->str($p, 'tanggal')),
+            $serapan,
+        );
+
+        return $this->message($name, $sppgId, "pengeluaran_diajukan:{$sppgId}:{$id}:{$versi}", $html, 'Lihat di Mini App', "/keuangan/pengeluaran/{$id}?sppg={$sppgId}");
+    }
+
     /** @param array<string, mixed> $p */
     private function anggaran(string $name, int $sppgId, array $p): NotificationMessage
     {
@@ -406,7 +502,7 @@ class DomainEventNotifications
             $sisa,
         );
 
-        return $this->message($name, $sppgId, "{$name}:{$sppgId}:{$periode}", $html, 'Buka Keuangan', '/keuangan');
+        return $this->message($name, $sppgId, "{$name}:{$sppgId}:{$periode}", $html, 'Buka Keuangan', '/keuangan?sppg='.$sppgId);
     }
 
     // ---------------------------------------------------------------- helper
@@ -423,6 +519,15 @@ class DomainEventNotifications
             buttonPath: $buttonPath,
             fallbackToAdmin: in_array($name, self::FALLBACK_ADMIN, true),
         );
+    }
+
+    /**
+     * @param  list<Role>  $roles
+     * @return list<Role>
+     */
+    private function tanpaInvestor(array $roles): array
+    {
+        return array_values(array_filter($roles, fn (Role $r) => $r !== Role::Investor));
     }
 
     private function e(string $text): string

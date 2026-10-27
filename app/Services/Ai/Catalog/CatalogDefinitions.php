@@ -17,7 +17,9 @@ use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusKeluhan;
 use App\Enums\StatusKirim;
 use App\Enums\StatusOperasional;
+use App\Enums\StatusPembelianBahan;
 use App\Enums\StatusPerjalanan;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Http\Requests\Armada\StoreArmadaRequest;
 use App\Http\Requests\Armada\StorePengemudiRequest;
 use App\Http\Requests\Armada\UpdateArmadaRequest;
@@ -46,6 +48,8 @@ use App\Http\Requests\Mutu\StorePemeriksaanMutuRequest;
 use App\Http\Requests\Mutu\UpdatePemeriksaanMutuRequest;
 use App\Http\Requests\Pemasok\StorePemasokRequest;
 use App\Http\Requests\Pemasok\UpdatePemasokRequest;
+use App\Http\Requests\Pembelian\StorePembelianBahanRequest;
+use App\Http\Requests\Pembelian\UpdatePembelianBahanRequest;
 use App\Http\Requests\PenerimaManfaat\StorePenerimaManfaatRequest;
 use App\Http\Requests\PenerimaManfaat\UpdatePenerimaManfaatRequest;
 use App\Http\Requests\Perjalanan\StoreNotifikasiPerjalananRequest;
@@ -64,6 +68,7 @@ use App\Models\LogProduksi;
 use App\Models\Menu;
 use App\Models\NotifikasiPerjalanan;
 use App\Models\Pemasok;
+use App\Models\PembelianBahan;
 use App\Models\PemeriksaanMutu;
 use App\Models\PencairanDana;
 use App\Models\PenerimaManfaat;
@@ -287,11 +292,34 @@ final class CatalogDefinitions
             new ResourceSpec(
                 key: 'pengeluaran', module: 'keuangan', label: 'pengeluaran', model: Pengeluaran::class,
                 search: ['uraian'],
-                list: ['id', 'tanggal', 'kategori', 'uraian', 'nominal', 'melebihi_anggaran', 'pemasok' => 'pemasok.nama'],
-                filters: ['kategori' => ['type' => 'string', 'enum' => self::values(KategoriPengeluaran::class)]],
+                list: ['id', 'tanggal', 'kategori', 'uraian', 'nominal', 'melebihi_anggaran', 'status_persetujuan', 'pemasok' => 'pemasok.nama'],
+                filters: [
+                    'kategori' => ['type' => 'string', 'enum' => self::values(KategoriPengeluaran::class)],
+                    'status_persetujuan' => ['type' => 'string', 'enum' => self::values(StatusPersetujuanPengeluaran::class), 'description' => 'Status persetujuan investor.'],
+                ],
                 date: 'tanggal', order: [['tanggal', 'desc'], ['id', 'desc']], rupiah: ['nominal'],
                 store: StorePengeluaranRequest::class, update: UpdatePengeluaranRequest::class, routeParameter: 'pengeluaran',
                 marker: 'pengeluaran',
+                exclude: ['versi'], berversi: true,
+            ),
+
+            // 14b. Pembelian Bahan (R-06b-2): staf gudang mencatat (draf), akuntan memverifikasi di Mini App.
+            // TIDAK ada tool verifikasi/keputusan. total/status/satuan/versi tidak pernah ditawarkan ke LLM; foto nota
+            // diunggah di Mini App saat konfirmasi draf (alasan penolakan = teks bebas akuntan, tidak disajikan).
+            new ResourceSpec(
+                key: 'pembelian_bahan', module: 'pembelian-bahan', label: 'pembelian bahan', model: PembelianBahan::class,
+                actions: ['R', 'C', 'U'],
+                search: ['bahanBaku.nama', 'pemasok.nama'],
+                list: ['id', 'tanggal_beli', 'bahan' => 'bahanBaku.nama', 'pemasok' => 'pemasok.nama', 'jumlah', 'satuan', 'harga_satuan', 'total', 'status'],
+                filters: [
+                    'status' => ['type' => 'string', 'enum' => self::values(StatusPembelianBahan::class)],
+                    'bahan_baku_id' => ['type' => 'integer', 'description' => 'ID bahan dari tool cari_bahan_baku.'],
+                    'pemasok_id' => ['type' => 'integer', 'description' => 'ID pemasok dari tool cari_pemasok.'],
+                ],
+                date: 'tanggal_beli', order: [['tanggal_beli', 'desc'], ['id', 'desc']], rupiah: ['total'],
+                store: StorePembelianBahanRequest::class, update: UpdatePembelianBahanRequest::class, routeParameter: 'pembelian_bahan',
+                hints: ['jumlah' => 'Jumlah dalam satuan bahan baku.', 'harga_satuan' => 'Harga per satuan bahan, rupiah.'],
+                exclude: ['versi'], berversi: true,
             ),
 
             // 15. Data Feedback dan Keluhan (deskripsi ditulis pengguna lain: DATA tak tepercaya). Deskripsi dan

@@ -31,6 +31,10 @@ class PengeluaranResource extends JsonResource
             'uraian' => $p->uraian,
             'nominal' => app(BudgetService::class)->rupiah($p->getRawOriginal('nominal') ?? $p->nominal),
             'melebihi_anggaran' => (bool) $p->melebihi_anggaran,
+            'status_persetujuan' => $p->status_persetujuan->value,
+            'status_persetujuan_label' => $p->status_persetujuan->label(),
+            'versi' => (int) $p->versi,
+            'pembelian_bahan_id' => $p->pembelian_bahan_id,
             'pemasok' => $p->pemasok === null ? null : ['id' => $p->pemasok->id, 'nama' => $p->pemasok->nama],
             'pencairan_dana_id' => $p->pencairan_dana_id,
             'nota' => $nota === null ? null : ['lampiran_id' => $nota->id, 'url' => $nota->url(), 'mime' => $nota->mime, 'ukuran' => $nota->ukuran],
@@ -38,6 +42,8 @@ class PengeluaranResource extends JsonResource
             'dicatat_oleh' => $p->pencatat === null ? null : ['id' => $p->pencatat->id, 'name' => $p->pencatat->name],
             'created_at' => $this->wib($p->created_at),
             'updated_at' => $this->wib($p->updated_at),
-        ];
+        ] + ($p->relationLoaded('persetujuans') ? [
+            'riwayat_persetujuan' => PersetujuanPengeluaranResource::collection($p->persetujuans),
+        ] : []);
     }
 }

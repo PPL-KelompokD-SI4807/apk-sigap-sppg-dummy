@@ -14,8 +14,9 @@ import {
   STATUS_PRODUKSI, STATUS_DISTRIBUSI, statusProduksiLabel, statusDistribusiLabel, statusBadge, transisiValid, aksiLabel,
   unitBoleh, rowPermsJadwal, hitungKapasitas, sisaPorsiDistribusi,
   produksiFields, produksiDetailFields, produksiPayload, distribusiFields, distribusiDetailFields, distribusiPayload,
-  statusKebutuhan, ringkasKebutuhan, catatanTidakDapat,
+  statusKebutuhan, ringkasKebutuhan, catatanTidakDapat, menuBelumDisetujui, masakDitahanMenu, pesanGagalStatus,
 } from './schema.js';
+import { statusLabel as statusMenuLabel } from '../persetujuan-menu/logika.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const SLUG = 'jadwal';
@@ -39,7 +40,7 @@ function aksiStatus(kind, rec, base, p) {
   const row = h('div', { class: 'row-actions' });
   for (const to of next) {
     const gagal = to === 'dibatalkan';
-    const ditahan = kind === 'distribusi' && to === 'berangkat' && rec.layak_distribusi === false;
+    const ditahan = (kind === 'distribusi' && to === 'berangkat' && rec.layak_distribusi === false) || masakDitahanMenu(kind, rec, to);
     const btn = h('button', { class: `btn ${gagal ? 'btn-danger' : 'btn-primary'}`, type: 'button', disabled: ditahan }, aksiLabel(kind, to));
     btn.addEventListener('click', async () => {
       const nama = kind === 'produksi' ? statusProduksiLabel(to) : statusDistribusiLabel(to);
@@ -51,13 +52,18 @@ function aksiStatus(kind, rec, base, p) {
         resolve();
       } catch (e) {
         if (e?.status === 401) throw e;
-        toast(errorMessage(e, 'Status gagal diubah.'), 'error', 5000);
+        // 422 pada `status` (mis. menu belum disetujui): tampilkan pesan server lalu muat ulang agar penanda terbaru terlihat.
+        toast(pesanGagalStatus(e) || errorMessage(e, 'Status gagal diubah.'), 'error', 7000);
+        if (e?.status === 422 || e?.status === 409) { resolve(); return; }
         btn.disabled = false;
       }
     });
     row.append(btn);
   }
   box.append(row);
+  if (next.some((to) => masakDitahanMenu(kind, rec, to))) {
+    box.append(h('div', { class: 'alert-danger' }, 'Mulai masak ditahan: menu belum disetujui investor. Ajukan ulang menu terlebih dahulu.'));
+  }
   if (kind === 'distribusi' && next.includes('berangkat') && rec.layak_distribusi === false) {
     box.append(h('div', { class: 'alert-danger' }, 'Keberangkatan ditahan: pemeriksaan mutu terbaru belum berstatus Layak.'));
   }
@@ -180,6 +186,14 @@ const distribusiModule = defineCrudModule({
 distribusiModule.hidden = true;
 
 // ---- Modul produksi ----
+const produksiQuery = { menu_belum_disetujui: '' };
+function listTopProduksi() {
+  const on = produksiQuery.menu_belum_disetujui === '1';
+  const chip = h('button', { type: 'button', class: `seg-btn${on ? ' active' : ''}`, 'aria-pressed': on ? 'true' : 'false', onclick: () => { produksiQuery.menu_belum_disetujui = on ? '' : '1'; resolve(); } },
+    on ? 'Menu belum disetujui (aktif)' : 'Menu belum disetujui');
+  return h('div', { class: 'stack' }, jadwalTabs('produksi'), h('div', { class: 'seg' }, chip));
+}
+
 const produksiBase = defineCrudModule({
   slug: SLUG,
   title: 'Jadwal',
@@ -193,7 +207,8 @@ const produksiBase = defineCrudModule({
   searchPlaceholder: 'Cari menu atau catatan...',
   filters: { param: 'status', label: 'Status produksi', options: [{ value: '', label: 'Semua' }, ...STATUS_PRODUKSI] },
   listRedirect: (u) => (unitBoleh(u, 'produksi') ? null : '/jadwal/distribusi'),
-  listTop: () => jadwalTabs('produksi'),
+  listQuery: produksiQuery,
+  listTop: listTopProduksi,
   formTop: produksiFormTop,
   onSaved: ({ mode, res }) => {
     const kurang = res?.data?.kekurangan_bahan;
@@ -206,10 +221,17 @@ const produksiBase = defineCrudModule({
     aside: Number(r.target_porsi ?? 0).toLocaleString('id-ID'),
     asideSub: 'porsi',
     badge: { text: r.status_label || statusProduksiLabel(r.status), cls: statusBadge(r.status) },
+    badges: menuBelumDisetujui(r) ? [{ text: 'Menu belum disetujui', cls: 'badge-warn' }] : [],
   }),
   rowPerms: (rec, p) => rowPermsJadwal('produksi', getUser(), rec, p),
   detailExtras: (rec, p) => {
     const nodes = [];
+    if (menuBelumDisetujui(rec) && rec.status !== 'selesai' && rec.status !== 'dibatalkan') {
+      nodes.push(h('div', { class: 'alert-danger', role: 'alert' },
+        `Menu jadwal ini belum disetujui investor (status menu: ${statusMenuLabel(rec.menu?.status_persetujuan)}). `,
+        rec.status === 'direncanakan' ? 'Jadwal tidak dapat dimasak sebelum menu disetujui kembali. ' : '',
+        rec.menu?.id && userPerms(getUser(), 'menu-gizi').R ? h('a', { class: 'link', href: `#/menu-gizi/${rec.menu.id}` }, 'Buka menu') : null));
+    }
     if (rec.status_mutu === 'tidak_layak') nodes.push(h('div', { class: 'alert-danger' }, 'Hasil mutu terbaru TIDAK LAYAK: distribusi ditahan sampai pemeriksaan ulang Layak.'));
     nodes.push(aksiStatus('produksi', rec, '/jadwal', p));
     const aktif = rec.status !== 'dibatalkan';

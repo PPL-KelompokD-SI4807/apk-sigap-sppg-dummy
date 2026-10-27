@@ -3,6 +3,7 @@
 namespace Tests\Feature\Unggahan;
 
 use App\Enums\Role;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Models\Lampiran;
 use App\Models\Pengeluaran;
 use App\Services\Storage\KetatPemrosesGambar;
@@ -34,7 +35,7 @@ class UnggahanAmanTest extends TestCase
         Storage::fake('uploads');
         $this->sppgA = $this->createSppg('SPPG A');
         $this->sppgB = $this->createSppg('SPPG B');
-        $this->pengeluaran = Pengeluaran::factory()->create(['sppg_id' => $this->sppgA]);
+        $this->pengeluaran = Pengeluaran::factory()->status(StatusPersetujuanPengeluaran::Diajukan)->create(['sppg_id' => $this->sppgA]); // lampiran terikat ditolak bila sudah disetujui (R-06b-2 M2)
     }
 
     private function unggah(mixed $berkas, ?int $id = null): TestResponse

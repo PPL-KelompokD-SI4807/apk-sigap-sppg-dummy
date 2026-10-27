@@ -35,7 +35,7 @@ schemas:
     properties:
       modul:
         type: string
-        enum: [bukti-distribusi, keuangan-pencairan, keuangan-pengeluaran, keluhan, mutu, log-produksi]
+        enum: [bukti-distribusi, keuangan-pencairan, keuangan-pengeluaran, keluhan, mutu, log-produksi, pembelian-bahan]
       lampiranable_id:
         type: [integer, 'null']
         description: |

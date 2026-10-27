@@ -25,4 +25,6 @@ Route::prefix('keuangan')->name('keuangan.')->group(function () {
     Route::match(['put', 'patch'], 'pengeluaran/{pengeluaran}', [PengeluaranController::class, 'update'])
         ->middleware('throttle:unggah')->whereNumber('pengeluaran')->name('pengeluaran.update');
     Route::delete('pengeluaran/{pengeluaran}', [PengeluaranController::class, 'destroy'])->whereNumber('pengeluaran')->name('pengeluaran.destroy');
+    // R-06b-2: keputusan investor atas pengajuan pengeluaran (satu-satunya tulis investor).
+    Route::post('pengeluaran/{pengeluaran}/keputusan', [PengeluaranController::class, 'keputusan'])->whereNumber('pengeluaran')->name('pengeluaran.keputusan');
 });

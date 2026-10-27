@@ -7,6 +7,7 @@ use App\Http\Resources\LampiranResource;
 use App\Models\Lampiran;
 use App\Services\Auth\GalatAuth;
 use App\Services\Storage\PengikatLampiran;
+use App\Services\Storage\PenjagaLampiranInduk;
 use App\Services\Storage\SecureUploadService;
 use App\Support\LampiranTersembunyi;
 use App\Support\Rbac;
@@ -36,7 +37,10 @@ class LampiranController extends ApiController
     /** Batas bawaan unggahan tertunda (belum diikat) per pengguna. */
     public const MAKS_TERTUNDA = 10;
 
-    public function __construct(private readonly SecureUploadService $unggahan) {}
+    public function __construct(
+        private readonly SecureUploadService $unggahan,
+        private readonly PenjagaLampiranInduk $penjaga,
+    ) {}
 
     public function show(Request $request, Lampiran $lampiran): Response
     {
@@ -89,8 +93,9 @@ class LampiranController extends ApiController
         $gambar = $this->unggahan->siapkan($request->file('berkas'), 'berkas');
 
         $lampiran = DB::transaction(function () use ($gambar, $induk, $data, $user, $kategori, $maks) {
-            // Kunci baris induk agar dua unggahan bersamaan tidak sama-sama lolos batas jumlah.
-            $induk->newQueryWithoutScopes()->whereKey($induk->getKey())->lockForUpdate()->first();
+            // Kunci baris induk agar dua unggahan bersamaan tidak sama-sama lolos batas jumlah. Induk berversi
+            // (pembelian, pengeluaran) juga diperiksa ulang statusnya dan versinya dinaikkan (R-06b-2 M1/M2).
+            $this->penjaga->kunciDanPeriksa($induk);
 
             if ($induk->lampirans()->count() >= $maks) {
                 throw ValidationException::withMessages(['lampiranable_id' => ["Jumlah lampiran maksimal {$maks} per data."]]);

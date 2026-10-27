@@ -162,7 +162,10 @@ class InvestorAksesTest extends InvestorTestCase
         $this->postJson('/api/v1/keluhan', ['kategori' => 'rasa', 'sumber' => 'sekolah', 'deskripsi' => 'Uji'])->assertForbidden();
         $this->patchJson("/api/v1/bahan-baku/{$bahan->id}", ['nama' => 'Ubah'])->assertForbidden();
         $this->postJson("/api/v1/bahan-baku/{$bahan->id}/mutasi", ['jenis' => 'masuk', 'jumlah' => 1])->assertForbidden();
-        $this->patchJson("/api/v1/keuangan/pengeluaran/{$pengeluaran->id}", ['uraian' => 'Ubah'])->assertForbidden();
+        $this->patchJson("/api/v1/keuangan/pengeluaran/{$pengeluaran->id}", ['uraian' => 'Ubah', 'versi' => 1])->assertForbidden();
+        $this->postJson('/api/v1/pembelian-bahan', [])->assertForbidden();
+        // Satu-satunya tulis investor (R-06b-2): memutuskan pengajuan pengeluaran; badan kosong = 422, data tak berubah.
+        $this->postJson("/api/v1/keuangan/pengeluaran/{$pengeluaran->id}/keputusan", [])->assertUnprocessable();
         $this->deleteJson("/api/v1/mutu/{$mutu->id}")->assertForbidden();
         $this->patchJson("/api/v1/rekap-harian/{$rekap->id}", ['catatan' => 'Ubah'])->assertForbidden();
         $this->postJson("/api/v1/rekap-harian/{$rekap->id}/kirim-ulang")->assertForbidden();
@@ -200,7 +203,8 @@ class InvestorAksesTest extends InvestorTestCase
     {
         $name = (string) $route->getName();
 
-        return str_starts_with($name, 'api.v1.auth.') || $name === 'api.v1.telegram.webhook' || str_contains($route->uri(), 'telegram');
+        // Keputusan investor atas pengajuan pengeluaran adalah satu-satunya tulis yang sah (diuji di tests/Feature/Persetujuan).
+        return $name === 'api.v1.keuangan.pengeluaran.keputusan' || str_starts_with($name, 'api.v1.auth.') || $name === 'api.v1.telegram.webhook' || str_contains($route->uri(), 'telegram');
     }
 
     public function test_peran_lain_header_sppg_lain_ditolak_dan_perilaku_lama_tetap(): void

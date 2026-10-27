@@ -13,6 +13,7 @@ import { renderAgregatPenerima } from './components/agregat-view.js';
 import { isInvestor, setSppgAktif } from './core/sppg-aktif.js';
 import { parseSppgHint } from './modules/persetujuan-menu/logika.js';
 import { getUser } from './core/auth.js';
+import { tujuanDraf } from './modules/pembelian-bahan/logika.js';
 import { showLoginFlow } from './components/login-flow.js';
 import { renderSesi } from './components/sesi-view.js';
 import { renderUbahPassword } from './components/password-view.js';
@@ -32,7 +33,7 @@ route('/', renderHome, { title: 'SiGAP SPPG' });
 route('/draf/:uuid', async (ctx) => {
   const res = await api.get(`/ai-drafts/${encodeURIComponent(ctx.params.uuid)}`);
   const d = res.data ?? res;
-  const target = d.action === 'update' && d.payload?.id ? `/${d.module}/${d.payload.id}/ubah` : `/${d.module}/baru`;
+  const target = tujuanDraf(d);
   navigate(`${target}?draft=${encodeURIComponent(d.uuid || ctx.params.uuid)}`, { replace: true });
 }, { title: 'Draf AI' });
 route('/sesi', (ctx) => renderSesi(ctx, { onKeluar: () => { navigate('/', { replace: true }); location.reload(); } }), { title: 'Perangkat & Sesi' });

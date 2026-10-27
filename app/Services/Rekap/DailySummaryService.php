@@ -7,6 +7,7 @@ use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusKeluhan;
 use App\Enums\StatusKirim;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Models\BahanBaku;
 use App\Models\BuktiDistribusi;
 use App\Models\FeedbackKeluhan;
@@ -243,9 +244,11 @@ class DailySummaryService
 
         $pencairan = $this->sen($this->q(PencairanDana::class, $sppgId)
             ->where('periode', $periode)->whereDate('tanggal_cair', '<=', $t->toDateString())->sum('nominal'));
-        $periodeKeluar = $this->sen($this->q(Pengeluaran::class, $sppgId)
+        // R-06b-2: hanya pengeluaran yang sudah disetujui investor yang dihitung (sejalan BudgetService).
+        $pengeluaran = fn () => $this->q(Pengeluaran::class, $sppgId)->where('status_persetujuan', StatusPersetujuanPengeluaran::Disetujui->value);
+        $periodeKeluar = $this->sen($pengeluaran()
             ->whereDate('tanggal', '>=', $awal)->whereDate('tanggal', '<=', $t->toDateString())->sum('nominal'));
-        $hariIni = $this->sen($this->q(Pengeluaran::class, $sppgId)
+        $hariIni = $this->sen($pengeluaran()
             ->whereDate('tanggal', $t->toDateString())->sum('nominal'));
 
         return [
