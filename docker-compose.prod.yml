@@ -1,0 +1,223 @@
+# SiGAP SPPG - Docker Compose PRODUKSI/STAGING (VPS 2 GiB, t3.small). Dipakai lewat scripts/deploy.sh.
+# Manual (dari direktori repo di server):
+#   docker compose -f docker-compose.prod.yml --env-file .env --env-file .deploy/image.env <perintah>
+#
+# - Rahasia HANYA di .env dan .env.mysql server (chmod 600) lewat env_file/interpolasi; tidak ada nilai rahasia
+#   di berkas ini. Sandi root MySQL hanya di .env.mysql (khusus kontainer mysql).
+# - Hanya nginx 80/443 (IPv4) yang dipublikasikan. MySQL tanpa ports, di jaringan internal `db`.
+# - Batas memori adalah plafon (ukur `docker stats` di staging); semua dapat diubah lewat MEM_* di .env.
+# - Image: ${IMAGE_REGISTRY}/sigap-sppg-{app,web}:${IMAGE_TAG}. Bawaan `localhost/...:local` (build lokal) agar
+#   nama image tidak pernah tertarik dari Docker Hub secara tidak sengaja.
+name: sigap
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-env: &app-env
+  # Dipaksa di sini (menimpa env_file) sebagai pertahanan berlapis; preflight deploy juga menolak nilai lain.
+  APP_ENV: production
+  APP_DEBUG: "false"
+  TELEGRAM_DEV_BYPASS: "false"
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  PHP_FPM_MAX_CHILDREN: ${PHP_FPM_MAX_CHILDREN:-4}
+  # Worker php-fpm tidak mewarisi variabel lingkungan (rahasia); config dibaca dari cache entrypoint.
+  PHP_FPM_CLEAR_ENV: "yes"
+
+x-app: &app
+  image: ${IMAGE_REGISTRY:-localhost}/sigap-sppg-app:${IMAGE_TAG:-local}
+  restart: unless-stopped
+  env_file: .env
+  depends_on:
+    mysql:
+      condition: service_healthy
+  volumes:
+    - app_storage:/var/www/html/storage
+  networks:
+    - edge
+    - db
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  logging: *logging
+
+services:
+  nginx:
+    build:
+      context: .
+      target: web
+      args:
+        VCS_REF: ${IMAGE_REVISION:-unknown}
+    image: ${IMAGE_REGISTRY:-localhost}/sigap-sppg-web:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?isi DOMAIN di .env}
+      TELEGRAM_WEBHOOK_IP_FILTER: ${TELEGRAM_WEBHOOK_IP_FILTER:-on}
+    volumes:
+      - certbot_etc:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    networks:
+      - edge
+    mem_limit: ${MEM_NGINX:-48m}
+    memswap_limit: ${MEMSWAP_NGINX:-304m}
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    # Master nginx (root) hanya butuh ini: bind 80/443, turun ke user nginx, membuat direktori temp.
+    # DAC_OVERRIDE disertakan agar start tidak gagal pada direktori cache milik user nginx; coba hapus
+    # setelah uji staging.
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/nginx-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *logging
+
+  app:
+    <<: *app
+    build:
+      context: .
+      target: app
+      args:
+        UID: ${APP_UID:-1000}
+        VCS_REF: ${IMAGE_REVISION:-unknown}
+        GID: ${APP_GID:-1000}
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: app
+    mem_limit: ${MEM_APP:-448m}
+    memswap_limit: ${MEMSWAP_APP:-704m}
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "sigap-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  queue:
+    <<: *app
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--max-time=3600", "--memory=128", "--timeout=80"]
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: queue
+    init: true
+    # > --timeout (80 s) agar job berjalan selesai saat deploy; DB_QUEUE_RETRY_AFTER (120) harus > --timeout.
+    stop_grace_period: 90s
+    mem_limit: ${MEM_QUEUE:-192m}
+    memswap_limit: ${MEMSWAP_QUEUE:-448m}
+    healthcheck:
+      test: ["CMD", "sigap-healthcheck"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  scheduler:
+    <<: *app
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: scheduler
+    init: true
+    stop_grace_period: 60s
+    mem_limit: ${MEM_SCHEDULER:-160m}
+    memswap_limit: ${MEMSWAP_SCHEDULER:-416m}
+    healthcheck:
+      test: ["CMD", "sigap-healthcheck"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  mysql:
+    image: mysql:${MYSQL_VERSION:-8.4}
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:?isi DB_DATABASE di .env}
+      MYSQL_USER: ${DB_USERNAME:?isi DB_USERNAME di .env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?isi DB_PASSWORD di .env}
+      # root hanya lewat soket di dalam kontainer (cadangan/pemulihan), tidak dari jaringan.
+      MYSQL_ROOT_HOST: localhost
+    # MYSQL_ROOT_PASSWORD HANYA di .env.mysql (chmod 600; docs/ops/env.mysql.example) agar tidak ikut env_file
+    # kontainer aplikasi. Skrip cadangan/pemulihan memakainya di dalam kontainer ini saja.
+    env_file: .env.mysql
+    # Saat memori habis, kernel memilih korban lain lebih dulu (aplikasi pulih sendiri; MySQL tidak).
+    oom_score_adj: -500
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/prod.cnf:/etc/mysql/conf.d/zz-sigap.cnf:ro
+    networks:
+      - db
+    # Tanpa swap agar buffer pool tidak di-page-out.
+    mem_limit: ${MEM_MYSQL:-640m}
+    memswap_limit: ${MEM_MYSQL:-640m}
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # mysqladmin ping keluar 0 bila server hidup walau akses ditolak: tanpa kata sandi di argumen proses.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  # Layanan sesaat (profil tools): `docker compose ... run --rm certbot <argumen>`; tidak residen,
+  # tanpa soket Docker. Dipakai scripts/bootstrap-cert.sh dan scripts/renew-cert.sh.
+  certbot:
+    # TODO(R01-L8): pin digest (@sha256:...) setelah diverifikasi dari registry; versi dikunci lewat CERTBOT_VERSION.
+    image: certbot/certbot:${CERTBOT_VERSION:-v4.0.0}
+    profiles:
+      - tools
+    restart: "no"
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Jaringan sendiri: hanya butuh keluar ke ACME, tidak perlu menjangkau php-fpm.
+    networks:
+      - acme
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+networks:
+  # nginx <-> php-fpm, dan jalan keluar internet (Telegram, Groq, ACME).
+  edge:
+    driver: bridge
+  # MySQL saja; internal = tanpa jalan keluar internet dan tidak terjangkau dari nginx.
+  db:
+    driver: bridge
+    internal: true
+  # certbot sesaat: jalan keluar internet saja.
+  acme:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  app_storage:
+  certbot_etc:
+  certbot_www:
