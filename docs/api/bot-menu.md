@@ -26,16 +26,16 @@ Tombol utama: `BotLayarRegistry::MENU` (profil -> [id layar, label, modul, hak])
 | Profil | Tombol utama (urutan tampil, bila layar terdaftar) |
 |---|---|
 | admin | Pilih SPPG; setelah SPPG dipilih: Rekap, Keluhan, Pengguna, Titik Layanan, Stok, Distribusi, Keuangan, Jadwal, Mutu (tanpa tombol tulis/`b1`) |
-| kepala_sppg | Jadwal, Distribusi, Armada, Rekap Harian, Keluhan, Keuangan, Stok, Mutu, Log Produksi, Titik Layanan, Tim, Notifikasi Perjalanan |
+| kepala_sppg | Jadwal, Distribusi, Armada, Rekap Harian, Keluhan, Keuangan, Stok, Mutu, Log Produksi, Titik Layanan, Tim, Notifikasi Perjalanan, Mulai Perjalanan |
 | ahli_gizi | Menu dan Gizi, Mutu, Jadwal, Keluhan, Rekap, Stok, Penerima Manfaat (agregat), Log Produksi |
-| akuntan | Pencairan, Pengeluaran, Anggaran, Stok, Pemasok, Armada, Rekap |
-| staf_gudang | Stok, Stok Menipis, Kedaluwarsa, Pemasok, Menu, Jadwal, Log Produksi |
-| relawan dapur | Jadwal Produksi, Log Produksi, Menu Hari Ini, Mutu, Profil Saya |
-| relawan distribusi | Jadwal Distribusi, Bukti Distribusi, Armada, Menu Hari Ini, Profil Saya |
-| relawan tanpa unit | Menu Hari Ini, Mutu, Armada, Profil Saya |
+| akuntan | Pencairan, Pengeluaran, Anggaran, Stok, Pemasok, Pembelian Bahan, Armada, Rekap, Catat pengeluaran, Catat pencairan |
+| staf_gudang | Stok, Stok Menipis, Kedaluwarsa, Pemasok, Pembelian Bahan, Menu, Jadwal, Log Produksi, Catat mutasi stok |
+| relawan dapur | Jadwal Produksi, Log Produksi, Menu Hari Ini, Mutu, Buat Keluhan, Profil Saya |
+| relawan distribusi | Jadwal Distribusi, Bukti Distribusi, Mulai Perjalanan, Armada, Menu Hari Ini, Buat Keluhan, Profil Saya |
+| relawan tanpa unit | Menu Hari Ini, Mutu, Armada, Buat Keluhan, Profil Saya |
 | investor | Menunggu keputusan, Rekap, Anggaran, Pilih SPPG (bila >1) |
 
-Baris tetap semua peran (paling bawah): [Tanya Agen AI (layar `ai`, hanya bila `ToolRegistry::forUser` tidak kosong), Bantuan (`bt`)] dan [Segarkan, Buka Mini App (`web_app` ke akar Mini App)]. Layar turunan memakai `BotTombol::kaki` (Kembali ke induk, Beranda bila induk bukan beranda, Segarkan). Tombol tulis (Buat Keluhan, Mulai Perjalanan, tindak lanjut) menyusul di PR-3. Pintasan `web_app` per modul v1 digantikan layar chat (B1); "Buka di Mini App" per layar disediakan layar masing-masing.
+Baris tetap semua peran (paling bawah): [Tanya Agen AI (layar `ai`, hanya bila `ToolRegistry::forUser` tidak kosong), Bantuan (`bt`)] dan [Segarkan, Buka Mini App (`web_app` ke akar Mini App)]. Layar turunan memakai `BotTombol::kaki` (Kembali ke induk, Beranda bila induk bukan beranda, Segarkan). Tombol aksi tulis PR-3 dijelaskan di bagian "Aksi tulis berkonfirmasi"; "Mulai Perjalanan" (layar `mp`) tampil hanya bila peran saat ini berhak memicu perjalanan (`LayarAksi::tampilUntuk`). Tombol alur draf (Catat pengeluaran/pencairan/mutasi stok, Buat Keluhan; layar `dpk`/`dpc`/`dms`/`dkl`) dijelaskan di bagian "Alur draf Agen AI" (R02-C2). Pintasan `web_app` per modul v1 digantikan layar chat (B1); "Buka di Mini App" per layar disediakan layar masing-masing.
 
 ## callback_data
 
@@ -52,6 +52,11 @@ Format `b1.<kode>.<mac>` (sekitar 23 byte): `kode` = 8 byte acak base64url (11 k
 | `tinjau` | tampilkan satu pengajuan | daftar |
 | `setuju` | setujui pengajuan | layar tinjau |
 | `tolak` | tolak pengajuan; membuka jendela alasan | layar tinjau |
+| `kirim_ulang_rekap` | buka konfirmasi kirim ulang rekap (subjek `rekap_harian`) | layar Rekap `rk` (kepala_sppg) |
+| `picu_perjalanan` | buka konfirmasi mulai perjalanan (subjek `jadwal_distribusi`) | layar Mulai Perjalanan `mp` (kepala_sppg, relawan distribusi) |
+| `tindak_keluhan` | buka konfirmasi keluhan baru -> diproses (subjek `keluhan`) | layar Keluhan `kl` (kepala_sppg) |
+| `ya_kirim_ulang_rekap`, `ya_picu_perjalanan`, `ya_tindak_keluhan` | "Ya, lakukan": jalankan service | layar konfirmasi (grup dengan `batal_aksi`) |
+| `batal_aksi` | batalkan tanpa perubahan data | layar konfirmasi |
 
 Status: `aktif` -> `dipakai` / `menunggu_catatan` -> `selesai`; `kedaluwarsa` untuk token saudara, jendela alasan yang dibatalkan, dan yang melewati batas aktif.
 
@@ -145,7 +150,45 @@ Layar berat (`rk`, `ku`, `ag`) dijeda `telegram.layar_berat_jeda_detik` (3 dtk) 
 - 409 (versi berubah, menu berubah, sudah diputuskan/dibatalkan): pesan jelas + tombol "Muat ulang" (token `daftar_persetujuan` baru). Data tidak berubah. Layar tinjau juga menolak bila versi sekarang berbeda dari versi saat daftar dirender.
 - Tolak tanpa alasan tidak mungkin: menekan Tolak mengubah token menjadi `menunggu_catatan`, menghapus tombol layar tinjau, dan mengirim pesan `ForceReply`. Alasan harus berupa BALASAN ke pesan itu (`reply_to_message.message_id == prompt_message_id`), dari pengguna yang sama, dalam jendela waktu, dengan sesi penuh dan hak yang dihitung ulang. Panjang: menu 5-1000, pengeluaran 5-500 karakter (konstanta `CATATAN_MIN/MAX` pada `KeputusanPengajuanRequest` / `KeputusanPengeluaranRequest`, dipakai bersama). Tidak valid: diminta ulang tanpa menghabiskan jendela. Balasan ke pesan prompt TIDAK PERNAH diteruskan ke Agen AI, apa pun hasilnya dan apa pun jenis pesannya: foto/suara/stiker dijawab "Kirim alasan penolakan sebagai teks" tanpa mengunduh berkas dan jendela tetap terbuka; teks bebas lain tetap ke Agen AI. Satu jendela alasan per pengguna; token Tolak baru atau `/batal` membatalkan yang lama. Isi alasan tidak disimpan di `bot_aksi`, log, jejak audit, atau ringkasan payload update; hanya di kolom keputusan resmi. Galat pada jalur ini dicatat aman (`bot.galat`: kelas, kode, lokasi; tanpa pesan exception karena `QueryException` memuat SQL + binding).
 
+## Aksi tulis berkonfirmasi (R-02 PR-3, R02-C1)
+
+Pola 3.7-B: layar baca -> tombol aksi `b1` (sekali pakai) -> layar KONFIRMASI (rincian dari data segar server + "Ya, lakukan" / "Batal", satu grup token sekali pakai) -> SATU pemanggilan service yang sama dengan REST -> layar hasil. Kode: `BotAksiTulisService`, `BotCallbackHandler::aksiTulis`, layar `LayarMulaiPerjalanan` (`mp`). Tidak ada endpoint REST baru dan tidak ada perubahan skema (`bot_aksi.jenis` string 24, `subjek_tipe` 20).
+
+| Aksi | Tombol (layar) | Peran | Hak (`config/rbac.php` + Policy) | Service | Batas tambahan |
+|---|---|---|---|---|---|
+| Kirim ulang rekap | "Kirim ulang rekap dd/mm" (`rk`) | kepala_sppg | rekap-harian U, `RekapHarianPolicy::update` | `DailySummaryService::kirimUlang` (diekstrak dari `RekapHarianController::kirimUlang`, REST memanggil yang sama) | hanya rekap hari ini dan kemarin (zona operasional); maks. 1x per rekap per `telegram.kirim_ulang_rekap_jeda_menit` (5) lintas pengguna (`Cache::add` atomik); rekap berstatus `menunggu` (sedang/akan dikirim) tidak diberi tombol dan ditolak ramah ("sedang dikirim"). Hanya jalur bot; REST tidak berubah |
+| Mulai perjalanan | "Berangkat: <tujuan> (HH:mm)" (`mp`) | kepala_sppg, relawan unit distribusi | notifikasi-perjalanan C (unit), `create` NotifikasiPerjalanan + `view` jadwal | `TripNotificationService::pratinjau` (konfirmasi: tujuan, kendaraan, estimasi tiba, penerima PIC/Kepala SPPG) lalu `mulai` | hanya jadwal distribusi hari ini; aturan `StoreNotifikasiPerjalananRequest::rules()` (jadwal milik SPPG pengguna, belum dihapus) + `pastikanBisaBerangkat` (siap/berangkat, mutu Layak, tanpa perjalanan aktif). Penolakan service = pesan ramah, bukan galat. Layar `mp` menampilkan alasan untuk jadwal yang belum bisa berangkat dan dijeda seperti layar berat (`telegram.layar_berat_jeda_detik`). Jejak audit ditulis setelah baris perjalanan disimpan tetapi sebelum `PerjalananDimulai` dipancarkan (`mulai(..., setelahSimpan:)`, parameter opsional; REST tidak memakainya) |
+| Tindak lanjut keluhan | "Proses keluhan #id" (`kl`, hanya keluhan berstatus baru pada halaman tampil) | kepala_sppg | keluhan U, `FeedbackKeluhanPolicy::update` | `KeluhanService::perbarui(['status' => 'diproses'])` | hanya baru -> diproses; selesai/ditolak + teks tindak lanjut tetap di Mini App (tombol "Buka di Mini App" `/keluhan/{id}`). Teks keluhan/tindak lanjut TIDAK tampil di konfirmasi/hasil |
+
+Admin dan investor tidak pernah mendapat tombol atau token aksi ini (juga ditolak bila token dibuat langsung). Ahli gizi (keluhan RU) sengaja belum diberi tombol keluhan (plan 3.7-B "aksi kepala_sppg"); relawan hanya mulai perjalanan dan hanya unit distribusi.
+
+Urutan tiap klik aksi/"Ya"/Batal (setelah langkah 1-4 umum: rate limit, MAC + baris + ikatan `from.id`/`chat.id`/`user_id`, pengguna dimuat ulang + `canAuthenticate`, `punyaSesiPenuh`):
+1. Tanpa sesi penuh: `PERLU_MASUK` + satu tombol "Masuk lewat Mini App" untuk SEMUA peran; layar asal dinetralkan (`LAYAR_DITUTUP_SESI`); token TIDAK dihabiskan.
+2. `BotAksiTulisService::periksa`: peran saat ini termasuk daftar aksi, bukan admin/investor, huruf RBAC (termasuk unit relawan), `sppg_id` token == `users.sppg_id` saat ini == `sppg_id` subjek, Policy di dalam `ActingUser` + `SppgAktif::untuk`. Gagal: alert "Anda tidak berhak melakukan aksi ini." + layar asal dinetralkan (`LAYAR_DITUTUP_HAK`); token dan saudara satu layar (Ya/Batal) menjadi `kedaluwarsa` (bukan dipakai, tanpa efek), sehingga tidak hidup lagi walau hak dipulihkan.
+3. Keadaan yang DILIHAT pengguna disimpan di `subjek_versi` (sidik: rekap = status kirim + waktu kirim/susun + `updated_at`; jadwal = status, tanggal, titik, armada, `updated_at`, PIC terhubung, mutu Layak, jumlah perjalanan aktif + jumlah/id terbesar/`updated_at` terbaru SEMUA perjalanan jadwal itu (mulai-lalu-batal di antara konfirmasi dan "Ya" terdeteksi); keluhan = status, prioritas, `updated_at`). Berbeda -> "Data sudah berubah" (setara 409): token basi ditutup, layar diganti pesan + tombol "Muat ulang" (`n1` ke layar baca asal). Di luar jendela (rekap bukan hari ini/kemarin, jadwal bukan hari ini) atau rekap sedang dikirim (`menunggu`) -> alert "Aksi tidak lagi tersedia." + pesan ramah + "Muat ulang".
+4. Konsumsi atomik (grup Ya/Batal: hanya satu yang pernah lolos). Tekan ganda/replay/dua layar konfirmasi tidak menggandakan efek: token sekali pakai, versi dicek ulang di dalam transaksi dengan kunci baris subjek tepat sebelum service, perjalanan ganda ditolak service, kirim ulang rekap dibatasi jeda.
+5. Service dijalankan di `AuditLog::withSource('bot')` + `ActingUser` + `SppgAktif::untuk` + transaksi. Jejak audit eksplisit (model ini tanpa trait Auditable): `bot_kirim_ulang_rekap`, `bot_picu_perjalanan`, `bot_tindak_keluhan`, `user_id` pengguna, `sumber=bot`, nilai hanya status/id (tanpa teks keluhan, pesan perjalanan, chat id PIC, nama, kontak). Galat tak terduga sebelum/di dalam transaksi: `BotGalat::catat` (kelas/kode/lokasi saja), transaksi di-rollback (event domain ber-`ShouldDispatchAfterCommit` tidak terkirim), layar "Terjadi kesalahan ... Periksa hasilnya di Mini App sebelum mencoba lagi", token `hasil=gagal`. Galat SETELAH commit (menyusun layar hasil, mengedit pesan): token dicatat dengan hasil sesuai efek (`dikirim_ulang`/`dimulai`/`diproses`) dan pengguna melihat "Aksi sudah diproses. Periksa hasilnya di Mini App sebelum mencoba lagi."
+
+Tombol aksi pada layar baca memakai `BotAksiService::terbitAtauPakai` dengan subjek + versi yang sama, sehingga Segarkan berulang tidak menumpuk baris `bot_aksi`. Semua layar konfirmasi/hasil bertanda `lindungi` (fallback `sendMessage` dengan `protect_content`). Log `bot.aksi` hanya jenis, hasil, `user_id`, subjek, `sppg_id`, hash chat.
+
+## Alur draf Agen AI (R-02 PR-3, R02-C2)
+
+Bot TIDAK menulis data pada alur ini (keputusan pengguna #2): tombol hanya membuka layar petunjuk baca-saja (`LayarAlurDraf`, callback `n1`, tanpa baris `bot_aksi`, tanpa token `b1`). Pengguna lalu mengetik permintaan ke Agen AI seperti biasa; Agen AI membuat `AiDraft` (`DraftService`), bot mengirim tombol web_app "Periksa & Simpan" (`?draft=<uuid>`, `AiChatHandler`, TIDAK diubah), dan konfirmasi/penyimpanan tetap di Mini App (Form Request, unggah nota, Policy, `AiDraftConfirmer`).
+
+| Tombol (layar) | Peran | Dasar RBAC | Tool tulis (syarat `ToolRegistry`) | Tombol "Buka formulir" (`?r=`) |
+|---|---|---|---|---|
+| Catat pengeluaran (`dpk`) | akuntan | keuangan C | `buat_pengeluaran` | `/keuangan/pengeluaran/baru` |
+| Catat pencairan (`dpc`) | akuntan | keuangan C | `buat_pencairan_dana` | `/keuangan/pencairan/baru` |
+| Catat mutasi stok (`dms`) | staf_gudang | bahan-baku U | `catat_mutasi_stok` | tidak ada (hanya petunjuk): satu-satunya rute mutasi Mini App adalah `/bahan-baku/:id/mutasi` (butuh id) |
+| Buat Keluhan (`dkl`) | relawan dapur, distribusi, tanpa unit | keluhan C | `buat_keluhan` | `/keluhan/baru` |
+
+- Tombol beranda tampil dan layar dapat dibuka hanya bila: pengguna aktif, bukan admin/investor, peran termasuk kolom Peran, `users.sppg_id` ada, huruf RBAC `config/rbac.php` saat ini mengizinkan (bukan self-only), DAN `ToolRegistry::resolveFor` (setara `forUser`) memuat tool tulis terkait. Pemeriksaan ini ada di `LayarAlurDraf::tampilUntuk` (sebagai `LayarAksi`) dan diulang pada setiap klik lewat `LayarAlurDraf::izinkan` di dalam `BotNavigasi` (sesi penuh, RBAC baca, kecocokan SPPG). Hak dicabut di antara render dan klik: pesan diganti teks netral `LAYAR_DITUTUP_HAK`, tanpa data.
+- Tanpa sesi login penuh (semua peran): hanya `PERLU_MASUK` + tombol "Masuk lewat Mini App"; layar asal dinetralkan.
+- Isi layar: judul (tanpa nama SPPG), kalimat petunjuk, 2 contoh kalimat per alur (konstanta `LayarAlurDraf::ALUR`, fiktif, tanpa data bisnis), catatan singkat (mis. foto nota ditambahkan di Mini App), dan tombol "Buka formulir" (`web_app`, `miniAppUrl(['r' => rute], rute)`, hanya bila URL HTTPS). Semua teks dinamis di-escape HTML; pesan bertanda `lindungi` (`protect_content`). Rute formulir diuji terhadap sumber Mini App (`resources/miniapp`, slug `defineCrudModule` + `${base}/baru`) dan pola aman `deeplink.js`.
+- Tidak ada penulisan: klik tidak mengubah tabel mana pun (domain, `ai_drafts`, `audit_logs`, `bot_aksi`), tidak mengantre job/event/notifikasi.
+
 ## Hal yang sengaja tidak ada
 
 - Tidak ada tombol keputusan di notifikasi `MenuDiajukan`/`PengeluaranDiajukan` (investor masuk lewat `/menu`).
-- Tidak ada verifikasi pembelian bahan (akuntan) atau pembuatan/ubah data lain lewat bot; aksi tulis Agen AI tetap draf yang dikonfirmasi di Mini App.
+- Tidak ada verifikasi pembelian bahan (akuntan) atau pembuatan/ubah data lain lewat bot selain tiga aksi berkonfirmasi di atas dan keputusan investor; aksi tulis Agen AI tetap draf yang dikonfirmasi di Mini App (bot hanya memberi petunjuk dan tombol formulir).
+- Keluhan selesai/ditolak, teks tindak lanjut, dan pembatalan/ubah status perjalanan tidak tersedia di chat (Mini App).
