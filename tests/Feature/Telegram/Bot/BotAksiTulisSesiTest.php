@@ -38,7 +38,7 @@ class BotAksiTulisSesiTest extends AksiTulisTestCase
             }
         }
 
-        foreach (['kepalaA', 'relawanDistribusi', 'investorAB'] as $peran) {
+        foreach (['kepalaA', 'ahliGiziA', 'relawanDistribusi', 'investorAB'] as $peran) {
             foreach (['ya_kirim_ulang_rekap', 'ya_picu_perjalanan', 'ya_tindak_keluhan'] as $jalur) {
                 yield "{$peran} x {$jalur} x kedaluwarsa" => [$peran, $jalur, 'kedaluwarsa'];
                 yield "{$peran} x {$jalur} x dicabut" => [$peran, $jalur, 'dicabut'];

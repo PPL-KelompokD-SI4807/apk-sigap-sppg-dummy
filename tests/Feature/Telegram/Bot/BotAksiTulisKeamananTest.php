@@ -197,7 +197,7 @@ class BotAksiTulisKeamananTest extends AksiTulisTestCase
         }
 
         match ($ubah) {
-            'peran' => DB::table('users')->where('id', $this->kepalaA->id)->update(['role' => Role::AhliGizi->value]),
+            'peran' => DB::table('users')->where('id', $this->kepalaA->id)->update(['role' => Role::Akuntan->value]),
             'nonaktif' => DB::table('users')->where('id', $this->kepalaA->id)->update(['is_active' => false]),
             'pindah_sppg' => DB::table('users')->where('id', $this->kepalaA->id)->update(['sppg_id' => $this->sppgB]),
             'sesi_dicabut' => app(SesiService::class)->keluarSemua($this->kepalaA),
@@ -248,7 +248,7 @@ class BotAksiTulisKeamananTest extends AksiTulisTestCase
         $ya = $this->ya($this->kepalaA);
         $batal = $this->batal($this->kepalaA);
 
-        DB::table('users')->where('id', $this->kepalaA->id)->update(['role' => Role::AhliGizi->value]);
+        DB::table('users')->where('id', $this->kepalaA->id)->update(['role' => Role::Akuntan->value]);
         $this->tekan($this->kepalaA, $ya);
         $this->assertSame(BotCallbackHandler::TIDAK_BERHAK, $this->jawabanTerakhir());
         $this->assertSame(BotAksi::STATUS_KEDALUWARSA, $this->statusToken($ya));
@@ -370,6 +370,7 @@ class BotAksiTulisKeamananTest extends AksiTulisTestCase
         ][$peran];
         $harap = match ($peran) {
             'kepalaA' => ['rk', 'kl', 'mp'],
+            'ahliGiziA' => ['kl'],
             'relawanDistribusi' => ['mp'],
             default => [],
         };
@@ -421,7 +422,9 @@ class BotAksiTulisKeamananTest extends AksiTulisTestCase
             [BotAksi::JENIS_TINDAK_KELUHAN, BotAksi::SUBJEK_KELUHAN, $a['keluhan']],
         ] as [$jenis, $tipe, $id]) {
             $this->tekan($user, $this->token($user, $jenis, $this->opsi($this->sppgA, $tipe, $id)));
-            $this->assertSame(BotCallbackHandler::TIDAK_BERHAK, $this->jawabanTerakhir(), "{$peran}/{$jenis}");
+            // Ahli gizi berhak U keluhan: token buatan berversi palsu ditolak tepat karena versi (bukan hak).
+            $harap = $peran === 'ahliGiziA' && $tipe === BotAksi::SUBJEK_KELUHAN ? 'Data sudah berubah.' : BotCallbackHandler::TIDAK_BERHAK;
+            $this->assertSame($harap, $this->jawabanTerakhir(), "{$peran}/{$jenis}");
         }
 
         // Mulai perjalanan: relawan distribusi berhak, sehingga token buatan berversi palsu ditolak tepat karena versi;
