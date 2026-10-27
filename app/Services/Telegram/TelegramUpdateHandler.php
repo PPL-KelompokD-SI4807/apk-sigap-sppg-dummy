@@ -12,7 +12,11 @@ use App\Models\TitikLayanan;
 use App\Models\User;
 use App\Services\Auth\SesiService;
 use App\Services\Telegram\Bot\BotCallbackHandler;
-use App\Services\Telegram\Bot\BotMenuService;
+use App\Services\Telegram\Bot\BotGalat;
+use App\Services\Telegram\Bot\BotLayarRegistry;
+use App\Services\Telegram\Bot\BotNavHasil;
+use App\Services\Telegram\Bot\BotNavigasi;
+use App\Services\Telegram\Bot\Layar\KonteksLayar;
 use App\Services\Users\InvalidInvitationException;
 use App\Services\Users\InvitationService;
 use Illuminate\Support\Facades\Log;
@@ -30,6 +34,9 @@ use Throwable;
  *   di-reset) -> arahan masuk lewat Mini App; Agen AI tidak dipanggil.
  * - R-02: /menu (tombol per peran), /batal, callback_query (BotCallbackHandler), dan balasan catatan penolakan
  *   (tidak pernah ke Agen AI). Semua jalur yang membuka data/menu wajib punyaSesiPenuh; tanpa sesi: petunjuk masuk saja.
+ * - R-02 v2: perintah pintasan (/jadwal, /stok, ... BotLayarRegistry::PERINTAH) membuka layar yang sama dengan
+ *   tombolnya lewat BotNavigasi (sesi penuh + RBAC + SPPG dicek saat dijalankan). Pesan berisi menu/data dikirim
+ *   dengan protect_content.
  * - Data pengirim yang tidak terdaftar TIDAK disimpan: payload update diringkas setelah diproses.
  */
 class TelegramUpdateHandler
@@ -43,12 +50,15 @@ class TelegramUpdateHandler
     /** Salam netral /start tanpa sesi penuh: tanpa nama pengguna, peran, atau SPPG. */
     public const SALAM_TANPA_SESI = 'Selamat datang di SiGAP SPPG. Masuk lewat Mini App untuk melanjutkan.';
 
+    /** Jawaban seragam bila perintah pintasan tidak boleh/tidak bisa dibuka untuk peran saat ini. */
+    public const PERINTAH_TIDAK_TERSEDIA = 'Perintah ini tidak tersedia untuk peran Anda.';
+
     public function __construct(
         private readonly TelegramBotService $bot,
         private readonly InvitationService $invitations,
         private readonly SesiService $sesi,
         private readonly BotCallbackHandler $callbacks,
-        private readonly BotMenuService $menu,
+        private readonly BotNavigasi $nav,
     ) {}
 
     public function handle(TelegramUpdate $update): void
@@ -82,7 +92,7 @@ class TelegramUpdateHandler
         $text = is_string($message['text'] ?? null) ? trim($message['text']) : null;
 
         // Batas perintah per pengirim (anti-banjir): lewat batas -> diabaikan tanpa balasan.
-        if ($text !== null && preg_match('/^\/(start|bantuan|help|menu)(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text) === 1
+        if ($text !== null && preg_match('/^\/(start|bantuan|help|menu|'.self::polaPintasan().')(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text) === 1
             && ! RateLimiter::attempt('tg:cmd:'.$from['id'], (int) config('telegram.perintah_rate', 20), fn () => true, 60)) {
             $this->finish($update, 'dibatasi');
 
@@ -112,7 +122,7 @@ class TelegramUpdateHandler
             return;
         }
 
-        $perintah = $text !== null && preg_match('/^\/(menu|batal)(?:@[A-Za-z0-9_]+)?$/i', $text, $pm) === 1 ? strtolower($pm[1]) : null;
+        $perintah = $text !== null && preg_match('/^\/(menu|batal|'.self::polaPintasan().')(?:@[A-Za-z0-9_]+)?$/i', $text, $pm) === 1 ? strtolower($pm[1]) : null;
         $untukAi = $text !== null || isset($message['photo']) || isset($message['voice']);
 
         if (($untukAi || $perintah !== null) && ! $this->sesi->punyaSesiPenuh($user)) {
@@ -125,9 +135,15 @@ class TelegramUpdateHandler
         }
 
         if ($perintah === 'menu') {
-            $layar = $this->menu->layar($user, $chatId);
-            $this->reply($chatId, $layar->teks, $layar->markup, html: true);
+            $this->bukaLayar($user, $chatId, BotLayarRegistry::BERANDA);
             $this->finish($update, 'menu');
+
+            return;
+        }
+
+        if ($perintah !== null && isset(BotLayarRegistry::PERINTAH[$perintah])) {
+            $this->bukaLayar($user, $chatId, BotLayarRegistry::PERINTAH[$perintah]);
+            $this->finish($update, 'pintasan');
 
             return;
         }
@@ -232,16 +248,16 @@ class TelegramUpdateHandler
             return;
         }
 
-        // R06a-S-07: investor (sppg_id null) tidak lintas SPPG; SPPG aktif dipilih di Mini App.
+        // R06a-S-07: investor (sppg_id null) tidak lintas SPPG; SPPG aktif dipilih lewat tombol Pilih SPPG.
         $sppg = match (true) {
-            $user->role === Role::Investor => 'SPPG milik Anda (pilih di Mini App)',
+            $user->role === Role::Investor => 'SPPG milik Anda',
             $user->sppg_id === null => 'semua SPPG',
             default => (string) (Sppg::query()->withoutGlobalScopes()->whereKey($user->sppg_id)->value('nama') ?? 'SPPG Anda'),
         };
         $unit = $user->unit !== null ? ' unit '.$user->unit->label() : '';
 
         $html = sprintf(
-            "%s, <b>%s</b>!\nPeran: <b>%s%s</b> di <b>%s</b>.\n\nBuka Mini App lewat tombol di bawah, atau ketik/kirim foto/pesan suara di sini untuk dibantu Agen AI.",
+            '%s, <b>%s</b>!'."\n".'Peran: <b>%s%s</b> di <b>%s</b>.',
             TelegramBotService::escapeHtml($opening),
             TelegramBotService::escapeHtml($user->name),
             TelegramBotService::escapeHtml($user->role->label()),
@@ -249,7 +265,41 @@ class TelegramUpdateHandler
             TelegramBotService::escapeHtml($sppg),
         );
 
-        $this->reply($chatId, $html, $this->menu->keyboard($user, $chatId) ?? $this->openAppKeyboard(), html: true);
+        // Sambutan + ringkasan hari ini + beranda (tombol per peran) dalam satu pesan; hak dicek BotNavigasi.
+        $this->bukaLayar($user, $chatId, BotLayarRegistry::BERANDA, $html);
+    }
+
+    /**
+     * Buka layar baca (beranda, perintah pintasan, bantuan) sebagai pesan baru terlindungi. Pemanggil sudah
+     * memastikan pengguna aktif + sesi penuh; BotNavigasi memeriksa ulang sesi, RBAC, dan SPPG. `$awal` = HTML
+     * sambutan (sudah di-escape) yang ditaruh di atas layar; bila layar tidak dapat dibuka, sambutan saja + tombol Mini App.
+     */
+    private function bukaLayar(User $user, int $chatId, string $layarId, ?string $awal = null): void
+    {
+        try {
+            $hasil = $this->nav->buka($user, $layarId, null, new KonteksLayar($chatId, (int) $user->telegram_id));
+        } catch (Throwable $e) {
+            BotGalat::catat($e, 'pintasan');
+            $this->reply($chatId, 'Terjadi kesalahan. Ketik /menu untuk memulai lagi.');
+
+            return;
+        }
+
+        match ($hasil->status) {
+            BotNavHasil::OK => $this->reply($chatId, ($awal === null ? '' : $awal."\n\n").$hasil->layar->teks, $hasil->layar->markup, html: $hasil->layar->html, lindungi: true),
+            BotNavHasil::TANPA_SESI => $this->reply($chatId, self::PERLU_MASUK, $this->masukKeyboard()),
+            BotNavHasil::PILIH_SPPG => $this->reply($chatId, BotCallbackHandler::PILIH_SPPG),
+            BotNavHasil::TERLALU_CEPAT => $this->reply($chatId, 'Terlalu cepat. Coba lagi sebentar.'),
+            default => $awal !== null
+                ? $this->reply($chatId, $awal, $this->openAppKeyboard(), html: true, lindungi: true)
+                : $this->reply($chatId, self::PERINTAH_TIDAK_TERSEDIA),
+        };
+    }
+
+    /** Alternatif regex perintah pintasan (nama perintah tetap dari kode, aman untuk regex). */
+    private static function polaPintasan(): string
+    {
+        return implode('|', array_keys(BotLayarRegistry::PERINTAH));
     }
 
     private function help(int $chatId, ?User $user): void
@@ -263,14 +313,13 @@ class TelegramUpdateHandler
             return;
         }
 
-        $text = $aktif
-            ? "Cara memakai SiGAP SPPG:\n- Tombol \"Buka SiGAP\" membuka Mini App.\n- Ketik /menu untuk pintasan layar sesuai peran Anda.\n- Ketik permintaan biasa, mis. \"cari titik layanan SD\".\n- Kirim foto nota/surat jalan untuk dibuatkan draf.\n- Setiap draf wajib diperiksa dan disimpan di Mini App."
-            : 'Bot SiGAP SPPG hanya untuk pengguna terdaftar. Minta tautan undangan kepada Admin SPPG.';
+        if ($aktif) {
+            $this->bukaLayar($user, $chatId, BotLayarRegistry::BANTUAN);
 
-        // Menu tombol hanya untuk pengguna aktif dengan sesi login penuh (dijamin oleh pemeriksaan di atas).
-        $markup = $aktif ? ($this->menu->keyboard($user, $chatId) ?? $this->openAppKeyboard()) : null;
+            return;
+        }
 
-        $this->reply($chatId, $text, $markup);
+        $this->reply($chatId, 'Bot SiGAP SPPG hanya untuk pengguna terdaftar. Minta tautan undangan kepada Admin SPPG.');
     }
 
     private function unregistered(int $chatId, ?User $user, bool $force = false): void
@@ -315,12 +364,13 @@ class TelegramUpdateHandler
         return TelegramBotService::inlineKeyboard([TelegramBotService::webAppButton('Buka SiGAP', $this->bot->miniAppUrl())]);
     }
 
-    private function reply(int $chatId, string $text, ?array $markup = null, bool $html = false): void
+    private function reply(int $chatId, string $text, ?array $markup = null, bool $html = false, bool $lindungi = false): void
     {
         try {
             $this->bot->sendMessage($chatId, $text, array_filter([
                 'parse_mode' => $html ? TelegramBotService::PARSE_HTML : null,
                 'reply_markup' => $markup,
+                'protect_content' => $lindungi ?: null,
             ]));
         } catch (TelegramApiException $e) {
             Log::warning('telegram.balasan_gagal', ['kode' => $e->errorCode, 'galat' => $e->getMessage()]);

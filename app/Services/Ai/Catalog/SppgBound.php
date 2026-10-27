@@ -3,12 +3,14 @@
 namespace App\Services\Ai\Catalog;
 
 use App\Models\User;
+use App\Support\SppgAktif;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
  * Pembatasan SPPG eksplisit untuk query tool (lapis kedua selain SppgScope): berlaku walau tool
  * dipanggil tanpa ActingUser. Admin lintas SPPG; non-admin tanpa SPPG tidak melihat apa pun.
+ * R-02: admin di dalam SppgAktif::untukBacaAdmin() dipersempit ke satu SPPG terpilih (baca-saja Bot).
  */
 final class SppgBound
 {
@@ -19,7 +21,10 @@ final class SppgBound
     public static function apply(Builder $query, User $user, string $column = 'sppg_id'): Builder
     {
         if ($user->isAdmin()) {
-            return $query;
+            // Di luar penimpa baca-saja Bot: tidak berubah (lintas SPPG). Penimpa hanya mempersempit.
+            $baca = app(SppgAktif::class)->sppgBacaAdmin($user);
+
+            return $baca === null ? $query : $query->where($query->getModel()->qualifyColumn($column), $baca);
         }
 
         $qualified = $query->getModel()->qualifyColumn($column);

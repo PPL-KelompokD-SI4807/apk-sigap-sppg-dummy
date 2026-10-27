@@ -5,6 +5,7 @@ namespace App\Services\Ai\Tools\Persetujuan;
 use App\Enums\StatusPengajuanMenu;
 use App\Models\PengajuanMenu;
 use App\Models\User;
+use App\Services\Ai\Catalog\SppgBound;
 use App\Services\Ai\Tools\ReadTool;
 
 /**
@@ -37,7 +38,8 @@ class DaftarPengajuanMenuTool extends ReadTool
 
     protected function handle(User $user, array $arguments): array
     {
-        $query = PengajuanMenu::query()->orderByDesc('diajukan_pada')->orderByDesc('id');
+        // Pembatasan SPPG eksplisit (lapis kedua selain SppgScope; admin baca-saja Bot dipersempit ke SPPG terpilih).
+        $query = SppgBound::apply(PengajuanMenu::query(), $user)->orderByDesc('diajukan_pada')->orderByDesc('id');
 
         if (isset($arguments['status'])) {
             $query->where('status', $arguments['status']);

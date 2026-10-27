@@ -98,7 +98,8 @@ class TelegramBotService
     // ------------------------------------------------------------------ metode Bot API
 
     /**
-     * @param  array<string, mixed>  $options  parse_mode, reply_markup, disable_notification, ...
+     * @param  array<string, mixed>  $options  parse_mode, reply_markup, disable_notification, protect_content (bool:
+     *                                         cegah forward/simpan; hanya berlaku saat kirim, tidak untuk edit), ...
      * @return array<string, mixed> objek Message
      */
     public function sendMessage(int|string $chatId, string $text, array $options = []): array
@@ -109,6 +110,7 @@ class TelegramBotService
             'parse_mode' => $options['parse_mode'] ?? null,
             'reply_markup' => isset($options['reply_markup']) ? json_encode($options['reply_markup'], JSON_UNESCAPED_UNICODE) : null,
             'disable_notification' => $options['disable_notification'] ?? null,
+            'protect_content' => ($options['protect_content'] ?? false) === true ? 'true' : null,
             'link_preview_options' => json_encode(['is_disabled' => true]),
         ], fn ($v) => $v !== null);
 
@@ -267,6 +269,46 @@ class TelegramBotService
         return (bool) $this->call('setChatMenuButton', array_filter([
             'chat_id' => $chatId,
             'menu_button' => json_encode(['type' => 'web_app', 'text' => mb_substr($text, 0, 64), 'web_app' => ['url' => $url]]),
+        ], fn ($v) => $v !== null));
+    }
+
+    /**
+     * Tombol menu bot bertipe `commands` (menampilkan daftar perintah setMyCommands). Null chat = default semua chat.
+     * R-02 keputusan #3: menggantikan tombol web_app; Mini App dibuka lewat /start dan tombol "Buka Mini App".
+     */
+    public function setChatMenuButtonCommands(int|string|null $chatId = null): bool
+    {
+        return (bool) $this->call('setChatMenuButton', array_filter([
+            'chat_id' => $chatId,
+            'menu_button' => json_encode(['type' => 'commands']),
+        ], fn ($v) => $v !== null));
+    }
+
+    /**
+     * Daftar perintah GLOBAL bot (scope default, tanpa per-pengguna). Perintah: huruf kecil/angka/_ 1-32 karakter;
+     * deskripsi 1-256 karakter. Hanya dipanggil dari CLI (sigap:telegram-set-webhook), tidak pernah dari pengguna.
+     *
+     * @param  array<string, string>  $perintah  perintah => deskripsi
+     */
+    public function setMyCommands(array $perintah, ?string $bahasa = null): bool
+    {
+        $daftar = [];
+
+        foreach ($perintah as $nama => $deskripsi) {
+            if (preg_match('/^[a-z0-9_]{1,32}$/D', (string) $nama) !== 1 || trim($deskripsi) === '') {
+                throw new TelegramApiException('Daftar perintah bot tidak valid.');
+            }
+
+            $daftar[] = ['command' => (string) $nama, 'description' => mb_substr($deskripsi, 0, 256)];
+        }
+
+        if ($daftar === [] || count($daftar) > 100) {
+            throw new TelegramApiException('Daftar perintah bot tidak valid.');
+        }
+
+        return (bool) $this->call('setMyCommands', array_filter([
+            'commands' => json_encode($daftar, JSON_UNESCAPED_UNICODE),
+            'language_code' => $bahasa,
         ], fn ($v) => $v !== null));
     }
 

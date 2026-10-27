@@ -136,7 +136,7 @@ class BotKeputusanService
             $baris[] = [$this->aksi->tombol((string) $sppg->nama, $aksi)];
         }
 
-        return new BotLayar("<b>Menunggu keputusan</b>\nPilih SPPG yang ingin ditinjau.", ['inline_keyboard' => $baris]);
+        return new BotLayar("<b>Menunggu keputusan</b>\nPilih SPPG yang ingin ditinjau.", ['inline_keyboard' => $baris], true, true);
     }
 
     public function daftar(User $user, int $chatId, int $sppgId): BotLayar
@@ -207,7 +207,7 @@ class BotKeputusanService
                 $baris[] = [$buka];
             }
 
-            return new BotLayar(implode("\n", $teks), $baris === [] ? null : ['inline_keyboard' => $baris]);
+            return new BotLayar(implode("\n", $teks), $baris === [] ? null : ['inline_keyboard' => $baris], true, true);
         });
     }
 
@@ -268,7 +268,7 @@ class BotKeputusanService
                 $baris[] = [$buka];
             }
 
-            return new BotLayar($teks."\n\nTekan Setujui atau Tolak. Penolakan wajib disertai alasan.", ['inline_keyboard' => $baris]);
+            return new BotLayar($teks."\n\nTekan Setujui atau Tolak. Penolakan wajib disertai alasan.", ['inline_keyboard' => $baris], true, true);
         });
     }
 
@@ -348,7 +348,7 @@ class BotKeputusanService
             $baris[] = [$buka];
         }
 
-        return ['hasil' => $keputusan, 'layar' => new BotLayar($teks, ['inline_keyboard' => $baris])];
+        return ['hasil' => $keputusan, 'layar' => new BotLayar($teks, ['inline_keyboard' => $baris], true, true)];
     }
 
     /**
@@ -380,7 +380,7 @@ class BotKeputusanService
     {
         $aksi = $this->aksi->terbit($user, $chatId, BotAksi::JENIS_DAFTAR, ['sppg_id' => $sppgId]);
 
-        return new BotLayar(TelegramBotService::escapeHtml($pesan), ['inline_keyboard' => [[$this->aksi->tombol('Muat ulang', $aksi)]]]);
+        return new BotLayar(TelegramBotService::escapeHtml($pesan), ['inline_keyboard' => [[$this->aksi->tombol('Muat ulang', $aksi)]]], true, true);
     }
 
     // ------------------------------------------------------------------ util

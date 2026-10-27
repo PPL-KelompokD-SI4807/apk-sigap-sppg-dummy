@@ -6,6 +6,7 @@ use App\Enums\JenisTitikLayanan;
 use App\Models\TitikLayanan;
 use App\Models\User;
 use App\Services\Ai\Catalog\RecordPresenter;
+use App\Services\Ai\Catalog\SppgBound;
 use App\Services\Ai\Tools\ReadTool;
 
 /**
@@ -40,7 +41,7 @@ class CariTitikLayananTool extends ReadTool
 
     protected function handle(User $user, array $arguments): array
     {
-        $query = TitikLayanan::query()
+        $query = SppgBound::apply(TitikLayanan::query(), $user)
             ->search($arguments['q'] ?? null)
             ->orderBy('nama')
             ->orderBy('id');

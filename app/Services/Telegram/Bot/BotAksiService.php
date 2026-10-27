@@ -53,6 +53,34 @@ class BotAksiService
         throw new LogicException('Tidak dapat menerbitkan kode aksi.');
     }
 
+    /**
+     * Pakai ulang token aktif tanpa grup/subjek milik (user, chat, jenis, SPPG) yang masih punya >= separuh umur,
+     * bila tidak ada terbitkan baru. Dipakai tombol yang dirender ulang berkali-kali (beranda/Segarkan) agar render
+     * berulang tidak menumpuk baris bot_aksi. Token tetap sekali pakai dan semua pemeriksaan klik berlaku seperti biasa.
+     *
+     * @param  array{sppg_id?: int|null}  $opsi
+     */
+    public function terbitAtauPakai(User $user, int $chatId, string $jenis, array $opsi = []): BotAksi
+    {
+        $sppgId = $opsi['sppg_id'] ?? null;
+        $sisaMin = now()->addSeconds(max(30, (int) config('telegram.callback_ttl_menit', 10) * 30));
+
+        $ada = BotAksi::query()
+            ->where('user_id', $user->getKey())
+            ->where('telegram_id', (int) $user->telegram_id)
+            ->where('chat_id', $chatId)
+            ->where('jenis', $jenis)
+            ->where('status', BotAksi::STATUS_AKTIF)
+            ->whereNull('grup')
+            ->whereNull('subjek_tipe')
+            ->when($sppgId === null, fn ($q) => $q->whereNull('sppg_id'), fn ($q) => $q->where('sppg_id', $sppgId))
+            ->where('expires_at', '>', $sisaMin)
+            ->latest('id')
+            ->first();
+
+        return $ada ?? $this->terbit($user, $chatId, $jenis, $opsi);
+    }
+
     public static function grupBaru(): string
     {
         return BotKodeCodec::kodeBaru();

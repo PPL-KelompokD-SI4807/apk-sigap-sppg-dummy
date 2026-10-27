@@ -4,10 +4,12 @@ namespace App\Models;
 
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Auth;
 
 class LogProduksi extends Model
 {
@@ -48,5 +50,19 @@ class LogProduksi extends Model
     public function pencatat(): BelongsTo
     {
         return $this->belongsTo(User::class, 'dicatat_oleh');
+    }
+
+    /**
+     * Hanya log yang dicatat pengguna yang sedang login (ActingUser). Tanpa pengguna login tidak ada hasil
+     * (fail closed). Dipakai filter `milik_saya` tool baca (layar Bot relawan: milik sendiri).
+     *
+     * @param  Builder<LogProduksi>  $query
+     * @return Builder<LogProduksi>
+     */
+    public function scopeMilikSaya(Builder $query): Builder
+    {
+        $id = Auth::hasUser() ? Auth::id() : null;
+
+        return $id === null ? $query->whereRaw('1 = 0') : $query->where($query->getModel()->qualifyColumn('dicatat_oleh'), $id);
     }
 }
