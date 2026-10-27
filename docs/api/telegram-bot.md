@@ -28,13 +28,13 @@ Variabel baru yang belum ada di `.env.example`: `TELEGRAM_MINIAPP_URL`, `LLM_MOD
 HTTPS publik wajib (lokal: Cloudflare Tunnel / ngrok, lalu set `APP_URL`).
 
 ```bash
-php artisan sigap:telegram-set-webhook                 # APP_URL/api/v1/telegram/webhook + tombol menu Mini App
+php artisan sigap:telegram-set-webhook                 # APP_URL/api/v1/telegram/webhook + daftar perintah + tombol menu commands
 php artisan sigap:telegram-set-webhook --url=https://x.trycloudflare.com/api/v1/telegram/webhook --drop-pending
 php artisan sigap:telegram-set-webhook --info          # status & galat terakhir
 php artisan sigap:telegram-set-webhook --delete
 ```
 
-Command mengirim `secret_token`, `allowed_updates=["message","callback_query"]`, dan `setChatMenuButton` bertipe web_app. Token/secret tidak pernah dicetak. Pastikan worker antrean berjalan (`queue` di Docker Compose).
+Command mengirim `secret_token`, `allowed_updates=["message","callback_query"]`, `setMyCommands` (daftar perintah global), dan `setChatMenuButton` bertipe `commands` (R-02; Mini App dibuka lewat `/start`). Lihat docs/api/bot-menu.md. Token/secret tidak pernah dicetak. Pastikan worker antrean berjalan (`queue` di Docker Compose).
 
 ## 4. Perilaku bot
 

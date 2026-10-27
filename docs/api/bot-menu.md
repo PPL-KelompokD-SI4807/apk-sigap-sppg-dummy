@@ -6,29 +6,36 @@ Kode: `app/Services/Telegram/Bot/*`, router di `TelegramUpdateHandler`, tabel `b
 
 | Perintah | Perilaku |
 |---|---|
-| `/menu` | Keyboard inline per peran (pintasan Mini App, maks. 6) + "Menunggu keputusan" (hanya yang berhak memutuskan) + "Buka SiGAP". |
-| `/start`, `/bantuan` | Pengguna dengan sesi login penuh mendapat keyboard menu yang sama; tanpa sesi (semua peran, semua jalur termasuk callback dan balasan catatan): hanya teks netral tanpa data/nama + satu tombol "Masuk lewat Mini App". Ringkasan peran/SPPG di sapaan hanya untuk yang sudah punya sesi penuh. |
+| `/menu` | Beranda (layar `h`): ringkasan hari ini sesuai peran + tombol utama 2-3 kolom disaring dari `config/rbac.php` (matriks 3.4) + baris tetap. Dikirim sebagai pesan baru terlindungi; navigasi berikutnya mengedit pesan itu. |
+| `/start` | Pengguna dengan sesi penuh: sambutan (peran, SPPG) + ringkasan + beranda dalam satu pesan. Tanpa sesi: salam netral + satu tombol "Masuk lewat Mini App". |
+| `/bantuan` | Sesi penuh: layar Bantuan (`bt`) dengan tombol Kembali. Tanpa sesi: hanya petunjuk masuk + tombol masuk. |
 | `/batal` | Membatalkan jendela balasan alasan penolakan yang terbuka. |
 
 Semua jalur (perintah menu, callback, balasan alasan) mewajibkan `SesiService::punyaSesiPenuh`. Tanpa sesi penuh balasannya hanya `TelegramUpdateHandler::PERLU_MASUK` + tombol web_app ke akar Mini App: tanpa data, tanpa daftar tombol data, token tidak dihabiskan, jendela alasan penolakan ditutup. Pengguna tidak terdaftar/nonaktif: perilaku lama (tanpa menu).
 
-## Pintasan layar (tombol `web_app`, bukan callback)
+## Beranda (R02-A2)
 
-URL: `<TELEGRAM_MINIAPP_URL>?r=<rute>[&sppg=<id>]#<rute>`. `?r=` adalah fallback untuk klien yang tidak mempertahankan hash; Mini App memvalidasi rute. `sppg` hanya untuk investor dengan tepat satu SPPG (petunjuk; server tetap memvalidasi pivot `investor_sppg`). Investor lebih dari satu SPPG: tanpa `sppg`, Mini App menampilkan pemilih SPPG.
+Layar `h` dibangun `LayarBeranda`; pesan diedit di tempat. Teks: judul + nama SPPG, bagian "Ringkasan hari ini" (`BotRingkasanService`), baris "Diperbarui HH:mm" (membuat Segarkan biasanya berubah). Ringkasan hanya ada bila SPPG efektif sudah diketahui:
 
-Butir disaring `Rbac::can(modul, huruf)` dan bukan self-only (`BotMenuCatalog`); `config/rbac.php` tetap satu-satunya sumber hak.
+- peran satu-SPPG: `users.sppg_id`; investor satu SPPG: otomatis; admin dan investor >1 SPPG: pilih dulu lewat tombol "Pilih SPPG" (layar `ps`, 8 SPPG pertama; admin = semua SPPG aktif, investor = pivot). Sebelum dipilih hanya sapaan + Pilih SPPG (+ "Menunggu keputusan" untuk investor); tombol data tidak muncul.
+- Ringkasan memakai `DailySummaryService::hitung` dan `BudgetService::ringkasan` (ambang peringatan `operasional.keuangan.ambang_peringatan_persen`) dengan `sppg_id` eksplisit, disaring per modul RBAC: jadwal (relawan: hanya sub-jenis unitnya), stok, keluhan, anggaran, antrean persetujuan (investor, `canDecide`). Relawan hanya jadwal unit + jumlah log hari ini milik sendiri. Hanya hitungan/persentase/status; tanpa nama, kontak, uraian, atau data anak.
+- Cache `telegram.ringkasan_cache_detik` (60 dtk; 0 = mati) per (SPPG, tanggal, profil peran), hanya baris agregat hasil saringan peran itu.
 
-| Profil | Pintasan (urutan tampil) |
+Tombol utama: `BotLayarRegistry::MENU` (profil -> [id layar, label, modul, hak]). Tombol tampil bila layar tujuannya TERDAFTAR di registri dan `BotLayarRegistry::hakRbac` (aturan yang sama dengan `BotNavigasi`) mengizinkan peran saat ini; layar yang belum dibangun tidak pernah muncul. Entri khusus: `ps` (admin atau investor >1 SPPG) dan `kp` "Menunggu keputusan" (callback `b1` sekali pakai, hanya `Rbac::canDecide`). Susunan: 3 kolom bila semua label baris pendek (<= 12 karakter), selain itu 2 kolom (`BotTombol::susun`).
+
+| Profil | Tombol utama (urutan tampil, bila layar terdaftar) |
 |---|---|
-| admin | Pengguna, Data SPPG, Titik Layanan, Keluhan, Rekap Harian |
-| kepala_sppg | Jadwal, Notifikasi Perjalanan (`/notifikasi-perjalanan/baru`), Bukti Distribusi, Keluhan, Rekap Harian, Keuangan |
-| ahli_gizi | Menu dan Gizi, Persetujuan Menu, Jadwal, Mutu Pangan, Keluhan, Rekap Harian |
-| akuntan | Keuangan, Pengeluaran, Pembelian Bahan, Rekap Harian |
-| staf_gudang | Bahan Baku, Stok Menipis, Kedaluwarsa Dekat, Pembelian Bahan, Pemasok |
-| relawan dapur | Jadwal, Log Produksi, Mutu Pangan, Keluhan |
-| relawan distribusi | Jadwal, Notifikasi Perjalanan, Bukti Distribusi, Keluhan |
-| relawan tanpa unit | Mutu Pangan, Keluhan, Armada |
-| investor | Persetujuan Menu, Pengeluaran, Keuangan, Rekap Harian, Keluhan, Mutu Pangan |
+| admin | Pilih SPPG; setelah SPPG dipilih: Rekap, Keluhan, Pengguna, Titik Layanan, Stok, Distribusi, Keuangan, Jadwal, Mutu (tanpa tombol tulis/`b1`) |
+| kepala_sppg | Jadwal, Distribusi, Armada, Rekap Harian, Keluhan, Keuangan, Stok, Mutu, Log Produksi, Titik Layanan, Tim, Notifikasi Perjalanan |
+| ahli_gizi | Menu dan Gizi, Mutu, Jadwal, Keluhan, Rekap, Stok, Penerima Manfaat (agregat), Log Produksi |
+| akuntan | Pencairan, Pengeluaran, Anggaran, Stok, Pemasok, Armada, Rekap |
+| staf_gudang | Stok, Stok Menipis, Kedaluwarsa, Pemasok, Menu, Jadwal, Log Produksi |
+| relawan dapur | Jadwal Produksi, Log Produksi, Menu Hari Ini, Mutu, Profil Saya |
+| relawan distribusi | Jadwal Distribusi, Bukti Distribusi, Armada, Menu Hari Ini, Profil Saya |
+| relawan tanpa unit | Menu Hari Ini, Mutu, Armada, Profil Saya |
+| investor | Menunggu keputusan, Rekap, Anggaran, Pilih SPPG (bila >1) |
+
+Baris tetap semua peran (paling bawah): [Tanya Agen AI (layar `ai`, hanya bila `ToolRegistry::forUser` tidak kosong), Bantuan (`bt`)] dan [Segarkan, Buka Mini App (`web_app` ke akar Mini App)]. Layar turunan memakai `BotTombol::kaki` (Kembali ke induk, Beranda bila induk bukan beranda, Segarkan). Tombol tulis (Buat Keluhan, Mulai Perjalanan, tindak lanjut) menyusul di PR-3. Pintasan `web_app` per modul v1 digantikan layar chat (B1); "Buka di Mini App" per layar disediakan layar masing-masing.
 
 ## callback_data
 
@@ -70,6 +77,64 @@ Status: `aktif` -> `dipakai` / `menunggu_catatan` -> `selesai`; `kedaluwarsa` un
 7. `answerCallbackQuery` + `editMessageText` (fallback `sendMessage`); log aman `bot.aksi` (jenis, hasil, `user_id`, subjek, `sppg_id`, hash chat id) tanpa catatan atau PII.
 
 `SppgAktif::untuk(User, sppgId, Closure)` menetapkan SPPG aktif hanya untuk closure (investor: harus milik pivot; peran lain: `sppg_id` sendiri; admin ditolak), dibersihkan di `finally`, tanpa bocor antar job.
+
+## Navigasi baca `n1` (R-02 v2, PR-2 tahap A1)
+
+Format `n1.<layar>.<sppg36>.<exp36>.<mac>` (maks. sekitar 40 byte, ditegakkan < 64): `layar` = id pendek (`^[a-z][a-z0-9]{0,7}$`), `sppg36` = id SPPG basis 36 (`0` = tanpa SPPG), `exp36` = detik Unix kedaluwarsa basis 36 (TTL `telegram.nav_ttl_menit` = 30), `mac` = 6 byte HMAC-SHA256 atas `n1|layar|sppg36|exp36|telegram_id`, kunci turunan `bot-nav|v1` dari `app.key` (berbeda dari `b1`), dibandingkan `hash_equals`. Tanpa baris basis data; dapat dipakai ulang sampai kedaluwarsa (Segarkan/Kembali/Beranda). Aksi yang mengubah keadaan tetap `b1` sekali pakai.
+
+Urutan tiap klik `n1` (`BotCallbackHandler::navigasiBaca` + `BotNavigasi::buka`):
+1. Rate limit (sama dengan `b1`).
+2. Format + MAC + ikatan `telegram_id`; `chat.id == from.id` (chat pribadi). Gagal (palsu, milik akun lain, format rusak, layar tak dikenal): "Tombol sudah tidak berlaku. Ketik /menu." dan dihitung ke `callback_gagal_rate`.
+3. Pengguna dimuat ulang (`canAuthenticate`; nonaktif/terhapus dijawab seragam seperti langkah 2).
+4. `punyaSesiPenuh`; tanpa sesi: hanya `PERLU_MASUK` + tombol "Masuk lewat Mini App", jendela alasan ditutup, layar tidak dirender.
+5. Kedaluwarsa (MAC sah): beranda segar diedit di tempat dengan catatan "Menu diperbarui." (bukan galat).
+6. Hak dari keadaan SAAT INI: RBAC modul layar (`LayarBaca::hak()`: `R` penuh / `R*` / agregat / sesi saja) dari `config/rbac.php`; SPPG efektif: peran satu-SPPG = `users.sppg_id` (SPPG lain di token ditolak), investor = pivot `investor_sppg` lewat `SppgAktif::untuk`, admin = SPPG ada dan belum dihapus lewat `SppgAktif::untukBacaAdmin`; layar data tanpa SPPG efektif tidak dirender ("Pilih SPPG terlebih dahulu lewat /menu."). Lalu `LayarBaca::izinkan` (Policy) dan render di dalam `ActingUser` + konteks SPPG. Ditolak: alert "Anda tidak berhak membuka layar ini." tanpa data.
+7. `editMessageText` (fallback `sendMessage` dengan `protect_content`), lalu `answerCallbackQuery` TEPAT sekali; edit tanpa perubahan dijawab "Sudah yang terbaru." tanpa pesan baru. Log `bot.nav` (layar, hasil, `user_id`, `sppg_id`) tanpa isi layar.
+
+Penimpa baca-saja admin: `SppgAktif::untukBacaAdmin(admin, sppgId, Closure)` membuat `SppgBound::apply` mempersempit query tool admin ke satu SPPG selama closure; tidak mengubah `SppgAktif::id()` (SppgScope, BelongsToSppg, Policy, daftar tool admin tetap sama), menolak non-admin, closure dijalankan di transaksi yang selalu di-rollback (tidak ada tulisan atau token `b1` yang tersimpan), dibersihkan di `finally`. Di luar penimpa perilaku AI/REST tidak berubah.
+
+## Layar baca modul (R02-B1)
+
+Layar dibangun di `app/Services/Telegram/Bot/Layar/**` dan didaftarkan lewat `DefinisiLayar::semua()` (dimuat `BotLayarRegistry::layarSemua()`; `layarBawaan()` hanya beranda, pilih SPPG, Tanya Agen AI, bantuan). Hak, sesi penuh, SPPG, dan Policy tetap ditegakkan `BotNavigasi` pada setiap klik; layar hanya menyajikan.
+
+Sumber data = tool baca Agen AI lewat adapter `BotLayarService` (`CatalogReadTool` dibangun langsung dari `ResourceSpec`, TIDAK bergantung pada `ToolRegistry`, `config('ai.tools.disabled')`, atau konfigurasi LLM). Argumen dibangun server dan divalidasi `ArgumentValidator`. **Whitelist kolom** per seksi: hanya kolom yang disebut yang diteruskan ke penyaji (mis. `uraian`, nota, `catatan_keputusan`, telepon, alamat tidak pernah tampil). Paginasi: 5 baris/halaman, maks. 4 halaman (batas tool 20 baris); id halaman ke-2..9 = id layar + angka 2..9 (`kl2`), id layar terdaftar tidak boleh berakhiran angka. Pilih SPPG: 8 per halaman, maks. 9 halaman.
+
+| Id | Layar | Modul / hak | Sumber |
+|---|---|---|---|
+| `jd` | Jadwal hari ini (produksi + distribusi sesuai unit) | jadwal R | `cari_jadwal_produksi`, `cari_jadwal_distribusi` |
+| `ds` | Distribusi hari ini | bukti-distribusi R | `cari_jadwal_distribusi`, `cari_bukti_distribusi` |
+| `ar` | Armada + pengemudi (inisial + ID) | armada R | `cari_armada`, `cari_pengemudi` |
+| `kl` | Keluhan terbuka (teks tersamar + terpotong) | keluhan R | `cari_keluhan` (terbuka) |
+| `st` `sm` `kd` | Stok, stok menipis, kedaluwarsa (termasuk yang sudah lewat) | bahan-baku R | `cari_bahan_baku` |
+| `mt` | Pemeriksaan mutu | mutu R | `cari_pemeriksaan_mutu` |
+| `lg` | Log produksi hari ini (relawan: hanya milik sendiri, filter `milik_saya`) | log-produksi R | `cari_log_produksi` |
+| `tl` | Titik layanan (PIC inisial) | titik-layanan R | spec `titik_layanan` |
+| `np` | Perjalanan aktif | notifikasi-perjalanan R | `cari_notifikasi_perjalanan` (aktif) |
+| `mg` `mh` | Menu dan gizi, menu hari ini | menu-gizi R | `cari_menu` |
+| `pc` `pk` | Pencairan, pengeluaran (tanpa uraian/nota) | keuangan R | `cari_pencairan_dana`, `cari_pengeluaran` |
+| `pe` `pb` | Pemasok (tanpa kontak), pembelian bahan | pemasok R, pembelian-bahan R | `cari_pemasok`, `cari_pembelian_bahan` |
+| `pj` | Persetujuan menu (tanpa catatan keputusan) | persetujuan-menu R | `daftar_pengajuan_menu` (kini lewat `SppgBound`) |
+| `rk` | Rekap harian (bagian disaring per modul RBAC) | rekap-harian R | `DailySummaryService::hitung` + `cari_rekap_harian` |
+| `ku` `ag` | Keuangan, anggaran (ambang 80/100%) | keuangan R | `BudgetService::ringkasan` |
+| `pn` | Penerima manfaat AGREGAT, tersamar k=5 untuk semua peran | penerima-manfaat agregat | `AgregatPenerimaService::hitung(samarkan: true)` |
+| `tm` | Tim: hitungan pengguna aktif per peran | pengguna R | query hitungan (`sppg_id` eksplisit) |
+| `pf` | Profil saya (tanpa kontak) | pengguna R* | pengguna login |
+
+Perilaku tambahan hasil tinjauan E1 PR-2:
+- Klik `n1` yang ditolak (hak hilang) atau tanpa sesi mengedit pesan asal menjadi teks netral tanpa data dan tanpa keyboard (`BotCallbackHandler::LAYAR_DITUTUP_HAK` / `LAYAR_DITUTUP_SESI`); tanpa sesi, `PERLU_MASUK` + tombol masuk tetap dikirim sebagai pesan baru. Bila edit gagal tidak ada pesan data baru.
+- Semua layar data (`n1` dan layar keputusan `b1`) bertanda `lindungi`, sehingga fallback `sendMessage` memakai `protect_content`.
+- Tombol "Menunggu keputusan" di beranda memakai ulang token `daftar_persetujuan` aktif milik (pengguna, chat, SPPG) selama sisa umurnya >= separuh TTL; render/Segarkan berulang tidak menumpuk baris `bot_aksi`. Token tetap sekali pakai.
+- Ringkasan beranda admin baca-saja dihitung langsung tanpa cache (cache tidak ditulis dari transaksi yang di-rollback).
+- Adapter `BotLayarService` membangun tool dari spec katalog dan sengaja tidak tunduk pada `config('ai.tools.disabled')`.
+- Id layar terdaftar maks. 7 karakter dan tidak berakhiran angka.
+
+Layar berat (`rk`, `ku`, `ag`) dijeda `telegram.layar_berat_jeda_detik` (3 dtk) per pengguna. Filter katalog baru: `milik_saya` pada `cari_log_produksi` (scope `LogProduksi::milikSaya`, memakai pengguna login). `DaftarPengajuanMenuTool` dan `CariTitikLayananTool` kini memakai `SppgBound::apply` agar admin baca-saja dipersempit ke SPPG terpilih.
+
+## Perintah pintasan dan tombol Menu Telegram
+
+`/jadwal /stok /keluhan /rekap /keuangan /anggaran /distribusi /mutu` (`BotLayarRegistry::PERINTAH`) membuka layar yang sama dengan tombolnya sebagai pesan baru ber-`protect_content`, dengan pemeriksaan yang sama (langkah 4 dan 6). Peran tanpa hak atau layar belum tersedia: "Perintah ini tidak tersedia untuk peran Anda."; admin/investor banyak SPPG: "Pilih SPPG terlebih dahulu lewat /menu."; tanpa sesi penuh: `PERLU_MASUK`. Termasuk dalam `telegram.perintah_rate`. `/menu`, `/start`, `/bantuan` (dengan sesi) juga dikirim ber-`protect_content`.
+
+`sigap:telegram-set-webhook` kini memanggil `setMyCommands` (daftar global `BotLayarRegistry::DESKRIPSI_PERINTAH`, tanpa scope per pengguna) dan `setChatMenuButton` bertipe `commands` (keputusan pengguna #3); Mini App dibuka lewat `/start` dan tombol Mini App. `--no-menu` melewati keduanya.
 
 ## Alur keputusan investor
 
