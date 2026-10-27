@@ -4,7 +4,8 @@ import { getTg, isNative } from './core/telegram.js';
 import { initTheme } from './core/theme.js';
 import { login } from './core/auth.js';
 import { onAuthRequired, onSppgDiperlukan, flushQueue } from './core/api.js';
-import { route, startRouter, navigate, parseHash } from './core/router.js';
+import { route, startRouter, navigate, parseHash, adaRuteTerdaftar } from './core/router.js';
+import { parseRuteDeepLink } from './core/deeplink.js';
 import { api } from './core/api.js';
 import { registerAllRoutes } from './modules/registry.js';
 import { renderHome } from './home.js';
@@ -105,6 +106,16 @@ async function masukBeranda() {
     const startParam = getTg()?.initDataUnsafe?.start_param;
     const draft = q.get('draft') || (startParam?.startsWith('draft_') ? startParam.slice(6) : null);
     if (draft && parseHash().path === '/') location.hash = `#/draf/${encodeURIComponent(draft)}`;
+    else if (parseHash().path === '/') {
+      // Deep link rute bot (?r=/rute): hanya rute terdaftar; guard RBAC router tetap berlaku.
+      const rute = parseRuteDeepLink(location.search, adaRuteTerdaftar);
+      if (rute) location.hash = `#${rute}`;
+    }
+    if (q.has('r') || q.has('sppg') || q.has('draft')) {
+      q.delete('r'); q.delete('sppg'); q.delete('draft');
+      const qs = q.toString();
+      history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+    }
     await startRouter(view);
   } else {
     location.reload();

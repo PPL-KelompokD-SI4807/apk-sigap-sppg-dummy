@@ -155,14 +155,27 @@ class TelegramWebhookTest extends MasterApiTestCase
         $this->assertSame(RelawanUnit::Distribusi, $user->unit);
 
         $sent = $this->messagesTo(777001)->sole();
-        $this->assertSame('HTML', $sent['parse_mode']);
-        $this->assertStringContainsString('Siti Fiktif', $sent['text']);
-        $this->assertStringContainsString('Relawan unit Distribusi', $sent['text']);
-        $this->assertStringContainsString('SPPG A', $sent['text']);
+        // R-02: akun baru belum punya sesi login penuh -> salam netral + tombol masuk, tanpa nama/peran/SPPG.
+        $this->assertStringContainsString('Masuk lewat Mini App', $sent['text']);
+        $this->assertStringNotContainsString('Siti', $sent['text']);
+        $this->assertStringNotContainsString($user->name, $sent['text']);
+        $this->assertSame('Masuk lewat Mini App', $this->markupOf($sent)['inline_keyboard'][0][0]['text']);
+        $this->assertStringNotContainsString('Relawan unit Distribusi', $sent['text']);
+        $this->assertStringNotContainsString('SPPG A', $sent['text']);
         $this->assertSame('https://sigap.test/miniapp/', $this->markupOf($sent)['inline_keyboard'][0][0]['web_app']['url']);
 
         // Payload diringkas setelah diproses (minimisasi data).
         $this->assertSame(['ringkas' => true, 'jenis' => 'start'], TelegramUpdate::query()->sole()->payload);
+    }
+
+    public function test_start_pengguna_dengan_sesi_penuh_menyebut_peran_dan_sppg_serta_menu(): void
+    {
+        $this->webhook($this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => '/start']))->assertOk();
+
+        $sent = $this->messagesTo((int) $this->kepalaA->telegram_id)->sole();
+        $this->assertStringContainsString('Kepala SPPG', $sent['text']);
+        $this->assertStringContainsString('SPPG A', $sent['text']);
+        $this->assertNotNull($this->markupOf($sent)['inline_keyboard'][0][0]['web_app'] ?? null);
     }
 
     public function test_start_undangan_tidak_valid_kedaluwarsa_dan_terpakai_dibalas_ramah(): void
@@ -203,7 +216,8 @@ class TelegramWebhookTest extends MasterApiTestCase
         $this->webhook($this->privateUpdate((int) $this->ahliGiziA->telegram_id, ['text' => '/start']))->assertOk();
 
         $sent = $this->messagesTo((int) $this->ahliGiziA->telegram_id)->sole();
-        $this->assertStringContainsString('Selamat datang kembali', $sent['text']);
+        $this->assertSame(TelegramUpdateHandler::SALAM_TANPA_SESI, $sent['text']);
+        $this->assertStringNotContainsString($this->ahliGiziA->name, $sent['text']);
         $this->assertNotNull($this->markupOf($sent)['inline_keyboard'][0][0]['web_app'] ?? null);
     }
 

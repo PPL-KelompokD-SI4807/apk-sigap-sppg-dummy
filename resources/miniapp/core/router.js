@@ -31,7 +31,9 @@ export function parseHashString(hash = '') {
   return { path: path || '/', query: new URLSearchParams(qs) };
 }
 
-export const parseHash = () => parseHashString(location.hash);
+export const adaRuteTerdaftar = (path) => path !== '/' && routes.some((r) => r.re.test(path));
+
+export const parseHash = ()=> parseHashString(location.hash);
 
 export const currentRoute = () => current;
 

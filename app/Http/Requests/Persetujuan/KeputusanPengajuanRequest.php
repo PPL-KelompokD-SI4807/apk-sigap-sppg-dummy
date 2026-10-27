@@ -13,6 +13,11 @@ use Illuminate\Validation\Rule;
  */
 class KeputusanPengajuanRequest extends FormRequest
 {
+    /** Panjang catatan keputusan; juga dipakai Bot (BotKeputusanService) agar aturan hanya didefinisikan sekali. */
+    public const CATATAN_MIN = 5;
+
+    public const CATATAN_MAX = 1000;
+
     public function authorize(): bool
     {
         $pengajuan = $this->route('pengajuan');
@@ -27,7 +32,7 @@ class KeputusanPengajuanRequest extends FormRequest
 
         return [
             'keputusan' => ['required', 'string', Rule::in(StatusPengajuanMenu::keputusan())],
-            'catatan' => [$wajibCatatan, 'nullable', 'string', 'min:5', 'max:1000'],
+            'catatan' => [$wajibCatatan, 'nullable', 'string', 'min:'.self::CATATAN_MIN, 'max:'.self::CATATAN_MAX],
             'versi_menu' => ['required', 'integer', 'min:1'],
         ];
     }

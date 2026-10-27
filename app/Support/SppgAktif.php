@@ -4,6 +4,8 @@ namespace App\Support;
 
 use App\Enums\Role;
 use App\Models\User;
+use Closure;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -40,10 +42,71 @@ final class SppgAktif
     /** Identitas objek permintaan pemilik cache (cache tidak dipakai ulang lintas permintaan). */
     private ?int $permintaan = null;
 
+    /**
+     * Penimpaan SPPG aktif eksplisit di luar HTTP (Bot, R-02), hanya selama untuk() berjalan.
+     *
+     * @var array<int, int>
+     */
+    private array $penimpa = [];
+
     public function reset(): void
     {
         $this->cache = [];
         $this->milik = [];
+    }
+
+    /**
+     * Buang cache pivot investor_sppg milik $user agar pembacaan berikutnya segar dari basis data
+     * (jalur keputusan Bot: pivot dapat dicabut antara pemeriksaan dan pemanggilan service).
+     */
+    public function segarkanMilik(User $user): void
+    {
+        unset($this->milik[(int) $user->getKey()], $this->cache[(int) $user->getKey()]);
+    }
+
+    /**
+     * Jalankan $callback dengan SPPG aktif $user = $sppgId (tanpa header HTTP), mis. di job Bot.
+     *
+     * - Investor: $sppgId wajib termasuk SPPG miliknya (pivot investor_sppg, SPPG belum dihapus).
+     * - Peran satu-SPPG: wajib users.sppg_id sendiri. Admin: tidak didukung (tidak ada SPPG aktif).
+     * - Penimpaan hanya berlaku untuk $user ini, selalu dibersihkan di finally (aman untuk worker
+     *   yang berjalan lama), dan bersarang dengan benar. Selain jalur ini tidak ada cara membuat
+     *   SPPG aktif non-null di luar HTTP.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     *
+     * @throws AuthorizationException bila SPPG bukan milik/penempatan $user
+     */
+    public function untuk(User $user, int $sppgId, Closure $callback): mixed
+    {
+        $this->segarkanMilik($user);
+
+        $sah = match (true) {
+            $user->isAdmin() => false,
+            $user->role === Role::Investor => in_array($sppgId, $this->milik($user), true),
+            default => $user->sppg_id !== null && (int) $user->sppg_id === $sppgId,
+        };
+
+        if (! $sah || $sppgId <= 0) {
+            throw new AuthorizationException('SPPG tidak termasuk hak pengguna.');
+        }
+
+        $key = (int) $user->getKey();
+        $sebelumnya = $this->penimpa[$key] ?? null;
+        $this->penimpa[$key] = $sppgId;
+
+        try {
+            return $callback();
+        } finally {
+            if ($sebelumnya === null) {
+                unset($this->penimpa[$key]);
+            } else {
+                $this->penimpa[$key] = $sebelumnya;
+            }
+        }
     }
 
     /** SPPG aktif pengguna, atau null (admin / tidak ada / ditolak). */
@@ -60,8 +123,13 @@ final class SppgAktif
     public function resolve(User $user): array
     {
         $this->segarkanBilaPermintaanBaru();
-        $header = self::headerPermintaan();
         $key = (int) $user->getKey();
+
+        if (isset($this->penimpa[$key])) {
+            return ['id' => $this->penimpa[$key], 'alasan' => null];
+        }
+
+        $header = self::headerPermintaan();
         $cached = $this->cache[$key] ?? null;
 
         if ($cached !== null && $cached['header'] === $header) {
