@@ -5,6 +5,7 @@ namespace App\Services\Telegram\Bot;
 use App\Models\BotAksi;
 use App\Models\User;
 use App\Services\Auth\SesiService;
+use App\Services\Telegram\Bot\Layar\KonteksLayar;
 use App\Services\Telegram\TelegramApiException;
 use App\Services\Telegram\TelegramBotService;
 use App\Services\Telegram\TelegramUpdateHandler;
@@ -16,12 +17,17 @@ use Illuminate\Support\Facades\RateLimiter;
  *
  * Urutan verifikasi tiap callback (WAJIB, jangan diubah):
  *   1. rate limit per telegram_id;
+ *   (percabangan: prefiks `n1` = navigasi baca dapat dipakai ulang -> navigasiBaca(), urutan langkah sama;
+ *    selain itu jalur aksi `b1` sekali pakai di bawah);
  *   2. MAC callback_data + muat baris + status/kedaluwarsa + ikatan from.id/chat.id/user_id;
  *   3. muat ulang pengguna dari basis data (aktif);
  *   4. SesiService::punyaSesiPenuh (tanpa sesi: petunjuk login, bukan data, token tidak dihabiskan);
  *   5. hak dihitung ulang (Rbac::canDecide + pivot + SPPG record + Policy) -> BotKeputusanService::periksa;
  *   6. konsumsi token atomik, lalu panggil service bisnis.
  * Isi callback_data tidak pernah menjadi sumber hak akses.
+ *
+ * Jalur `n1` (R-02 v2): 2. MAC + kedaluwarsa + ikatan telegram_id (chat.id == from.id); 3. muat ulang pengguna;
+ * 4. sesi penuh; 5-6. BotNavigasi::buka (RBAC peran saat ini, SPPG/pivot, Policy, render). Tanpa baris DB.
  */
 class BotCallbackHandler
 {
@@ -29,11 +35,33 @@ class BotCallbackHandler
 
     public const TIDAK_BERHAK = 'Anda tidak berhak melakukan aksi ini.';
 
+    public const TIDAK_BERHAK_LIHAT = 'Anda tidak berhak membuka layar ini.';
+
+    public const PILIH_SPPG = 'Pilih SPPG terlebih dahulu lewat /menu.';
+
+    public const SUDAH_TERBARU = 'Sudah yang terbaru.';
+
+    public const MENU_DIPERBARUI = 'Menu diperbarui.';
+
+    /** Teks netral pengganti layar data lama saat klik ditolak (tanpa data, tanpa tombol). */
+    public const LAYAR_DITUTUP_SESI = 'Sesi Anda berakhir. Masuk lewat Mini App untuk melanjutkan.';
+
+    public const LAYAR_DITUTUP_HAK = 'Layar ini tidak lagi tersedia untuk akun Anda. Ketik /menu.';
+
+    public const PERLU_MASUK_SINGKAT = 'Masuk lewat Mini App terlebih dahulu.';
+
+    private const TAMPIL_EDIT = 'edit';
+
+    private const TAMPIL_TIDAK_BERUBAH = 'tidak_berubah';
+
+    private const TAMPIL_KIRIM = 'kirim';
+
     public function __construct(
         private readonly TelegramBotService $bot,
         private readonly BotAksiService $aksi,
         private readonly SesiService $sesi,
         private readonly BotKeputusanService $keputusan,
+        private readonly BotNavigasi $nav,
     ) {}
 
     /** @param array<string, mixed> $query objek CallbackQuery Telegram */
@@ -66,6 +94,13 @@ class BotCallbackHandler
             return;
         }
 
+        // Percabangan token: n1 = navigasi baca (dapat dipakai ulang, tanpa baris DB); selain itu b1.
+        if (BotNavCodec::cocokPrefiks($query['data'] ?? null)) {
+            $this->navigasiBaca($id, $query['data'], $fromId, $chatId, $messageId);
+
+            return;
+        }
+
         // 2-3. MAC + baris + ikatan + pengguna dimuat ulang. Semua kegagalan dijawab seragam (tanpa oracle).
         $user = $this->cariUser($fromId);
         $aksi = $this->aksi->temukan($query['data'] ?? null, $fromId);
@@ -80,7 +115,7 @@ class BotCallbackHandler
         // 4. Sesi login penuh.
         if (! $this->sesi->punyaSesiPenuh($user)) {
             $this->aksi->batalkanCatatan($fromId);
-            $this->jawab($id, 'Masuk lewat Mini App terlebih dahulu.');
+            $this->jawab($id, self::PERLU_MASUK_SINGKAT);
             $this->kirim($chatId, new BotLayar(TelegramUpdateHandler::PERLU_MASUK, $this->bukaAplikasi(), false));
             $this->catat($aksi, $user, 'tanpa_sesi');
 
@@ -239,6 +274,94 @@ class BotCallbackHandler
         $this->kirim($chatId, new BotLayar($jumlah > 0 ? 'Penolakan dibatalkan. Tidak ada perubahan data.' : 'Tidak ada proses yang perlu dibatalkan.', null, false));
     }
 
+    // ------------------------------------------------------------------ navigasi baca (n1)
+
+    /**
+     * Klik tombol navigasi `n1`. Callback dijawab TEPAT SEKALI di akhir (finally), setelah layar diedit, sehingga
+     * edit tanpa perubahan dapat dijawab "Sudah yang terbaru". Kegagalan token/pengguna dijawab seragam.
+     */
+    private function navigasiBaca(?string $id, string $data, int $fromId, int $chatId, ?int $messageId): void
+    {
+        $jawaban = null;
+        $alert = false;
+
+        try {
+            // 2. MAC + kedaluwarsa + ikatan telegram_id; chat pribadi milik pengirim sendiri. 3. Pengguna dimuat ulang.
+            $tujuan = BotNavCodec::urai($data, $fromId);
+            $user = $tujuan === null || $chatId !== $fromId ? null : $this->cariUser($fromId);
+
+            if ($tujuan === null || $user === null || ! $user->canAuthenticate()) {
+                RateLimiter::hit('tg:cbgagal:'.$fromId, 60);
+                $jawaban = self::TIDAK_BERLAKU;
+
+                return;
+            }
+
+            // 4. Sesi login penuh: hanya tombol masuk, tanpa data; jendela catatan ditutup.
+            if (! $this->sesi->punyaSesiPenuh($user)) {
+                $this->aksi->batalkanCatatan($fromId);
+                $jawaban = self::PERLU_MASUK_SINGKAT;
+                $this->netralkan($chatId, $messageId, self::LAYAR_DITUTUP_SESI);
+                $this->kirim($chatId, new BotLayar(TelegramUpdateHandler::PERLU_MASUK, $this->bukaAplikasi(), false));
+                Log::info('bot.nav', ['layar' => $tujuan->layar, 'hasil' => 'tanpa_sesi', 'user_id' => (int) $user->getKey()]);
+
+                return;
+            }
+
+            // Kedaluwarsa: bukan galat, beranda segar dirender di tempat (hak tetap dicek ulang).
+            $hasil = $tujuan->kedaluwarsa
+                ? $this->nav->buka($user, BotLayarRegistry::BERANDA, null, new KonteksLayar($chatId, $fromId, self::MENU_DIPERBARUI))
+                : $this->nav->buka($user, $tujuan->layar, $tujuan->sppgId, new KonteksLayar($chatId, $fromId));
+
+            switch ($hasil->status) {
+                case BotNavHasil::OK:
+                    if ($hasil->layar !== null && $this->tampilkan($chatId, $messageId, $hasil->layar) === self::TAMPIL_TIDAK_BERUBAH) {
+                        $jawaban = self::SUDAH_TERBARU;
+                    }
+                    break;
+
+                case BotNavHasil::TIDAK_BERHAK:
+                    [$jawaban, $alert] = [self::TIDAK_BERHAK_LIHAT, true];
+                    $this->netralkan($chatId, $messageId, self::LAYAR_DITUTUP_HAK);
+                    break;
+
+                case BotNavHasil::PILIH_SPPG:
+                    [$jawaban, $alert] = [self::PILIH_SPPG, true];
+                    break;
+
+                case BotNavHasil::TERLALU_CEPAT:
+                    $jawaban = 'Terlalu cepat. Coba lagi sebentar.';
+                    break;
+
+                default:
+                    RateLimiter::hit('tg:cbgagal:'.$fromId, 60);
+                    $jawaban = self::TIDAK_BERLAKU;
+            }
+        } catch (\Throwable $e) {
+            BotGalat::catat($e, 'navigasi');
+            $jawaban = 'Terjadi kesalahan. Ketik /menu untuk memulai lagi.';
+        } finally {
+            $this->jawab($id, $jawaban, $alert);
+        }
+    }
+
+    /**
+     * Ganti pesan asal (yang mungkin berisi data lama) dengan teks netral TANPA keyboard dan tanpa data. Bila edit
+     * gagal (pesan terlalu lama/dihapus) tidak ada pesan data baru yang dikirim; hanya galat dicatat (kode saja).
+     */
+    private function netralkan(int $chatId, ?int $messageId, string $teks): void
+    {
+        if ($messageId === null) {
+            return;
+        }
+
+        try {
+            $this->bot->editMessageText($chatId, $messageId, $teks);
+        } catch (TelegramApiException $e) {
+            Log::info('bot.netralkan_gagal', ['kode' => $e->errorCode]);
+        }
+    }
+
     // ------------------------------------------------------------------ aksi
 
     private function navigasi(BotAksi $aksi, int $chatId, ?int $messageId, BotLayar $layar): void
@@ -314,9 +437,9 @@ class BotCallbackHandler
     /**
      * Ubah pesan asal bila ada. "message is not modified" (isi identik, mis. Segarkan tanpa perubahan) diabaikan:
      * callback sudah dijawab, JANGAN kirim pesan baru. Galat edit lain (pesan terlalu lama/tidak ditemukan) -> pesan baru.
-     * Log hanya memuat kode galat, tidak pernah isi layar.
+     * Log hanya memuat kode galat, tidak pernah isi layar. Mengembalikan cara layar ditampilkan (TAMPIL_*).
      */
-    private function tampilkan(int $chatId, ?int $messageId, BotLayar $layar): void
+    private function tampilkan(int $chatId, ?int $messageId, BotLayar $layar): string
     {
         if ($messageId !== null) {
             try {
@@ -325,12 +448,12 @@ class BotCallbackHandler
                     'reply_markup' => $layar->markup,
                 ]));
 
-                return;
+                return self::TAMPIL_EDIT;
             } catch (TelegramApiException $e) {
                 if ($e->isMessageNotModified()) {
                     Log::info('bot.edit_tidak_berubah', ['kode' => $e->errorCode]);
 
-                    return;
+                    return self::TAMPIL_TIDAK_BERUBAH;
                 }
 
                 Log::warning('bot.edit_gagal', ['kode' => $e->errorCode]);
@@ -338,6 +461,8 @@ class BotCallbackHandler
         }
 
         $this->kirim($chatId, $layar);
+
+        return self::TAMPIL_KIRIM;
     }
 
     private function kirim(int $chatId, BotLayar $layar): void
@@ -346,6 +471,7 @@ class BotCallbackHandler
             $this->bot->sendMessage($chatId, $layar->teks, array_filter([
                 'parse_mode' => $layar->html ? TelegramBotService::PARSE_HTML : null,
                 'reply_markup' => $layar->markup,
+                'protect_content' => $layar->lindungi ?: null,
             ]));
         } catch (TelegramApiException $e) {
             Log::warning('telegram.balasan_gagal', ['kode' => $e->errorCode, 'galat' => $e->getMessage()]);

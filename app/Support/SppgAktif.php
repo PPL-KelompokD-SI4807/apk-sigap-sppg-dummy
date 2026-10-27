@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Enums\Role;
+use App\Models\Sppg;
 use App\Models\User;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -48,6 +49,13 @@ final class SppgAktif
      * @var array<int, int>
      */
     private array $penimpa = [];
+
+    /**
+     * Penimpa baca-saja admin (Bot, R-02), hanya selama untukBacaAdmin() berjalan.
+     *
+     * @var array<int, int>
+     */
+    private array $bacaAdmin = [];
 
     public function reset(): void
     {
@@ -107,6 +115,56 @@ final class SppgAktif
                 $this->penimpa[$key] = $sebelumnya;
             }
         }
+    }
+
+    /**
+     * Penimpa BACA-SAJA untuk admin (Bot R-02): selama $callback berjalan, SppgBound::apply membatasi query
+     * tool admin ke $sppgId. Hanya MEMPERSEMPIT akses admin (yang memang lintas SPPG), tidak pernah melebarkan.
+     *
+     * - Hanya untuk admin aktif; peran lain -> AuthorizationException (tidak pernah aktif untuk non-admin).
+     * - SPPG wajib ada dan belum dihapus.
+     * - TIDAK mengubah id()/resolve(): SppgScope, BelongsToSppg, Policy, dan daftar tool admin tetap sama.
+     * - Baca-saja: $callback dijalankan di transaksi yang SELALU di-rollback pada koneksi DB BAWAAN, jadi tulisan DB
+     *   di koneksi itu (termasuk token bot_aksi) tidak tersimpan. Efek samping NON-DB (antrean, event, notifikasi,
+     *   cache, HTTP) TIDAK dibatalkan: pemanggil tidak boleh memicunya di dalam closure (layar Bot hanya membaca).
+     * - Dibersihkan di finally (aman untuk worker yang berjalan lama) dan bersarang dengan benar.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     *
+     * @throws AuthorizationException
+     */
+    public function untukBacaAdmin(User $user, int $sppgId, Closure $callback): mixed
+    {
+        if (! $user->isAdmin() || ! $user->canAuthenticate() || $sppgId <= 0
+            || ! Sppg::query()->withoutGlobalScopes()->whereKey($sppgId)->whereNull('deleted_at')->exists()) {
+            throw new AuthorizationException('SPPG tidak dapat dibaca.');
+        }
+
+        $key = (int) $user->getKey();
+        $sebelumnya = $this->bacaAdmin[$key] ?? null;
+        $this->bacaAdmin[$key] = $sppgId;
+        DB::beginTransaction();
+
+        try {
+            return $callback();
+        } finally {
+            DB::rollBack();
+
+            if ($sebelumnya === null) {
+                unset($this->bacaAdmin[$key]);
+            } else {
+                $this->bacaAdmin[$key] = $sebelumnya;
+            }
+        }
+    }
+
+    /** SPPG baca-saja admin yang sedang aktif (untukBacaAdmin), atau null. Selalu null untuk non-admin. */
+    public function sppgBacaAdmin(User $user): ?int
+    {
+        return $user->isAdmin() ? ($this->bacaAdmin[(int) $user->getKey()] ?? null) : null;
     }
 
     /** SPPG aktif pengguna, atau null (admin / tidak ada / ditolak). */
