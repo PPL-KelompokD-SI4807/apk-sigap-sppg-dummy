@@ -1,0 +1,36 @@
+# SiGAP SPPG - tuning MySQL 8.4 untuk VPS 2 GiB (kontainer mysql mem_limit 640m, tanpa swap).
+# Dipasang hanya-baca ke /etc/mysql/conf.d/zz-sigap.cnf oleh docker-compose.prod.yml.
+# Angka awal; ukur dengan `docker stats` di staging lalu setel (lihat docs/plan/2026-10-27-r01-deploy-vps.md (b)).
+[mysqld]
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# Memori
+innodb_buffer_pool_size = 256M
+innodb_buffer_pool_instances = 1
+innodb_redo_log_capacity = 128M
+innodb_log_buffer_size = 16M
+performance_schema = OFF
+max_connections = 40
+thread_cache_size = 8
+table_open_cache = 400
+table_definition_cache = 400
+tmp_table_size = 32M
+max_heap_table_size = 32M
+sort_buffer_size = 512K
+join_buffer_size = 256K
+read_buffer_size = 128K
+read_rnd_buffer_size = 256K
+max_allowed_packet = 32M
+
+# Durabilitas (data keuangan): tetap flush per transaksi.
+innodb_flush_log_at_trx_commit = 1
+
+# Binlog mati: RPO mengandalkan dump harian + dump pra-deploy (scripts/backup.sh).
+disable_log_bin
+
+# Jaringan & keamanan
+skip-name-resolve
+host_cache_size = 0
+mysqlx = OFF
+local_infile = OFF

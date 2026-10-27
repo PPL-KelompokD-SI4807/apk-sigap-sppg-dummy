@@ -18,3 +18,9 @@
 .DS_Store
 database/*.sqlite
 /public/miniapp
+
+# Operasi deploy (R-01): status deploy dan artefak cadangan tidak pernah di-commit
+/.deploy/
+*.age
+*.sql
+*.sql.gz
