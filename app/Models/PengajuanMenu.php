@@ -28,6 +28,9 @@ class PengajuanMenu extends Model
     /** @var list<string> */
     protected $fillable = [];
 
+    /** Catatan keputusan (teks bebas) tidak masuk jejak audit (sama dengan PersetujuanPengeluaran). @var list<string> */
+    protected array $auditExclude = ['catatan_keputusan'];
+
     /** Kolom yang boleh berubah pada transisi keputusan. */
     private const KOLOM_KEPUTUSAN = ['status', 'diputuskan_oleh', 'diputuskan_pada', 'catatan_keputusan', 'updated_at'];
 
