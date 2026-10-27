@@ -47,3 +47,10 @@ Schedule::command('sigap:proses-ulang-telegram')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->onOneServer();
+
+// R-02: hapus token tombol Bot Telegram (bot_aksi) yang lebih tua dari 30 hari, harian dini hari.
+Schedule::command('sigap:bersihkan-aksi-bot')
+    ->dailyAt('03:30')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();

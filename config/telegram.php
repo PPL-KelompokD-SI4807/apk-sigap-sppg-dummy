@@ -40,4 +40,23 @@ return [
     // Pembaruan yang diminta dari Telegram (setWebhook allowed_updates).
     'allowed_updates' => ['message', 'callback_query'],
 
+    /*
+    | Tombol aksi bot (R-02): callback_data berformat b1.<kode>.<mac>; status di tabel bot_aksi.
+    | - callback_ttl_menit: umur tombol sejak layar dirender (sekali pakai, dibuat ulang tiap layar).
+    | - catatan_ttl_menit: jendela membalas ForceReply alasan penolakan setelah menekan Tolak.
+    | - callback_rate: maks. callback per telegram_id per menit; callback_gagal_rate: maks. tombol tidak sah per menit.
+    | - perintah_rate: maks. /start, /bantuan, /menu per menit per telegram_id; catatan_gagal_rate: maks. balasan alasan
+    |   penolakan yang gagal per menit (lewat batas: dijawab diam).
+    | - aksi_aktif_maks: batas token aktif per pengguna (yang tertua dikedaluwarsakan).
+    | - aksi_retensi_hari: baris bot_aksi lebih tua dari ini dihapus terjadwal (sigap:bersihkan-aksi-bot).
+    */
+    'callback_ttl_menit' => (int) env('TELEGRAM_CALLBACK_TTL_MENIT', 10),
+    'catatan_ttl_menit' => (int) env('TELEGRAM_CATATAN_TTL_MENIT', 10),
+    'callback_rate' => 30,
+    'callback_gagal_rate' => 10,
+    'perintah_rate' => 20,
+    'catatan_gagal_rate' => 20,
+    'aksi_aktif_maks' => 50,
+    'aksi_retensi_hari' => 30,
+
 ];
