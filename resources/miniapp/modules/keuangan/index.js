@@ -21,7 +21,7 @@ import {
 } from './schema.js';
 import {
   statusPersetujuanBadge, statusPersetujuanLabel, statusPengeluaran, STATUS_PERSETUJUAN, KEPUTUSAN_PENGELUARAN, tombolKeputusanPengeluaranTampil,
-  validasiCatatanKeputusan, payloadKeputusanPengeluaran, rowPermsPengeluaran, dariPembelian, teksMenunggu, MAKS_CATATAN, MIN_CATATAN,
+  validasiCatatanKeputusan, payloadKeputusanPengeluaran, rowPermsPengeluaran, dariPembelian, pesanLampiranTerkunci, teksMenunggu, MAKS_CATATAN, MIN_CATATAN,
 } from './persetujuan.js';
 
 const SLUG = 'keuangan';
@@ -258,9 +258,16 @@ const pengeluaranModule = defineCrudModule({
       rec.nota ? createAuthImage(rec.nota, { alt: 'Foto nota' }) : h('p', { class: 'muted small' }, 'Tidak ada nota.')));
     const lain = (rec.lampiran || []).filter((l) => l.id !== rec.nota?.lampiran_id);
     // Server menolak lampiran baru pada pengeluaran disetujui (409) atau hasil pembelian (403).
-    const bisaTambah = !!p.U && !dariPembelian(rec) && rec.status_persetujuan !== 'disetujui';
-    if (lain.length || p.U) nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: bisaTambah, title: 'Lampiran lain' }));
-    if (p.U && rec.status_persetujuan === 'disetujui' && !dariPembelian(rec)) nodes.push(h('p', { class: 'muted small' }, 'Ubah pengeluaran agar diajukan ulang bila perlu menambah lampiran.'));
+    const terkunci = pesanLampiranTerkunci(rec);
+    if (terkunci) {
+      // Panel unggah disembunyikan; lampiran yang sudah ada tetap bisa dilihat tanpa tombol tambah.
+      if (lain.length) nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: false, title: 'Lampiran lain' }));
+      const info = h('p', { class: 'muted small', role: 'note' });
+      info.textContent = terkunci;
+      nodes.push(info);
+    } else if (lain.length || p.U) {
+      nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: !!p.U, title: 'Lampiran lain' }));
+    }
     return nodes;
   },
 });

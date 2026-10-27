@@ -36,7 +36,7 @@ export function statusMessage(status, serverMessage = '') {
 export function errorMessage(e, fallback = 'Terjadi kesalahan.') {
   if (!e) return fallback;
   if (e.status === 0) return 'Tidak ada koneksi internet.';
-  if (e.status === 403) return 'Anda tidak punya hak akses.';
+  if (e.status === 403) return PESAN_KONFLIK[e?.data?.alasan] || 'Anda tidak punya hak akses.';
   if (e.status === 404) return 'Data tidak ditemukan atau sudah dihapus.';
   if (e.status === 413) return PESAN_413;
   if (e.status === 429) return PESAN_429;
@@ -70,7 +70,7 @@ export function ringkasGalatAksi(e, fallback = 'Aksi gagal.') {
   const s = e?.status;
   const dasar = { muatUlang: false, konflik: false, fields: {} };
   if (s === 0) return { ...dasar, pesan: 'Tidak ada koneksi internet.' };
-  if (s === 403) return { ...dasar, pesan: 'Anda tidak berhak melakukan aksi ini.' };
+  if (s === 403) return { ...dasar, pesan: PESAN_KONFLIK[e?.data?.alasan] || 'Anda tidak berhak melakukan aksi ini.' };
   if (s === 404) return { ...dasar, pesan: 'Data tidak ditemukan atau sudah dihapus.', muatUlang: true };
   if (s === 409) {
     const alasan = e?.data?.alasan;

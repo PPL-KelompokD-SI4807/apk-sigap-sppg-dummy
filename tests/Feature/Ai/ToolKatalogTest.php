@@ -506,7 +506,7 @@ class ToolKatalogTest extends MasterApiTestCase
     public function test_nama_orang_dikirim_ke_llm_sebagai_inisial(): void
     {
         $this->forgetActor();
-        $titik = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA, 'nama' => 'SDN Contoh Rahasia', 'pic_nama' => 'Rahmat Hidayat']);
+        $titik = TitikLayanan::factory()->create(['sppg_id' => $this->sppgA, 'nama' => 'SDN Contoh Rahasia', 'alamat' => 'Jl. Contoh No. 1', 'pic_nama' => 'Rahmat Hidayat']);
         $penerima = PenerimaManfaat::factory()->create([
             'sppg_id' => $this->sppgA, 'titik_layanan_id' => $titik->id, 'nama' => 'Siti Aminah Fiktif', 'kelas_keterangan' => 'Kelas 3B Melati',
         ]);

@@ -29,6 +29,14 @@ export const tombolKeputusanPengeluaranTampil = (user, rec) => bolehMemutuskanPe
 
 /** Pengeluaran hasil pembelian bahan terverifikasi tidak dapat diubah/dihapus lewat jalur pengeluaran (409 di server). */
 export const dariPembelian = (rec) => rec?.pembelian_bahan_id != null;
+export const PESAN_NOTA_DARI_PEMBELIAN = 'Nota pengeluaran ini dikelola lewat pembelian bahan.';
+export const PESAN_NOTA_DISETUJUI = 'Pengeluaran sudah disetujui, nota tidak bisa ditambah.';
+/** Pesan pengganti panel unggah lampiran, atau null bila unggah masih boleh (diajukan/ditolak non-pembelian). */
+export function pesanLampiranTerkunci(rec) {
+  if (dariPembelian(rec)) return PESAN_NOTA_DARI_PEMBELIAN;
+  if (rec?.status_persetujuan === 'disetujui') return PESAN_NOTA_DISETUJUI;
+  return null;
+}
 export const rowPermsPengeluaran = (rec, p) => (dariPembelian(rec) ? { ...p, U: false, D: false } : p);
 
 /** Catatan wajib 5..500 karakter bila ditolak; opsional (maks 500) bila disetujui. '' bila valid. */
