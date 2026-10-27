@@ -136,16 +136,60 @@ class TelegramBotService
         ]));
     }
 
+    /**
+     * Ubah teks (+ keyboard inline) pesan bot yang sudah terkirim. $options: parse_mode, reply_markup
+     * (null = hapus keyboard, array = keyboard baru). Melempar TelegramApiException bila ditolak Telegram
+     * (mis. pesan terlalu lama/tidak berubah); pemanggil memutuskan fallback.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>|bool
+     */
+    public function editMessageText(int|string $chatId, int $messageId, string $text, array $options = []): array|bool
+    {
+        $payload = array_filter([
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'text' => self::limit($text),
+            'parse_mode' => $options['parse_mode'] ?? null,
+            // Tanpa keyboard baru, keyboard lama dihapus (keyboard kosong eksplisit).
+            'reply_markup' => json_encode($options['reply_markup'] ?? ['inline_keyboard' => []], JSON_UNESCAPED_UNICODE),
+            'link_preview_options' => json_encode(['is_disabled' => true]),
+        ], fn ($v) => $v !== null);
+
+        return $this->call('editMessageText', $payload);
+    }
+
+    /** Ganti/hapus keyboard inline pesan tanpa mengubah teksnya ($replyMarkup null = hapus). */
+    public function editMessageReplyMarkup(int|string $chatId, int $messageId, ?array $replyMarkup = null): array|bool
+    {
+        return $this->call('editMessageReplyMarkup', [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'reply_markup' => json_encode($replyMarkup ?? ['inline_keyboard' => []], JSON_UNESCAPED_UNICODE),
+        ]);
+    }
+
+    /** reply_markup ForceReply: klien Telegram membuka balasan ke pesan ini (placeholder maks. 64 karakter). */
+    public static function forceReply(?string $placeholder = null): array
+    {
+        return array_filter([
+            'force_reply' => true,
+            'input_field_placeholder' => $placeholder === null ? null : mb_substr($placeholder, 0, 64),
+            'selective' => true,
+        ], fn ($v) => $v !== null);
+    }
+
     public function sendChatAction(int|string $chatId, string $action = 'typing'): void
     {
         $this->call('sendChatAction', ['chat_id' => $chatId, 'action' => $action]);
     }
 
-    public function answerCallbackQuery(string $callbackQueryId, ?string $text = null): void
+    public function answerCallbackQuery(string $callbackQueryId, ?string $text = null, bool $alert = false): void
     {
         $this->call('answerCallbackQuery', array_filter([
             'callback_query_id' => $callbackQueryId,
             'text' => $text === null ? null : mb_substr($text, 0, 200),
+            'show_alert' => $alert && $text !== null ? 'true' : null,
         ], fn ($v) => $v !== null));
     }
 
