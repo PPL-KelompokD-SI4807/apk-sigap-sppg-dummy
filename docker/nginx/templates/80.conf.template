@@ -1,0 +1,33 @@
+# SiGAP SPPG - server HTTP :80 (produksi/staging; dirender bila DOMAIN terisi).
+# Hanya: tantangan ACME (webroot certbot), /up (health check deploy sebelum TLS aktif), redirect 301 ke HTTPS.
+
+# Host tak dikenal (pemindai IP) ditutup tanpa respons.
+server {
+    listen 80 default_server;
+    server_name _;
+    access_log /var/log/nginx/access.log sigap;
+    return 444;
+}
+
+server {
+    listen 80;
+    server_name ${DOMAIN};
+    root /var/www/html/public;
+    access_log /var/log/nginx/access.log sigap;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location = /up {
+        access_log off;
+        add_header X-Content-Type-Options "nosniff" always;
+        include /etc/nginx/snippets/sigap-php.conf;
+    }
+
+    location / {
+        return 301 https://${DOMAIN}$request_uri;
+    }
+}
