@@ -146,19 +146,23 @@ class ToolKatalogTest extends MasterApiTestCase
         }
 
         // Peran dengan sel kosong tidak melihat satu pun tool modul, dan ditolak resolveFor() walau dipanggil model.
-        foreach ($this->semuaPengguna() as $user) {
-            if (Rbac::letters($user, $modul) !== '') {
-                continue;
+        $toolModul = array_values(array_filter($this->registry->all(), fn (AiTool $t) => $t->module() === $modul));
+        $this->assertNotEmpty($toolModul, "modul {$modul} harus punya tool (tes tidak boleh vakum)");
+
+        $tanpaHak = array_values(array_filter($this->semuaPengguna(), fn (User $u) => Rbac::letters($u, $modul) === ''));
+        $denganHak = array_values(array_filter($this->semuaPengguna(), fn (User $u) => $this->namaTool($u, $modul) !== []));
+        // Kontrol: setidaknya satu peran melihat tool modul ini, sehingga asersi "tidak melihat" bermakna.
+        $this->assertNotEmpty($denganHak, "tidak ada peran yang melihat tool modul {$modul}");
+
+        foreach ($tanpaHak as $user) {
+            $nama = $this->namaTool($user);
+
+            foreach ($toolModul as $tool) {
+                $this->assertNotContains($tool->name(), $nama, "{$user->role->value} tanpa hak {$modul} tetapi ditawari {$tool->name()}");
+                $this->assertFalse($tool->isAvailableFor($user), "{$tool->name()} tersedia untuk {$user->role->value}");
             }
 
             $this->assertSame([], $this->namaTool($user, $modul));
-
-            foreach ($this->registry->all() as $tool) {
-                if ($tool->module() === $modul) {
-                    $this->expectNotToPerformAssertions();
-                    $this->assertFalse($tool->isAvailableFor($user));
-                }
-            }
         }
     }
 
