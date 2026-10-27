@@ -237,6 +237,7 @@ final class CatalogDefinitions
                 key: 'log_produksi', module: 'log-produksi', label: 'log produksi harian', model: LogProduksi::class,
                 list: ['id', 'jadwal_produksi_id', 'tanggal_produksi' => 'jadwalProduksi.tanggal_produksi', 'realisasi_porsi', 'sisa_makanan_kg', 'jam_selesai', 'kode_batch'],
                 detail: ['kendala'],
+                filters: ['milik_saya' => ['type' => 'boolean', 'scope' => 'milikSaya', 'description' => 'Hanya log yang dicatat pengguna ini.']],
                 date: 'created_at',
                 store: StoreLogProduksiRequest::class, update: UpdateLogProduksiRequest::class, routeParameter: 'log_produksi',
             ),
