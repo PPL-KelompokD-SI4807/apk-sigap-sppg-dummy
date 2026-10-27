@@ -175,7 +175,8 @@ class TelegramWebhookTest extends MasterApiTestCase
         $sent = $this->messagesTo((int) $this->kepalaA->telegram_id)->sole();
         $this->assertStringContainsString('Kepala SPPG', $sent['text']);
         $this->assertStringContainsString('SPPG A', $sent['text']);
-        $this->assertNotNull($this->markupOf($sent)['inline_keyboard'][0][0]['web_app'] ?? null);
+        $tombol = array_merge(...$this->markupOf($sent)['inline_keyboard']);
+        $this->assertContains('Buka Mini App', array_column($tombol, 'text'), 'Beranda memuat baris tetap Buka Mini App');
     }
 
     public function test_start_undangan_tidak_valid_kedaluwarsa_dan_terpakai_dibalas_ramah(): void

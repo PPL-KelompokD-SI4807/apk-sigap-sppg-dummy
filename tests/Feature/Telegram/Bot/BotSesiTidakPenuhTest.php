@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Telegram\Bot;
 
+use App\Enums\RelawanUnit;
+use App\Enums\Role;
 use App\Models\BotAksi;
 use App\Models\User;
 use App\Services\Ai\Llm\FakeLlmClient;
@@ -21,7 +23,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 class BotSesiTidakPenuhTest extends BotTestCase
 {
-    private const PERAN = ['admin', 'kepalaA', 'ahliGiziA', 'akuntanA', 'stafGudangA', 'relawanA', 'investorAB'];
+    private const PERAN = ['admin', 'kepalaA', 'ahliGiziA', 'akuntanA', 'stafGudangA', 'relawanA', 'relawanDistribusi', 'relawanTanpaUnit', 'investorAB', 'investorC'];
 
     private const JALUR = [
         'start', 'menu', 'bantuan', 'batal', 'teks_bebas', 'balasan_catatan', 'balasan_foto_catatan',
@@ -50,8 +52,7 @@ class BotSesiTidakPenuhTest extends BotTestCase
     #[DataProvider('peranDanJalur')]
     public function test_tanpa_sesi_penuh_hanya_tombol_masuk(string $peran, string $jalur): void
     {
-        /** @var User $user */
-        $user = $this->{$peran};
+        $user = $this->pengguna($peran);
         $uid = (int) $user->telegram_id;
 
         // Data bisnis nyata ada (pengeluaran menunggu + pengajuan menu) agar kebocoran akan terlihat.
@@ -95,8 +96,7 @@ class BotSesiTidakPenuhTest extends BotTestCase
     public function test_sesi_dicabut_kembali_ke_tombol_masuk_untuk_semua_peran(): void
     {
         foreach (self::PERAN as $peran) {
-            /** @var User $user */
-            $user = $this->{$peran};
+            $user = $this->pengguna($peran);
             $this->sesiPenuh($user);
             $this->ketik($user, '/menu');
             $this->assertNotSame(TelegramUpdateHandler::PERLU_MASUK, $this->teksLayar($user), "{$peran}: dengan sesi dapat menu");
@@ -110,6 +110,23 @@ class BotSesiTidakPenuhTest extends BotTestCase
     }
 
     // ------------------------------------------------------------------ pembantu
+
+    private function pengguna(string $peran): User
+    {
+        return match ($peran) {
+            'relawanDistribusi' => $this->userOf(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi),
+            'relawanTanpaUnit' => $this->tanpaUnit(),
+            default => $this->{$peran},
+        };
+    }
+
+    private function tanpaUnit(): User
+    {
+        $user = $this->userOf(Role::Relawan, $this->sppgA);
+        $user->forceFill(['unit' => null])->save();
+
+        return $user->fresh();
+    }
 
     /** Balasan ke prompt "alasan penolakan" yang masih terbuka, tetapi sesi sudah tidak penuh. */
     private function balasCatatan(User $user, int $idKeluar, ?string $teks): void

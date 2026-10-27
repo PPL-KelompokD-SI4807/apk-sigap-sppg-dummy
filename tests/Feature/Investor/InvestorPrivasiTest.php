@@ -125,7 +125,8 @@ class InvestorPrivasiTest extends InvestorTestCase
         $this->webhook($this->privateUpdate((int) $this->investorAB->telegram_id, ['text' => '/start']))->assertOk();
 
         $teks = (string) $this->messagesTo((int) $this->investorAB->telegram_id)->sole()['text'];
-        $this->assertStringContainsString('SPPG milik Anda (pilih di Mini App)', $teks);
+        // R-02 A2: pemilih SPPG ada di beranda bot, sapaan tidak menyebut daftar/semua SPPG.
+        $this->assertStringContainsString('SPPG milik Anda', $teks);
         $this->assertStringNotContainsString('semua SPPG', $teks);
 
         // Admin tetap "semua SPPG".

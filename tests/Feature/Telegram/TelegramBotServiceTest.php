@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Telegram;
 
+use App\Services\Telegram\Bot\BotLayarRegistry;
 use App\Services\Telegram\TelegramApiException;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Http\Client\ConnectionException;
@@ -75,9 +76,53 @@ class TelegramBotServiceTest extends TestCase
         $this->assertSame('https://sigap.test/api/v1/telegram/webhook', $set['url']);
         $this->assertSame('rahasia-webhook-fiktif-1234567890', $set['secret_token']);
         $this->assertSame(['message', 'callback_query'], json_decode($set['allowed_updates'], true));
+        // R-02 keputusan #3: tombol Menu Telegram bertipe commands + daftar perintah global (tanpa scope per pengguna).
         $menu = json_decode($this->telegramCalls('setChatMenuButton')->sole()['menu_button'], true);
-        $this->assertSame('web_app', $menu['type']);
-        $this->assertSame('https://sigap.test/miniapp/', $menu['web_app']['url']);
+        $this->assertSame(['type' => 'commands'], $menu);
+        $perintah = $this->telegramCalls('setMyCommands')->sole();
+        $this->assertArrayNotHasKey('scope', $perintah->data());
+        $daftar = array_column(json_decode($perintah['commands'], true), 'command');
+        $this->assertSame(array_keys(BotLayarRegistry::DESKRIPSI_PERINTAH), $daftar);
+
+        foreach (['menu', 'jadwal', 'stok', 'keluhan', 'rekap', 'keuangan', 'anggaran', 'distribusi', 'mutu', 'start', 'bantuan'] as $p) {
+            $this->assertContains($p, $daftar);
+        }
+
+        foreach ($daftar as $p) {
+            $this->assertMatchesRegularExpression('/^[a-z0-9_]{1,32}$/', $p);
+        }
+    }
+
+    public function test_command_set_webhook_no_menu_tidak_mengatur_perintah(): void
+    {
+        $this->fakeTelegram();
+        config(['telegram.webhook_secret' => 'rahasia-webhook-fiktif-1234567890']);
+
+        $this->artisan('sigap:telegram-set-webhook', ['--url' => 'https://sigap.test/api/v1/telegram/webhook', '--no-menu' => true])->assertSuccessful();
+
+        $this->assertCount(0, $this->telegramCalls('setMyCommands'));
+        $this->assertCount(0, $this->telegramCalls('setChatMenuButton'));
+    }
+
+    public function test_send_message_protect_content_hanya_bila_diminta(): void
+    {
+        $this->fakeTelegram();
+        $bot = app(TelegramBotService::class);
+
+        $bot->sendMessage(42, 'data', ['protect_content' => true]);
+        $bot->sendMessage(42, 'biasa');
+
+        [$lindungi, $biasa] = $this->telegramCalls('sendMessage')->all();
+        $this->assertSame('true', $lindungi['protect_content']);
+        $this->assertArrayNotHasKey('protect_content', $biasa->data());
+    }
+
+    public function test_set_my_commands_menolak_nama_perintah_tidak_sah(): void
+    {
+        $this->fakeTelegram();
+
+        $this->expectException(TelegramApiException::class);
+        app(TelegramBotService::class)->setMyCommands(['Jadwal Hari' => 'x']);
     }
 
     public function test_command_menolak_http_dan_secret_lemah(): void

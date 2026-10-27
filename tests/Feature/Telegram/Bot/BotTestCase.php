@@ -7,6 +7,7 @@ use App\Models\PengajuanMenu;
 use App\Models\Pengeluaran;
 use App\Models\Scopes\SppgScope;
 use App\Models\User;
+use App\Services\Telegram\Bot\BotCallbackHandler;
 use Illuminate\Http\Client\Request;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
@@ -28,6 +29,8 @@ abstract class BotTestCase extends PembelianTestCase
     {
         parent::setUp();
         $this->forgetActor();
+        // Ringkasan beranda tanpa cache agar data uji yang berubah langsung terlihat (tes cache menyalakannya sendiri).
+        config(['telegram.ringkasan_cache_detik' => 0]);
         $this->logBot = [];
         Event::listen(MessageLogged::class, function (MessageLogged $e): void {
             $this->logBot[] = ['message' => $e->message, 'context' => $e->context];
@@ -67,6 +70,20 @@ abstract class BotTestCase extends PembelianTestCase
     }
 
     // ------------------------------------------------------------------ membaca keluaran bot
+
+    /** Edit pesan yang BUKAN penetral netral (layar data/navigasi); penetral = hasil klik ditolak/tanpa sesi. */
+    protected function jumlahEditData(): int
+    {
+        return $this->telegramCalls('editMessageText')
+            ->reject(fn ($r) => in_array($r['text'], [BotCallbackHandler::LAYAR_DITUTUP_HAK, BotCallbackHandler::LAYAR_DITUTUP_SESI], true))
+            ->count();
+    }
+
+    /** Edit penetral (teks netral tanpa keyboard) yang terkirim. */
+    protected function jumlahEditNetral(): int
+    {
+        return $this->telegramCalls('editMessageText')->count() - $this->jumlahEditData();
+    }
 
     /** Layar terakhir (sendMessage/editMessageText) ke chat. */
     protected function layar(int $chatId): ?Request
