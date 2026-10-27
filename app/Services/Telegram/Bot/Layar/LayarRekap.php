@@ -5,6 +5,7 @@ namespace App\Services\Telegram\Bot\Layar;
 use App\Models\RekapHarian;
 use App\Models\User;
 use App\Services\Rekap\DailySummaryService;
+use App\Services\Telegram\Bot\BotAksiTulisService;
 use App\Services\Telegram\Bot\BotLayar;
 use App\Services\Telegram\Bot\BotLayarRegistry;
 use App\Services\Telegram\Bot\BotLayarService;
@@ -20,6 +21,7 @@ final class LayarRekap extends LayarModulDasar
     public function __construct(
         private readonly DailySummaryService $harian,
         private readonly BotLayarService $layanan,
+        private readonly BotAksiTulisService $tulis,
     ) {}
 
     public function id(): string
@@ -110,6 +112,9 @@ final class LayarRekap extends LayarModulDasar
             $isi[] = '- '.self::e(sprintf('Rekap tersimpan terakhir: %s (%s)', FormatLayar::tanggal($rekap['tanggal'] ?? null), FormatLayar::label($rekap['status_kirim'] ?? null)));
         }
 
-        return $this->susun($user, $sppgId, $konteks, $isi);
+        // Aksi tulis berkonfirmasi (PR-3): hanya peran yang berhak (kepala_sppg); admin/investor/peran lain tanpa tombol.
+        $tombol = $sppgId === null ? [] : $this->tulis->tombolRekap($user, $sppgId, $konteks);
+
+        return $this->susun($user, $sppgId, $konteks, $isi, barisTombol: $tombol);
     }
 }

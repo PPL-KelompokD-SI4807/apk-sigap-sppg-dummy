@@ -6,6 +6,7 @@ use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Models\User;
 use App\Services\Telegram\Bot\Layar\DefinisiLayar;
+use App\Services\Telegram\Bot\Layar\LayarAksi;
 use App\Services\Telegram\Bot\Layar\LayarBaca;
 use App\Services\Telegram\Bot\Layar\LayarBantuan;
 use App\Services\Telegram\Bot\Layar\LayarBeranda;
@@ -97,7 +98,8 @@ class BotLayarRegistry
      * Matriks tombol beranda per profil (urutan tampil). Tiap entri: [id layar, label, modul RBAC, hak].
      * hak = HAK_BACA 'R' | 'R*' | 'agregat' (lihat LayarBaca) atau HAK_PILIH / HAK_PUTUSKAN (khusus, modul null).
      * Tombol hanya tampil bila layar `id` terdaftar dan hak RBAC peran saat ini mengizinkan (HAK_PILIH: admin atau
-     * investor >1 SPPG; HAK_PUTUSKAN: Rbac::canDecide). Tombol tulis (Buat Keluhan, Mulai Perjalanan, dll.) menyusul di PR-3.
+     * investor >1 SPPG; HAK_PUTUSKAN: Rbac::canDecide). Layar aksi (LayarAksi, mis. `mp` Mulai Perjalanan dan petunjuk alur
+     * draf `dpk`/`dpc`/`dms`/`dkl`, C2) juga mensyaratkan tampilUntuk(); tombol aksi tulis lain (kirim ulang rekap, proses keluhan) ada di layar Rekap/Keluhan (PR-3).
      *
      * @var array<string, list<array{0: string, 1: string, 2: ?string, 3: string}>>
      */
@@ -127,6 +129,7 @@ class BotLayarRegistry
             ['tl', 'Titik Layanan', 'titik-layanan', 'R'],
             ['tm', 'Tim', 'pengguna', 'R'],
             ['np', 'Notifikasi Perjalanan', 'notifikasi-perjalanan', 'R'],
+            ['mp', 'Mulai Perjalanan', 'notifikasi-perjalanan', 'R'],
         ],
         'ahli_gizi' => [
             ['mg', 'Menu dan Gizi', 'menu-gizi', 'R'],
@@ -148,6 +151,8 @@ class BotLayarRegistry
             ['pb', 'Pembelian Bahan', 'pembelian-bahan', 'R'],
             ['ar', 'Armada', 'armada', 'R'],
             ['rk', 'Rekap', 'rekap-harian', 'R'],
+            ['dpk', 'Catat pengeluaran', 'keuangan', 'R'],
+            ['dpc', 'Catat pencairan', 'keuangan', 'R'],
         ],
         'staf_gudang' => [
             ['st', 'Stok', 'bahan-baku', 'R'],
@@ -158,25 +163,30 @@ class BotLayarRegistry
             ['mg', 'Menu', 'menu-gizi', 'R'],
             ['jd', 'Jadwal', 'jadwal', 'R'],
             ['lg', 'Log Produksi', 'log-produksi', 'R'],
+            ['dms', 'Catat mutasi stok', 'bahan-baku', 'R'],
         ],
         'relawan.dapur' => [
             ['jd', 'Jadwal Produksi', 'jadwal', 'R'],
             ['lg', 'Log Produksi', 'log-produksi', 'R'],
             ['mh', 'Menu Hari Ini', 'menu-gizi', 'R'],
             ['mt', 'Mutu', 'mutu', 'R'],
+            ['dkl', 'Buat Keluhan', 'keluhan', 'R'],
             ['pf', 'Profil Saya', 'pengguna', LayarBaca::HAK_BACA_MILIK_SENDIRI],
         ],
         'relawan.distribusi' => [
             ['jd', 'Jadwal Distribusi', 'jadwal', 'R'],
             ['ds', 'Bukti Distribusi', 'bukti-distribusi', 'R'],
+            ['mp', 'Mulai Perjalanan', 'notifikasi-perjalanan', 'R'],
             ['ar', 'Armada', 'armada', 'R'],
             ['mh', 'Menu Hari Ini', 'menu-gizi', 'R'],
+            ['dkl', 'Buat Keluhan', 'keluhan', 'R'],
             ['pf', 'Profil Saya', 'pengguna', LayarBaca::HAK_BACA_MILIK_SENDIRI],
         ],
         'relawan.tanpa_unit' => [
             ['mh', 'Menu Hari Ini', 'menu-gizi', 'R'],
             ['mt', 'Mutu', 'mutu', 'R'],
             ['ar', 'Armada', 'armada', 'R'],
+            ['dkl', 'Buat Keluhan', 'keluhan', 'R'],
             ['pf', 'Profil Saya', 'pengguna', LayarBaca::HAK_BACA_MILIK_SENDIRI],
         ],
         'investor' => [
@@ -314,7 +324,9 @@ class BotLayarRegistry
             $tampil = match ($hak) {
                 self::HAK_PILIH => isset($this->layar[$id]) && self::bisaMemilihSppg($user),
                 self::HAK_PUTUSKAN => self::bisaMemutuskan($user),
-                default => $adaSppg && isset($this->layar[$id]) && self::hakRbac($user, $modul, $hak),
+                // Layar aksi (PR-3, mis. Mulai Perjalanan): juga butuh hak aksi peran saat ini (LayarAksi::tampilUntuk).
+                default => $adaSppg && isset($this->layar[$id]) && self::hakRbac($user, $modul, $hak)
+                    && (! $this->layar[$id] instanceof LayarAksi || $this->layar[$id]->tampilUntuk($user)),
             };
 
             if ($tampil) {

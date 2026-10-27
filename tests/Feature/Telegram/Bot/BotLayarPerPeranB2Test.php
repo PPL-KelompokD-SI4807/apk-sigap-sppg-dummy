@@ -39,13 +39,29 @@ class BotLayarPerPeranB2Test extends LayarBacaTestCase
     }
 
     #[DataProvider('peran')]
-    public function test_tombol_tulis_belum_tampil_di_beranda_peran_mana_pun(string $peran): void
+    public function test_tombol_tulis_beranda_hanya_mulai_perjalanan_untuk_kepala_dan_relawan_distribusi(string $peran): void
     {
         $label = implode(' | ', $this->labelBeranda($this->pengguna($peran)));
 
-        foreach (['Buat Keluhan', 'Mulai Perjalanan', 'Catat', 'Picu', 'Kirim ulang', 'Tindak lanjut'] as $tulis) {
-            $this->assertStringNotContainsString($tulis, $label, "{$peran}: tombol tulis '{$tulis}' belum boleh ada");
+        // PR-3: tombol beranda bernuansa tulis = "Mulai Perjalanan" (notifikasi-perjalanan C) dan petunjuk alur draf (C2:
+        // Catat pengeluaran/pencairan = akuntan, Catat mutasi stok = staf gudang, Buat Keluhan = relawan). Kirim ulang rekap
+        // dan tindak lanjut keluhan hanya muncul di layar Rekap/Keluhan.
+        foreach (['Picu', 'Kirim ulang', 'Tindak lanjut', 'Proses keluhan'] as $tulis) {
+            $this->assertStringNotContainsString($tulis, $label, "{$peran}: tombol tulis '{$tulis}' tidak boleh di beranda");
         }
+
+        $draf = ['akuntanA' => ['Catat pengeluaran', 'Catat pencairan'], 'stafGudangA' => ['Catat mutasi stok'],
+            'relawanA' => ['Buat Keluhan'], 'relawanDistribusi' => ['Buat Keluhan'], 'relawanTanpaUnit' => ['Buat Keluhan']];
+
+        foreach (['Catat pengeluaran', 'Catat pencairan', 'Catat mutasi stok', 'Buat Keluhan'] as $tombol) {
+            in_array($tombol, $draf[$peran] ?? [], true)
+                ? $this->assertStringContainsString($tombol, $label, "{$peran}: {$tombol}")
+                : $this->assertStringNotContainsString($tombol, $label, "{$peran}: {$tombol} tidak boleh tampil");
+        }
+
+        in_array($peran, ['kepalaA', 'relawanDistribusi'], true)
+            ? $this->assertStringContainsString('Mulai Perjalanan', $label, $peran)
+            : $this->assertStringNotContainsString('Mulai Perjalanan', $label, $peran);
     }
 
     public function test_setiap_layar_beranda_relawan_dan_gudang_terdaftar_di_registri(): void
@@ -161,7 +177,7 @@ class BotLayarPerPeranB2Test extends LayarBacaTestCase
         $tanpa = $this->relawanTanpaUnit();
         $this->sesiPenuh($tanpa);
 
-        $this->assertSame(['Menu Hari Ini', 'Mutu', 'Armada', 'Profil Saya'], array_slice($this->labelBeranda($tanpa), 0, 4));
+        $this->assertSame(['Menu Hari Ini', 'Mutu', 'Armada', 'Buat Keluhan', 'Profil Saya'], array_slice($this->labelBeranda($tanpa), 0, 5));
 
         foreach (['mh', 'mt', 'ar', 'pf'] as $id) {
             $this->assertNotNull($this->buka($tanpa, $id), "Relawan tanpa unit harus bisa membuka {$id}");

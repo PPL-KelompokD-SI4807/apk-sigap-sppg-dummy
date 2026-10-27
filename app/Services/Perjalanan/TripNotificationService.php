@@ -15,6 +15,7 @@ use App\Models\TitikLayanan;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -106,10 +107,14 @@ class TripNotificationService
 
     /**
      * Mulai perjalanan: catat notifikasi berstatus "berangkat" lalu pancarkan PerjalananDimulai.
+     *
+     * @param  (Closure(NotifikasiPerjalanan): void)|null  $setelahSimpan  dijalankan setelah baris disimpan dan SEBELUM event
+     *                                                                     dipancarkan, di transaksi yang sama (mis. jejak audit Bot); galat di sini membatalkan
+     *                                                                     seluruh perjalanan tanpa event/notifikasi. REST tidak memakainya.
      */
-    public function mulai(User $pemicu, JadwalDistribusi $jadwal, ?CarbonInterface $berangkat = null, ?int $manualMenit = null): NotifikasiPerjalanan
+    public function mulai(User $pemicu, JadwalDistribusi $jadwal, ?CarbonInterface $berangkat = null, ?int $manualMenit = null, ?Closure $setelahSimpan = null): NotifikasiPerjalanan
     {
-        return DB::transaction(function () use ($pemicu, $jadwal, $berangkat, $manualMenit) {
+        return DB::transaction(function () use ($pemicu, $jadwal, $berangkat, $manualMenit, $setelahSimpan) {
             // Kunci baris jadwal agar dua pemicu bersamaan tidak membuat perjalanan ganda.
             $jadwal = JadwalDistribusi::query()->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
             $this->pastikanBisaBerangkat($jadwal);
@@ -137,6 +142,10 @@ class TripNotificationService
                 'pesan' => $this->susunPesan($jadwal, $titik, $berangkat, $estimasi['tiba'], $estimasi['menit']),
             ]);
             $notifikasi->save();
+
+            if ($setelahSimpan !== null) {
+                $setelahSimpan($notifikasi);
+            }
 
             event(PerjalananDimulai::dari($notifikasi));
 

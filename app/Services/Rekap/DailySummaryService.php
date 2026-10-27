@@ -8,6 +8,7 @@ use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusKeluhan;
 use App\Enums\StatusKirim;
 use App\Enums\StatusPersetujuanPengeluaran;
+use App\Events\RekapHarianDibuat;
 use App\Models\BahanBaku;
 use App\Models\BuktiDistribusi;
 use App\Models\FeedbackKeluhan;
@@ -124,6 +125,21 @@ class DailySummaryService
             // Dua penyusun bersamaan: yang kalah mengulang sebagai pembaruan.
             return $simpan();
         }
+    }
+
+    /**
+     * Kirim ulang rekap tersimpan: status kirim kembali "menunggu", dikirim_pada dikosongkan, lalu RekapHarianDibuat
+     * dipancarkan (listener notifikasi mengirim ke penerima rekap). Dipakai REST (POST /rekap-harian/{id}/kirim-ulang)
+     * dan Bot (R-02 PR-3). Otorisasi (Policy `update`) dan pembatasan tambahan jalur Bot menjadi tanggung jawab pemanggil.
+     */
+    public function kirimUlang(RekapHarian $rekap): RekapHarian
+    {
+        DB::transaction(function () use ($rekap): void {
+            $rekap->forceFill(['status_kirim' => StatusKirim::Menunggu, 'dikirim_pada' => null])->save();
+            event(RekapHarianDibuat::dari($rekap));
+        });
+
+        return $rekap;
     }
 
     /**

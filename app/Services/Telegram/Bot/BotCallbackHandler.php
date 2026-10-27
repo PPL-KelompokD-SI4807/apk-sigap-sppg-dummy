@@ -23,6 +23,8 @@ use Illuminate\Support\Facades\RateLimiter;
  *   3. muat ulang pengguna dari basis data (aktif);
  *   4. SesiService::punyaSesiPenuh (tanpa sesi: petunjuk login, bukan data, token tidak dihabiskan);
  *   5. hak dihitung ulang (Rbac::canDecide + pivot + SPPG record + Policy) -> BotKeputusanService::periksa;
+ *      aksi tulis (PR-3: kirim ulang rekap, mulai perjalanan, tindak lanjut keluhan) -> BotAksiTulisService::periksa
+ *      (peran + RBAC + SPPG + Policy + versi yang dilihat);
  *   6. konsumsi token atomik, lalu panggil service bisnis.
  * Isi callback_data tidak pernah menjadi sumber hak akses.
  *
@@ -62,6 +64,7 @@ class BotCallbackHandler
         private readonly SesiService $sesi,
         private readonly BotKeputusanService $keputusan,
         private readonly BotNavigasi $nav,
+        private readonly BotAksiTulisService $tulis,
     ) {}
 
     /** @param array<string, mixed> $query objek CallbackQuery Telegram */
@@ -112,12 +115,27 @@ class BotCallbackHandler
             return;
         }
 
+        $tulis = BotAksiTulisService::milik($aksi->jenis);
+
         // 4. Sesi login penuh.
         if (! $this->sesi->punyaSesiPenuh($user)) {
             $this->aksi->batalkanCatatan($fromId);
             $this->jawab($id, self::PERLU_MASUK_SINGKAT);
+
+            // Aksi tulis (R-02 PR-3): layar asal (baca/konfirmasi) dinetralkan seperti pola n1; token tidak dihabiskan.
+            if ($tulis) {
+                $this->netralkan($chatId, $messageId, self::LAYAR_DITUTUP_SESI);
+            }
+
             $this->kirim($chatId, new BotLayar(TelegramUpdateHandler::PERLU_MASUK, $this->bukaAplikasi(), false));
             $this->catat($aksi, $user, 'tanpa_sesi');
+
+            return;
+        }
+
+        // 5-7 aksi tulis berkonfirmasi (kirim ulang rekap, mulai perjalanan, tindak lanjut keluhan).
+        if ($tulis) {
+            $this->aksiTulis($id, $user, $aksi, $fromId, $chatId, $messageId);
 
             return;
         }
@@ -359,6 +377,82 @@ class BotCallbackHandler
             $this->bot->editMessageText($chatId, $messageId, $teks);
         } catch (TelegramApiException $e) {
             Log::info('bot.netralkan_gagal', ['kode' => $e->errorCode]);
+        }
+    }
+
+    // ------------------------------------------------------------------ aksi tulis (R-02 PR-3)
+
+    /**
+     * Langkah 5-7 untuk token aksi tulis. Dipanggil SETELAH langkah 1-4 (rate limit, MAC + baris + ikatan, pengguna
+     * dimuat ulang, sesi penuh). Hak + SPPG + Policy + versi dihitung ulang (BotAksiTulisService::periksa); ditolak hak
+     * -> token tidak dihabiskan dan layar asal dinetralkan; keadaan berubah -> token basi ditutup + "data sudah berubah";
+     * lalu konsumsi atomik (grup Ya/Batal: hanya satu yang pernah lolos), baru satu pemanggilan service.
+     */
+    private function aksiTulis(?string $id, User $user, BotAksi $aksi, int $fromId, int $chatId, ?int $messageId): void
+    {
+        $tolak = $this->tulis->periksa($user, $aksi);
+
+        if (in_array($tolak, [BotAksiTulisService::BERUBAH, BotAksiTulisService::DI_LUAR_JENDELA, BotAksiTulisService::SEDANG_DIKIRIM], true)) {
+            if ($this->aksi->konsumsi($aksi)) {
+                $this->aksi->selesai($aksi, $tolak === BotAksiTulisService::BERUBAH ? 'konflik_versi' : $tolak);
+            }
+
+            $this->jawab($id, $tolak === BotAksiTulisService::BERUBAH ? 'Data sudah berubah.' : 'Aksi tidak lagi tersedia.', alert: true);
+            $this->tampilkan($chatId, $messageId, $this->tulis->layarTolakKeadaan($user, $aksi, $chatId, $tolak));
+            $this->catat($aksi, $user, $tolak);
+
+            return;
+        }
+
+        if ($tolak !== null) {
+            // Ditolak hak/data hilang: token dan saudara satu layar (Ya/Batal) ikut kedaluwarsa (bukan dipakai); tanpa efek.
+            $this->aksi->kedaluwarsakan($aksi);
+            $this->jawab($id, $tolak === BotAksiTulisService::TIDAK_ADA ? 'Data tidak ditemukan atau sudah tidak berlaku.' : self::TIDAK_BERHAK, alert: true);
+            $this->netralkan($chatId, $messageId, self::LAYAR_DITUTUP_HAK);
+            $this->catat($aksi, $user, $tolak);
+
+            return;
+        }
+
+        if (! $this->aksi->konsumsi($aksi)) {
+            RateLimiter::hit('tg:cbgagal:'.$fromId, 60);
+            $this->jawab($id, self::TIDAK_BERLAKU);
+
+            return;
+        }
+
+        $dijawab = false;
+        $hasil = null;
+
+        try {
+            if (BotAksiTulisService::tahapAksi($aksi)) {
+                $layar = $this->tulis->konfirmasi($user, $aksi, $chatId);
+                $hasil = 'konfirmasi';
+            } elseif ($aksi->jenis === BotAksi::JENIS_BATAL_AKSI) {
+                $layar = $this->tulis->layarBatal($user, $aksi, $chatId);
+                $hasil = 'batal';
+            } else {
+                ['hasil' => $hasil, 'layar' => $layar] = $this->tulis->jalankan($user, $aksi, $chatId);
+            }
+
+            $this->aksi->selesai($aksi, $hasil);
+            $this->jawab($id, $hasil === 'batal' ? 'Dibatalkan.' : null);
+            $dijawab = true;
+            $this->tampilkan($chatId, $messageId, $layar);
+            $this->catat($aksi, $user, $hasil);
+        } catch (\Throwable $e) {
+            BotGalat::catat($e, 'aksi_tulis');
+            // Efek bisnis sudah terjadi (mis. galat saat menampilkan hasil setelah commit): catat hasil sebenarnya dan
+            // jangan menyuruh mencoba lagi secara buta (kirim rekap/notifikasi perjalanan tidak dapat ditarik).
+            $berefek = in_array($hasil, BotAksiTulisService::HASIL_BEREFEK, true);
+            $this->aksi->selesai($aksi, $berefek ? $hasil : 'gagal');
+
+            if (! $dijawab) {
+                $this->jawab($id);
+            }
+
+            $this->kirim($chatId, new BotLayar($berefek ? BotAksiTulisService::PESAN_SUDAH_DIPROSES : 'Terjadi kesalahan. Ketik /menu untuk memulai lagi.', null, false));
+            $this->catat($aksi, $user, $berefek ? $hasil : 'gagal');
         }
     }
 
