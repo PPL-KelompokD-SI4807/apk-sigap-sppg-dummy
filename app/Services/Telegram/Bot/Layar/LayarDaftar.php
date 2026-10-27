@@ -5,6 +5,7 @@ namespace App\Services\Telegram\Bot\Layar;
 use App\Models\User;
 use App\Services\Telegram\Bot\BotLayar;
 use App\Services\Telegram\Bot\BotLayarService;
+use Closure;
 
 /**
  * Layar daftar generik (R02-B1) dari satu atau lebih SeksiDaftar: tiap seksi = satu tool baca katalog lewat
@@ -16,6 +17,8 @@ final class LayarDaftar extends LayarModulDasar
 {
     /**
      * @param  list<SeksiDaftar>  $seksi
+     * @param  (Closure(User, int, KonteksLayar, list<array<string, mixed>>): list<list<array<string, mixed>>>)|null  $aksi
+     *                                                                                                                       tombol aksi tulis (PR-3) dari baris seksi PERTAMA yang sedang ditampilkan; pembangun wajib memeriksa hak sendiri
      */
     public function __construct(
         private readonly BotLayarService $layanan,
@@ -24,6 +27,7 @@ final class LayarDaftar extends LayarModulDasar
         private readonly string $judul,
         private readonly array $seksi,
         private readonly ?string $rute = null,
+        private readonly ?Closure $aksi = null,
     ) {}
 
     public function id(): string
@@ -70,6 +74,7 @@ final class LayarDaftar extends LayarModulDasar
         $halaman = $berhalaman ? $konteks->halaman : 0;
         $isi = [];
         $adaLagi = false;
+        $barisPertama = null;
 
         foreach ($this->seksi as $seksi) {
             $hasil = $this->layanan->daftar($user, $seksi->sumber, $seksi->argumenUntuk($user), $seksi->kolom, $halaman);
@@ -77,6 +82,8 @@ final class LayarDaftar extends LayarModulDasar
             if ($hasil === null) {
                 continue;
             }
+
+            $barisPertama ??= $hasil['baris'];
 
             if (! $berhalaman) {
                 $isi[] = "\n<b>".self::e($seksi->judul).'</b>';
@@ -101,6 +108,10 @@ final class LayarDaftar extends LayarModulDasar
             $isi[] = 'Tidak ada data yang dapat ditampilkan untuk peran Anda.';
         }
 
-        return $this->susun($user, $sppgId, $konteks, $isi, $berhalaman, $berhalaman && $adaLagi);
+        $tombol = $this->aksi === null || $sppgId === null || $barisPertama === null || $barisPertama === []
+            ? []
+            : ($this->aksi)($user, $sppgId, $konteks, $barisPertama);
+
+        return $this->susun($user, $sppgId, $konteks, $isi, $berhalaman, $berhalaman && $adaLagi, $tombol);
     }
 }

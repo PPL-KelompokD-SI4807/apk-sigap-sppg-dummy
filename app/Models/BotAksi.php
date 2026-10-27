@@ -33,9 +33,30 @@ class BotAksi extends Model
 
     public const JENIS_TOLAK = 'tolak';
 
+    // R-02 PR-3 (aksi tulis berkonfirmasi dua langkah): tombol aksi -> layar konfirmasi -> token "Ya" sekali pakai.
+    public const JENIS_KIRIM_ULANG_REKAP = 'kirim_ulang_rekap';
+
+    public const JENIS_PICU_PERJALANAN = 'picu_perjalanan';
+
+    public const JENIS_TINDAK_KELUHAN = 'tindak_keluhan';
+
+    public const JENIS_YA_KIRIM_ULANG_REKAP = 'ya_kirim_ulang_rekap';
+
+    public const JENIS_YA_PICU_PERJALANAN = 'ya_picu_perjalanan';
+
+    public const JENIS_YA_TINDAK_KELUHAN = 'ya_tindak_keluhan';
+
+    public const JENIS_BATAL_AKSI = 'batal_aksi';
+
     public const SUBJEK_MENU = 'pengajuan_menu';
 
     public const SUBJEK_PENGELUARAN = 'pengeluaran';
+
+    public const SUBJEK_REKAP = 'rekap_harian';
+
+    public const SUBJEK_JADWAL_DISTRIBUSI = 'jadwal_distribusi';
+
+    public const SUBJEK_KELUHAN = 'keluhan';
 
     public const STATUS_AKTIF = 'aktif';
 

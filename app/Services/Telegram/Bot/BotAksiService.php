@@ -54,16 +54,22 @@ class BotAksiService
     }
 
     /**
-     * Pakai ulang token aktif tanpa grup/subjek milik (user, chat, jenis, SPPG) yang masih punya >= separuh umur,
-     * bila tidak ada terbitkan baru. Dipakai tombol yang dirender ulang berkali-kali (beranda/Segarkan) agar render
-     * berulang tidak menumpuk baris bot_aksi. Token tetap sekali pakai dan semua pemeriksaan klik berlaku seperti biasa.
+     * Pakai ulang token aktif tanpa grup milik (user, chat, jenis, SPPG, subjek + versi yang dilihat) yang masih punya
+     * >= separuh umur, bila tidak ada terbitkan baru. Dipakai tombol yang dirender ulang berkali-kali (beranda/Segarkan,
+     * tombol aksi tulis pada layar baca) agar render berulang tidak menumpuk baris bot_aksi. Subjek/versi harus SAMA
+     * persis (versi berubah = token baru). Token tetap sekali pakai dan semua pemeriksaan klik berlaku seperti biasa.
      *
-     * @param  array{sppg_id?: int|null}  $opsi
+     * @param  array{sppg_id?: int|null, subjek_tipe?: string|null, subjek_id?: int|null, subjek_versi?: int|null}  $opsi
      */
     public function terbitAtauPakai(User $user, int $chatId, string $jenis, array $opsi = []): BotAksi
     {
         $sppgId = $opsi['sppg_id'] ?? null;
         $sisaMin = now()->addSeconds(max(30, (int) config('telegram.callback_ttl_menit', 10) * 30));
+        $cocok = function ($q, string $kolom) use ($opsi) {
+            $nilai = $opsi[$kolom] ?? null;
+
+            return $nilai === null ? $q->whereNull($kolom) : $q->where($kolom, $nilai);
+        };
 
         $ada = BotAksi::query()
             ->where('user_id', $user->getKey())
@@ -72,7 +78,9 @@ class BotAksiService
             ->where('jenis', $jenis)
             ->where('status', BotAksi::STATUS_AKTIF)
             ->whereNull('grup')
-            ->whereNull('subjek_tipe')
+            ->where(fn ($q) => $cocok($q, 'subjek_tipe'))
+            ->where(fn ($q) => $cocok($q, 'subjek_id'))
+            ->where(fn ($q) => $cocok($q, 'subjek_versi'))
             ->when($sppgId === null, fn ($q) => $q->whereNull('sppg_id'), fn ($q) => $q->where('sppg_id', $sppgId))
             ->where('expires_at', '>', $sisaMin)
             ->latest('id')
@@ -205,6 +213,15 @@ class BotAksiService
         BotAksi::query()
             ->where('grup', $aksi->grup)
             ->whereKeyNot($aksi->getKey())
+            ->where('status', BotAksi::STATUS_AKTIF)
+            ->update(['status' => BotAksi::STATUS_KEDALUWARSA]);
+    }
+
+    /** Token ini dan saudara satu layar (grup) yang masih aktif menjadi kedaluwarsa (mis. klik ditolak hak). */
+    public function kedaluwarsakan(BotAksi $aksi): void
+    {
+        BotAksi::query()
+            ->where(fn ($q) => $aksi->grup === null ? $q->whereKey($aksi->getKey()) : $q->whereKey($aksi->getKey())->orWhere('grup', $aksi->grup))
             ->where('status', BotAksi::STATUS_AKTIF)
             ->update(['status' => BotAksi::STATUS_KEDALUWARSA]);
     }

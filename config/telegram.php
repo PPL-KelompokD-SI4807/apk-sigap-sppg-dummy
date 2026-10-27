@@ -77,4 +77,10 @@ return [
     */
     'layar_berat_jeda_detik' => (int) env('TELEGRAM_LAYAR_BERAT_JEDA_DETIK', 3),
 
+    /*
+    | Aksi tulis berkonfirmasi lewat bot (R-02 PR-3): kirim ulang rekap dibatasi satu kali per rekap per jeda ini
+    | (menit, lintas pengguna). Hanya jalur bot; REST POST /rekap-harian/{id}/kirim-ulang tidak berubah.
+    */
+    'kirim_ulang_rekap_jeda_menit' => 5,
+
 ];

@@ -4,6 +4,7 @@ namespace App\Services\Telegram\Bot\Layar;
 
 use App\Enums\Role;
 use App\Models\User;
+use App\Services\Telegram\Bot\BotAksiTulisService;
 use App\Services\Telegram\Bot\BotLayarService;
 
 /**
@@ -58,11 +59,12 @@ final class DefinisiLayar
             ], '/armada'),
 
             // Keluhan terbuka (deskripsi sudah tersamar + terpotong oleh RecordPresenter; di chat dipotong lagi).
-            $daftar('kl', 'keluhan', 'Keluhan Terbuka', [
-                new SeksiDaftar('keluhan', 'Keluhan', ['kategori', 'prioritas', 'status', 'titik_layanan', 'deskripsi', 'created_at'],
-                    fn (array $b) => sprintf("[%s] %s - %s (%s, %s)\n  %s", strtoupper((string) ($b['prioritas'] ?? '-')), $f::label($b['kategori'] ?? null), $f::nama($b['titik_layanan'] ?? null), $f::label($b['status'] ?? null), $f::tanggal($b['created_at'] ?? null), $f::teks($b['deskripsi'] ?? null, 100)),
+            // PR-3: tombol "Proses keluhan #id" (baru -> diproses, berkonfirmasi) hanya untuk peran berhak (BotAksiTulisService).
+            new LayarDaftar($layanan, 'kl', 'keluhan', 'Keluhan Terbuka', [
+                new SeksiDaftar('keluhan', 'Keluhan', ['id', 'kategori', 'prioritas', 'status', 'titik_layanan', 'deskripsi', 'created_at'],
+                    fn (array $b) => sprintf("#%s [%s] %s - %s (%s, %s)\n  %s", $f::angka($b['id'] ?? null), strtoupper((string) ($b['prioritas'] ?? '-')), $f::label($b['kategori'] ?? null), $f::nama($b['titik_layanan'] ?? null), $f::label($b['status'] ?? null), $f::tanggal($b['created_at'] ?? null), $f::teks($b['deskripsi'] ?? null, 100)),
                     ['terbuka' => true], 'Tidak ada keluhan terbuka.'),
-            ], '/keluhan'),
+            ], '/keluhan', fn (User $u, int $sppg, KonteksLayar $k, array $baris): array => app(BotAksiTulisService::class)->tombolKeluhan($u, $sppg, $k, $baris)),
 
             // Stok bahan baku.
             $daftar('st', 'bahan-baku', 'Stok Bahan Baku', [
@@ -151,6 +153,9 @@ final class DefinisiLayar
             app(LayarTim::class),
             app(LayarProfil::class),
             app(LayarPengajuanMenu::class),
+            app(LayarMulaiPerjalanan::class),
+            // Petunjuk alur draf (R-02 PR-3 C2): bot tidak menulis; konfirmasi draf di Mini App.
+            ...array_map(fn (string $kode): LayarAlurDraf => new LayarAlurDraf($kode), LayarAlurDraf::semuaId()),
         ];
     }
 
