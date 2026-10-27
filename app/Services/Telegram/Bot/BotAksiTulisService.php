@@ -99,7 +99,7 @@ class BotAksiTulisService
         ],
         BotAksi::JENIS_TINDAK_KELUHAN => [
             'ya' => BotAksi::JENIS_YA_TINDAK_KELUHAN, 'subjek' => BotAksi::SUBJEK_KELUHAN,
-            'peran' => [Role::KepalaSppg], 'modul' => 'keluhan', 'huruf' => 'U', 'layar' => 'kl',
+            'peran' => [Role::KepalaSppg, Role::AhliGizi], 'modul' => 'keluhan', 'huruf' => 'U', 'layar' => 'kl',
         ],
     ];
 

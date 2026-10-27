@@ -43,5 +43,29 @@
         <env name="TELEGRAM_DEV_BYPASS" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Agen AI/LLM/STT: netral agar tes tidak bergantung .env lokal (tes yang butuh penyedia mengatur config sendiri). -->
+        <env name="LLM_PROVIDER" value="" force="true"/>
+        <env name="LLM_BASE_URL" value="" force="true"/>
+        <env name="LLM_API_KEY" value="" force="true"/>
+        <env name="LLM_MODEL" value="" force="true"/>
+        <env name="LLM_VISION_MODEL" value="" force="true"/>
+        <env name="LLM_MAX_TOKENS" value="1024" force="true"/>
+        <env name="LLM_TIMEOUT" value="20" force="true"/>
+        <env name="STT_DRIVER" value="" force="true"/>
+        <env name="STT_URL" value="" force="true"/>
+        <env name="STT_API_KEY" value="" force="true"/>
+        <env name="STT_MODEL" value="whisper-1" force="true"/>
+        <env name="STT_TIMEOUT" value="20" force="true"/>
+        <env name="AI_MAX_ITERATIONS" value="4" force="true"/>
+        <env name="AI_RATE_PER_MINUTE" value="20" force="true"/>
+        <env name="AI_RATE_PER_HOUR" value="30" force="true"/>
+        <env name="AI_TOKEN_PER_MINUTE" value="0" force="true"/>
+        <env name="AI_TOKEN_PER_DAY" value="0" force="true"/>
+        <env name="AI_TOOL_SELECTION" value="auto" force="true"/>
+        <env name="AI_TOOL_TOKEN_THRESHOLD" value="2500" force="true"/>
+        <env name="AI_TOOL_MAX" value="10" force="true"/>
+        <env name="AI_TOOL_MAX_TOKENS" value="2500" force="true"/>
+        <env name="AI_DRAFT_TTL_MINUTES" value="30" force="true"/>
+        <env name="AI_DRAFT_MAX_PENDING" value="10" force="true"/>
     </php>
 </phpunit>

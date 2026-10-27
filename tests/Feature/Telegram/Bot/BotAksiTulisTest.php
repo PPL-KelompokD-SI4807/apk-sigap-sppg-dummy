@@ -420,6 +420,115 @@ class BotAksiTulisTest extends AksiTulisTestCase
         $this->assertTanpaBocor();
     }
 
+    // ------------------------------------------------------------------ keluhan: ahli gizi (hak U keluhan dari rbac.php)
+
+    public function test_ahli_gizi_proses_keluhan_dua_langkah_sampai_hasil_dengan_audit(): void
+    {
+        $k = $this->keluhan($this->sppgA);
+        $this->keluhan($this->sppgA, 'selesai');
+        $this->sesiPenuh($this->ahliGiziA);
+
+        $this->buka($this->ahliGiziA, 'kl');
+        $label = array_column($this->tombolLayar((int) $this->ahliGiziA->telegram_id), 'text');
+        $this->assertSame(['Proses keluhan #'.$k->id], array_values(array_filter($label, fn ($t) => str_starts_with($t, 'Proses keluhan'))), 'Hanya keluhan berstatus baru');
+
+        $this->keKonfirmasi($this->ahliGiziA, 'kl', 'Proses keluhan #'.$k->id);
+        $this->assertStringContainsString('Status: Baru -&gt; Diproses', $this->teksLayar($this->ahliGiziA));
+        $this->assertSame('baru', $this->keluhanRaw($k->id)->status->value, 'Konfirmasi belum mengubah data');
+
+        $this->tekan($this->ahliGiziA, $this->ya($this->ahliGiziA));
+
+        $segar = $this->keluhanRaw($k->id);
+        $this->assertSame('diproses', $segar->status->value);
+        $this->assertSame((int) $this->ahliGiziA->id, (int) $segar->ditangani_oleh);
+        $this->assertNull($segar->tindak_lanjut);
+        $this->assertStringContainsString('kini Diproses', $this->teksLayar($this->ahliGiziA));
+
+        $audit = AuditLog::query()->withoutGlobalScopes()->where('event', 'bot_tindak_keluhan')->sole();
+        $this->assertSame((int) $this->ahliGiziA->id, (int) $audit->user_id);
+        $this->assertSame('bot', $audit->sumber);
+        $this->assertTanpaBocor();
+    }
+
+    public function test_tombol_keluhan_ahli_gizi_hilang_bila_hak_u_dicabut_lewat_config(): void
+    {
+        $this->keluhan($this->sppgA);
+        $this->sesiPenuh($this->ahliGiziA);
+
+        $this->buka($this->ahliGiziA, 'kl');
+        $this->assertTrue($this->adaTombol($this->ahliGiziA, 'Proses keluhan'));
+
+        config(['rbac.modules.keluhan.ahli_gizi' => 'R']);
+        $this->assertNotNull($this->buka($this->ahliGiziA, 'kl'));
+        $this->assertFalse($this->adaTombol($this->ahliGiziA, 'Proses keluhan'));
+    }
+
+    public function test_hak_u_ahli_gizi_dicabut_antara_render_dan_klik_ditolak_tanpa_efek(): void
+    {
+        $k = $this->keluhan($this->sppgA);
+        $this->sesiPenuh($this->ahliGiziA);
+        $this->keKonfirmasi($this->ahliGiziA, 'kl', 'Proses keluhan');
+        $ya = $this->ya($this->ahliGiziA);
+
+        config(['rbac.modules.keluhan.ahli_gizi' => 'R']);
+        $this->tekan($this->ahliGiziA, $ya);
+
+        $this->assertSame(BotCallbackHandler::TIDAK_BERHAK, $this->jawabanTerakhir());
+        $this->assertSame('baru', $this->keluhanRaw($k->id)->status->value);
+        $this->assertSame(0, AuditLog::query()->withoutGlobalScopes()->where('event', 'bot_tindak_keluhan')->count());
+    }
+
+    public function test_ahli_gizi_berubah_peran_atau_nonaktif_antara_render_dan_klik_ditolak(): void
+    {
+        $k = $this->keluhan($this->sppgA);
+        $this->sesiPenuh($this->ahliGiziA);
+        $this->buka($this->ahliGiziA, 'kl');
+        $aksi = $this->dataTombol($this->ahliGiziA, 'Proses keluhan');
+
+        DB::table('users')->where('id', $this->ahliGiziA->id)->update(['role' => Role::StafGudang->value]);
+        $this->tekan($this->ahliGiziA, $aksi);
+        $this->assertSame(BotCallbackHandler::TIDAK_BERHAK, $this->jawabanTerakhir());
+
+        DB::table('users')->where('id', $this->ahliGiziA->id)->update(['role' => Role::AhliGizi->value, 'is_active' => false]);
+        $this->tekan($this->ahliGiziA, $aksi);
+        $this->assertSame(BotCallbackHandler::TIDAK_BERLAKU, $this->jawabanTerakhir());
+        $this->assertSame('baru', $this->keluhanRaw($k->id)->status->value);
+    }
+
+    public function test_ahli_gizi_tidak_dapat_memproses_keluhan_sppg_lain(): void
+    {
+        $milikB = $this->keluhan($this->sppgB);
+        $this->keluhan($this->sppgA);
+        $this->sesiPenuh($this->ahliGiziA);
+
+        // Layar baca hanya menawarkan keluhan SPPG sendiri.
+        $this->buka($this->ahliGiziA, 'kl');
+        $this->assertSame(1, count(array_filter(array_column($this->tombolLayar((int) $this->ahliGiziA->telegram_id), 'text'), fn ($t) => str_starts_with($t, 'Proses keluhan'))));
+
+        // Token buatan: subjek SPPG lain dengan sppg_id token milik A, atau sppg_id token SPPG lain.
+        foreach ([$this->sppgA, $this->sppgB] as $sppgToken) {
+            foreach ([BotAksi::JENIS_TINDAK_KELUHAN, BotAksi::JENIS_YA_TINDAK_KELUHAN] as $jenis) {
+                $this->tekan($this->ahliGiziA, $this->token($this->ahliGiziA, $jenis, $this->opsi($sppgToken, BotAksi::SUBJEK_KELUHAN, $milikB->id)));
+                $this->assertSame(BotCallbackHandler::TIDAK_BERHAK, $this->jawabanTerakhir(), "{$jenis}/{$sppgToken}");
+            }
+        }
+
+        $this->assertSame('baru', $this->keluhanRaw($milikB->id)->status->value);
+    }
+
+    public function test_admin_dan_investor_tetap_tanpa_tombol_proses_keluhan(): void
+    {
+        $this->keluhan($this->sppgA);
+
+        foreach ([$this->admin, $this->investorAB] as $u) {
+            $this->sesiPenuh($u);
+            $this->buka($u, 'kl', $this->sppgA);
+            $this->assertFalse($this->adaTombol($u, 'Proses keluhan'), $u->role->value);
+        }
+
+        $this->assertSame(0, BotAksi::query()->whereIn('jenis', [BotAksi::JENIS_TINDAK_KELUHAN])->count());
+    }
+
     public function test_batal_tidak_mengubah_data_dan_mematikan_tombol_ya(): void
     {
         $k = $this->keluhan($this->sppgA);
