@@ -2,12 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Telegram\Bot\BotLayarRegistry;
 use App\Services\Telegram\TelegramApiException;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Console\Command;
 
 /**
- * Daftarkan webhook bot (setWebhook + secret_token + allowed_updates) dan tombol menu Mini App.
+ * Daftarkan webhook bot (setWebhook + secret_token + allowed_updates), daftar perintah global (setMyCommands),
+ * dan tombol menu bertipe commands (R-02).
  * Tidak pernah mencetak token bot maupun secret webhook. Lihat docs/api/telegram-bot.md.
  */
 class TelegramSetWebhook extends Command
@@ -17,9 +19,9 @@ class TelegramSetWebhook extends Command
         {--drop-pending : Buang pembaruan yang menunggu}
         {--delete : Hapus webhook (kembali ke mode tanpa webhook)}
         {--info : Tampilkan status webhook saat ini}
-        {--no-menu : Jangan mengatur tombol menu Mini App}';
+        {--no-menu : Jangan mengatur daftar perintah dan tombol menu}';
 
-    protected $description = 'Daftarkan webhook Telegram (secret_token) dan tombol menu web_app Mini App SiGAP SPPG.';
+    protected $description = 'Daftarkan webhook Telegram (secret_token), daftar perintah bot, dan tombol menu bertipe commands.';
 
     public function handle(TelegramBotService $bot): int
     {
@@ -66,14 +68,10 @@ class TelegramSetWebhook extends Command
             $this->info("Webhook terdaftar: {$url}");
 
             if (! $this->option('no-menu')) {
-                $miniApp = $bot->miniAppUrl();
-
-                if (str_starts_with(strtolower($miniApp), 'https://')) {
-                    $bot->setChatMenuButton('Buka SiGAP', $miniApp);
-                    $this->info("Tombol menu Mini App: {$miniApp}");
-                } else {
-                    $this->warn('TELEGRAM_MINIAPP_URL bukan HTTPS; tombol menu tidak diatur.');
-                }
+                // R-02 keputusan #3: tombol Menu Telegram = daftar perintah; Mini App lewat /start dan "Buka Mini App".
+                $bot->setMyCommands(BotLayarRegistry::DESKRIPSI_PERINTAH);
+                $bot->setChatMenuButtonCommands();
+                $this->info('Daftar perintah bot dan tombol menu (commands) diatur. Mini App dibuka lewat /start.');
             }
         } catch (TelegramApiException $e) {
             $this->error($e->getMessage());
