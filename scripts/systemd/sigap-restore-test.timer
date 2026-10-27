@@ -1,0 +1,10 @@
+# SiGAP SPPG - uji pemulihan tiap Minggu 04:00 WIB (setelah cadangan 02:30, di luar jam operasional).
+[Unit]
+Description=SiGAP SPPG - jadwal uji pemulihan mingguan
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 Asia/Jakarta
+Persistent=true
+
+[Install]
+WantedBy=timers.target
