@@ -59,3 +59,7 @@ Properti publik event dibaca berdasarkan nama (camelCase, dengan cadangan snake_
 | Anggaran* | sppgId, periode, anggaran, terpakai, sisa, persen |
 | PengeluaranDiajukan | id (pengeluaran), sppgId, versi, kategori, nominal, tanggal, periode, anggaran, terpakai |
 | BuktiDistribusiBelumMasuk (diharapkan) | sppgId, jadwalDistribusiId, titikLayananId, titikLayananNama, jamRencanaTiba ("HH:MM[:SS]" atau ISO), menitSejakRencana |
+
+## Tombol aksi di bot (R-02)
+
+Notifikasi tetap hanya membawa tombol web_app. Menu per peran, `callback_query` (keputusan investor), dan balasan alasan penolakan didokumentasikan di `docs/api/bot-menu.md`.
