@@ -304,7 +304,12 @@ class TelegramBotService
         $description = is_array($json) && is_string($json['description'] ?? null) ? mb_substr($json['description'], 0, 200) : 'tanpa keterangan';
         $retryAfter = is_array($json) && isset($json['parameters']['retry_after']) ? (int) $json['parameters']['retry_after'] : null;
 
-        throw new TelegramApiException("Bot API {$method} gagal ({$code}): ".$this->redact($description), $code, $retryAfter);
+        // Deskripsi galat Telegram bersifat tetap (bukan isi pesan pengguna); hanya dipakai untuk menentukan jenis.
+        $jenis = $code === 400 && stripos($description, 'message is not modified') !== false
+            ? TelegramApiException::JENIS_TIDAK_BERUBAH
+            : null;
+
+        throw new TelegramApiException("Bot API {$method} gagal ({$code}): ".$this->redact($description), $code, $retryAfter, $jenis);
     }
 
     private function http(): PendingRequest

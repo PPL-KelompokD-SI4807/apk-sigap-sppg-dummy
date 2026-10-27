@@ -311,7 +311,11 @@ class BotCallbackHandler
         }
     }
 
-    /** Ubah pesan asal bila ada; bila gagal (terlalu lama/tidak berubah) kirim pesan baru. */
+    /**
+     * Ubah pesan asal bila ada. "message is not modified" (isi identik, mis. Segarkan tanpa perubahan) diabaikan:
+     * callback sudah dijawab, JANGAN kirim pesan baru. Galat edit lain (pesan terlalu lama/tidak ditemukan) -> pesan baru.
+     * Log hanya memuat kode galat, tidak pernah isi layar.
+     */
     private function tampilkan(int $chatId, ?int $messageId, BotLayar $layar): void
     {
         if ($messageId !== null) {
@@ -323,6 +327,12 @@ class BotCallbackHandler
 
                 return;
             } catch (TelegramApiException $e) {
+                if ($e->isMessageNotModified()) {
+                    Log::info('bot.edit_tidak_berubah', ['kode' => $e->errorCode]);
+
+                    return;
+                }
+
                 Log::warning('bot.edit_gagal', ['kode' => $e->errorCode]);
             }
         }
@@ -345,7 +355,7 @@ class BotCallbackHandler
     /** @return array{inline_keyboard: list<list<array<string, mixed>>>}|null */
     private function bukaAplikasi(): ?array
     {
-        return TelegramBotService::inlineKeyboard([TelegramBotService::webAppButton('Buka SiGAP', $this->bot->miniAppUrl())]);
+        return TelegramBotService::inlineKeyboard([TelegramBotService::webAppButton(TelegramUpdateHandler::LABEL_MASUK, $this->bot->miniAppUrl())]);
     }
 
     /** Log aman: jenis, hasil, user_id, subjek, chat id ter-hash. TANPA catatan, nama, atau data pribadi. */
