@@ -9,6 +9,7 @@ use App\Services\Telegram\Bot\BotLayarRegistry;
 use App\Services\Telegram\Bot\BotNavCodec;
 use App\Services\Telegram\Bot\BotNavigasi;
 use App\Services\Telegram\Bot\Layar\KonteksLayar;
+use App\Services\Telegram\Bot\Layar\LayarAksi;
 use App\Services\Telegram\TelegramUpdateHandler;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -216,7 +217,8 @@ class BotTinjauanE1Test extends LayarBacaTestCase
         $this->assertStringContainsString('Ringkasan hari ini', $beranda->layar->teks);
 
         foreach ($this->idLayarData() as $id) {
-            $this->assertTrue($nav->buka($this->admin, $id, $this->sppgA, $konteks)->berhasil(), "admin/{$id}");
+            // mp (Mulai Perjalanan, PR-3) ditolak untuk admin: tetap tanpa efek samping.
+            $this->assertSame(! (app(BotLayarRegistry::class)->cari($id) instanceof LayarAksi), $nav->buka($this->admin, $id, $this->sppgA, $konteks)->berhasil(), "admin/{$id}");
         }
 
         Queue::assertNothingPushed();

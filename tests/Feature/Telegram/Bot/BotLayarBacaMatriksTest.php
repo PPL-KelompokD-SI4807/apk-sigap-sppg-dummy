@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 class BotLayarBacaMatriksTest extends LayarBacaTestCase
 {
-    private const SEMUA = ['jd', 'ds', 'ar', 'rk', 'kl', 'ku', 'pc', 'pk', 'ag', 'st', 'sm', 'kd', 'mt', 'lg', 'tl', 'tm', 'np', 'mg', 'mh', 'pn', 'pe', 'pb', 'pj', 'pf'];
+    private const SEMUA = ['jd', 'ds', 'ar', 'rk', 'kl', 'ku', 'pc', 'pk', 'ag', 'st', 'sm', 'kd', 'mt', 'lg', 'tl', 'tm', 'np', 'mg', 'mh', 'pn', 'pe', 'pb', 'pj', 'pf', 'mp', 'dpk', 'dpc', 'dms', 'dkl'];
 
     /** @return array<string, list<string>> peran => id layar yang boleh dibuka (dari rbac.php) */
     private static function boleh(): array
@@ -24,14 +24,16 @@ class BotLayarBacaMatriksTest extends LayarBacaTestCase
         $tanpa = fn (array $buang): array => array_values(array_diff(self::SEMUA, $buang));
 
         return [
-            'admin' => self::SEMUA,
-            'kepalaA' => self::SEMUA,
-            'ahliGiziA' => $tanpa(['tm', 'np', 'ar', 'ku', 'pc', 'pk', 'ag', 'pb']),
-            'akuntanA' => $tanpa(['tm', 'np', 'pn', 'mg', 'mh', 'jd', 'mt', 'kl', 'pj']),
-            'stafGudangA' => $tanpa(['tm', 'np', 'pn', 'mt', 'ar', 'ds', 'ku', 'pc', 'pk', 'ag', 'kl', 'rk', 'pj']),
-            'relawanA' => ['jd', 'lg', 'mg', 'mh', 'mt', 'ar', 'tl', 'kl', 'pf'],
-            'relawanDistribusi' => ['jd', 'ds', 'np', 'mg', 'mh', 'mt', 'ar', 'tl', 'kl', 'pf'],
-            'relawanTanpaUnit' => ['mg', 'mh', 'mt', 'ar', 'tl', 'kl', 'pf'],
+            // mp (Mulai Perjalanan, PR-3) butuh notifikasi-perjalanan C + Policy create: admin (R) ditolak.
+            // dpk/dpc/dms/dkl (petunjuk alur draf, C2): hanya akuntan (dpk, dpc), staf gudang (dms), relawan (dkl).
+            'admin' => $tanpa(['mp', 'dpk', 'dpc', 'dms', 'dkl']),
+            'kepalaA' => $tanpa(['dpk', 'dpc', 'dms', 'dkl']),
+            'ahliGiziA' => $tanpa(['mp', 'dpk', 'dpc', 'dms', 'dkl', 'tm', 'np', 'ar', 'ku', 'pc', 'pk', 'ag', 'pb']),
+            'akuntanA' => $tanpa(['mp', 'dms', 'dkl', 'tm', 'np', 'pn', 'mg', 'mh', 'jd', 'mt', 'kl', 'pj']),
+            'stafGudangA' => $tanpa(['mp', 'dpk', 'dpc', 'dkl', 'tm', 'np', 'pn', 'mt', 'ar', 'ds', 'ku', 'pc', 'pk', 'ag', 'kl', 'rk', 'pj']),
+            'relawanA' => ['jd', 'lg', 'mg', 'mh', 'mt', 'ar', 'tl', 'kl', 'pf', 'dkl'],
+            'relawanDistribusi' => ['jd', 'ds', 'np', 'mp', 'mg', 'mh', 'mt', 'ar', 'tl', 'kl', 'pf', 'dkl'],
+            'relawanTanpaUnit' => ['mg', 'mh', 'mt', 'ar', 'tl', 'kl', 'pf', 'dkl'],
             'investorAB' => ['st', 'sm', 'kd', 'mt', 'ku', 'pc', 'pk', 'ag', 'kl', 'rk', 'pj', 'pn', 'pf'],
             'investorC' => ['st', 'sm', 'kd', 'mt', 'ku', 'pc', 'pk', 'ag', 'kl', 'rk', 'pj', 'pn', 'pf'],
         ];

@@ -118,16 +118,16 @@ class BotMenuTest extends BotTestCase
     public function test_matriks_beranda_per_peran_sesuai_rbac(): void
     {
         $this->assertSame(
-            ['Jadwal', 'Distribusi', 'Armada', 'Rekap Harian', 'Keluhan', 'Keuangan', 'Stok', 'Mutu', 'Log Produksi', 'Titik Layanan', 'Tim', 'Notifikasi Perjalanan'],
+            ['Jadwal', 'Distribusi', 'Armada', 'Rekap Harian', 'Keluhan', 'Keuangan', 'Stok', 'Mutu', 'Log Produksi', 'Titik Layanan', 'Tim', 'Notifikasi Perjalanan', 'Mulai Perjalanan'],
             $this->berandaUntuk($this->kepalaA),
         );
         $this->assertSame(
             ['Menu dan Gizi', 'Persetujuan Menu', 'Mutu', 'Jadwal', 'Keluhan', 'Rekap', 'Stok', 'Penerima Manfaat', 'Log Produksi'],
             $this->berandaUntuk($this->ahliGiziA),
         );
-        $this->assertSame(['Pencairan', 'Pengeluaran', 'Anggaran', 'Stok', 'Pemasok', 'Pembelian Bahan', 'Armada', 'Rekap'], $this->berandaUntuk($this->akuntanA));
+        $this->assertSame(['Pencairan', 'Pengeluaran', 'Anggaran', 'Stok', 'Pemasok', 'Pembelian Bahan', 'Armada', 'Rekap', 'Catat pengeluaran', 'Catat pencairan'], $this->berandaUntuk($this->akuntanA));
         $this->assertSame(
-            ['Stok', 'Stok Menipis', 'Kedaluwarsa', 'Pemasok', 'Pembelian Bahan', 'Menu', 'Jadwal', 'Log Produksi'],
+            ['Stok', 'Stok Menipis', 'Kedaluwarsa', 'Pemasok', 'Pembelian Bahan', 'Menu', 'Jadwal', 'Log Produksi', 'Catat mutasi stok'],
             $this->berandaUntuk($this->stafGudangA),
         );
         $this->assertSame(['Menunggu keputusan', 'Rekap', 'Anggaran', 'Persetujuan Menu'], $this->berandaUntuk($this->investorC));
@@ -135,9 +135,9 @@ class BotMenuTest extends BotTestCase
 
     public function test_matriks_beranda_relawan_per_unit(): void
     {
-        $this->assertSame(['Jadwal Produksi', 'Log Produksi', 'Menu Hari Ini', 'Mutu', 'Profil Saya'], $this->berandaUntuk($this->relawanA));
-        $this->assertSame(['Jadwal Distribusi', 'Bukti Distribusi', 'Armada', 'Menu Hari Ini', 'Profil Saya'], $this->berandaUntuk($this->relawanDistribusi()));
-        $this->assertSame(['Menu Hari Ini', 'Mutu', 'Armada', 'Profil Saya'], $this->berandaUntuk($this->relawanTanpaUnit()));
+        $this->assertSame(['Jadwal Produksi', 'Log Produksi', 'Menu Hari Ini', 'Mutu', 'Buat Keluhan', 'Profil Saya'], $this->berandaUntuk($this->relawanA));
+        $this->assertSame(['Jadwal Distribusi', 'Bukti Distribusi', 'Mulai Perjalanan', 'Armada', 'Menu Hari Ini', 'Buat Keluhan', 'Profil Saya'], $this->berandaUntuk($this->relawanDistribusi()));
+        $this->assertSame(['Menu Hari Ini', 'Mutu', 'Armada', 'Buat Keluhan', 'Profil Saya'], $this->berandaUntuk($this->relawanTanpaUnit()));
     }
 
     public function test_investor_banyak_sppg_pilih_dulu_baru_tombol_data_dan_admin_tanpa_tombol_tulis(): void

@@ -10,6 +10,7 @@ use App\Services\Ai\ActingUser;
 use App\Services\Ai\Catalog\RecordPresenter;
 use App\Services\Telegram\Bot\BotLayarRegistry;
 use App\Services\Telegram\Bot\BotLayarService;
+use App\Services\Telegram\Bot\Layar\LayarAksi;
 use App\Services\Telegram\Bot\Layar\LayarDaftar;
 use LogicException;
 
@@ -254,6 +255,13 @@ class BotLayarBacaTest extends LayarBacaTestCase
     public function test_admin_hanya_melihat_sppg_terpilih_tanpa_tombol_aksi(): void
     {
         foreach ($this->idLayarData() as $id) {
+            // Layar aksi Mulai Perjalanan (PR-3): admin tidak punya hak C, layar ditolak tanpa data dan tanpa token.
+            if (app(BotLayarRegistry::class)->cari($id) instanceof LayarAksi) {
+                $this->assertNull($this->buka($this->admin, $id, $this->sppgA), "admin tidak boleh membuka layar aksi {$id}");
+
+                continue;
+            }
+
             $a = $this->buka($this->admin, $id, $this->sppgA);
             $this->assertNotNull($a, "admin layar {$id}");
             $this->assertStringNotContainsString('Beta', $a, "admin/{$id}/A bocor SPPG B");
