@@ -119,6 +119,9 @@ class InvestorPrivasiTest extends InvestorTestCase
     public function test_sapaan_bot_investor_tidak_menyebut_semua_sppg(): void
     {
         $this->fakeTelegram();
+        // R-02 (A3): ringkasan peran/SPPG di sapaan hanya untuk pengguna dengan sesi login penuh.
+        $this->beriSesiPenuh($this->investorAB);
+        $this->beriSesiPenuh($this->admin);
         $this->webhook($this->privateUpdate((int) $this->investorAB->telegram_id, ['text' => '/start']))->assertOk();
 
         $teks = (string) $this->messagesTo((int) $this->investorAB->telegram_id)->sole()['text'];
