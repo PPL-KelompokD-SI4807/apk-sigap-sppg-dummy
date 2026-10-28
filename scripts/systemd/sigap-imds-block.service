@@ -1,0 +1,21 @@
+# SiGAP SPPG - blokir akses kontainer ber-jaringan bridge ke IMDS EC2 (169.254.169.254).
+# Kontainer aplikasi (bila diretas) tidak dapat mengambil kredensial instance profile. rclone cadangan berjalan
+# dengan --network host sehingga tidak terkena aturan ini. Aturan dipasang di rantai DOCKER-USER (dihormati Docker)
+# dan dipasang ulang setiap Docker mulai. Idempoten (-C sebelum -I).
+# Pasang: sudo cp scripts/systemd/sigap-imds-block.service /etc/systemd/system/
+#         sudo systemctl daemon-reload && sudo systemctl enable --now sigap-imds-block.service
+# Cek:    sudo iptables -S DOCKER-USER
+[Unit]
+Description=SiGAP SPPG - blokir IMDS dari kontainer Docker
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -d 169.254.169.254/32 -j DROP 2>/dev/null || iptables -I DOCKER-USER -d 169.254.169.254/32 -j DROP'
+ExecStop=/bin/sh -c 'iptables -D DOCKER-USER -d 169.254.169.254/32 -j DROP 2>/dev/null || true'
+
+[Install]
+WantedBy=docker.service

@@ -1,0 +1,26 @@
+# SiGAP SPPG - server HTTPS :443 (dirender HANYA bila /etc/letsencrypt/live/${DOMAIN}/ berisi sertifikat;
+# lihat docker/nginx/entrypoint/40-sigap-config.sh dan scripts/bootstrap-cert.sh).
+
+# SNI/Host tak dikenal: tolak jabat tangan TLS (tanpa sertifikat, tanpa membocorkan nama domain).
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name _;
+    ssl_reject_handshake on;
+    return 444;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/sigap-tls.conf;
+
+    access_log /var/log/nginx/access.log sigap;
+    limit_conn sigap_conn 40;
+
+    include /etc/nginx/snippets/sigap-app.conf;
+}

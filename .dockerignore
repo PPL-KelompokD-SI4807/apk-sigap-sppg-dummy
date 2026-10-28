@@ -1,23 +1,48 @@
+# Konteks build image SiGAP SPPG. Rahasia, cache lokal, dan data unggahan TIDAK boleh masuk image.
 .git
 .github
 .claude
+.deploy
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.age
+*.sql
+*.sql.gz
 node_modules
 vendor
+# Hasil build lokal (dibangun ulang di stage assets)
+public/miniapp
+public/hot
+public/build
+public/storage
+# Cache bootstrap lokal dapat memuat konfigurasi/rahasia pengembang
+bootstrap/cache/*.php
+# storage lokal: log, sesi, cache, view, unggahan
 storage/logs/*
 storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
-public/hot
-public/storage
+storage/framework/down
+storage/app/*
+storage/*.key
+storage/pail
 tests
+resources/miniapp/tests
 docs
+scripts
+docker-compose*.yml
 *.log
 *.md
 !README.md
+.phpunit.result.cache
+.phpunit.cache
 .idea
 .vscode
 .DS_Store
 database/*.sqlite
+auth.json
+*.tar.gz
+rclone.conf

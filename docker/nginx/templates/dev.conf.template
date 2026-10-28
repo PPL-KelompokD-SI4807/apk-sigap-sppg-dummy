@@ -1,0 +1,9 @@
+# SiGAP SPPG - mode pengembangan (DOMAIN kosong, mis. docker-compose.yml lokal): aplikasi di HTTP :80
+# tanpa TLS dan tanpa redirect. TIDAK dipakai docker-compose.prod.yml (DOMAIN wajib di sana).
+server {
+    listen 80 default_server;
+    server_name _;
+    access_log /var/log/nginx/access.log sigap;
+
+    include /etc/nginx/snippets/sigap-app.conf;
+}

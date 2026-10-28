@@ -1,0 +1,32 @@
+# SiGAP SPPG - cadangan harian (DB + storage/app, terenkripsi age, rclone).
+# Pasang: sudo cp scripts/systemd/sigap-*.{service,timer} /etc/systemd/system/
+#         sudo systemctl daemon-reload && sudo systemctl enable --now sigap-backup.timer
+# Sesuaikan User= dan jalur /opt/sigap/app bila repo berada di tempat lain. Log: journalctl -u sigap-backup
+[Unit]
+Description=SiGAP SPPG - cadangan harian terenkripsi
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+# Percobaan ulang terbatas: maks 3 kali dalam 3 jam.
+StartLimitIntervalSec=3h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/sigap/app
+ExecStart=/bin/bash /opt/sigap/app/scripts/backup.sh
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1h
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+Environment=NO_COLOR=1
+# Tunggu kunci operasi (deploy/backup/restore lain) hingga 30 menit, bukan langsung gagal.
+Environment=SIGAP_LOCK_WAIT=1800
+Restart=on-failure
+RestartSec=10min
