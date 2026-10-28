@@ -80,6 +80,6 @@ Sprint 1 = 26 Okt - 22 Nov 2026; Sprint 2 = 23 Nov - 20 Des 2026.
 | Agen | Wilayah |
 |---|---|
 | `project-manager` | `docs/plan/**`, `docs/decisions/**` |
-| `backend-dev` | `app/**`, `routes/**`, `database/**`, `config/**`, `tests/**`, `docs/api/openapi.yaml` |
+| `backend-dev` | `app/**`, `routes/**`, `database/**`, `config/**`, `tests/**`, `docs/api/openapi.yaml`; berkas deploy: `Dockerfile`, `docker/**`, `docker-compose*.yml`, `scripts/**` (kecuali `scripts/create-labels.sh` dan `scripts/create-issues.sh`), `docs/ops/**` |
 | `frontend-dev` | `resources/miniapp/**`, `resources/css/**`, `resources/js/**`, `vite.config.js` |
-| `github-ops` | `.github/**`, `CHANGELOG.md`, `scripts/**`, infra Docker, branch, PR, issue |
+| `github-ops` | `.github/**`, `CHANGELOG.md`, `scripts/create-labels.sh`, `scripts/create-issues.sh`, branch, PR, issue |

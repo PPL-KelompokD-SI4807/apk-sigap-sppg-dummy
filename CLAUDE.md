@@ -36,9 +36,9 @@ Sprint 2 = minggu 11–14 (23 Nov – 20 Des 2026, operasional + notifikasi + re
 | Agen | Wilayah file (hanya agen ini yang mengedit) |
 |---|---|
 | `project-manager` | `docs/plan/**`, `docs/decisions/**` (tidak menulis kode aplikasi) |
-| `backend-dev` | `app/**`, `routes/**`, `database/**`, `config/**`, `tests/**`, `docs/api/openapi.yaml` |
+| `backend-dev` | `app/**`, `routes/**`, `database/**`, `config/**`, `tests/**`, `docs/api/openapi.yaml`; berkas deploy: `Dockerfile`, `docker/**`, `docker-compose*.yml`, `scripts/**` (kecuali `scripts/create-labels.sh` dan `scripts/create-issues.sh`), `docs/ops/**`, `.dockerignore`, `.gitattributes` |
 | `frontend-dev` | `resources/miniapp/**`, `resources/css/**`, `resources/js/**`, `vite.config.js` |
-| `github-ops` | `.github/**`, `CHANGELOG.md`, branch, commit, PR, issue, label |
+| `github-ops` | `.github/**`, `CHANGELOG.md`, `scripts/create-labels.sh`, `scripts/create-issues.sh`, branch, commit, PR, issue, label |
 
 Dua agen tidak boleh mengedit file yang sama. Bila perlu perubahan di wilayah agen lain, kirim pesan (SendMessage) ke agen pemiliknya.
 
