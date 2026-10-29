@@ -36,6 +36,7 @@ final class LayarTanyaAi extends LayarBacaDasar
         'cari_titik_layanan' => 'Cari titik layanan SD',
         'catat_mutasi_stok' => 'Catat stok beras masuk 50 kg (menjadi draf)',
         'buat_pengeluaran' => 'Catat pengeluaran gas elpiji Rp 150.000 (menjadi draf)',
+        'ringkas_dashboard_saya' => 'Ringkas dashboard saya',
     ];
 
     public const MAKS_CONTOH = 3;

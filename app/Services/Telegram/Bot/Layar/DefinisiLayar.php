@@ -154,6 +154,7 @@ final class DefinisiLayar
             app(LayarProfil::class),
             app(LayarPengajuanMenu::class),
             app(LayarMulaiPerjalanan::class),
+            app(LayarDashboard::class),
             // Petunjuk alur draf (R-02 PR-3 C2): bot tidak menulis; konfirmasi draf di Mini App.
             ...array_map(fn (string $kode): LayarAlurDraf => new LayarAlurDraf($kode), LayarAlurDraf::semuaId()),
         ];
