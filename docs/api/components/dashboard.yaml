@@ -1,0 +1,731 @@
+schemas:
+  Dashboard:
+    type: object
+    required: [peran, profil, mode, rentang_hari, periode, dibuat_pada, cache_detik, sppg, sppg_pilihan, widgets]
+    description: |
+      Isi `data` GET /dashboard. `widgets` berbeda per peran (lihat deskripsi endpoint dan DashboardWidgets*).
+      Semua nominal rupiah bulat (integer); persen berupa angka 0-100 (dua desimal) atau `null` bila pembagi 0.
+    properties:
+      peran: { $ref: '#/components/schemas/Role' }
+      unit: { type: [string, 'null'], enum: [dapur, distribusi, null], description: 'Hanya relawan.' }
+      profil: { type: string, enum: [investor, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan_dapur, relawan_distribusi, relawan_tanpa_unit, admin] }
+      mode: { type: string, enum: [satu, gabungan], description: '`gabungan` = lebih dari satu SPPG (investor tanpa pilihan, atau Admin tanpa sppg_id).' }
+      rentang_hari: { type: integer, enum: [7, 30] }
+      periode:
+        type: object
+        properties:
+          zona_waktu: { type: string, examples: [Asia/Jakarta] }
+          hari_ini: { type: string, format: date }
+          bulan_berjalan:
+            type: object
+            properties:
+              bulan: { type: string, examples: ['2026-11'] }
+              dari: { type: string, format: date }
+              sampai: { type: string, format: date }
+          tren:
+            type: object
+            properties:
+              rentang_hari: { type: integer }
+              dari: { type: string, format: date }
+              sampai: { type: string, format: date }
+      dibuat_pada: { type: string, format: date-time, description: Waktu hitung (hasil di-cache 60 detik). }
+      cache_detik: { type: integer, examples: [60] }
+      sppg:
+        type: array
+        description: SPPG yang dicakup respons ini.
+        items: { $ref: '#/components/schemas/SppgPilihan' }
+      sppg_pilihan:
+        type: [array, 'null']
+        description: Hanya investor - semua SPPG miliknya untuk pemilih SPPG.
+        items: { $ref: '#/components/schemas/SppgPilihan' }
+      widgets:
+        description: Peta kunci widget -> objek widget (atau null). Bentuk per peran di bawah.
+        oneOf:
+          - { $ref: '#/components/schemas/DashboardWidgetsInvestor' }
+          - { $ref: '#/components/schemas/DashboardWidgetsKepala' }
+          - { $ref: '#/components/schemas/DashboardWidgetsAhliGizi' }
+          - { $ref: '#/components/schemas/DashboardWidgetsAkuntan' }
+          - { $ref: '#/components/schemas/DashboardWidgetsGudang' }
+          - { $ref: '#/components/schemas/DashboardWidgetsRelawanDapur' }
+          - { $ref: '#/components/schemas/DashboardWidgetsRelawanDistribusi' }
+          - { $ref: '#/components/schemas/DashboardWidgetsAdmin' }
+  DashboardPeriode:
+    type: object
+    required: [jenis]
+    description: Periode yang dipakai widget. Bidang lain menyesuaikan `jenis`.
+    properties:
+      jenis: { type: string, enum: [hari_ini, bulan_berjalan, tren, saat_ini] }
+      tanggal: { type: string, format: date, description: 'jenis=hari_ini.' }
+      bulan: { type: string, description: 'jenis=bulan_berjalan, format YYYY-MM.' }
+      dari: { type: string, format: date }
+      sampai: { type: string, format: date }
+      rentang_hari: { type: integer, description: 'jenis=tren.' }
+      per: { type: string, format: date, description: 'jenis=saat_ini (keadaan terkini).' }
+  DashboardDeret:
+    type: object
+    description: Deret untuk Chart.js - `labels` (tanggal Y-m-d berurutan) dan `series` (nama -> larik sepanjang labels).
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      labels: { type: array, items: { type: string } }
+      series: { type: object, additionalProperties: { type: array, items: { type: number } } }
+  DashboardPerStatus:
+    type: array
+    items:
+      type: object
+      properties:
+        status: { type: string }
+        label: { type: string }
+        jumlah: { type: integer }
+  DashboardWidgetJadwalProduksi:
+    type: object
+    description: Status jadwal produksi hari ini.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      total: { type: integer, description: Semua jadwal hari ini termasuk dibatalkan. }
+      aktif: { type: integer, description: Tidak dibatalkan. }
+      target_porsi: { type: integer }
+      per_status: { $ref: '#/components/schemas/DashboardPerStatus' }
+  DashboardWidgetPorsi:
+    type: object
+    description: |
+      Porsi hari ini. `didistribusikan` = porsi jadwal distribusi berstatus berangkat/diterima; `diterima` = porsi
+      pada bukti distribusi. (Investor memperoleh agregat yang sama dengan ringkasan rekap harian, bukan rincian modul tertutup.)
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      target: { type: integer }
+      realisasi: { type: integer }
+      capaian_persen: { type: [number, 'null'] }
+      jadwal_aktif: { type: integer }
+      jadwal_dengan_log: { type: integer }
+      jadwal_tanpa_log: { type: integer }
+      sisa_makanan_kg: { type: number }
+      didistribusikan: { type: integer }
+      diterima: { type: integer }
+      diterima_persen_dari_diproduksi: { type: [number, 'null'] }
+  DashboardWidgetDistribusiPerTitik:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            titik_layanan_id: { type: integer }
+            nama: { type: string }
+            jumlah_jadwal: { type: integer }
+            jadwal_selesai: { type: integer }
+            porsi_rencana: { type: integer }
+            porsi_diterima: { type: integer }
+            terlambat: { type: integer }
+      labels: { type: array, items: { type: string } }
+      series:
+        type: object
+        properties:
+          porsi_rencana: { type: array, items: { type: integer } }
+          porsi_diterima: { type: array, items: { type: integer } }
+  DashboardHitunganMutu:
+    type: object
+    properties:
+      pemeriksaan: { type: integer }
+      layak: { type: integer }
+      tidak_layak: { type: integer }
+      batch_belum_diperiksa: { type: integer, description: 'Hanya pada hari_ini - jadwal produksi hari ini tanpa pemeriksaan.' }
+  DashboardWidgetMutu:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      hari_ini: { $ref: '#/components/schemas/DashboardHitunganMutu' }
+      bulan_berjalan: { $ref: '#/components/schemas/DashboardHitunganMutu' }
+      persen_layak_bulan: { type: [number, 'null'] }
+  DashboardWidgetInsidenMutu:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      tidak_layak_hari_ini: { type: integer }
+      tidak_layak_bulan: { type: integer }
+      tren: { $ref: '#/components/schemas/DashboardDeret' }
+  DashboardWidgetKeluhanTerbuka:
+    type: object
+    description: Hanya hitungan; teks dan foto keluhan tidak pernah disertakan.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      terbuka: { type: integer }
+      baru: { type: integer }
+      diproses: { type: integer }
+      kritis_terbuka: { type: integer }
+      masuk_hari_ini: { type: integer }
+      per_prioritas: { type: array, items: { type: object, properties: { prioritas: { type: string }, label: { type: string }, jumlah: { type: integer } } } }
+      tren: { $ref: '#/components/schemas/DashboardDeret' }
+  DashboardWidgetKeluhanKritis:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      kritis_terbuka: { type: integer }
+      kritis_masuk_rentang: { type: integer }
+      terbuka_semua_prioritas: { type: integer }
+      tren: { $ref: '#/components/schemas/DashboardDeret' }
+  DashboardWidgetStokKritis:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      total_bahan: { type: integer }
+      di_bawah_minimum: { type: integer, description: 'stok <= stok minimum.' }
+      sudah_kedaluwarsa: { type: integer }
+      akan_kedaluwarsa: { type: integer }
+      hari_peringatan_kedaluwarsa: { type: integer, examples: [3] }
+  DashboardBahan:
+    type: object
+    properties:
+      bahan_baku_id: { type: integer }
+      nama: { type: string }
+      kategori: { type: string }
+      satuan: { type: string }
+      stok: { type: number }
+      stok_minimum: { type: number }
+      kedaluwarsa_terdekat: { type: [string, 'null'], format: date }
+  DashboardWidgetStokPerBahan:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      total_bahan: { type: integer }
+      per_kategori: { type: array, items: { type: object, properties: { kategori: { type: string }, label: { type: string }, jumlah: { type: integer } } } }
+      terendah: { type: array, description: 'Maks. 15 bahan dengan selisih stok - minimum terkecil.', items: { $ref: '#/components/schemas/DashboardBahan' } }
+  DashboardWidgetStokDiBawahMinimum:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah: { type: integer }
+      items: { type: array, description: Maks. 10., items: { $ref: '#/components/schemas/DashboardBahan' } }
+  DashboardWidgetStokKedaluwarsa:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      sudah_kedaluwarsa: { type: integer }
+      akan_kedaluwarsa: { type: integer }
+      hari_peringatan: { type: integer }
+      items: { type: array, description: 'Maks. 10, kedaluwarsa terdekat dulu.', items: { $ref: '#/components/schemas/DashboardBahan' } }
+  DashboardWidgetMutasiHariIni:
+    type: object
+    description: Jumlah kejadian per jenis (satuan bahan berbeda sehingga kuantitas tidak dijumlahkan).
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      total: { type: integer }
+      per_jenis: { type: array, items: { type: object, properties: { jenis: { type: string, enum: [masuk, keluar, penyesuaian] }, jumlah: { type: integer } } } }
+  DashboardWidgetPengirimanPemasok:
+    type: object
+    description: |
+      Penerimaan dari pemasok/koperasi (mutasi masuk bertanda pemasok) hari ini. `terjadwal` SELALU `null`: sistem belum
+      menyimpan jadwal pengiriman pemasok. `pembelian` null bila peran tanpa hak baca pembelian bahan.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      penerimaan_hari_ini: { type: integer }
+      pemasok_hari_ini: { type: integer }
+      per_jenis_pemasok: { type: array, items: { type: object, properties: { jenis: { type: string }, label: { type: string }, penerimaan: { type: integer }, pemasok: { type: integer } } } }
+      terjadwal: { type: 'null' }
+      pembelian:
+        type: [object, 'null']
+        properties:
+          menunggu_verifikasi: { type: integer }
+          ditolak_bulan_ini: { type: integer }
+  DashboardWidgetAnggaran:
+    type: object
+    description: |
+      Serapan bulan berjalan: anggaran = total pencairan periode; terpakai = pengeluaran DISETUJUI di bulan itu
+      (definisi sama dengan GET /keuangan/ringkasan). `rencana_anggaran` = anggaran (belum ada tabel rencana terpisah).
+      `penanda`: ambang peringatan 80% (config), 100%, dan melampaui. `per_sppg` hanya bila cakupan lebih dari satu SPPG.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      anggaran: { type: integer }
+      terpakai: { type: integer }
+      sisa: { type: integer }
+      persen: { type: [number, 'null'] }
+      status: { type: string, enum: [belum_ada_anggaran, aman, peringatan, habis, melampaui] }
+      penanda:
+        type: object
+        properties:
+          ambang_peringatan_persen: { type: integer, examples: [80] }
+          mencapai_ambang: { type: boolean }
+          mencapai_100: { type: boolean }
+          melampaui: { type: boolean }
+      rencana_anggaran: { type: integer }
+      keterangan_rencana: { type: string }
+      menunggu_persetujuan:
+        type: object
+        properties:
+          jumlah: { type: integer }
+          nominal: { type: integer }
+      per_sppg:
+        type: [array, 'null']
+        items:
+          type: object
+          properties:
+            sppg_id: { type: integer }
+            nama: { type: string }
+            anggaran: { type: integer }
+            terpakai: { type: integer }
+            sisa: { type: integer }
+            persen: { type: [number, 'null'] }
+            status: { type: string }
+            penanda: { type: object }
+            menunggu_persetujuan: { type: integer }
+  DashboardWidgetBuktiNota:
+    type: object
+    description: |
+      Pengeluaran bulan berjalan (diajukan/disetujui) yang belum punya bukti nota: `nota_path` kosong, tidak ada
+      lampiran terikat, dan (untuk hasil pembelian bahan) nota pembelian kosong. Hanya hitungan; berkas nota tidak
+      dilayani lewat dashboard (tetap lewat GET /lampiran/{id} yang diotorisasi).
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      pengeluaran_dihitung: { type: integer }
+      bukti_belum_ada:
+        type: object
+        properties:
+          jumlah: { type: integer }
+          nominal: { type: integer }
+      persen_bukti_belum_ada: { type: [number, 'null'] }
+  DashboardWidgetPengajuanMenunggu:
+    type: object
+    description: Pengajuan terbuka (tanpa batas tanggal) yang menunggu keputusan investor - pengeluaran dan pengajuan menu.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      total: { type: integer }
+      pengeluaran:
+        type: object
+        properties:
+          jumlah: { type: integer }
+          nominal: { type: integer }
+      menu: { type: object, properties: { jumlah: { type: integer } } }
+      per_sppg:
+        type: [array, 'null']
+        items: { type: object, properties: { sppg_id: { type: integer }, nama: { type: string }, pengeluaran: { type: integer }, menu: { type: integer } } }
+  DashboardWidgetRekap:
+    type: object
+    description: Status rekap harian operasional hari ini (batas kirim 17.00 WIB).
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jam_kirim: { type: string, examples: ['17:00'] }
+      sudah_disusun: { type: boolean }
+      status_kirim: { type: [string, 'null'], enum: [menunggu, terkirim, gagal, tidak_terkirim, null] }
+      disusun_pada: { type: [string, 'null'] }
+      dikirim_pada: { type: [string, 'null'] }
+      sudah_lewat_jam_kirim: { type: boolean }
+  DashboardWidgetTrenGabungan:
+    allOf:
+      - { $ref: '#/components/schemas/DashboardDeret' }
+    description: 'Tren investor: series porsi_target, porsi_realisasi, porsi_diterima, pengeluaran (disetujui), keluhan_masuk, mutu_tidak_layak.'
+  DashboardWidgetMenuHariIni:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah: { type: integer }
+      per_status: { $ref: '#/components/schemas/DashboardPerStatus' }
+      items:
+        type: array
+        description: Maks. 30 menu disajikan atau dijadwalkan produksi hari ini.
+        items:
+          type: object
+          properties:
+            menu_id: { type: integer }
+            nama_menu: { type: string }
+            kelompok_sasaran: { type: string }
+            status_persetujuan: { type: string, enum: [draf, diajukan, disetujui, ditolak, perlu_revisi] }
+            status_label: { type: string }
+  DashboardWidgetGiziVsStandar:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      sesuai: { type: integer }
+      tidak_sesuai: { type: integer }
+      tanpa_standar: { type: integer }
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            menu_id: { type: integer }
+            nama_menu: { type: string }
+            standar_tersedia: { type: boolean }
+            sesuai: { type: [boolean, 'null'] }
+            zat:
+              type: array
+              items:
+                type: object
+                properties:
+                  kolom: { type: string, enum: [energi_kkal, protein_g, lemak_g, karbohidrat_g, serat_g] }
+                  label: { type: string }
+                  satuan: { type: string }
+                  nilai: { type: number }
+                  minimum: { type: [number, 'null'] }
+                  maksimum: { type: [number, 'null'] }
+                  status: { type: [string, 'null'], enum: [kurang, sesuai, lebih, null] }
+  DashboardWidgetBiayaPerPorsi:
+    type: object
+    description: |
+      Biaya per porsi = snapshot pengajuan menu TERAKHIR (tidak dibatalkan). Menu yang belum pernah diajukan ke investor
+      bernilai `null` (rincian penuh: GET /menu-gizi/{id}/rincian-biaya).
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      rata_rata: { type: [number, 'null'] }
+      menu_tanpa_biaya: { type: integer }
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            menu_id: { type: integer }
+            nama_menu: { type: string }
+            biaya_per_porsi: { type: [number, 'null'] }
+            sumber: { type: [string, 'null'], enum: [pengajuan_terakhir, null] }
+            nomor_pengajuan: { type: [integer, 'null'] }
+            status_pengajuan: { type: [string, 'null'] }
+  DashboardWidgetKebutuhanKhusus:
+    type: object
+    description: |
+      AGREGAT penerima aktif dengan catatan alergi/kebutuhan khusus terisi (belum ada kolom terstruktur khusus; sumber
+      = `catatan_alergi`). Tanpa nama/NIK/titik layanan. Sel 1..k-1 disamarkan (`jumlah: null`, `penanda: "<k"`) beserta
+      sel pelengkap bila perlu (AgregatPenerimaService::topengTabel), sehingga "<5" berarti "disamarkan". `total`
+      disembunyikan (`null`) bila ada sel tersamar. Sengaja TIDAK ada total penerima aktif atau pelengkap "tanpa
+      kebutuhan khusus", agar selisih antar-agregat tidak dapat membuka sel kecil. k dari config/rbac.php (bawaan 5).
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      sumber: { type: string, const: catatan_alergi }
+      keterangan: { type: string }
+      total: { type: [integer, 'null'] }
+      per_kelompok_sasaran:
+        type: array
+        items:
+          type: object
+          properties:
+            kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+            label: { type: string }
+            jumlah: { type: [integer, 'null'] }
+            penanda: { type: [string, 'null'], examples: ['<5'] }
+      penyamaran:
+        type: object
+        properties:
+          diterapkan: { type: boolean }
+          ambang_k: { type: integer }
+          penanda: { type: string }
+  DashboardWidgetPencairanVsPengeluaran:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      pencairan: { type: integer }
+      jumlah_pencairan: { type: integer }
+      pengeluaran: { type: integer, description: Disetujui. }
+      jumlah_pengeluaran: { type: integer }
+      selisih: { type: integer }
+      persen: { type: [number, 'null'] }
+      status: { type: string }
+  DashboardWidgetSerapanKategori:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      anggaran: { type: integer }
+      terpakai: { type: integer }
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            kategori: { type: string }
+            label: { type: string }
+            nominal: { type: integer }
+            jumlah: { type: integer }
+            persen_dari_terpakai: { type: [number, 'null'] }
+            persen_dari_anggaran: { type: [number, 'null'] }
+      labels: { type: array, items: { type: string } }
+      series: { type: object, properties: { nominal: { type: array, items: { type: integer } } } }
+  DashboardWidgetPengeluaranMenunggu:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      pengeluaran: { type: object, properties: { jumlah: { type: integer }, nominal: { type: integer } } }
+      pembelian_menunggu_verifikasi: { type: object, properties: { jumlah: { type: integer }, nominal: { type: integer } } }
+  DashboardWidgetSelisihTren:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      labels: { type: array, items: { type: string } }
+      series:
+        type: object
+        description: Rupiah per hari; selisih = pencairan - pengeluaran disetujui; selisih_kumulatif = jumlah berjalan dalam jendela.
+        properties:
+          pencairan: { type: array, items: { type: integer } }
+          pengeluaran: { type: array, items: { type: integer } }
+          selisih: { type: array, items: { type: integer } }
+          selisih_kumulatif: { type: array, items: { type: integer } }
+      total_selisih: { type: integer }
+  DashboardWidgetMenuTarget:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah_jadwal: { type: integer }
+      total_target_porsi: { type: integer }
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            jadwal_id: { type: integer }
+            menu: { type: string }
+            kelompok_sasaran: { type: string }
+            target_porsi: { type: integer }
+            status: { type: string }
+            status_label: { type: string }
+            jam_mulai_masak: { type: [string, 'null'], examples: ['03:00'] }
+  DashboardWidgetStatusLog:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah_jadwal: { type: integer }
+      sudah_ada_log: { type: integer }
+      belum_ada_log: { type: integer }
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            jadwal_id: { type: integer }
+            menu: { type: string }
+            target_porsi: { type: integer }
+            ada_log: { type: boolean }
+            realisasi_porsi: { type: [integer, 'null'] }
+            jam_selesai: { type: [string, 'null'] }
+  DashboardWidgetChecklistMutu:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah: { type: integer }
+      items:
+        type: array
+        description: Maks. 30.
+        items:
+          type: object
+          properties:
+            jadwal_id: { type: integer }
+            menu: { type: string }
+            jam_mulai_masak: { type: [string, 'null'] }
+            status: { type: string }
+  DashboardWidgetRute:
+    type: object
+    description: Rute hari ini (maks. 50, urut jam berangkat). Tanpa PIC titik layanan, no HP pengemudi, atau data penerima.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah_titik: { type: integer }
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            jadwal_id: { type: integer }
+            titik_layanan:
+              type: object
+              properties:
+                id: { type: integer }
+                nama: { type: string }
+                jenis: { type: string }
+                alamat: { type: string }
+            jam_berangkat: { type: [string, 'null'] }
+            jam_rencana_tiba: { type: [string, 'null'] }
+            jumlah_porsi: { type: integer }
+            status: { type: string, enum: [menunggu, siap, berangkat, diterima, dibatalkan] }
+            status_label: { type: string }
+            armada_plat: { type: [string, 'null'] }
+            pengemudi: { type: [string, 'null'] }
+            bukti_ada: { type: boolean }
+  DashboardWidgetStatusKirim:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      total: { type: integer }
+      per_status: { $ref: '#/components/schemas/DashboardPerStatus' }
+      notifikasi_perjalanan:
+        type: object
+        properties:
+          terkirim: { type: integer }
+          menunggu: { type: integer }
+          gagal: { type: integer }
+  DashboardWidgetBuktiBelum:
+    type: object
+    description: Jadwal hari ini berstatus berangkat/diterima yang bukti distribusinya belum ada.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah: { type: integer }
+      items:
+        type: array
+        description: Maks. 10.
+        items:
+          type: object
+          properties:
+            jadwal_id: { type: integer }
+            titik_layanan: { type: string }
+            jam_rencana_tiba: { type: [string, 'null'] }
+            status: { type: string }
+  DashboardWidgetArmadaPengemudi:
+    type: object
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      armada_per_status: { $ref: '#/components/schemas/DashboardPerStatus' }
+      armada:
+        type: array
+        items: { type: object, properties: { id: { type: integer }, plat_nomor: { type: string }, jenis: { type: string }, kapasitas_box: { type: integer }, status: { type: string } } }
+      pengemudi_aktif:
+        type: array
+        items: { type: object, properties: { id: { type: integer }, nama: { type: string } } }
+      bertugas_hari_ini: { type: object, properties: { armada: { type: integer }, pengemudi: { type: integer } } }
+  DashboardWidgetOperasionalLintas:
+    type: object
+    description: Ringkas per SPPG (hanya angka) dan total. Hari ini.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      jumlah_sppg: { type: integer }
+      total:
+        type: object
+        properties:
+          target_porsi: { type: integer }
+          realisasi_porsi: { type: integer }
+          capaian_persen: { type: [number, 'null'] }
+          distribusi_jadwal: { type: integer }
+          distribusi_selesai: { type: integer }
+          keluhan_terbuka: { type: integer }
+          keluhan_kritis: { type: integer }
+          stok_di_bawah_minimum: { type: integer }
+      per_sppg:
+        type: array
+        items:
+          type: object
+          properties:
+            sppg_id: { type: integer }
+            kode: { type: string }
+            nama: { type: string }
+            status_operasional: { type: string }
+            target_porsi: { type: integer }
+            realisasi_porsi: { type: integer }
+            capaian_persen: { type: [number, 'null'] }
+            distribusi_jadwal: { type: integer }
+            distribusi_selesai: { type: integer }
+            keluhan_terbuka: { type: integer }
+            keluhan_kritis: { type: integer }
+            stok_di_bawah_minimum: { type: integer }
+  DashboardWidgetPenggunaAktif:
+    type: object
+    description: Jumlah akun per peran (tanpa nama). `cakupan` = semua_sppg atau sppg_terpilih.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      cakupan: { type: string, enum: [semua_sppg, sppg_terpilih] }
+      total_aktif: { type: integer }
+      items: { type: array, items: { type: object, properties: { peran: { type: string }, label: { type: string }, aktif: { type: integer }, nonaktif: { type: integer } } } }
+      labels: { type: array, items: { type: string } }
+      series: { type: object, properties: { aktif: { type: array, items: { type: integer } } } }
+  DashboardWidgetLoginGagal:
+    type: object
+    description: 'Dari audit login (tanpa nama, IP, atau identitas yang diketik). Selalu seluruh sistem (cakupan = sistem).'
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      cakupan: { type: string, const: sistem }
+      hari_ini: { type: object, properties: { masuk_gagal: { type: integer }, token_salah: { type: integer }, akun_terkunci: { type: integer } } }
+      total_rentang: { type: integer }
+      akun_terkunci_saat_ini: { type: integer }
+      tren:
+        type: object
+        properties:
+          labels: { type: array, items: { type: string } }
+          series:
+            type: object
+            properties:
+              masuk_gagal: { type: array, items: { type: integer } }
+              token_salah: { type: array, items: { type: integer } }
+              akun_terkunci: { type: array, items: { type: integer } }
+              ditolak_terkunci: { type: array, items: { type: integer } }
+  DashboardWidgetAntrean:
+    type: object
+    description: |
+      Antrean job, job gagal, dan webhook Telegram tersangkut (belum diproses > 2 menit). `antrean`/`job_gagal`
+      bernilai `null` bila tabelnya tidak ada (antrean memakai penyimpanan lain). Tanpa payload.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      cakupan: { type: string, const: sistem }
+      antrean: { type: [object, 'null'], properties: { menunggu_atau_ditunda: { type: integer }, sedang_diproses: { type: integer } } }
+      job_gagal: { type: [object, 'null'], properties: { total: { type: integer }, dalam_rentang: { type: integer } } }
+      webhook_tersangkut: { type: object, properties: { jumlah: { type: integer }, tertua_menit: { type: [integer, 'null'] } } }
+  DashboardWidgetDrafAi:
+    type: object
+    description: Draf AI berstatus pending, per modul. Isi draf tidak pernah disertakan.
+    properties:
+      periode: { $ref: '#/components/schemas/DashboardPeriode' }
+      cakupan: { type: string, enum: [semua_sppg, sppg_terpilih] }
+      menunggu_konfirmasi: { type: integer }
+      kedaluwarsa_belum_dibersihkan: { type: integer }
+      per_modul: { type: array, items: { type: object, properties: { modul: { type: string }, menunggu_konfirmasi: { type: integer }, kedaluwarsa_belum_dibersihkan: { type: integer } } } }
+  DashboardWidgetsInvestor:
+    type: object
+    description: Peran investor. Setiap nilai dapat `null` bila hak baca modul sumber dicabut.
+    properties:
+      porsi_hari_ini: { $ref: '#/components/schemas/DashboardWidgetPorsi' }
+      anggaran: { $ref: '#/components/schemas/DashboardWidgetAnggaran' }
+      pengajuan_menunggu: { $ref: '#/components/schemas/DashboardWidgetPengajuanMenunggu' }
+      stok_kritis: { $ref: '#/components/schemas/DashboardWidgetStokKritis' }
+      insiden_mutu: { $ref: '#/components/schemas/DashboardWidgetInsidenMutu' }
+      keluhan_kritis: { $ref: '#/components/schemas/DashboardWidgetKeluhanKritis' }
+      bukti_nota: { $ref: '#/components/schemas/DashboardWidgetBuktiNota' }
+      tren: { $ref: '#/components/schemas/DashboardWidgetTrenGabungan' }
+  DashboardWidgetsKepala:
+    type: object
+    properties:
+      jadwal_produksi_hari_ini: { $ref: '#/components/schemas/DashboardWidgetJadwalProduksi' }
+      porsi_target_vs_realisasi: { $ref: '#/components/schemas/DashboardWidgetPorsi' }
+      distribusi_per_titik: { $ref: '#/components/schemas/DashboardWidgetDistribusiPerTitik' }
+      mutu: { $ref: '#/components/schemas/DashboardWidgetMutu' }
+      keluhan_terbuka: { $ref: '#/components/schemas/DashboardWidgetKeluhanTerbuka' }
+      stok_kritis: { $ref: '#/components/schemas/DashboardWidgetStokKritis' }
+      anggaran: { $ref: '#/components/schemas/DashboardWidgetAnggaran' }
+      bukti_nota: { $ref: '#/components/schemas/DashboardWidgetBuktiNota' }
+      pengajuan_menunggu_investor: { $ref: '#/components/schemas/DashboardWidgetPengajuanMenunggu' }
+      rekap_harian: { $ref: '#/components/schemas/DashboardWidgetRekap' }
+  DashboardWidgetsAhliGizi:
+    type: object
+    properties:
+      menu_hari_ini: { $ref: '#/components/schemas/DashboardWidgetMenuHariIni' }
+      gizi_vs_standar: { $ref: '#/components/schemas/DashboardWidgetGiziVsStandar' }
+      biaya_per_porsi: { $ref: '#/components/schemas/DashboardWidgetBiayaPerPorsi' }
+      kebutuhan_khusus: { $ref: '#/components/schemas/DashboardWidgetKebutuhanKhusus' }
+      hasil_mutu: { $ref: '#/components/schemas/DashboardWidgetMutu' }
+  DashboardWidgetsAkuntan:
+    type: object
+    properties:
+      pencairan_vs_pengeluaran: { $ref: '#/components/schemas/DashboardWidgetPencairanVsPengeluaran' }
+      serapan_per_kategori: { $ref: '#/components/schemas/DashboardWidgetSerapanKategori' }
+      pengeluaran_menunggu: { $ref: '#/components/schemas/DashboardWidgetPengeluaranMenunggu' }
+      selisih_tren: { $ref: '#/components/schemas/DashboardWidgetSelisihTren' }
+      bukti_nota: { $ref: '#/components/schemas/DashboardWidgetBuktiNota' }
+  DashboardWidgetsGudang:
+    type: object
+    properties:
+      stok_per_bahan: { $ref: '#/components/schemas/DashboardWidgetStokPerBahan' }
+      stok_di_bawah_minimum: { $ref: '#/components/schemas/DashboardWidgetStokDiBawahMinimum' }
+      stok_mendekati_kedaluwarsa: { $ref: '#/components/schemas/DashboardWidgetStokKedaluwarsa' }
+      mutasi_hari_ini: { $ref: '#/components/schemas/DashboardWidgetMutasiHariIni' }
+      pengiriman_pemasok: { $ref: '#/components/schemas/DashboardWidgetPengirimanPemasok' }
+  DashboardWidgetsRelawanDapur:
+    type: object
+    properties:
+      menu_target_hari_ini: { $ref: '#/components/schemas/DashboardWidgetMenuTarget' }
+      status_log_produksi: { $ref: '#/components/schemas/DashboardWidgetStatusLog' }
+      checklist_mutu_belum_diisi: { $ref: '#/components/schemas/DashboardWidgetChecklistMutu' }
+  DashboardWidgetsRelawanDistribusi:
+    type: object
+    properties:
+      rute_hari_ini: { $ref: '#/components/schemas/DashboardWidgetRute' }
+      status_kirim: { $ref: '#/components/schemas/DashboardWidgetStatusKirim' }
+      bukti_belum_diunggah: { $ref: '#/components/schemas/DashboardWidgetBuktiBelum' }
+      armada_pengemudi: { $ref: '#/components/schemas/DashboardWidgetArmadaPengemudi' }
+  DashboardWidgetsAdmin:
+    type: object
+    properties:
+      operasional_lintas_sppg: { $ref: '#/components/schemas/DashboardWidgetOperasionalLintas' }
+      pengguna_aktif_per_peran: { $ref: '#/components/schemas/DashboardWidgetPenggunaAktif' }
+      login_gagal: { $ref: '#/components/schemas/DashboardWidgetLoginGagal' }
+      antrean_job_webhook: { $ref: '#/components/schemas/DashboardWidgetAntrean' }
+      draf_ai_tertunda: { $ref: '#/components/schemas/DashboardWidgetDrafAi' }

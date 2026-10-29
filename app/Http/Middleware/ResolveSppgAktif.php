@@ -18,14 +18,15 @@ use Symfony\Component\HttpFoundation\Response;
  * - Header berisi SPPG yang tidak boleh diakses (investor: bukan miliknya; peran lain: bukan
  *   SPPG-nya; format salah) -> 403 alasan `sppg_aktif_ditolak` (juga pada rute pengecualian).
  * - Investor tanpa header dengan >1 SPPG -> 409 `sppg_aktif_belum_dipilih`; tanpa SPPG -> 403
- *   `tanpa_sppg`. Kecuali rute yang tidak butuh SPPG (profil/sesi/logout, daftar SPPG saya).
+ *   `tanpa_sppg`. Kecuali rute yang tidak butuh SPPG (profil/sesi/logout, daftar SPPG saya) dan dashboard (R-07:
+ *   investor multi-SPPG tanpa header = gabungan seluruh SPPG miliknya; DashboardService memvalidasi sendiri).
  * - Admin: header diabaikan (perilaku tidak berubah). Akun nonaktif diteruskan ke middleware
  *   `active` yang menolak dan mencabut tokennya.
  */
 class ResolveSppgAktif
 {
     /** Rute yang tetap dilayani walau investor belum memilih SPPG aktif. */
-    public const TANPA_SPPG_AKTIF = ['api.v1.auth.*', 'api.v1.sppg-saya'];
+    public const TANPA_SPPG_AKTIF = ['api.v1.auth.*', 'api.v1.sppg-saya', 'api.v1.dashboard'];
 
     public function __construct(private readonly SppgAktif $sppgAktif) {}
 

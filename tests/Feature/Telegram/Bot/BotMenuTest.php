@@ -88,7 +88,7 @@ class BotMenuTest extends BotTestCase
                 $this->assertNotSame('', $label);
                 $ada[$id] = true;
 
-                if (in_array($hak, [BotLayarRegistry::HAK_PILIH, BotLayarRegistry::HAK_PUTUSKAN], true)) {
+                if (in_array($hak, [BotLayarRegistry::HAK_PILIH, BotLayarRegistry::HAK_PUTUSKAN, BotLayarRegistry::HAK_DASHBOARD], true)) {
                     $this->assertNull($modul);
 
                     continue;

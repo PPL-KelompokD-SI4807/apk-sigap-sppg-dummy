@@ -37,13 +37,19 @@ class BotLayarRegistry
 
     public const BANTUAN = 'bt';
 
-    /** Id layar yang boleh berhak HAK_SESI (tanpa modul RBAC): beranda, pilih SPPG, profil, Tanya Agen AI, bantuan. */
-    public const TANPA_MODUL = ['h', 'ps', 'pf', 'ai', 'bt'];
+    /** Dashboard per peran (R-07): ringkasan 5-8 angka kunci dari DashboardService. */
+    public const DASHBOARD = 'db';
+
+    /** Id layar yang boleh berhak HAK_SESI (tanpa modul RBAC): beranda, pilih SPPG, profil, Tanya Agen AI, bantuan, dashboard. */
+    public const TANPA_MODUL = ['h', 'ps', 'pf', 'ai', 'bt', 'db'];
 
     /** Penanda entri MENU khusus (bukan huruf RBAC). */
     public const HAK_PILIH = 'pilih';
 
     public const HAK_PUTUSKAN = 'putuskan';
+
+    /** Penanda entri MENU Dashboard (modul null): layar `db` HAK_SESI; isi disaring per widget oleh DashboardService. */
+    public const HAK_DASHBOARD = 'dashboard';
 
     /** Id semu tombol keputusan investor (callback `b1`, bukan layar `n1`). */
     public const KEPUTUSAN = 'kp';
@@ -96,15 +102,17 @@ class BotLayarRegistry
 
     /**
      * Matriks tombol beranda per profil (urutan tampil). Tiap entri: [id layar, label, modul RBAC, hak].
-     * hak = HAK_BACA 'R' | 'R*' | 'agregat' (lihat LayarBaca) atau HAK_PILIH / HAK_PUTUSKAN (khusus, modul null).
+     * hak = HAK_BACA 'R' | 'R*' | 'agregat' (lihat LayarBaca) atau HAK_PILIH / HAK_PUTUSKAN / HAK_DASHBOARD (khusus, modul null).
      * Tombol hanya tampil bila layar `id` terdaftar dan hak RBAC peran saat ini mengizinkan (HAK_PILIH: admin atau
-     * investor >1 SPPG; HAK_PUTUSKAN: Rbac::canDecide). Layar aksi (LayarAksi, mis. `mp` Mulai Perjalanan dan petunjuk alur
+     * investor >1 SPPG; HAK_PUTUSKAN: Rbac::canDecide; HAK_DASHBOARD: layar `db` terdaftar dan pengguna lolos izinkan(), tanpa syarat SPPG terpilih
+     * untuk admin/investor karena tampilan gabungan sah). Layar aksi (LayarAksi, mis. `mp` Mulai Perjalanan dan petunjuk alur
      * draf `dpk`/`dpc`/`dms`/`dkl`, C2) juga mensyaratkan tampilUntuk(); tombol aksi tulis lain (kirim ulang rekap, proses keluhan) ada di layar Rekap/Keluhan (PR-3).
      *
      * @var array<string, list<array{0: string, 1: string, 2: ?string, 3: string}>>
      */
     public const MENU = [
         'admin' => [
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['ps', 'Pilih SPPG', null, self::HAK_PILIH],
             ['rk', 'Rekap', 'rekap-harian', 'R'],
             ['kl', 'Keluhan', 'keluhan', 'R'],
@@ -117,6 +125,7 @@ class BotLayarRegistry
             ['mt', 'Mutu', 'mutu', 'R'],
         ],
         'kepala_sppg' => [
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['jd', 'Jadwal', 'jadwal', 'R'],
             ['ds', 'Distribusi', 'bukti-distribusi', 'R'],
             ['ar', 'Armada', 'armada', 'R'],
@@ -132,6 +141,7 @@ class BotLayarRegistry
             ['mp', 'Mulai Perjalanan', 'notifikasi-perjalanan', 'R'],
         ],
         'ahli_gizi' => [
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['mg', 'Menu dan Gizi', 'menu-gizi', 'R'],
             ['pj', 'Persetujuan Menu', 'persetujuan-menu', 'R'],
             ['mt', 'Mutu', 'mutu', 'R'],
@@ -143,6 +153,7 @@ class BotLayarRegistry
             ['lg', 'Log Produksi', 'log-produksi', 'R'],
         ],
         'akuntan' => [
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['pc', 'Pencairan', 'keuangan', 'R'],
             ['pk', 'Pengeluaran', 'keuangan', 'R'],
             ['ag', 'Anggaran', 'keuangan', 'R'],
@@ -155,6 +166,7 @@ class BotLayarRegistry
             ['dpc', 'Catat pencairan', 'keuangan', 'R'],
         ],
         'staf_gudang' => [
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['st', 'Stok', 'bahan-baku', 'R'],
             ['sm', 'Stok Menipis', 'bahan-baku', 'R'],
             ['kd', 'Kedaluwarsa', 'bahan-baku', 'R'],
@@ -166,6 +178,7 @@ class BotLayarRegistry
             ['dms', 'Catat mutasi stok', 'bahan-baku', 'R'],
         ],
         'relawan.dapur' => [
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['jd', 'Jadwal Produksi', 'jadwal', 'R'],
             ['lg', 'Log Produksi', 'log-produksi', 'R'],
             ['mh', 'Menu Hari Ini', 'menu-gizi', 'R'],
@@ -174,6 +187,7 @@ class BotLayarRegistry
             ['pf', 'Profil Saya', 'pengguna', LayarBaca::HAK_BACA_MILIK_SENDIRI],
         ],
         'relawan.distribusi' => [
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['jd', 'Jadwal Distribusi', 'jadwal', 'R'],
             ['ds', 'Bukti Distribusi', 'bukti-distribusi', 'R'],
             ['mp', 'Mulai Perjalanan', 'notifikasi-perjalanan', 'R'],
@@ -191,6 +205,7 @@ class BotLayarRegistry
         ],
         'investor' => [
             [self::KEPUTUSAN, 'Menunggu keputusan', null, self::HAK_PUTUSKAN],
+            ['db', 'Dashboard', null, self::HAK_DASHBOARD],
             ['rk', 'Rekap', 'rekap-harian', 'R'],
             ['ag', 'Anggaran', 'keuangan', 'R'],
             ['pj', 'Persetujuan Menu', 'persetujuan-menu', 'R'],
@@ -324,6 +339,8 @@ class BotLayarRegistry
             $tampil = match ($hak) {
                 self::HAK_PILIH => isset($this->layar[$id]) && self::bisaMemilihSppg($user),
                 self::HAK_PUTUSKAN => self::bisaMemutuskan($user),
+                // Dashboard: admin/investor boleh gabungan tanpa SPPG terpilih; peran lain butuh SPPG efektif.
+                self::HAK_DASHBOARD => isset($this->layar[$id]) && ($adaSppg || $user->isAdmin() || $user->role === Role::Investor) && $this->layar[$id]->izinkan($user, null),
                 // Layar aksi (PR-3, mis. Mulai Perjalanan): juga butuh hak aksi peran saat ini (LayarAksi::tampilUntuk).
                 default => $adaSppg && isset($this->layar[$id]) && self::hakRbac($user, $modul, $hak)
                     && (! $this->layar[$id] instanceof LayarAksi || $this->layar[$id]->tampilUntuk($user)),
@@ -364,7 +381,11 @@ class BotLayarRegistry
     {
         foreach (self::MENU as $profil => $entri) {
             foreach ($entri as [$id, , $modul, $hak]) {
-                if (in_array($hak, [self::HAK_PILIH, self::HAK_PUTUSKAN], true)) {
+                if (in_array($hak, [self::HAK_PILIH, self::HAK_PUTUSKAN, self::HAK_DASHBOARD], true)) {
+                    if ($hak === self::HAK_DASHBOARD && isset($this->layar[$id]) && ($id !== self::DASHBOARD || $this->layar[$id]->hak() !== LayarBaca::HAK_SESI)) {
+                        throw new LogicException("Entri menu dashboard bot tidak sesuai layar: {$profil}/{$id}");
+                    }
+
                     continue;
                 }
 

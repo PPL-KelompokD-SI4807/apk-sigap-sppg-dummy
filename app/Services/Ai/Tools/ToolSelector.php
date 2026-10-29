@@ -41,6 +41,7 @@ class ToolSelector
         'rekap-harian' => ['rekap', 'ringkasan', 'rangkuman', 'laporan', 'hari ini'],
         'pembelian-bahan' => ['pembelian', 'beli', 'membeli', 'belanja', 'nota', 'kuitansi', 'struk', 'harga satuan', 'pemasok'],
         'persetujuan-menu' => ['persetujuan', 'pengajuan', 'setuju', 'disetujui', 'approve', 'revisi menu'],
+        'dashboard' => ['dashboard', 'ringkas', 'ringkasan', 'rangkuman', 'ikhtisar', 'kondisi', 'situasi', 'angka kunci'],
     ];
 
     /** Kata kerja niat tulis (awal kata, boleh berimbuhan di-/me-/ter-/ber-). */

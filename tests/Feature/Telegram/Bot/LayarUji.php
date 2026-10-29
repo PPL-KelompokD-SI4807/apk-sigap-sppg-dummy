@@ -67,7 +67,8 @@ final class LayarUji implements LayarBaca
 
         foreach (BotLayarRegistry::MENU as $entri) {
             foreach ($entri as [$id, , $modul, $hak]) {
-                if (! in_array($hak, [BotLayarRegistry::HAK_PILIH, BotLayarRegistry::HAK_PUTUSKAN], true)) {
+                // Dashboard (`db`) adalah layar sungguhan HAK_SESI (LayarDashboard), bukan layar uji bermodul.
+                if (! in_array($hak, [BotLayarRegistry::HAK_PILIH, BotLayarRegistry::HAK_PUTUSKAN, BotLayarRegistry::HAK_DASHBOARD], true)) {
                     $unik[$id] ??= new self($id, $modul, $hak);
                 }
             }

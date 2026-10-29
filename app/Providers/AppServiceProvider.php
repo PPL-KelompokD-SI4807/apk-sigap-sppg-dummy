@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Policies\DashboardPolicy;
 use App\Services\Telegram\InitDataValidator;
 use App\Support\SppgAktif;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -33,6 +34,9 @@ class AppServiceProvider extends ServiceProvider
 
             return ['App\\Policies\\'.Str::after($modelClass, 'App\\Models\\').'Policy'];
         });
+
+        // R-07: gerbang dashboard per peran (isi disaring lagi per modul oleh DashboardService).
+        Gate::define('dashboard.lihat', [DashboardPolicy::class, 'lihat']);
 
         // NFR-05: 60 permintaan/menit per pengguna (fallback IP).
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
