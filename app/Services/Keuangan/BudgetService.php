@@ -399,12 +399,12 @@ class BudgetService
         return $negatif ? -$hasil : $hasil;
     }
 
-    private function persen(int $terpakai, int $anggaran): ?float
+    public function persen(int $terpakai, int $anggaran): ?float
     {
         return $anggaran > 0 ? round($terpakai * 100 / $anggaran, 2) : null;
     }
 
-    private function status(int $terpakai, int $anggaran): string
+    public function status(int $terpakai, int $anggaran): string
     {
         return match (true) {
             $anggaran <= 0 => $terpakai > 0 ? 'melampaui' : 'belum_ada_anggaran',
