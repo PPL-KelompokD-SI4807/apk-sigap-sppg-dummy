@@ -345,8 +345,12 @@ class PersetujuanPengeluaranTest extends PembelianTestCase
             'nominal' => 100_000, 'status_persetujuan' => $status, 'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        // Mundurkan dua migrasi R-06b-2 terakhir (persetujuan_pengeluarans dan kolom pengeluarans), isi data "lama".
-        $this->artisan('migrate:rollback', ['--step' => 2])->assertExitCode(0);
+        // Mundurkan dua migrasi R-06b-2 (persetujuan_pengeluarans dan kolom pengeluarans) menurut berkasnya, bukan
+        // "N terakhir" (migrasi baru di kemudian hari tidak boleh ikut mundur), lalu isi data "lama".
+        $this->artisan('migrate:rollback', ['--path' => [
+            'database/migrations/2026_10_27_000102_add_persetujuan_to_pengeluarans_table.php',
+            'database/migrations/2026_10_27_000103_create_persetujuan_pengeluarans_table.php',
+        ], '--force' => true])->assertExitCode(0);
         $this->assertFalse(Schema::hasColumn('pengeluarans', 'status_persetujuan'));
 
         $lama = DB::table('pengeluarans')->insertGetId([
