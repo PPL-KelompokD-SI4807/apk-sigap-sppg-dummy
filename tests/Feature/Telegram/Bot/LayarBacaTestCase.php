@@ -44,6 +44,7 @@ abstract class LayarBacaTestCase extends BotTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->netralkanNamaPengguna();
         config([
             'telegram.callback_rate' => 100000,
             'telegram.callback_gagal_rate' => 100000,
@@ -52,6 +53,23 @@ abstract class LayarBacaTestCase extends BotTestCase
         ]);
         $this->hari = now(config('operasional.timezone', 'Asia/Jakarta'))->toDateString();
         $this->forgetActor();
+    }
+
+    /**
+     * Nama pengguna dari faker acak bisa memuat penanda tes (mis. "Betania" memuat "Beta") sehingga
+     * assertStringNotContainsString lintas-SPPG gagal sesekali. Netralkan nama semua pengguna fixture.
+     */
+    protected function netralkanNamaPengguna(): void
+    {
+        User::withoutGlobalScopes()->update(['name' => 'Pengguna Uji']);
+    }
+
+    protected function userOf(Role $role, int $sppgId, ?RelawanUnit $unit = null): User
+    {
+        $user = parent::userOf($role, $sppgId, $unit);
+        $user->forceFill(['name' => 'Pengguna Uji'])->save();
+
+        return $user;
     }
 
     /** Id semua layar data (hak bukan HAK_SESI) pada registri produksi. @return list<string> */
