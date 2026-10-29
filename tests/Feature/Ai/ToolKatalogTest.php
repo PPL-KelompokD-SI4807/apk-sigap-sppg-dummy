@@ -106,7 +106,9 @@ class ToolKatalogTest extends MasterApiTestCase
         // 16 modul fitur resmi + 'persetujuan-menu' (R-06b-1, hanya tool baca daftar_pengajuan_menu)
         // + 'pembelian-bahan' (R-06b-2: baca/buat/ubah draf, tanpa verifikasi).
         $tambahan = ['persetujuan-menu', 'pembelian-bahan'];
-        $this->assertEqualsCanonicalizing([...self::MODUL, ...$tambahan], $modul);
+        // + 'dashboard' (R-07): tool baca lintas modul `ringkas_dashboard_saya`; bukan modul RBAC (hak baca tiap widget
+        // disaring DashboardService), jadi tidak ada di config('rbac.modules').
+        $this->assertEqualsCanonicalizing([...self::MODUL, ...$tambahan, 'dashboard'], $modul);
         $this->assertEqualsCanonicalizing(array_keys(config('rbac.modules')), [...self::MODUL, ...$tambahan]);
 
         $nama = array_values(array_map(fn (AiTool $t) => $t->name(), $this->registry->all()));
