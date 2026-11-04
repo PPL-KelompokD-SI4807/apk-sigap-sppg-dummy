@@ -44,6 +44,10 @@ export async function renderHome(ctx) {
       h('span', { class: 'menu-title' }, 'Ringkasan Penerima Manfaat'),
       h('span', { class: 'muted small' }, 'Jumlah per kelompok dan titik layanan')));
   }
+  grid.prepend(h('a', { class: 'menu-card', href: '#/dashboard' },
+    h('span', { class: 'menu-icon', 'aria-hidden': 'true' }, '\u{1F4CA}'),
+    h('span', { class: 'menu-title' }, 'Dashboard'),
+    h('span', { class: 'muted small' }, 'Lihat dashboard sesuai peran')));
   grid.append(h('a', { class: 'menu-card', href: '#/sesi' },
     h('span', { class: 'menu-icon', 'aria-hidden': 'true' }, '\u{1F4F1}'),
     h('span', { class: 'menu-title' }, 'Perangkat & Sesi'),
