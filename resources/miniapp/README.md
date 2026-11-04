@@ -10,6 +10,9 @@ npm run build
 
 Mode dev (`import.meta.env.DEV`) memasang shim `Telegram.WebApp` bila `initData` kosong: `?dev_role=<peran>`, `?dev_theme=dark`. Bila backend belum ada, login memakai pengguna tiruan. Tidak ada di build produksi.
 
+## Dashboard (R-07)
+`modules/dashboard/` (rute `#/dashboard`, deep link `?r=/dashboard`, tautan di beranda): `logika.js` murni (diuji di `tests/dashboard.test.js`), `view.js` tabel renderer kunci widget -> kartu (kunci tak dikenal memakai fallback skalar), `index.js` rute, pemilih rentang 7/30 dan pemilih SPPG investor. Kartu `null` disembunyikan; grafik lewat `core/charts.js` dan dihancurkan saat render ulang/pindah layar.
+
 ## Menambah modul CRUD baru
 1. Pastikan slug ada di `core/permissions.js` (16 slug resmi sudah ada).
 2. Buat `modules/<nama>/index.js` (salin `modules/_contoh/`). `modules/registry.js` memuatnya otomatis lewat `import.meta.glob`.
