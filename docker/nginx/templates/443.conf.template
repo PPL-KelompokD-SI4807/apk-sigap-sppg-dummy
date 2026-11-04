@@ -14,6 +14,7 @@ server {
     listen 443 ssl;
     http2 on;
     server_name ${DOMAIN};
+    keepalive_timeout 30s;
 
     ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;

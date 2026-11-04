@@ -12,6 +12,7 @@ server {
 server {
     listen 80;
     server_name ${DOMAIN};
+    keepalive_timeout 30s;
     root /var/www/html/public;
     access_log /var/log/nginx/access.log sigap;
 

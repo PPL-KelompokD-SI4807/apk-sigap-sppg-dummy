@@ -19,7 +19,7 @@
 #                    putus koneksi saat migrasi meninggalkan skema setengah jadi). SIGHUP selalu diabaikan.
 #
 # Urutan: kunci -> preflight (.env, nilai berbahaya, disk, compose, git bersih, DB siap) -> checkout ->
-#   build/pull (gagal = rilis lama tetap jalan) -> dump pra-migrasi -> maintenance + hentikan queue/scheduler ->
+#   build/pull (gagal = rilis lama tetap jalan) -> nginx -t pada image web -> dump pra-migrasi -> maintenance + hentikan queue/scheduler ->
 #   migrate --force -> up (entrypoint membuat cache config/route/event/view) -> artisan up -> health /up ->
 #   catat rilis -> bersihkan image lama (simpan rilis ini dan sebelumnya).
 # Aman dijalankan ulang. Tidak mencetak nilai .env.
@@ -255,6 +255,9 @@ get_images() {
   else
     warn "Image tanpa label org.opencontainers.image.revision: asal image tidak terverifikasi."
   fi
+  # Uji sintaks nginx pada image baru (kontainer sekali pakai); rilis lama tetap berjalan bila gagal.
+  bash "$SIGAP_REPO_DIR/scripts/nginx-test.sh" "$IMAGE_REGISTRY/sigap-sppg-web:$NEW_TAG" ||
+    die "nginx -t gagal pada image web $NEW_TAG; deploy dibatalkan sebelum maintenance."
   ok "Image $NEW_TAG siap."
 }
 
