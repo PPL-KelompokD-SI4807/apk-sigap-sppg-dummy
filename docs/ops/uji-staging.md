@@ -260,3 +260,55 @@ Semua butir `W` harus Lulus atau ada pengecualian tertulis dari pemilik. Isi seb
 | `DEPLOY_GO_LIVE=true`, disk EBS terenkripsi, bucket Versioning + Object Lock (BK-01), IMDS diblokir dari kontainer (SEC-20) | | |
 | Tipe VM dan batas `MEM_*` final diputuskan dari BEB-01..06 | | |
 | Ketidaksesuaian dokumen/skrip yang ditemukan sudah ditindaklanjuti | | |
+| Data uji dihapus: `sigap:isi-data-uji --hapus --confirm --izinkan-produksi` (DU-04, Wajib) | | |
+
+---
+
+## 13. Data uji (`sigap:isi-data-uji`)
+
+Perintah artisan yang mengisi **satu SPPG fiktif** `SPPG-UJI-01` ("SPPG Uji Staging (Uji)") beserta turunannya agar semua widget dashboard dan logika bisnis dapat diuji. Tanpa Faker/factory (aman di image `--no-dev`), deterministik, tanpa NIK, semua nama berakhiran "(Uji)", telepon `0812-0000-xxxx`.
+
+### Cara menjalankan (login `deploy` di `/opt/sigap/app`, fungsi `dcp` dari runbook bagian 0)
+
+Staging dan produksi sama-sama `APP_ENV=production`, sehingga menulis/menghapus **wajib** `--izinkan-produksi` (tanpa opsi itu perintah menolak; mode kering tetap boleh).
+
+```bash
+# 1. Mode kering (bawaan): hanya ringkasan jumlah baris per tabel, tidak menulis DB
+dcp exec app php artisan sigap:isi-data-uji
+# 2. Isi (idempoten; bila SPPG-UJI-01 sudah ada: dilewati)
+dcp exec app php artisan sigap:isi-data-uji --confirm --izinkan-produksi
+# 3. Hapus: mode kering dulu (hitung saja), lalu hapus sungguhan
+dcp exec app php artisan sigap:isi-data-uji --hapus
+dcp exec app php artisan sigap:isi-data-uji --hapus --confirm --izinkan-produksi
+```
+
+**Penjaga produksi:** `--izinkan-produksi` hanya diperlukan bersama `--confirm` (isi maupun `--hapus`). Tanpa opsi itu pada `APP_ENV=production`, perintah keluar dengan galat dan tidak menulis apa pun; mode kering selalu diizinkan. **WAJIB sebelum go-live:** jalankan `sigap:isi-data-uji --hapus --confirm --izinkan-produksi` (lihat DU-04 dan bagian 12) agar SPPG uji dan seluruh turunannya tidak terbawa ke produksi.
+
+### Yang dibuat
+- 1 SPPG (kapasitas 1200 porsi), 3 titik layanan (320 + 280 + 400 sasaran, PIC tanpa chat Telegram sehingga notifikasi dialihkan ke Kepala SPPG), 18 penerima manfaat (agregat; 6 per titik).
+- 2 pemasok, 10 bahan baku + mutasi stok (Ikan Lele dan Minyak Goreng di bawah stok minimum; Bayam, Ikan Lele, Tahu hampir kedaluwarsa; Pisang sudah kedaluwarsa), harga pemasok, 3 standar gizi.
+- 3 menu (2 disetujui, 1 diajukan beserta satu pengajuan menu ke investor).
+- 3 armada (bertugas/tersedia/servis) dan 3 pengemudi (bukan akun login).
+- 7 hari jadwal produksi (6 hari ke belakang + hari ini) dengan log produksi, pemeriksaan mutu (satu hari diawali tidak layak lalu layak), 3 jadwal distribusi per hari; hari-hari lampau lengkap dengan bukti distribusi (satu terlambat, satu selisih porsi). Hari ini: distribusi berstatus berangkat/siap/menunggu dengan satu notifikasi perjalanan berjalan beserta estimasi tiba.
+- Pencairan dana bulan berjalan Rp100.000.000; pengeluaran disetujui Rp82.560.000 (82,56%, **melewati ambang 80%**); satu pengeluaran menunggu keputusan investor; satu pembelian bahan menunggu verifikasi dan satu terverifikasi. **Tidak ada berkas nota/foto** yang dibuat, sehingga semua pengeluaran muncul sebagai "tanpa bukti nota" sampai penguji mengunggah. Baris `peringatan_anggarans` sengaja tidak dibuat: menyetujui pengeluaran yang menunggu akan memicu notifikasi ambang 80% (NT-03) sekali.
+- 3 keluhan (satu **kritis** berstatus baru, satu diproses, satu selesai) dan 6 rekap harian (status `tidak_terkirim`; rekap hari ini disusun scheduler 17.00).
+
+### Yang TIDAK dilakukan
+- Tidak membuat pengguna (semua kolom ke `users` dibiarkan null), tidak ada ID Telegram palsu, tidak menyentuh admin atau akun lain.
+- Tidak membuat `audit_logs` palsu dan tidak memicu event domain (tidak ada pesan Telegram terkirim): penulisan memakai `Model::withoutEvents`.
+- Scheduler (stok 06.00, rekap 17.00) memperlakukan SPPG uji sebagai SPPG aktif, tetapi tanpa pengguna berhubungan tidak ada penerima pesan sampai penguji menautkan akun.
+
+### Penanda dan cara penghapusan
+Penanda tunggal: rantai `sppg_id` ke SPPG berkode `SPPG-UJI-01` (nama berakhiran "(Uji)"); `menu_bahan` lewat `menu_id` milik SPPG uji. Tanpa migrasi/kolom baru. `--hapus --confirm` berjalan dalam satu transaksi, urutan anak ke induk, force delete, dan menolak bila kode cocok tetapi nama bukan "(Uji)". Berkas lampiran (`lampirans`, disk `uploads`) milik SPPG uji ikut dihapus; kolom `*_path` lain tidak dipakai data uji.
+- `audit_logs` dan `ai_interactions` tidak dihapus (append-only; FK `nullOnDelete` melepas tautan SPPG-nya). Jejak aksi penguji pada data uji karenanya tetap ada.
+- **Akun penguji tidak pernah dihapus otomatis.** Bila masih ada akun dengan `sppg_id` = SPPG uji, penghapusan ditolak dengan pesan jelas. Pindahkan akun ke SPPG lain lewat Data Pengguna, atau jalankan dengan `--lepas-pengguna` (hanya mengosongkan `users.sppg_id` dan menghapus tautan `investor_sppg` SPPG uji; akun tetap ada dan harus ditetapkan ke SPPG nyata oleh Admin).
+
+### Membuat pengguna per peran untuk pengujian
+Perintah tidak membuat akun. Admin (`sigap:buat-admin <telegram_id> <nama>`) membuat akun lewat fitur **Data Pengguna** di Mini App (undangan) memakai **ID Telegram anggota tim sendiri**, satu peran per anggota/akun (kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan dapur, relawan distribusi, investor), dengan SPPG = SPPG uji. Investor ditautkan ke SPPG uji lewat pengaturan investor. Jangan memakai ID Telegram orang lain.
+
+| ID | P | Langkah | Hasil diharapkan | Bukti |
+|---|---|---|---|---|
+| DU-01 | D | Mode kering lalu isi: `dcp exec app php artisan sigap:isi-data-uji`, lalu dengan `--confirm --izinkan-produksi`; jalankan isi sekali lagi. | Mode kering tidak mengubah hitungan baris (`SELECT COUNT(*) FROM sppgs`); isi pertama membuat data; isi kedua melaporkan "sudah ada; dilewati"; tanpa `--izinkan-produksi` ditolak | keluaran, hitungan |
+| DU-02 | D | Buka dashboard tiap peran pada SPPG uji. | Widget stok kritis (2 di bawah minimum), keluhan kritis (1), anggaran 82,56% (melewati 80%), bukti nota belum ada, pengajuan menunggu, distribusi hari ini, rekap terisi | tangkapan layar |
+| DU-03 | D | Setujui pengeluaran yang menunggu sebagai investor; pantau notifikasi ambang. | Notifikasi 80% terkirim sekali (NT-03) | tangkapan layar |
+| DU-04 | W | **Sebelum go-live:** `dcp exec app php artisan sigap:isi-data-uji --hapus` (periksa ringkasan), lalu `--hapus --confirm --izinkan-produksi` (tambah `--lepas-pengguna` bila akun penguji masih tertaut). Periksa `sqlroot -e "SELECT COUNT(*) FROM <DB>.sppgs WHERE kode='SPPG-UJI-01'"` dan hitungan tabel domain. | SPPG uji dan seluruh turunannya hilang; data/akun non-uji utuh; akun penguji ditetapkan ulang ke SPPG nyata atau dinonaktifkan | keluaran, hitungan |
