@@ -2,6 +2,8 @@
 
 namespace App\Services\Telegram;
 
+use App\Enums\JenisInputAi;
+use App\Models\AiDraft;
 use App\Models\TelegramUpdate;
 use App\Models\User;
 use App\Services\Ai\AiAgentService;
@@ -9,8 +11,13 @@ use App\Services\Ai\AiInput;
 use App\Services\Ai\AiReply;
 use App\Services\Ai\Speech\SpeechToTextException;
 use App\Services\Ai\Speech\SpeechToTextService;
+use App\Services\Telegram\Bot\BotAksiAiService;
+use App\Services\Telegram\Bot\BotGalat;
+use App\Services\Telegram\Bot\BotLayar;
 use finfo;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
+use Throwable;
 
 /**
  * Pipeline chat -> Agen AI (dijalankan job ProcessAiMessage):
@@ -18,8 +25,11 @@ use Illuminate\Support\Facades\Log;
  *   foto  -> bila penyedia tidak mendukung gambar (LLM_VISION_MODEL kosong): balasan ramah + tombol
  *            formulir TANPA mengunduh; selain itu unduh ukuran terbesar <= batas, verifikasi MIME aktual
  *            (JPEG/PNG/WebP), kirim ke agen sebagai lampiran gambar (dibaca LLM/model vision); caption = teks;
- *   suara -> SpeechToTextService (Null = "belum didukung") -> transkrip sebagai teks.
- * Balasan: teks POLOS (tanpa parse_mode) + tombol web_app "Periksa & Simpan" per draf.
+ *   suara -> batas laju AI dicek SEBELUM STT (biaya STT), durasi/ukuran/kuota detik STT per jam dicek, lalu
+ *            SpeechToTextService (Null = "belum didukung") -> transkrip sebagai teks TIDAK tepercaya (sama dengan teks).
+ * Balasan: teks POLOS (tanpa parse_mode). Per draf: bila tool-nya dapat dijalankan dari chat, LAYAR KONFIRMASI terpisah
+ * (BotAksiAiService: ringkasan server + Lanjutkan/Batal/Ubah; suara: "Yang saya dengar"); selain itu tombol web_app
+ * "Periksa & Simpan" (Mini App). Teks/suara "ya/lanjut" tidak pernah menjalankan draf: hanya tombol callback sah.
  */
 class AiChatHandler
 {
@@ -29,6 +39,7 @@ class AiChatHandler
         private readonly TelegramBotService $bot,
         private readonly AiAgentService $agent,
         private readonly SpeechToTextService $stt,
+        private readonly BotAksiAiService $konfirmasi,
     ) {}
 
     public function handle(TelegramUpdate $update, User $user): void
@@ -42,7 +53,15 @@ class AiChatHandler
             }
 
             $this->typing($chatId);
-            $input = $this->buildInput($message);
+
+            // Batas laju AI berlaku juga untuk biaya unduh foto/STT: dicek sebelum memproses media (tanpa menghitung).
+            if ((isset($message['voice']) || isset($message['photo'])) && $this->agent->batasLajuTercapai($user)) {
+                $this->deliver($chatId, new AiReply('Batas penggunaan Agen AI tercapai. Coba lagi nanti atau isi formulir di Mini App.', fallback: true));
+
+                return;
+            }
+
+            $input = $this->buildInput($message, (int) $user->getKey());
 
             if (is_string($input)) {
                 $this->send($chatId, $input);
@@ -56,7 +75,7 @@ class AiChatHandler
                 return;
             }
 
-            $this->deliver($chatId, $this->agent->handle($user, $input));
+            $this->deliver($chatId, $this->agent->handle($user, $input), $user, $input->type === JenisInputAi::Suara ? $input->text : null);
         } finally {
             TelegramUpdateHandler::finish($update, 'ai');
         }
@@ -66,7 +85,7 @@ class AiChatHandler
      * @param  array<string, mixed>  $message
      * @return AiInput|AiReply|string AiInput, atau balasan langsung (string = galat ramah; AiReply = dengan tombol formulir)
      */
-    public function buildInput(array $message): AiInput|AiReply|string
+    public function buildInput(array $message, ?int $userId = null): AiInput|AiReply|string
     {
         $caption = is_string($message['caption'] ?? null) ? $message['caption'] : '';
 
@@ -75,7 +94,7 @@ class AiChatHandler
         }
 
         if (isset($message['voice']) && is_array($message['voice'])) {
-            return $this->voiceInput($message['voice']);
+            return $this->voiceInput($message['voice'], $userId);
         }
 
         return AiInput::text(is_string($message['text'] ?? null) ? $message['text'] : '');
@@ -117,25 +136,43 @@ class AiChatHandler
     }
 
     /** @param array<string, mixed> $voice */
-    private function voiceInput(array $voice): AiInput|string
+    private function voiceInput(array $voice, ?int $userId = null): AiInput|string
     {
         if (! $this->stt->isAvailable()) {
             return 'Pesan suara belum didukung. Silakan ketik pesan atau kirim foto.';
         }
 
-        if ((int) ($voice['duration'] ?? 0) > (int) config('ai.input.voice_max_seconds', 120)) {
+        $durasi = max(0, (int) ($voice['duration'] ?? 0));
+
+        if ($durasi > (int) config('ai.input.voice_max_seconds', 120)) {
             return 'Pesan suara terlalu panjang (maksimal 2 menit).';
+        }
+
+        if ((int) ($voice['file_size'] ?? 0) > (int) config('ai.input.voice_max_bytes', 10 * 1024 * 1024)) {
+            return 'Pesan suara terlalu besar. Kirim pesan yang lebih pendek atau ketik permintaan Anda.';
         }
 
         if (! is_string($voice['file_id'] ?? null)) {
             return 'Pesan suara tidak valid.';
         }
 
+        // Biaya STT: kuota detik audio per pengguna per jam (selain AI_RATE_*), dihitung sebelum transkripsi.
+        if ($userId !== null) {
+            $kunci = 'ai:stt:'.$userId;
+            $maks = max(1, (int) config('ai.stt.max_detik_per_jam', 600));
+
+            if ((int) RateLimiter::attempts($kunci) + max(1, $durasi) > $maks) {
+                return 'Kuota pesan suara Anda untuk satu jam ini sudah habis. Silakan ketik permintaan Anda.';
+            }
+
+            RateLimiter::increment($kunci, 3600, max(1, $durasi));
+        }
+
         try {
             $audio = $this->bot->downloadFile($voice['file_id'], (int) config('ai.input.voice_max_bytes', 10 * 1024 * 1024));
             $mime = is_string($voice['mime_type'] ?? null) && preg_match('#^audio/[a-z0-9.+-]{1,30}$#', $voice['mime_type']) === 1 ? $voice['mime_type'] : 'audio/ogg';
 
-            return AiInput::voice($this->stt->transcribe($audio, $mime));
+            return AiInput::voice($this->stt->transcribe($audio, $mime), $durasi);
         } catch (TelegramApiException $e) {
             Log::warning('telegram.unduh_suara_gagal', ['kode' => $e->errorCode]);
 
@@ -145,11 +182,25 @@ class AiChatHandler
         }
     }
 
-    public function deliver(int $chatId, AiReply $reply): void
+    /**
+     * @param  ?string  $transkrip  transkrip suara (ditampilkan "Yang saya dengar" di layar konfirmasi; tidak disimpan)
+     */
+    public function deliver(int $chatId, AiReply $reply, ?User $user = null, ?string $transkrip = null): void
     {
         $buttons = [];
+        $layarKonfirmasi = [];
+        $lama = 0;
 
         foreach (array_slice($reply->drafts, 0, self::MAX_DRAFT_BUTTONS) as $draft) {
+            $layar = $this->layarKonfirmasi($chatId, $draft, $user, $transkrip);
+
+            if ($layar !== null) {
+                $layarKonfirmasi[] = $layar;
+
+                continue;
+            }
+
+            $lama++;
             $label = (string) config("rbac.modules.{$draft->module}.label", $draft->module);
             $buttons[] = TelegramBotService::webAppButton(
                 'Periksa & Simpan: '.mb_substr($label, 0, 40),
@@ -157,11 +208,39 @@ class AiChatHandler
             );
         }
 
-        if ($reply->fallback || ($reply->drafts !== [] && array_filter($buttons) === [])) {
+        if ($reply->fallback || ($lama > 0 && array_filter($buttons) === [])) {
             $buttons[] = TelegramBotService::webAppButton('Buka formulir SiGAP', $this->bot->miniAppUrl());
         }
 
         $this->send($chatId, $reply->text, TelegramBotService::inlineKeyboard($buttons));
+
+        foreach ($layarKonfirmasi as $layar) {
+            try {
+                $this->bot->sendMessage($chatId, $layar->teks, array_filter([
+                    'parse_mode' => $layar->html ? TelegramBotService::PARSE_HTML : null,
+                    'reply_markup' => $layar->markup,
+                    'protect_content' => $layar->lindungi ?: null,
+                ]));
+            } catch (TelegramApiException $e) {
+                Log::warning('telegram.konfirmasi_ai_gagal', ['kode' => $e->errorCode]);
+            }
+        }
+    }
+
+    /** Layar konfirmasi chat hanya di chat pribadi pemilik draf; galat -> jalur lama (tombol Mini App). */
+    private function layarKonfirmasi(int $chatId, AiDraft $draft, ?User $user, ?string $transkrip): ?BotLayar
+    {
+        if ($user === null || $user->telegram_id === null || (int) $user->telegram_id !== $chatId) {
+            return null;
+        }
+
+        try {
+            return $this->konfirmasi->layarKonfirmasi($user, $chatId, $draft, $transkrip);
+        } catch (Throwable $e) {
+            BotGalat::catat($e, 'ai_konfirmasi');
+
+            return null;
+        }
     }
 
     /** Teks polos tanpa parse_mode: isi dari model/pengguna tidak pernah dirender sebagai markup. */

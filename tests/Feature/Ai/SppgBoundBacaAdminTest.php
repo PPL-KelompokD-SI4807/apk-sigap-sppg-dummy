@@ -164,7 +164,8 @@ class SppgBoundBacaAdminTest extends MasterApiTestCase
             $this->assertNotEmpty($ditawarkan, 'Admin tetap punya tool baca');
 
             foreach ($ditawarkan as $tool) {
-                $this->assertFalse($tool->isWrite(), "Admin di penimpa tidak ditawari {$tool->name()}");
+                // Satu-satunya tool tulis Admin: modul pengguna (tidak ber-tenant; tidak dipengaruhi penimpa baca SPPG).
+                $this->assertTrue(! $tool->isWrite() || $tool->module() === 'pengguna', "Admin di penimpa tidak ditawari {$tool->name()}");
             }
 
             // Sama persis dengan keadaan di luar penimpa: penimpa tidak menambah/mengurangi tool.
@@ -176,7 +177,7 @@ class SppgBoundBacaAdminTest extends MasterApiTestCase
 
         $luar = ActingUser::run($this->admin, fn () => app(ToolRegistry::class)->forUser($this->admin));
         $this->assertNotEmpty($luar);
-        $this->assertSame([], array_values(array_filter($luar, fn (AiTool $t) => $t->isWrite())), 'Di luar penimpa admin juga tanpa tool tulis (lintas SPPG)');
+        $this->assertSame([], array_values(array_filter($luar, fn (AiTool $t) => $t->isWrite() && $t->module() !== 'pengguna')), 'Di luar penimpa admin juga tanpa tool tulis modul ber-tenant (lintas SPPG)');
 
         $this->assertSame($sebelum, TitikLayanan::query()->withoutGlobalScopes()->count());
         $this->assertSame(0, BotAksi::query()->count());

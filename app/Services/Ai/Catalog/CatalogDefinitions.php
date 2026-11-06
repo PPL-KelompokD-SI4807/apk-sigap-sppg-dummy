@@ -93,7 +93,9 @@ use BackedEnum;
  * - Kolom form sensitif dikecualikan dari skema tulis ($exclude): pengguna mengisinya sendiri di Mini App.
  * - Ketersediaan tool = matriks Tabel 5 + aturan unit relawan + Policy (BaseAiTool); sppg_id/user_id/role
  *   tidak pernah ditawarkan dan selalu dibuang (config ai.protected_arguments).
- * - Pengguna (modul 1) hanya dibaca: akun dan peran tidak dibuat/diubah lewat draf AI.
+ * - Pengguna (modul 1): katalog hanya `cari_pengguna`; undangan/peran/status akun memakai tool khusus Admin di
+ *   Tools/Pengguna (draf + konfirmasi di chat).
+ * - `rute` = draf dapat dijalankan dari tombol konfirmasi Bot (sub-request REST); `berkas` = hanya Mini App.
  */
 final class CatalogDefinitions
 {
@@ -149,6 +151,7 @@ final class CatalogDefinitions
                 order: [['nama', 'asc'], ['id', 'asc']],
                 store: StoreTitikLayananRequest::class, update: UpdateTitikLayananRequest::class, routeParameter: 'titikLayanan',
                 skip: ['cari_titik_layanan', 'buat_titik_layanan'],
+                rute: 'api.v1.titik-layanan',
                 exclude: ['pic_telepon'],
                 initials: ['pic_nama'],
             ),
@@ -189,6 +192,7 @@ final class CatalogDefinitions
                 order: [['nama', 'asc'], ['id', 'asc']],
                 store: StorePemasokRequest::class, update: UpdatePemasokRequest::class, routeParameter: 'pemasok',
                 exclude: ['kontak'],
+                rute: 'api.v1.pemasok',
             ),
 
             // 8. Data Menu dan Gizi: menu + standar gizi (penanda 'standar_gizi' pada draf).
@@ -240,6 +244,7 @@ final class CatalogDefinitions
                 filters: ['milik_saya' => ['type' => 'boolean', 'scope' => 'milikSaya', 'description' => 'Hanya log yang dicatat pengguna ini.']],
                 date: 'created_at',
                 store: StoreLogProduksiRequest::class, update: UpdateLogProduksiRequest::class, routeParameter: 'log_produksi',
+                rute: 'api.v1.log-produksi',
             ),
 
             // 11. Data Pemeriksaan Mutu dan Keamanan Pangan.
@@ -279,6 +284,7 @@ final class CatalogDefinitions
                 date: 'created_at',
                 store: StoreBuktiDistribusiRequest::class, update: UpdateBuktiDistribusiRequest::class, routeParameter: 'buktiDistribusi',
                 exclude: ['latitude', 'longitude'],
+                berkas: true,
             ),
 
             // 14. Data Keuangan: pencairan dana + pengeluaran (nominal rupiah bulat).
@@ -289,6 +295,7 @@ final class CatalogDefinitions
                 detail: ['catatan'],
                 date: 'tanggal_cair', order: [['tanggal_cair', 'desc'], ['id', 'desc']], rupiah: ['nominal'],
                 store: StorePencairanRequest::class, update: UpdatePencairanRequest::class, routeParameter: 'pencairanDana',
+                berkas: true,
             ),
             new ResourceSpec(
                 key: 'pengeluaran', module: 'keuangan', label: 'pengeluaran', model: Pengeluaran::class,
@@ -301,7 +308,7 @@ final class CatalogDefinitions
                 date: 'tanggal', order: [['tanggal', 'desc'], ['id', 'desc']], rupiah: ['nominal'],
                 store: StorePengeluaranRequest::class, update: UpdatePengeluaranRequest::class, routeParameter: 'pengeluaran',
                 marker: 'pengeluaran',
-                exclude: ['versi'], berversi: true,
+                exclude: ['versi'], berversi: true, berkas: true,
             ),
 
             // 14b. Pembelian Bahan (R-06b-2): staf gudang mencatat (draf), akuntan memverifikasi di Mini App.
@@ -320,7 +327,7 @@ final class CatalogDefinitions
                 date: 'tanggal_beli', order: [['tanggal_beli', 'desc'], ['id', 'desc']], rupiah: ['total'],
                 store: StorePembelianBahanRequest::class, update: UpdatePembelianBahanRequest::class, routeParameter: 'pembelian_bahan',
                 hints: ['jumlah' => 'Jumlah dalam satuan bahan baku.', 'harga_satuan' => 'Harga per satuan bahan, rupiah.'],
-                exclude: ['versi'], berversi: true,
+                exclude: ['versi'], berversi: true, berkas: true,
             ),
 
             // 15. Data Feedback dan Keluhan (deskripsi ditulis pengguna lain: DATA tak tepercaya). Deskripsi dan
@@ -340,6 +347,7 @@ final class CatalogDefinitions
                 ],
                 date: 'created_at',
                 store: StoreKeluhanRequest::class, update: UpdateKeluhanRequest::class, routeParameter: 'keluhan',
+                rute: 'api.v1.keluhan',
             ),
 
             // 16. Laporan Rekapitulasi Harian Operasional (ringkasan dibaca lewat detail; tanpa hapus).

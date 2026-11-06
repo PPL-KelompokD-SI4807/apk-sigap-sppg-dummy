@@ -174,11 +174,17 @@ class AiAgentServiceTest extends MasterApiTestCase
 
     public function test_peran_tanpa_hak_modul_tidak_ditawari_tool_apa_pun_untuk_modul_itu(): void
     {
-        // Admin: lintas SPPG -> tidak ada tool tulis (draf butuh SPPG), tetap boleh membaca.
+        // Admin: lintas SPPG -> tidak ada tool tulis modul ber-tenant (draf butuh SPPG), tetap boleh membaca. Tool tulis
+        // yang ditawarkan HANYA modul pengguna (undangan/peran/status akun; hak CRUD pengguna = Admin di config/rbac.php).
         $this->llm->push(LlmResponse::text('ok'));
         $this->agent()->handle($this->admin, AiInput::text('halo'));
         $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
-        $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_') && ! in_array($n, ['daftar_pengajuan_menu', 'ringkas_dashboard_saya'], true))));
+        $tulis = array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_') && ! in_array($n, ['daftar_pengajuan_menu', 'ringkas_dashboard_saya'], true)));
+        $this->assertEqualsCanonicalizing(['buat_undangan_pengguna', 'cabut_undangan', 'ubah_peran_pengguna', 'nonaktifkan_pengguna', 'aktifkan_pengguna', 'hapus_pengguna'], $tulis);
+        $registry = app(ToolRegistry::class);
+        foreach ($tulis as $nama) {
+            $this->assertSame('pengguna', $registry->all()[$nama]->module(), $nama);
+        }
 
         // Pengguna nonaktif: tidak ada tool, tidak ada panggilan LLM.
         $nonaktif = User::factory()->role(Role::KepalaSppg)->inactive()->create(['sppg_id' => $this->sppgA]);

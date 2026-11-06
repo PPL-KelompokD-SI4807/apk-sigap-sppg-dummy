@@ -8,21 +8,29 @@ use App\Models\User;
 use App\Services\Ai\Drafts\DraftService;
 use App\Services\Ai\Drafts\DraftValidationResult;
 use App\Services\Ai\Drafts\DraftValidator;
+use App\Services\Ai\Eksekusi\RingkasanDraf;
+use App\Services\Ai\Eksekusi\SpesifikasiEksekusi;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Tool tulis (buat_..., ubah_..., hapus_...): TIDAK PERNAH menulis data modul. Alurnya:
  *   argumen tervalidasi skema -> argumen terlindungi dibuang -> target (ubah/hapus) dicari lewat
  *   SppgScope + Policy -> payload divalidasi dry-run dengan Form Request modul (DraftValidator)
- *   -> AiDraft pending (berlaku config ai.drafts.ttl_minutes) -> bot mengirim tombol Mini App.
- * Data baru tersimpan hanya saat pengguna menekan Simpan di Mini App (endpoint modul + ai_draft_id).
+ *   -> AiDraft pending (berlaku config ai.drafts.ttl_minutes).
+ * Data tersimpan hanya setelah KONFIRMASI MANUSIA: tombol Simpan di Mini App (endpoint modul + ai_draft_id), atau
+ * tombol Lanjutkan di chat Bot bila tool punya eksekusi() (AiDraftExecutor memanggil endpoint REST yang sama sebagai
+ * sub-request atas nama pengguna penekan tombol; Policy + Form Request + Service dijalankan ulang).
  *
  * Subkelas mengisi $name, $description, $module, $action (C/U/D), $model, lalu:
  *   formRequest(): kelas Form Request store/update modul (null untuk hapus)
  *   fields(): ['properties' => [...], 'required' => [...]] skema kolom form
  *   routeParameter(): nama parameter rute model untuk Form Request update (mis. 'titikLayanan')
  *   toPayload(): opsional, memetakan argumen ke kolom form (mis. nama pemasok -> pemasok_id)
+ *   eksekusi(): opsional, rute REST untuk menjalankan draf dari chat (null = hanya Mini App)
+ *   ringkasan()/berbahaya()/olahHasil(): opsional, layar konfirmasi dan hasil
  */
 abstract class WriteDraftTool extends BaseAiTool
 {
@@ -88,6 +96,190 @@ abstract class WriteDraftTool extends BaseAiTool
         return $this->model === null ? null : $this->model::query()->find($id);
     }
 
+    /** Policy per record target untuk draf ubah/hapus (bawaan: Policy update/delete model). */
+    protected function izinkanTarget(User $user, Model $target): bool
+    {
+        return $this->allows($user, $this->action === 'U' ? 'update' : 'delete', $target);
+    }
+
+    /**
+     * Pemeriksaan bisnis tambahan saat draf dibuat (pesan ramah untuk model), mis. Admin tidak dapat menonaktifkan
+     * dirinya sendiri. Null = lolos. Tidak menggantikan aturan Service yang tetap dijalankan saat eksekusi.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function tolakDraf(User $user, ?Model $target, array $payload): ?string
+    {
+        return null;
+    }
+
+    /** Penanda sub-modul pada draf (`_resource`), null = sumber daya bawaan modul. */
+    public function draftResource(): ?string
+    {
+        return null;
+    }
+
+    /**
+     * Draf wajib ber-SPPG (peran satu-SPPG). False hanya untuk tool lintas SPPG milik Admin (mis. modul pengguna),
+     * yang drafnya tidak terikat SPPG. Tool modul ber-tenant untuk Admin (memilih SPPG tujuan) = titik ekstensi tahap 2.
+     */
+    protected function butuhSppg(): bool
+    {
+        return true;
+    }
+
+    /**
+     * True = argumen yang tidak lolos validasi Form Request TIDAK menjadi draf; model menerima galat dan harus
+     * bertanya ulang ke pengguna (dipakai tool yang tidak punya formulir Mini App untuk melengkapi isian).
+     */
+    protected function wajibValid(): bool
+    {
+        return false;
+    }
+
+    /** Cara menjalankan draf dari tombol konfirmasi Bot; null = hanya lewat Mini App ("Periksa & Simpan"). */
+    public function eksekusi(): ?SpesifikasiEksekusi
+    {
+        return null;
+    }
+
+    /** Aksi berbahaya -> konfirmasi DUA LANGKAH + peringatan tegas. Bawaan: semua hapus. */
+    public function berbahaya(AiDraft $draft): bool
+    {
+        return $this->action === 'D';
+    }
+
+    /** Label singkat sumber daya untuk ringkasan ("pemasok", "titik layanan"). */
+    protected function labelSumberDaya(): string
+    {
+        return (string) config("rbac.modules.{$this->module}.label", $this->module);
+    }
+
+    /**
+     * Ringkasan konfirmasi dari payload draf TERSIMPAN + nama target dari basis data (dipanggil di dalam
+     * ActingUser::run). Bawaan: daftar kolom payload "Kolom: nilai" (teks polos, dipotong).
+     */
+    public function ringkasan(User $user, AiDraft $draft): RingkasanDraf
+    {
+        $judul = match ($this->action) {
+            'U' => 'Ubah '.$this->labelSumberDaya(),
+            'D' => 'Hapus '.$this->labelSumberDaya(),
+            default => 'Buat '.$this->labelSumberDaya(),
+        };
+
+        $target = null;
+
+        if ($draft->target_id !== null) {
+            $record = $this->findTarget($user, (int) $draft->target_id);
+            $target = $record === null ? '#'.(int) $draft->target_id.' (tidak ditemukan)' : $this->namaTarget($record);
+        }
+
+        $baris = [];
+
+        foreach ((array) $draft->payload as $kunci => $nilai) {
+            if (! is_string($kunci) || str_starts_with($kunci, '_') || in_array($kunci, ['versi', 'ai_draft_id'], true) || count($baris) >= 12) {
+                continue;
+            }
+
+            $baris[] = self::labelKolom($kunci).': '.(in_array($kunci, $this->kolomTersembunyi(), true) && is_string($nilai)
+                ? '(tidak ditampilkan di chat, '.mb_strlen($nilai).' karakter)'
+                : self::nilaiTeks($nilai));
+        }
+
+        return new RingkasanDraf($judul, $baris, $target, $this->action === 'D' ? 'Data akan dihapus.' : null);
+    }
+
+    /** Kolom teks bebas yang dapat memuat data pribadi: tidak ditampilkan di ringkasan chat. */
+    protected function kolomTersembunyi(): array
+    {
+        return [];
+    }
+
+    /** Nama tampilan record target (dari basis data). */
+    protected function namaTarget(Model $record): string
+    {
+        foreach (['nama', 'name', 'nama_menu', 'plat_nomor', 'kode'] as $kolom) {
+            $nilai = $record->getAttribute($kolom);
+
+            if (is_string($nilai) && self::satuBaris($nilai) !== '') {
+                return self::satuBaris($nilai, 80).' (#'.$record->getKey().')';
+            }
+        }
+
+        return '#'.$record->getKey();
+    }
+
+    /**
+     * Sidik keadaan target (diisi server saat draf ubah/hapus dibuat dan dihitung ulang saat dijalankan). Berbeda =
+     * data berubah sejak draf dibuat -> draf tidak dijalankan. Bawaan: versi (bila ada) + updated_at.
+     */
+    protected function sidikTarget(Model $target): ?string
+    {
+        $diubah = $target->getAttribute('updated_at');
+
+        return substr(hash('sha256', implode('|', [
+            $target->getKey(),
+            (string) $target->getAttribute('versi'),
+            $diubah instanceof CarbonInterface ? $diubah->getTimestamp() : (string) $diubah,
+        ])), 0, 16);
+    }
+
+    /**
+     * Sidik target SAAT INI untuk draf ubah/hapus (dipanggil di dalam ActingUser::run): null = draf tanpa target,
+     * false = target tidak ditemukan / di luar scope.
+     */
+    public function sidikTargetSaatIni(User $user, AiDraft $draft): string|false|null
+    {
+        if ($draft->target_id === null) {
+            return null;
+        }
+
+        $target = $this->findTarget($user, (int) $draft->target_id);
+
+        if ($target === null) {
+            return false;
+        }
+
+        return $this->izinkanTarget($user, $target) ? (string) $this->sidikTarget($target) : false;
+    }
+
+    /**
+     * Body sub-request eksekusi: payload TERSIMPAN disaring ke kunci aturan Form Request (bila ada), tanpa kunci
+     * cadangan draf (`_resource`, `_peringatan`).
+     *
+     * @return array<string, mixed>
+     */
+    public function bodyEksekusi(AiDraft $draft, ?DraftValidationResult $cek): array
+    {
+        $payload = (array) $draft->payload;
+        $payload = $cek === null ? ($this->formRequest() === null ? [] : $payload) : $cek->saring($payload);
+
+        return array_filter($payload, fn ($kunci) => ! is_string($kunci) || ! str_starts_with($kunci, '_'), ARRAY_FILTER_USE_KEY);
+    }
+
+    /**
+     * Olah respons sukses sub-request: [hasil yang BOLEH disimpan (id/status saja), pesan rahasia untuk pengguna
+     * atau null]. Bawaan: id data hasil bila ada, tanpa rahasia.
+     *
+     * @param  array<string, mixed>  $json
+     * @return array{0: array<string, int|string|bool|null>, 1: ?string}
+     */
+    public function olahHasil(array $json, AiDraft $draft): array
+    {
+        $id = $json['data']['id'] ?? null;
+
+        return [is_int($id) ? ['id' => $id] : [], null];
+    }
+
+    /**
+     * Batalkan hasil aksi yang sudah dijalankan bila rahasianya gagal sampai ke pengguna (dipanggil di dalam
+     * ActingUser::run + sumber audit `ai`). Bawaan: tidak didukung (false).
+     */
+    public function cabutHasil(User $user, AiDraft $draft): bool
+    {
+        return false;
+    }
+
     public function draftAction(): AksiAiDraft
     {
         return match ($this->action) {
@@ -118,16 +310,24 @@ abstract class WriteDraftTool extends BaseAiTool
     }
 
     /**
-     * Draf butuh SPPG (ai_drafts.sppg_id wajib): pengguna tanpa SPPG (Admin) memakai Mini App langsung.
+     * Draf butuh SPPG untuk peran satu-SPPG; Admin tidak ditawari tool tulis modul ber-tenant (butuhSppg).
      * Investor (R-06a) baca saja: tidak pernah ditawari tool tulis walau matriks salah isi.
      */
     public function isAvailableFor(User $user): bool
     {
-        return $user->sppg_id !== null && ! $user->isInvestor() && parent::isAvailableFor($user);
+        if ($user->isInvestor()) {
+            return false;
+        }
+
+        if ($this->butuhSppg() && $user->sppg_id === null) {
+            return false;
+        }
+
+        return parent::isAvailableFor($user);
     }
 
     /**
-     * Validasi ulang draf tersimpan (GET /ai-drafts/{uuid}) dengan aturan Form Request terkini.
+     * Validasi ulang draf tersimpan (GET /ai-drafts/{uuid}, eksekusi Bot) dengan aturan Form Request terkini.
      * Null bila modul tidak memakai Form Request (hapus).
      */
     public function revalidate(User $user, AiDraft $draft): ?DraftValidationResult
@@ -170,17 +370,18 @@ abstract class WriteDraftTool extends BaseAiTool
                 return ToolResult::invalid('Data yang dimaksud tidak ditemukan.');
             }
 
-            if (! $this->allows($user, $this->action === 'U' ? 'update' : 'delete', $target)) {
+            if (! $this->izinkanTarget($user, $target)) {
                 return ToolResult::denied('Anda tidak berhak mengubah/menghapus data ini.');
             }
         }
 
-        [$payload] = ArgumentValidator::stripProtected(
-            $this->toPayload($user, $arguments),
-            (array) config('ai.protected_arguments', []),
-        );
+        [$payload] = ArgumentValidator::stripProtectedFor($this, $this->toPayload($user, $arguments));
 
         $payload = $this->sisipkanDariServer($payload, $target);
+
+        if (($tolak = $this->tolakDraf($user, $target, $payload)) !== null) {
+            return ToolResult::invalid($tolak);
+        }
 
         $errors = [];
         $scores = [];
@@ -193,6 +394,12 @@ abstract class WriteDraftTool extends BaseAiTool
                 return ToolResult::denied();
             }
 
+            if ($this->wajibValid() && $result->errors !== []) {
+                $pesan = collect($result->errors)->flatten()->filter(fn ($p) => is_string($p))->take(4)->implode(' ');
+
+                return ToolResult::invalid('Draf belum dibuat. Tanyakan ke pengguna: '.$pesan);
+            }
+
             $errors = $result->errors;
             $scores = $result->confidence;
             // Hanya kunci yang diatur Form Request yang disimpan di draf (kunci isian server dibuang).
@@ -203,6 +410,10 @@ abstract class WriteDraftTool extends BaseAiTool
 
         [$payload, $scores] = $this->afterValidation($payload, $scores, $errors);
 
+        if (($resource = $this->draftResource()) !== null) {
+            $payload['_resource'] = $resource;
+        }
+
         $draft = app(DraftService::class)->create(
             user: $user,
             module: $this->module,
@@ -211,8 +422,46 @@ abstract class WriteDraftTool extends BaseAiTool
             confidence: $scores,
             interactionId: $context->interactionId,
             targetId: $target?->getKey(),
+            tool: $this->name(),
+            sidikTarget: $target === null ? null : $this->sidikTarget($target),
         );
 
-        return ToolResult::draft($draft, $errors);
+        return ToolResult::draft($draft, $errors, $this->eksekusi()?->dapatDijalankan() ?? false);
+    }
+
+    /** Akses Gate untuk subkelas (Policy kelas/record). */
+    protected function gate(User $user): \Illuminate\Contracts\Auth\Access\Gate
+    {
+        return Gate::forUser($user);
+    }
+
+    private static function labelKolom(string $kunci): string
+    {
+        $teks = str_replace('_', ' ', preg_replace('/_id$/', '', $kunci) ?? $kunci);
+
+        return mb_strtoupper(mb_substr($teks, 0, 1)).mb_substr($teks, 1);
+    }
+
+    private static function nilaiTeks(mixed $nilai): string
+    {
+        $teks = match (true) {
+            $nilai === null => '-',
+            is_bool($nilai) => $nilai ? 'Ya' : 'Tidak',
+            is_scalar($nilai) => (string) $nilai,
+            default => (string) json_encode($nilai, JSON_UNESCAPED_UNICODE),
+        };
+
+        return self::satuBaris($teks, 120);
+    }
+
+    /**
+     * Teks tampilan SATU baris: karakter kontrol/format (baris baru, tab, RLO/LRO dan kendali bidi lain, zero-width) dan
+     * spasi beruntun menjadi satu spasi, lalu dipotong. Mencegah nilai dari DB/model memalsukan baris layar konfirmasi.
+     */
+    public static function satuBaris(string $teks, int $maks = 200): string
+    {
+        $teks = trim((string) preg_replace('/[\p{C}\s]+/u', ' ', $teks));
+
+        return mb_strlen($teks) > $maks ? rtrim(mb_substr($teks, 0, $maks - 1)).'…' : $teks;
     }
 }

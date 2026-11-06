@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\RateLimiter;
  *   5. hak dihitung ulang (Rbac::canDecide + pivot + SPPG record + Policy) -> BotKeputusanService::periksa;
  *      aksi tulis (PR-3: kirim ulang rekap, mulai perjalanan, tindak lanjut keluhan) -> BotAksiTulisService::periksa
  *      (peran + RBAC + SPPG + Policy + versi yang dilihat);
+ *      konfirmasi draf Agen AI (Lanjutkan / Ya, yakin / Batal) -> token dikonsumsi atomik lalu BotAksiAiService ->
+ *      AiDraftExecutor (pengguna dimuat ulang, sesi penuh, Rbac/Policy/Form Request lewat sub-request REST);
  *   6. konsumsi token atomik, lalu panggil service bisnis.
  * Isi callback_data tidak pernah menjadi sumber hak akses.
  *
@@ -65,6 +67,7 @@ class BotCallbackHandler
         private readonly BotKeputusanService $keputusan,
         private readonly BotNavigasi $nav,
         private readonly BotAksiTulisService $tulis,
+        private readonly BotAksiAiService $ai,
     ) {}
 
     /** @param array<string, mixed> $query objek CallbackQuery Telegram */
@@ -116,19 +119,28 @@ class BotCallbackHandler
         }
 
         $tulis = BotAksiTulisService::milik($aksi->jenis);
+        $draftAi = BotAksiAiService::milik($aksi->jenis);
 
         // 4. Sesi login penuh.
         if (! $this->sesi->punyaSesiPenuh($user)) {
             $this->aksi->batalkanCatatan($fromId);
             $this->jawab($id, self::PERLU_MASUK_SINGKAT);
 
-            // Aksi tulis (R-02 PR-3): layar asal (baca/konfirmasi) dinetralkan seperti pola n1; token tidak dihabiskan.
-            if ($tulis) {
+            // Aksi tulis (R-02 PR-3) & draf Agen AI: layar asal dinetralkan seperti pola n1; token tidak dihabiskan,
+            // draf TIDAK dijalankan (tetap terbuka sampai kedaluwarsa).
+            if ($tulis || $draftAi) {
                 $this->netralkan($chatId, $messageId, self::LAYAR_DITUTUP_SESI);
             }
 
             $this->kirim($chatId, new BotLayar(TelegramUpdateHandler::PERLU_MASUK, $this->bukaAplikasi(), false));
             $this->catat($aksi, $user, 'tanpa_sesi');
+
+            return;
+        }
+
+        // Konfirmasi draf Agen AI (semua peran; hak dihitung ulang AiDraftExecutor).
+        if ($draftAi) {
+            $this->aksiAi($id, $user, $aksi, $fromId, $chatId, $messageId);
 
             return;
         }
@@ -456,6 +468,64 @@ class BotCallbackHandler
         }
     }
 
+    // ------------------------------------------------------------------ konfirmasi draf Agen AI
+
+    /**
+     * Tombol konfirmasi draf Agen AI. Dipanggil SETELAH langkah 1-4. Hanya chat pribadi pemilik (chat.id == from.id),
+     * subjek ai_draft. Token dikonsumsi ATOMIK lebih dulu (Lanjutkan & Batal satu grup: hanya satu yang pernah lolos;
+     * klik ganda/replay -> TIDAK_BERLAKU), baru satu langkah AiDraftExecutor. Rahasia hasil (tautan undangan) dikirim
+     * sebagai pesan BARU terlindungi (protect_content), tidak di-log.
+     */
+    private function aksiAi(?string $id, User $user, BotAksi $aksi, int $fromId, int $chatId, ?int $messageId): void
+    {
+        if ($chatId !== $fromId || $aksi->subjek_tipe !== BotAksi::SUBJEK_AI_DRAFT || $aksi->subjek_id === null) {
+            RateLimiter::hit('tg:cbgagal:'.$fromId, 60);
+            $this->jawab($id, self::TIDAK_BERLAKU);
+
+            return;
+        }
+
+        if (! $this->aksi->konsumsi($aksi)) {
+            RateLimiter::hit('tg:cbgagal:'.$fromId, 60);
+            $this->jawab($id, self::TIDAK_BERLAKU);
+
+            return;
+        }
+
+        $dijawab = false;
+
+        try {
+            ['hasil' => $hasil, 'layar' => $layar, 'rahasia' => $rahasia] = $this->ai->tangani($user, $aksi, $chatId);
+
+            // Rahasia (tautan undangan) dikirim LEBIH DULU. Gagal kirim -> hasil rahasia dicabut otomatis (tautan tidak
+            // pernah dapat ditampilkan ulang karena tidak disimpan) dan layar tidak mengklaim tautan sudah dikirim.
+            if ($rahasia !== null && ! $this->kirimRahasia($chatId, $rahasia)) {
+                ['hasil' => $hasil, 'layar' => $layar] = $this->ai->rahasiaGagalTerkirim($user, $aksi);
+            }
+
+            $this->aksi->selesai($aksi, $hasil);
+            $this->jawab($id, match ($hasil) {
+                'batal' => 'Dibatalkan.',
+                'sukses' => 'Berhasil.',
+                'ditolak' => self::TIDAK_BERHAK,
+                default => null,
+            });
+            $dijawab = true;
+            $this->tampilkan($chatId, $messageId, $layar);
+            $this->catat($aksi, $user, $hasil);
+        } catch (\Throwable $e) {
+            BotGalat::catat($e, 'aksi_ai');
+            $this->aksi->selesai($aksi, 'gagal');
+
+            if (! $dijawab) {
+                $this->jawab($id);
+            }
+
+            $this->kirim($chatId, new BotLayar('Terjadi kesalahan. Periksa hasilnya di Mini App sebelum mencoba lagi.', null, false));
+            $this->catat($aksi, $user, 'gagal');
+        }
+    }
+
     // ------------------------------------------------------------------ aksi
 
     private function navigasi(BotAksi $aksi, int $chatId, ?int $messageId, BotLayar $layar): void
@@ -557,6 +627,28 @@ class BotCallbackHandler
         $this->kirim($chatId, $layar);
 
         return self::TAMPIL_KIRIM;
+    }
+
+    /**
+     * Kirim pesan berisi rahasia (terlindungi). True bila diterima Telegram. Log hanya kode galat; isi pesan TIDAK PERNAH
+     * dicatat (pesan exception Telegram tidak memuat teks yang dikirim, tetapi tetap tidak di-log di sini).
+     */
+    private function kirimRahasia(int $chatId, BotLayar $layar): bool
+    {
+        try {
+            $this->bot->sendMessage($chatId, $layar->teks, array_filter([
+                'parse_mode' => $layar->html ? TelegramBotService::PARSE_HTML : null,
+                'protect_content' => true,
+            ]));
+
+            return true;
+        } catch (TelegramApiException $e) {
+            Log::warning('telegram.rahasia_gagal', ['kode' => $e->errorCode]);
+        } catch (\Throwable $e) {
+            BotGalat::catat($e, 'kirim_rahasia');
+        }
+
+        return false;
     }
 
     private function kirim(int $chatId, BotLayar $layar): void

@@ -1,6 +1,6 @@
 # Pola Tool Agen AI SiGAP SPPG (FR-11)
 
-Agen AI = `AiAgentService` + `LlmClient` + `ToolRegistry` + `AiDraft`. Tool **baca** dijalankan langsung atas nama pengguna; tool **tulis** hanya membuat **draf** yang wajib dikonfirmasi manusia di Mini App. Contoh lengkap: `app/Services/Ai/Tools/TitikLayanan/{CariTitikLayananTool,BuatTitikLayananTool}.php`.
+Agen AI = `AiAgentService` + `LlmClient` + `ToolRegistry` + `AiDraft` + `AiDraftExecutor`. Tool **baca** dijalankan langsung atas nama pengguna; tool **tulis** hanya membuat **draf** yang wajib dikonfirmasi manusia: di Mini App (Simpan) atau, untuk tool yang mendukungnya, lewat **tombol konfirmasi di chat Bot** (Lanjutkan; dua langkah untuk aksi berbahaya). Keputusan lama "bot tidak menulis" dibalik oleh Tahap 1 eksekusi AI (lihat bagian "Eksekusi dari chat"). Contoh lengkap: `app/Services/Ai/Tools/TitikLayanan/{CariTitikLayananTool,BuatTitikLayananTool}.php`.
 
 ## Alur satu pesan
 
@@ -13,9 +13,14 @@ Telegram -> POST /api/v1/telegram/webhook -> ProcessTelegramUpdate -> ProcessAiM
          LlmClient::chat(messages, tools milik peran)
          tiap tool call: nama dikenal? -> milik peran? -> buang argumen terlindungi
                          -> ArgumentValidator (skema ketat) -> execute()
-  -> balasan teks POLOS + tombol web_app "Periksa & Simpan" (?draft=<uuid>)
+  -> balasan teks POLOS, lalu per draf:
+       tool punya eksekusi() -> LAYAR KONFIRMASI (BotAksiAiService): ringkasan server + Lanjutkan/Batal/Ubah
+       selain itu           -> tombol web_app "Periksa & Simpan" (?draft=<uuid>)
 Mini App: GET /ai-drafts/{uuid} -> form prefill -> POST/PUT endpoint modul + ai_draft_id
           -> AiDraftConfirmer menandai draf confirmed (dalam transaksi yang sama)
+Chat:     callback b1 (ai_lanjut / ai_yakin / ai_batal) -> BotCallbackHandler (rate limit, MAC+baris+ikatan,
+          pengguna dimuat ulang, sesi penuh, konsumsi atomik) -> AiDraftExecutor -> sub-request REST internal
+          (PermintaanInternal) sebagai pengguna penekan -> middleware + Form Request + Policy + Service + ai_draft_id
 ```
 
 ## Menambah tool untuk fitur Anda
@@ -85,7 +90,8 @@ class BuatPemasokTool extends WriteDraftTool
 - Untuk ubah: set `$action = 'U'` dan `routeParameter()` = nama parameter rute Form Request update (mis. `'titikLayanan'`); target dicari lewat `findTarget()` (ber-scope) lalu dicek Policy `update`. Hapus (`D`) boleh `formRequest()` = null.
 - Draf disimpan `ai_drafts` (pemilik + SPPG dari pengguna login, berlaku `AI_DRAFT_TTL_MINUTES`, default 30 menit sesuai FR-11, maks `AI_DRAFT_MAX_PENDING` draf pending per pengguna).
 - Controller modul Anda **sudah** menerima `ai_draft_id` (trait `HasAiDraftId` + `AiDraftConfirmer::confirm()` di dalam transaksi store/update). Pastikan `module` draf = slug yang dipakai controller saat `confirm()`.
-- Pengguna tanpa SPPG (Admin) tidak ditawari tool tulis (draf wajib ber-SPPG); Admin memakai Mini App langsung.
+- Pengguna tanpa SPPG (Admin) tidak ditawari tool tulis modul ber-tenant (`butuhSppg()` = true, bawaan); Admin memakai Mini App langsung. Pengecualian: tool modul pengguna (`butuhSppg()` = false, draf Admin tanpa SPPG). Pemilihan SPPG tujuan untuk aksi tulis modul Admin = titik ekstensi tahap 2.
+- Agar draf dapat dijalankan dari chat, isi `eksekusi()` (lihat bagian berikut); tanpa itu draf tetap memakai tombol Mini App.
 
 ## Katalog tool 16 modul
 
@@ -93,7 +99,7 @@ Tool 16 modul (73 tool) dibangun otomatis dari `app/Services/Ai/Catalog/CatalogD
 
 | Modul | Tool |
 |---|---|
-| pengguna | `cari_pengguna` (baca saja; akun/peran tidak dibuat lewat AI) |
+| pengguna | `cari_pengguna` (katalog). Khusus Admin (hasil Rbac: pengguna CRUD hanya Admin), kelas di `Tools/Pengguna`: `buat_undangan_pengguna`, `cari_undangan_pengguna`, `cabut_undangan`, `ubah_peran_pengguna`, `nonaktifkan_pengguna`, `aktifkan_pengguna`, `hapus_pengguna` (lihat "Eksekusi dari chat") |
 | notifikasi-perjalanan | `cari_notifikasi_perjalanan`, `buat_notifikasi_perjalanan` |
 | sppg | `cari_sppg`, `ubah_sppg` |
 | titik-layanan | `cari_`/`buat_` (kelas sendiri), `ubah_`/`hapus_titik_layanan` |
@@ -105,9 +111,65 @@ Tool 16 modul (73 tool) dibangun otomatis dari `app/Services/Ai/Catalog/CatalogD
 
 R-06b-2: `total`, `status`, `satuan`, `versi`, `lampiran_ids`, `status_persetujuan` tidak ada di skema tool (argumen di luar skema ditolak). Untuk draf **ubah** pada record berversi (`ubah_pembelian_bahan`, `ubah_pengeluaran`) `versi` disisipkan SERVER dari record target saat draf dibuat (`ResourceSpec::$berversi` -> `WriteDraftTool::sisipkanDariServer`); mengonfirmasi draf yang basi (record berubah setelah draf) -> 409 `versi_tidak_cocok` dan draf tetap pending. Dry-run `POST pembelian-bahan` dari draf TIDAK menuntut `lampiran_ids` (foto Telegram tidak disimpan), tetapi endpoint nyata tetap mewajibkan minimal satu nota: Mini App memaksa unggah nota saat konfirmasi. Foto nota di bot memakai vision dua tahap yang ada (tahap 1 tanpa tool = data tak tepercaya; tahap 2 hanya dapat memanggil tool draf). Pengeluaran yang dikonfirmasi dari draf akuntan menjadi `diajukan` ke investor (alur normal). `cari_pengeluaran` punya filter `status_persetujuan`.
 
-Aturan: ketersediaan = Tabel 5 + aturan unit relawan + Policy (modul `jadwal` untuk relawan: dapur = produksi, distribusi = distribusi); tool tulis tidak ditawarkan ke Admin (tanpa SPPG). Modul dengan >1 sumber daya menandai draf dengan `_resource` (`DraftToolResolver`) agar `GET /ai-drafts/{uuid}` dan konfirmasi memakai Form Request yang benar.
+Aturan: ketersediaan = Tabel 5 + aturan unit relawan + Policy (modul `jadwal` untuk relawan: dapur = produksi, distribusi = distribusi); tool tulis modul ber-tenant tidak ditawarkan ke Admin (tanpa SPPG). Modul dengan >1 sumber daya menandai draf dengan `_resource` (`DraftToolResolver`) agar `GET /ai-drafts/{uuid}` dan konfirmasi memakai Form Request yang benar.
 
 Data sensitif tidak masuk spesifikasi: `no_sim`, `no_hp`, telepon/kontak, `telegram_*`, NIK, catatan alergi, koordinat, dan jalur berkas ditolak `RecordPresenter::assertSafe()` saat tool dibangun, dan dikecualikan dari skema tulis lewat `ResourceSpec::$exclude`. Foto/berkas tidak lewat AI: pengguna melampirkannya di Mini App.
+
+## Eksekusi dari chat (Tahap 1, semua peran)
+
+Fondasi GENERIK: tidak ada daftar peran di eksekutor. Tool yang tampil dan aksi yang diizinkan = Rbac (Tabel 5) + aturan unit relawan + Policy + cakupan SPPG peran penekan tombol. Investor tidak pernah mendapat tool tulis.
+
+### Menandai tool agar dapat dijalankan dari chat
+
+```php
+public function eksekusi(): ?SpesifikasiEksekusi
+{
+    return SpesifikasiEksekusi::rest('api.v1.pemasok.store', 'POST', kirimAiDraftId: true);    // buat
+    // ubah:  rest('api.v1.pemasok.update', 'PATCH', 'pemasok', kirimAiDraftId: true)
+    // hapus: rest('api.v1.pemasok.destroy', 'DELETE', 'pemasok', bisaUbah: false)
+    // butuh foto/nota: SpesifikasiEksekusi::hanyaMiniApp()  (Lanjutkan tidak pernah tampil)
+}
+```
+
+Tool katalog cukup mengisi `ResourceSpec::$rute` (awalan nama rute) atau `$berkas = true`. Tahap 1 mengaktifkan: pemasok, titik layanan (buat/ubah/hapus), keluhan, log produksi; keuangan, pembelian bahan, bukti distribusi = hanya Ubah (berkas). Modul lain menyusul di tahap 2 tanpa perubahan arsitektur. Hook opsional di `WriteDraftTool`: `berbahaya()` (bawaan: semua hapus), `ringkasan()`, `namaTarget()`, `kolomTersembunyi()`, `sidikTarget()`, `olahHasil()` (hasil yang disimpan = id/status saja + rahasia untuk pesan langsung), `tolakDraf()`, `wajibValid()`, `butuhSppg()`.
+
+### Alur dan status draf
+
+```
+pending --Lanjutkan--> (aksi biasa) dijalankan -> confirmed
+pending --Lanjutkan--> (aksi berbahaya) menunggu_konfirmasi_ulang --Ya, yakin--> dijalankan -> confirmed
+pending|menunggu_konfirmasi_ulang --Batal--> cancelled      --TTL--> expired
+eksekusi ditolak/gagal (403, 404, 409, 422, 5xx, hak dicabut, data berubah) -> gagal (tidak dapat dipakai lagi)
+429 (throttle) -> draf tetap terbuka, layar konfirmasi diterbitkan ulang
+```
+
+Pemeriksaan pada SETIAP klik (`AiDraftExecutor`): pengguna dimuat ulang (aktif) + sesi login penuh; draf milik penekan dan SPPG draf = SPPG pengguna SAAT INI (Admin: tanpa SPPG; dipindah SPPG -> tidak berlaku), status sesuai langkah (langkah 2 tanpa langkah 1 ditolak), belum kedaluwarsa; tool pembuat (`ai_drafts.tool`) masih tersedia untuk peran SAAT INI; spesifikasi dapat dijalankan (bukan berkas, tidak ada isian berkeyakinan rendah). Di dalam transaksi + `lockForUpdate` baris draf: status dicek ulang, sidik target dibandingkan (`ai_drafts.sidik_target`, diisi server saat draf dibuat; berbeda -> "data berubah, ulangi permintaan"), Form Request dry-run diulang, lalu SATU sub-request.
+
+### Sub-request internal (`PermintaanInternal`)
+
+- `Illuminate\Contracts\Http\Kernel::handle()` dengan `Request::create()` ke rute REST modul: middleware global + `auth:sanctum`, `active`, `EnsureTokenAbility:auth:penuh`, `ResolveSppgAktif`, `throttle:api`, `IdempotencyKey` (header = uuid draf untuk POST modul), route model binding ber-SppgScope, Form Request, Policy, Service, format galat API. Tidak ada HTTP keluar.
+- Identitas = baris pengguna SEGAR + salah satu token sesi login penuh MILIKNYA (`SesiService::tokenSesiPenuh`); guard Sanctum diisi langsung, tidak ada token baru diterbitkan. Body = payload draf TERSIMPAN disaring ke kunci aturan Form Request (+ `ai_draft_id` bila endpoint menerimanya), bukan data callback.
+- Isolasi state di `finally`: pengguna guard Sanctum, guard bawaan + user resolver (`shouldUse`), instance `request` (+ facade/URL generator), cache `SppgAktif`. Sumber audit `AuditLog::withSource('ai', ...)` dipulihkan otomatis. Diuji `AiEksekusiSubRequestTest`.
+- Respons dipetakan: 401/403 ditolak, 404 tidak ada, 409 data berubah, 422 (`ai_draft_id` = draf tidak berlaku; lainnya pesan validasi server), 429 coba lagi, 5xx gagal. Audit `ai_eksekusi_draf` (sumber `ai`): tool, modul, aksi, target, hasil, status HTTP, id hasil.
+
+### Tool Pengguna (Admin)
+
+| Tool | Endpoint | Konfirmasi |
+|---|---|---|
+| `buat_undangan_pengguna` (role, unit relawan, sppg_id dari `cari_sppg`) | POST /pengguna/undangan | satu langkah; peran Admin = dua langkah. SPPG belum disebut / tidak valid / terhapus -> tidak ada draf, model bertanya ulang. admin/investor: sppg_id dibuang |
+| `cari_undangan_pengguna` | (baca; tanpa token/tautan) | - |
+| `cabut_undangan` | DELETE /pengguna/undangan/{id} | dua langkah |
+| `ubah_peran_pengguna` | PATCH /pengguna/{id} + ai_draft_id | dua langkah |
+| `nonaktifkan_pengguna` / `aktifkan_pengguna` | PATCH /pengguna/{id} (`is_active`) + ai_draft_id | dua langkah / satu langkah |
+| `hapus_pengguna` | DELETE /pengguna/{id} | dua langkah |
+
+Satu target per draf (tidak ada aksi massal). Ubah peran ke Admin dan undangan peran Admin: peringatan tegas + dua langkah. Nama/nilai di layar konfirmasi diratakan menjadi satu baris (`WriteDraftTool::satuBaris`: karakter kontrol/bidi/zero-width dibuang) sebelum escape HTML. `cari_undangan_pengguna` hanya menerima filter `role` (enum). Bila pesan tautan gagal dikirim setelah undangan terbit, undangan dicabut otomatis (`cabutHasil`, audit `ai`) dan Admin diminta mengulang; tautan tidak pernah ditampilkan ulang. Diri sendiri ditolak saat draf dibuat dan lagi oleh `UserAccountService` (diri sendiri / admin aktif terakhir). `role`/`unit`/`sppg_id` adalah argumen terlindungi global; tool pengguna menerimanya EKSPLISIT lewat `MenerimaArgumenTerlindungi` (hanya `ArgumentValidator::DAPAT_DIIZINKAN`, tingkat atas, divalidasi enum + Form Request); tool lain tetap membuangnya, `user_id`/`id`/`created_by`/... tidak pernah dapat diizinkan.
+
+**Token undangan:** tool hanya membuat draf tanpa token; token hanya ada di respons sub-request, diolah `olahHasil()` dan dikirim LANGSUNG ke Admin sebagai pesan terpisah (teks polos, protect_content, tanpa pratinjau tautan). Tidak pernah masuk LLM/riwayat, `ai_interactions`, `ai_drafts.payload/hasil` (hanya `undangan_id` + status), audit, log, atau `bot_aksi`.
+
+### Suara dan teks bebas
+
+Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDAK tepercaya (dibungkus nonce). Layar konfirmasi menampilkan "Yang saya dengar: ..." (escape, dipotong 300, tidak disimpan). Prompt melarang draf tebakan untuk transkrip/angka/target yang ambigu; isian berkeyakinan < `ai.drafts.low_confidence` tidak dapat dijalankan dari chat (hanya Ubah). Batas laju AI dicek SEBELUM unduh/STT; kuota detik audio per pengguna per jam `AI_STT_DETIK_PER_JAM` (600); durasi > 120 dtk / ukuran > 10 MB ditolak ramah; `ai_interactions.argumen.stt_detik` mencatat biaya STT. Balasan "ya/oke/lanjut" (teks atau suara) tidak pernah menjalankan apa pun.
 
 ## Pertahanan prompt injection (wajib, sudah di kerangka)
 
@@ -120,7 +182,12 @@ Data sensitif tidak masuk spesifikasi: `no_sim`, `no_hp`, telepon/kontak, `teleg
 | `sppg_id`/`user_id`/`role`/`created_by` dari model | Dibuang di semua level (`config ai.protected_arguments`), diisi ulang dari pengguna login | `test_argumen_sppg_id_*` |
 | Kunci isian server (`total`, `status`, `satuan`, `status_persetujuan`, `melebihi_anggaran`, `versi` pada draf buat, dst.) yang lolos ke payload | Payload draf disaring ke kunci yang diatur Form Request modul (`DraftValidationResult::saring`); kunci lain tidak pernah tersimpan di `ai_drafts.payload` | `test_l1_payload_draf_hanya_berisi_kunci_aturan_form_request` |
 | Argumen berlebihan/salah tipe/terlalu panjang/terlalu dalam | `ArgumentValidator` (additionalProperties false, enum, maxLength, depth 4, total 4000 karakter) | `test_argumen_*`, `ArgumentValidatorTest` |
-| Aksi tulis otomatis | Tool tulis hanya membuat AiDraft; data tersimpan hanya lewat endpoint modul | `test_tool_tulis_*`, `AiDraftApiTest` |
+| Aksi tulis otomatis | Tool tulis hanya membuat AiDraft; data tersimpan hanya lewat endpoint modul setelah tombol manusia (Simpan Mini App / Lanjutkan chat); teks/suara "ya" tidak mengeksekusi | `test_tool_tulis_*`, `AiDraftApiTest`, `AiEksekusiPenggunaTest::test_teks_ya_*`, `AiEksekusiSuaraTest` |
+| Ringkasan konfirmasi dipalsukan model | Layar dibangun server dari payload tersimpan + nama target dari DB, escape HTML; teks LLM tidak masuk layar | `test_layar_konfirmasi_dari_server_*` |
+| Callback dipalsukan/dipakai ulang | `b1` MAC ke telegram_id, baris sekali pakai per grup (konsumsi atomik), TTL = TTL draf, hanya chat pribadi pemilik; langkah 2 tanpa langkah 1 ditolak | `AiEksekusiPenggunaTest::test_hanya_pemilik_*`, `test_hapus_pengguna_dua_langkah_*` |
+| Hak dicabut / data berubah setelah draf | Hak dihitung ulang (tool + sub-request Policy/Form Request); sidik target + 409 -> "data berubah, ulangi permintaan" | `test_hak_dicabut_*`, `test_data_target_berubah_*`, `test_respons_409_*` |
+| Eskalasi via chat | Tool pengguna hanya Admin (Rbac); role divalidasi enum + Form Request; undangan Admin dua langkah | `test_peran_selain_admin_*`, `test_argumen_role_*` |
+| Bocor token undangan | Lihat "Token undangan" di atas | `test_admin_buat_undangan_*_tanpa_bocor` |
 | Banjir draf | Maks draf pending per pengguna | `test_jumlah_draf_*` |
 | Draf orang lain | GET/DELETE hanya pemilik + SPPG sama (lainnya 404) | `AiDraftApiTest` |
 | Loop tool tak berujung | Maks iterasi + maks tool call per langkah + anggaran waktu | `test_loop_*`, `test_jumlah_tool_call_*` |
@@ -145,7 +212,8 @@ Data sensitif tidak masuk spesifikasi: `no_sim`, `no_hp`, telepon/kontak, `teleg
 | `AI_TOKEN_PER_MINUTE` / `AI_TOKEN_PER_DAY` | 0 / 0 (nonaktif) | pelindung token GLOBAL per model; Groq gratis disarankan `7000` / `190000` |
 | `AI_TOOL_SELECTION` | `auto` | `auto` (aktif untuk `openai_compat`) \| `on` \| `off` |
 | `AI_TOOL_TOKEN_THRESHOLD` / `AI_TOOL_MAX` / `AI_TOOL_MAX_TOKENS` | 2500 / 10 / 2500 | pemilihan aktif bila estimasi token tool peran > ambang; batas jumlah & token tool terpilih |
-| `AI_DRAFT_TTL_MINUTES` / `AI_DRAFT_MAX_PENDING` | 30 / 10 | masa berlaku & batas draf |
+| `AI_DRAFT_TTL_MINUTES` / `AI_DRAFT_MAX_PENDING` | 30 / 10 | masa berlaku & batas draf (juga masa berlaku tombol konfirmasi chat) |
+| `AI_STT_DETIK_PER_JAM` | 600 | kuota detik audio STT per pengguna per jam (dicek sebelum transkripsi) |
 | `STT_DRIVER`, `STT_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_TIMEOUT` | kosong, -, -, `whisper-1`, 20 | `http` = endpoint bergaya OpenAI `/audio/transcriptions` (HTTPS, tanpa redirect) |
 
 ## Penyedia kompatibel OpenAI (`LLM_PROVIDER=openai_compat`, Tahap 5a)
@@ -190,4 +258,4 @@ $reply = app(AiAgentService::class)->handle($stafGudang, AiInput::text('Pemasok 
 $this->assertSame(['cari_pemasok', 'buat_pemasok', ...], $llm->offeredTools(0));
 ```
 
-Untuk setiap tool baru minimal uji: ditawarkan hanya ke peran berhak, data SPPG lain tidak terbaca, tool tulis tidak menyimpan data modul (hanya `ai_drafts`), dan alur draf -> endpoint modul dengan `ai_draft_id` berhasil.
+Untuk setiap tool baru minimal uji: ditawarkan hanya ke peran berhak, data SPPG lain tidak terbaca, tool tulis tidak menyimpan data modul (hanya `ai_drafts`), dan alur draf -> endpoint modul dengan `ai_draft_id` berhasil. Tool dengan `eksekusi()`: draf -> layar konfirmasi -> Lanjutkan berhasil, peran tanpa hak ditolak, Batal, TTL, klik ganda (lihat `tests/Feature/Ai/Eksekusi/*`).

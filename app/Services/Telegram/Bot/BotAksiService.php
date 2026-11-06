@@ -17,7 +17,10 @@ use LogicException;
 class BotAksiService
 {
     /**
-     * @param  array{sppg_id?: int|null, subjek_tipe?: string|null, subjek_id?: int|null, subjek_versi?: int|null}  $opsi
+     * `expires_at` opsional (mis. konfirmasi draf Agen AI = masa berlaku draf, config ai.drafts.ttl_minutes); bawaan
+     * config telegram.callback_ttl_menit.
+     *
+     * @param  array{sppg_id?: int|null, subjek_tipe?: string|null, subjek_id?: int|null, subjek_versi?: int|null, expires_at?: \DateTimeInterface|null}  $opsi
      */
     public function terbit(User $user, int $chatId, string $jenis, array $opsi = [], ?string $grup = null): BotAksi
     {
@@ -36,7 +39,7 @@ class BotAksiService
                     'subjek_id' => $opsi['subjek_id'] ?? null,
                     'subjek_versi' => $opsi['subjek_versi'] ?? null,
                     'status' => BotAksi::STATUS_AKTIF,
-                    'expires_at' => now()->addMinutes(max(1, (int) config('telegram.callback_ttl_menit', 10))),
+                    'expires_at' => $opsi['expires_at'] ?? now()->addMinutes(max(1, (int) config('telegram.callback_ttl_menit', 10))),
                 ])->save();
 
                 $this->batasiAktif((int) $user->getKey(), (int) $aksi->getKey());

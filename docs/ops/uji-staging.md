@@ -139,6 +139,23 @@ Berkas contoh untuk `--stt`/`--vision` harus ada **di dalam kontainer**: `dcp cp
 | AI-08 | W | **Ketahanan.** Ubah sementara `LLM_BASE_URL` ke alamat tak terjangkau, recreate, kirim pesan. Kembalikan. | Dalam batas anggaran waktu (`agent.time_budget_seconds` 25 dtk) bot membalas fallback ramah; job selesai < 30 dtk (tidak kena timeout job); worker tidak menggantung | waktu respons |
 | AI-09 | W | **Rahasia tidak bocor di log.** `dcp logs app queue nginx \| grep -c "<awalan kunci API Anda>"` dan periksa `storage/logs`. Cari token bot (`<angka>:`) dan secret webhook. | 0 kecocokan; log hanya memuat kode galat/ID, bukan isi percakapan atau kunci | hitungan |
 
+### 6a. Aksi Agen AI dari chat (Tahap 1: konfirmasi tombol + tool Pengguna)
+
+Semua akun uji fiktif dan sudah masuk penuh lewat Mini App (sesi login penuh). Tombol berlaku `AI_DRAFT_TTL_MINUTES` (30 menit).
+
+| ID | P | Langkah | Hasil diharapkan | Bukti |
+|---|---|---|---|---|
+| AI-10 | W | **Undangan lewat chat (Admin).** Kirim "buat tautan undangan untuk teman saya, peran staf gudang". Bot menanyakan SPPG; jawab nama/kode SPPG uji. Periksa layar konfirmasi lalu tekan **Lanjutkan**. | Sebelum SPPG disebut: tidak ada draf. Layar konfirmasi memuat "Peran: Staf Gudang" + "SPPG tujuan: ..." (tanpa tombol Ubah). Setelah Lanjutkan: pesan "Berhasil" + pesan TERPISAH berisi tautan `https://t.me/<bot>?start=inv_...` yang tidak dapat diteruskan (protect_content). Undangan muncul di Mini App > Pengguna > Undangan. Tautan bekerja di akun Telegram kedua (akun staf gudang aktif setelah aktivasi). | tangkapan layar, baris `invitations` |
+| AI-11 | W | **Token tidak bocor.** Setelah AI-10: `dcp exec mysql mysql -e "select count(*) from ai_drafts where payload like '%inv_%' or hasil like '%inv_%'; select count(*) from ai_interactions where argumen like '%inv_%'; select count(*) from audit_logs where new_values like '%inv_%';" sigap` dan `dcp logs app queue \| grep -c "start=inv_"`. | Semua 0 | hitungan |
+| AI-12 | W | **Batal.** Ulangi permintaan undangan, tekan **Batal**, lalu coba tekan Lanjutkan pada pesan yang sama (bila masih terlihat). | "Dibatalkan. Tidak ada perubahan data."; tombol lama "sudah tidak berlaku"; tidak ada undangan baru | tangkapan layar |
+| AI-13 | W | **Kedaluwarsa.** Buat draf undangan, tunggu > 30 menit (atau sementara set `AI_DRAFT_TTL_MINUTES=1`, recreate `app queue`), tekan Lanjutkan. Kembalikan nilai. | "Tombol sudah tidak berlaku"; tidak ada undangan | tangkapan layar |
+| AI-14 | W | **Bukan Admin ditolak.** Sebagai kepala SPPG, staf gudang, relawan, dan investor kirim "buat undangan admin untuk teman saya" dan "hapus akun kepala SPPG". | Bot menolak sopan / tidak ada layar konfirmasi; tidak ada draf pengguna (`select count(*) from ai_drafts where module='pengguna' and user_id=<id>` = 0) | tangkapan layar, hitungan |
+| AI-15 | W | **Dua langkah hapus.** Sebagai Admin: "hapus akun <nama pengguna uji>". Tekan Lanjutkan, periksa layar "KONFIRMASI KEDUA" (peringatan tebal + nama target), lalu **Ya, yakin**. Ulangi dengan target diri sendiri. | Akun baru terhapus setelah "Ya, yakin" (hapus lunak); target diri sendiri ditolak ("tidak dapat menghapus akun Anda sendiri") | tangkapan layar, `users.deleted_at` |
+| AI-16 | W | **Lintas peran.** Staf gudang: "tambah pemasok <nama fiktif>, petani" -> Lanjutkan. Kepala SPPG: "ubah nama titik layanan X jadi Y" -> Lanjutkan. Akuntan: "catat pengeluaran gas 150 ribu". | Pemasok/titik layanan tersimpan di SPPG sendiri, audit `sumber=ai`; pengeluaran hanya tombol **Ubah di Mini App** (butuh nota), tanpa Lanjutkan | tangkapan layar, `audit_logs` |
+| AI-17 | W | **Suara.** Kirim pesan suara "tambah pemasok <nama fiktif>" lalu pesan suara "ya, lanjutkan". | Layar konfirmasi memuat "Yang saya dengar: ..."; pesan "ya, lanjutkan" TIDAK menjalankan apa pun; hanya tombol yang menjalankan | tangkapan layar |
+| AI-18 | W | **Tanpa sesi.** Keluar dari Mini App (logout semua sesi) lalu tekan Lanjutkan pada draf yang masih berlaku. | Diminta masuk dulu; draf tidak dijalankan; setelah masuk lagi tombol yang sama masih dapat dipakai sampai kedaluwarsa | tangkapan layar |
+| AI-19 | W | **MySQL 8.4 (belum teruji lokal, hanya SQLite).** Setelah `migrate`: `SHOW CREATE TABLE ai_drafts` (kolom `sppg_id` NULL, FK `ai_drafts_sppg_id_foreign` tetap ada; `status` varchar(32)). Lalu dua perangkat menekan **Lanjutkan** pada draf yang sama hampir bersamaan, dan uji draf yang sama disimpan dari Mini App sambil menekan Lanjutkan. | Migrasi sukses tanpa kehilangan baris; hanya SATU eksekusi (satu baris data / satu undangan), klik lain "tidak berlaku" atau 422 `ai_draft_id`; tidak ada deadlock tertinggal (`SHOW ENGINE INNODB STATUS`) | keluaran SQL, hitungan |
+
 ---
 
 ## 7. Keamanan

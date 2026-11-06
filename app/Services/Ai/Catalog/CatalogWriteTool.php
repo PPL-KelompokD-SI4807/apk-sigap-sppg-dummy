@@ -3,6 +3,7 @@
 namespace App\Services\Ai\Catalog;
 
 use App\Models\User;
+use App\Services\Ai\Eksekusi\SpesifikasiEksekusi;
 use App\Services\Ai\Tools\WriteDraftTool;
 use App\Support\Rbac;
 use Illuminate\Database\Eloquent\Model;
@@ -45,6 +46,48 @@ class CatalogWriteTool extends WriteDraftTool
     public function draftResource(): ?string
     {
         return $this->spec->marker;
+    }
+
+    /**
+     * Eksekusi dari chat: hanya sumber daya yang mendaftarkan `rute` (tahap 1: pemasok, titik layanan, keluhan, log
+     * produksi; sisanya tahap 2). Sumber daya ber-berkas (nota/foto) selalu hanya Mini App. Tool turunan dengan nama
+     * lain (mis. catat_mutasi_stok) tidak mewarisi rute sumber dayanya.
+     */
+    public function eksekusi(): ?SpesifikasiEksekusi
+    {
+        if ($this->spec->berkas) {
+            return SpesifikasiEksekusi::hanyaMiniApp();
+        }
+
+        if ($this->spec->rute === null || $this->name !== $this->spec->toolName($this->action)) {
+            return null;
+        }
+
+        return match ($this->action) {
+            'C' => SpesifikasiEksekusi::rest($this->spec->rute.'.store', 'POST', null, kirimAiDraftId: true),
+            'U' => SpesifikasiEksekusi::rest($this->spec->rute.'.update', 'PATCH', $this->spec->routeParameter, kirimAiDraftId: true),
+            default => SpesifikasiEksekusi::rest($this->spec->rute.'.destroy', 'DELETE', $this->spec->routeParameter, bisaUbah: false),
+        };
+    }
+
+    protected function kolomTersembunyi(): array
+    {
+        return $this->spec->personalText;
+    }
+
+    protected function labelSumberDaya(): string
+    {
+        return $this->spec->label;
+    }
+
+    /** Nama orang yang ke LLM disajikan sebagai inisial juga tidak ditampilkan lengkap di ringkasan chat. */
+    protected function namaTarget(Model $record): string
+    {
+        if (array_intersect(['nama', 'name'], $this->spec->initials) !== []) {
+            return '#'.$record->getKey();
+        }
+
+        return parent::namaTarget($record);
     }
 
     protected function formRequest(): ?string
@@ -121,14 +164,5 @@ class CatalogWriteTool extends WriteDraftTool
     protected function findTarget(User $user, int $id): ?Model
     {
         return SppgBound::apply($this->spec->model::query(), $user, $this->spec->scopeColumn)->whereKey($id)->first();
-    }
-
-    protected function afterValidation(array $payload, array $confidence, array $errors): array
-    {
-        if ($this->draftResource() !== null) {
-            $payload['_resource'] = $this->draftResource();
-        }
-
-        return [$payload, $confidence];
     }
 }

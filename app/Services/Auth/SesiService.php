@@ -177,6 +177,27 @@ class SesiService
     }
 
     /**
+     * Sesi login penuh aktif terbaru milik pengguna (kriteria sama dengan punyaSesiPenuh), atau null. Dipakai
+     * eksekusi aksi Agen AI dari Bot sebagai identitas sub-request internal (PermintaanInternal): tanpa sesi
+     * penuh tidak ada aksi yang dijalankan.
+     */
+    public function tokenSesiPenuh(User $user): ?PersonalAccessToken
+    {
+        if (! $user->canAuthenticate()) {
+            return null;
+        }
+
+        $token = $user->tokens()
+            ->where('name', 'like', self::PREFIX_SESI.'%')
+            ->whereNotNull('perangkat_tepercaya_id')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->orderByDesc('last_used_at')->orderByDesc('id')
+            ->first();
+
+        return $token instanceof PersonalAccessToken && in_array(self::ABILITY_PENUH, (array) $token->abilities, true) ? $token : null;
+    }
+
+    /**
      * Daftar sesi login penuh aktif pengguna (terbaru dulu).
      *
      * @return Collection<int, array{id: int, perangkat: string|null, dibuat_pada: string|null, terakhir_dipakai_pada: string|null, diverifikasi_pada: string|null, sesi_ini: bool}>
