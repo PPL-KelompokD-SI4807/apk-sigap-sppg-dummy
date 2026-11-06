@@ -15,8 +15,9 @@ use Symfony\Component\HttpKernel\Exception\GoneHttpException;
 
 /**
  * Siklus hidup AiDraft (FR-11): dibuat oleh tool tulis, dibaca/dibuang HANYA oleh pemiliknya
- * (SPPG sama), kedaluwarsa setelah config ai.drafts.ttl_minutes, dikonfirmasi oleh
- * AiDraftConfirmer saat endpoint modul menyimpan data dengan ai_draft_id.
+ * (SPPG sama; Admin = draf tanpa SPPG), kedaluwarsa setelah config ai.drafts.ttl_minutes, dikonfirmasi oleh
+ * AiDraftConfirmer saat endpoint modul menyimpan data dengan ai_draft_id, atau dijalankan lewat tombol
+ * konfirmasi Bot (App\Services\Ai\Eksekusi\AiDraftExecutor).
  */
 class DraftService
 {
@@ -26,13 +27,14 @@ class DraftService
      *
      * @throws DraftLimitException
      */
-    public function create(User $user, string $module, AksiAiDraft $action, array $payload, array $confidence, ?int $interactionId = null, ?int $targetId = null): AiDraft
+    public function create(User $user, string $module, AksiAiDraft $action, array $payload, array $confidence, ?int $interactionId = null, ?int $targetId = null, ?string $tool = null, ?string $sidikTarget = null): AiDraft
     {
-        if ($user->sppg_id === null || $user->isInvestor()) {
+        // Investor baca saja (R-06a). Peran satu-SPPG wajib punya SPPG; Admin (lintas SPPG) memiliki draf tanpa SPPG.
+        if ($user->isInvestor() || ($user->sppg_id === null && ! $user->isAdmin())) {
             throw new DraftLimitException('Draf AI membutuhkan SPPG pengguna.');
         }
 
-        return DB::transaction(function () use ($user, $module, $action, $payload, $confidence, $interactionId, $targetId): AiDraft {
+        return DB::transaction(function () use ($user, $module, $action, $payload, $confidence, $interactionId, $targetId, $tool, $sidikTarget): AiDraft {
             $this->expireFor($user);
 
             $pending = $this->ownQuery($user)->pending()->where('expires_at', '>', now())->lockForUpdate()->count();
@@ -52,8 +54,13 @@ class DraftService
                 'status' => StatusAiDraft::Pending,
                 'expires_at' => now()->addMinutes(max(1, (int) config('ai.drafts.ttl_minutes', 30))),
             ]);
-            // Pemilik & SPPG selalu dari pengguna login, tidak pernah dari argumen model.
-            $draft->forceFill(['sppg_id' => $user->sppg_id, 'user_id' => $user->getKey()]);
+            // Pemilik, SPPG, nama tool, dan sidik target selalu dari server, tidak pernah dari argumen model.
+            $draft->forceFill([
+                'sppg_id' => $user->isAdmin() ? null : $user->sppg_id,
+                'user_id' => $user->getKey(),
+                'tool' => $tool,
+                'sidik_target' => $sidikTarget,
+            ]);
             $draft->save();
 
             return $draft;
@@ -75,15 +82,16 @@ class DraftService
      */
     public function assertUsable(AiDraft $draft): AiDraft
     {
-        if ($draft->status === StatusAiDraft::Pending && $draft->isKedaluwarsa()) {
+        if ($draft->status->terbuka() && $draft->isKedaluwarsa()) {
             $draft->forceFill(['status' => StatusAiDraft::Expired])->save();
         }
 
         return match ($draft->status) {
-            StatusAiDraft::Pending => $draft,
+            StatusAiDraft::Pending, StatusAiDraft::MenungguKonfirmasiUlang => $draft,
             StatusAiDraft::Expired => throw new GoneHttpException('Draf sudah kedaluwarsa. Kirim ulang pesan ke bot atau isi formulir manual.'),
             StatusAiDraft::Confirmed => throw new GoneHttpException('Draf sudah disimpan sebelumnya.'),
-            StatusAiDraft::Discarded => throw new GoneHttpException('Draf sudah dibuang.'),
+            StatusAiDraft::Discarded, StatusAiDraft::Cancelled => throw new GoneHttpException('Draf sudah dibuang.'),
+            StatusAiDraft::Gagal => throw new GoneHttpException('Draf tidak dapat dipakai lagi. Kirim ulang permintaan ke bot atau isi formulir manual.'),
         };
     }
 
@@ -94,7 +102,7 @@ class DraftService
             throw new ConflictHttpException('Draf sudah disimpan dan tidak dapat dibuang.');
         }
 
-        if ($draft->status !== StatusAiDraft::Discarded) {
+        if (! in_array($draft->status, [StatusAiDraft::Discarded, StatusAiDraft::Cancelled, StatusAiDraft::Gagal], true)) {
             $draft->forceFill(['status' => StatusAiDraft::Discarded])->save();
         }
     }
@@ -121,9 +129,13 @@ class DraftService
     /** @return Builder<AiDraft> */
     private function ownQuery(User $user)
     {
-        return AiDraft::query()
+        $query = AiDraft::query()
             ->withoutGlobalScope(SppgScope::class)
-            ->where('user_id', $user->getKey())
-            ->where('sppg_id', $user->sppg_id ?? 0);
+            ->where('user_id', $user->getKey());
+
+        // Admin: draf tanpa SPPG. Peran lain: SPPG penempatan (tanpa SPPG -> tidak ada draf, fail closed).
+        return $user->isAdmin()
+            ? $query->whereNull('sppg_id')
+            : $query->where('sppg_id', $user->sppg_id ?? 0);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Services\Ai\Tools\TitikLayanan;
 use App\Enums\JenisTitikLayanan;
 use App\Http\Requests\TitikLayanan\StoreTitikLayananRequest;
 use App\Models\TitikLayanan;
+use App\Services\Ai\Eksekusi\SpesifikasiEksekusi;
 use App\Services\Ai\Tools\WriteDraftTool;
 
 /**
@@ -28,6 +29,17 @@ class BuatTitikLayananTool extends WriteDraftTool
     protected function formRequest(): ?string
     {
         return StoreTitikLayananRequest::class;
+    }
+
+    /** Dapat dijalankan dari tombol konfirmasi chat: POST /titik-layanan (+ ai_draft_id) sebagai pengguna penekan. */
+    public function eksekusi(): ?SpesifikasiEksekusi
+    {
+        return SpesifikasiEksekusi::rest('api.v1.titik-layanan.store', 'POST', kirimAiDraftId: true);
+    }
+
+    protected function labelSumberDaya(): string
+    {
+        return 'titik layanan';
     }
 
     protected function fields(): array

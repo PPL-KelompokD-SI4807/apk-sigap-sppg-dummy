@@ -42,6 +42,9 @@ final class ResourceSpec
      *                          draf dibuat (diisi server, bukan LLM) sehingga konfirmasi draf basi -> 409
      * @param  list<string>  $personalText  kolom teks bebas yang dapat memuat data pribadi; disamarkan
      *                                      RecordPresenter::redactPersonal() dan dipotong sebelum ke LLM
+     * @param  string|null  $rute  awalan nama rute REST (mis. 'api.v1.pemasok' -> .store/.update/.destroy) agar draf
+     *                             dapat dijalankan dari tombol konfirmasi Bot (sub-request internal); null = hanya Mini App
+     * @param  bool  $berkas  aksi tulis sumber daya ini memerlukan foto/nota/berkas: dari chat hanya "Ubah" (Mini App)
      */
     public function __construct(
         public readonly string $key,
@@ -68,6 +71,8 @@ final class ResourceSpec
         public readonly array $initials = [],
         public readonly array $personalText = [],
         public readonly bool $berversi = false,
+        public readonly ?string $rute = null,
+        public readonly bool $berkas = false,
     ) {}
 
     public function toolName(string $letter): string

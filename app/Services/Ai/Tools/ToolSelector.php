@@ -23,7 +23,7 @@ class ToolSelector
 {
     /** Kata kunci (awal kata, huruf kecil) per slug modul config/rbac.php. */
     private const MODULE_KEYWORDS = [
-        'pengguna' => ['pengguna', 'user', 'akun', 'petugas', 'karyawan', 'staf', 'kurir', 'anggota'],
+        'pengguna' => ['pengguna', 'user', 'akun', 'petugas', 'karyawan', 'staf', 'kurir', 'anggota', 'undang', 'undangan', 'tautan', 'peran', 'nonaktif', 'aktifkan'],
         'notifikasi-perjalanan' => ['perjalanan', 'berangkat', 'tiba', 'sampai', 'otw', 'jalan', 'posisi', 'notifikasi', 'estimasi'],
         'sppg' => ['sppg', 'kapasitas', 'profil', 'alamat dapur'],
         'titik-layanan' => ['titik', 'layanan', 'sekolah', 'sd', 'smp', 'sma', 'smk', 'paud', 'tk', 'posyandu', 'pesantren'],
@@ -47,8 +47,8 @@ class ToolSelector
     /** Kata kerja niat tulis (awal kata, boleh berimbuhan di-/me-/ter-/ber-). */
     private const VERBS = [
         'C' => ['tambah', 'nambah', 'buat', 'bikin', 'catat', 'input', 'masukkan', 'daftarkan', 'rekam', 'simpan', 'baru', 'laporkan', 'ajukan', 'terima'],
-        'U' => ['ubah', 'ganti', 'edit', 'perbarui', 'update', 'koreksi', 'revisi', 'ralat', 'tandai', 'atur', 'selesaikan', 'tangani'],
-        'D' => ['hapus', 'buang', 'batalkan', 'hilangkan', 'delete'],
+        'U' => ['ubah', 'ganti', 'edit', 'perbarui', 'update', 'koreksi', 'revisi', 'ralat', 'tandai', 'atur', 'selesaikan', 'tangani', 'nonaktifkan', 'aktifkan'],
+        'D' => ['hapus', 'buang', 'batalkan', 'hilangkan', 'delete', 'cabut'],
     ];
 
     /** Kata tanya/baca: pesan berangka TANPA kata ini dianggap pencatatan (mis. "log produksi 240 porsi"). */

@@ -38,15 +38,18 @@ final class ToolResult
 
     /**
      * @param  array<string, list<string>>  $errors
+     * @param  bool  $konfirmasiChat  draf dapat dijalankan dari tombol konfirmasi di chat (bukan hanya Mini App)
      */
-    public static function draft(AiDraft $draft, array $errors = []): self
+    public static function draft(AiDraft $draft, array $errors = [], bool $konfirmasiChat = false): self
     {
         return new self(self::DRAFT, [
             'draf_dibuat' => true,
             'modul' => $draft->module,
             'aksi' => $draft->action->value,
             'perlu_dicek' => array_values(array_unique(array_map(fn ($k) => explode('.', (string) $k)[0], array_keys($errors)))),
-            'catatan' => 'Data BELUM disimpan. Pengguna harus memeriksa dan menekan Simpan di Mini App.',
+            'catatan' => $konfirmasiChat
+                ? 'Data BELUM disimpan. Sistem menampilkan ringkasan dengan tombol Lanjutkan/Batal; aksi hanya berjalan bila pengguna menekan tombol itu. Jangan meminta pengguna mengetik "ya".'
+                : 'Data BELUM disimpan. Pengguna harus memeriksa dan menekan Simpan di Mini App.',
         ], null, $draft);
     }
 

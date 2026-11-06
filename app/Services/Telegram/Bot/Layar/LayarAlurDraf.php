@@ -13,7 +13,8 @@ use LogicException;
 
 /**
  * Petunjuk alur DRAF (R-02 PR-3, C2; bagian 3.7-A rencana): "Catat pengeluaran", "Catat pencairan", "Catat mutasi stok",
- * "Buat Keluhan". Layar BACA-SAJA: bot TIDAK menulis data. Isinya hanya petunjuk + contoh kalimat agar pengguna mengetik ke
+ * "Buat Keluhan". Layar BACA-SAJA: layar ini sendiri TIDAK menulis data (draf yang dapat dijalankan dari chat memakai
+ * layar konfirmasi Agen AI terpisah, BotAksiAiService). Isinya hanya petunjuk + contoh kalimat agar pengguna mengetik ke
  * Agen AI seperti biasa (Agen AI membuat AiDraft; tombol "Periksa & Simpan" ?draft=<uuid> (AiChatHandler) yang sudah ada tetap
  * dipakai), plus tombol web_app "Buka formulir" ke rute formulir modul yang SUDAH terdaftar di Mini App (?r=). Konfirmasi
  * dan penyimpanan tetap di Mini App (keputusan pengguna #2).
@@ -138,7 +139,7 @@ final class LayarAlurDraf extends LayarModulDasar implements LayarAksi
             ...array_map(fn (string $c) => '- '.self::e($c), $d['contoh']),
             '',
             self::e($d['catatan']),
-            'Setelah draf siap, tekan tombol "'.self::e('Periksa & Simpan').'" untuk memeriksa dan menyimpannya di Mini App.',
+            'Setelah draf siap, tekan tombol konfirmasi yang muncul (Lanjutkan) atau "'.self::e('Periksa & Simpan').'" untuk memeriksa dan menyimpannya di Mini App.',
         ];
 
         if ($d['rute'] === null) {

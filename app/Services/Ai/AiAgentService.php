@@ -75,6 +75,10 @@ class AiAgentService
 
         $log = ['iterasi' => 0, 'tools' => [], 'panjang_masukan' => 0, 'gambar' => count($input->images)];
 
+        if ($input->detikAudio > 0) {
+            $log['stt_detik'] = $input->detikAudio;
+        }
+
         try {
             if (! $this->withinRateLimit($user)) {
                 return $this->finish($interaction, $started, $log, HasilAi::Ditolak, 'rate_limited', new AiReply(
@@ -252,7 +256,9 @@ class AiAgentService
             return $this->record($log, $call->name, ToolResult::invalid('Argumen harus berupa objek JSON.'), []);
         }
 
-        [$arguments, $stripped] = ArgumentValidator::stripProtected($call->arguments, (array) config('ai.protected_arguments', []));
+        // Argumen terlindungi dibuang; hanya tool yang menyatakannya eksplisit (MenerimaArgumenTerlindungi) yang
+        // mempertahankan role/unit/sppg_id tingkat atas (divalidasi enum + Form Request + Policy).
+        [$arguments, $stripped] = ArgumentValidator::stripProtectedFor($tool, $call->arguments);
 
         $json = (string) json_encode($arguments, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
 
@@ -378,6 +384,18 @@ class AiAgentService
             'keluar' => (int) ($log[$key]['keluar'] ?? 0) + $response->outputTokens,
             'estimasi' => (int) ($log[$key]['estimasi'] ?? 0) + $estimate,
         ];
+    }
+
+    /**
+     * True bila batas laju AI pengguna sudah tercapai (TANPA menghitung). Dipakai AiChatHandler sebelum mengunduh
+     * foto / mentranskripsi suara agar biaya media tidak terjadi untuk pesan yang pasti ditolak.
+     */
+    public function batasLajuTercapai(User $user): bool
+    {
+        $id = $user->getKey();
+
+        return RateLimiter::tooManyAttempts("ai:m:{$id}", max(1, (int) config('ai.rate_limit.per_minute', 20)))
+            || RateLimiter::tooManyAttempts("ai:h:{$id}", max(1, (int) config('ai.rate_limit.per_hour', 30)));
     }
 
     private function withinRateLimit(User $user): bool

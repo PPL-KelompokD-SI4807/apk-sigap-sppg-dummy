@@ -16,6 +16,7 @@ final class AiInput
         public readonly JenisInputAi $type,
         public readonly string $text = '',
         public readonly array $images = [],
+        public readonly int $detikAudio = 0,
     ) {}
 
     public static function text(string $text): self
@@ -29,8 +30,9 @@ final class AiInput
         return new self(JenisInputAi::Foto, $caption, $images);
     }
 
-    public static function voice(string $transcript): self
+    /** $detikAudio = durasi pesan suara (biaya STT, dicatat sebagai angka di ai_interactions). */
+    public static function voice(string $transcript, int $detikAudio = 0): self
     {
-        return new self(JenisInputAi::Suara, $transcript);
+        return new self(JenisInputAi::Suara, $transcript, [], max(0, $detikAudio));
     }
 }

@@ -28,6 +28,8 @@ use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmResponse;
 use App\Services\Ai\Tools\AiTool;
+use App\Services\Ai\Tools\ArgumentValidator;
+use App\Services\Ai\Tools\MenerimaArgumenTerlindungi;
 use App\Services\Ai\Tools\ToolContext;
 use App\Services\Ai\Tools\ToolRegistry;
 use App\Services\Ai\Tools\ToolResult;
@@ -168,14 +170,23 @@ class ToolKatalogTest extends MasterApiTestCase
         }
     }
 
-    public function test_tool_tulis_tidak_ditawarkan_ke_admin_tanpa_sppg_dan_pengguna_hanya_dibaca(): void
+    public function test_tool_tulis_tidak_ditawarkan_ke_admin_tanpa_sppg_kecuali_modul_pengguna(): void
     {
+        // Tahap 1 eksekusi AI: Admin (lintas SPPG) hanya ditawari tool tulis modul pengguna (undangan/peran/status akun),
+        // bukan tool modul ber-tenant (draf butuh SPPG; pemilihan SPPG tujuan Admin = tahap 2).
         foreach ($this->registry->forUser($this->admin) as $tool) {
-            $this->assertFalse($tool->isWrite(), "Admin tanpa SPPG tidak boleh ditawari {$tool->name()}");
+            $this->assertTrue(! $tool->isWrite() || $tool->module() === 'pengguna', "Admin tanpa SPPG tidak boleh ditawari {$tool->name()}");
         }
 
+        // Tool tulis pengguna tidak pernah tersedia untuk peran selain Admin (hasil Rbac + Policy, bukan daftar peran).
         $tulisPengguna = array_filter($this->registry->all(), fn (AiTool $t) => $t->module() === 'pengguna' && $t->isWrite());
-        $this->assertSame([], $tulisPengguna, 'Akun/peran tidak dibuat atau diubah lewat draf AI.');
+        $this->assertNotEmpty($tulisPengguna);
+
+        foreach (User::query()->withoutGlobalScopes()->get() as $user) {
+            foreach ($tulisPengguna as $tool) {
+                $this->assertSame($user->isAdmin() && $user->canAuthenticate(), $tool->isAvailableFor($user), "{$tool->name()} untuk {$user->role->value}");
+            }
+        }
     }
 
     public function test_hak_per_peran_sesuai_tabel_5_pada_contoh_utama(): void
@@ -281,7 +292,9 @@ class ToolKatalogTest extends MasterApiTestCase
             $properti = array_keys($tool->parameters()['properties'] ?? []);
 
             if ($tool->isWrite()) {
-                $this->assertSame([], array_values(array_intersect($properti, $terlarang)), "{$tool->name()} menawarkan kolom terlarang");
+                // Pengecualian eksplisit: tool undangan/peran pengguna menerima role/unit/sppg_id (DAPAT_DIIZINKAN saja).
+                $izin = $tool instanceof MenerimaArgumenTerlindungi ? ArgumentValidator::DAPAT_DIIZINKAN : [];
+                $this->assertSame([], array_values(array_diff(array_intersect($properti, $terlarang), $izin)), "{$tool->name()} menawarkan kolom terlarang");
             } else {
                 $this->assertSame([], array_values(array_intersect($properti, ['sppg_id', 'user_id', 'telegram_id', 'no_sim', 'no_hp', 'phone'])), "{$tool->name()}");
             }

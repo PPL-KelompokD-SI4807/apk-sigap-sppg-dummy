@@ -156,6 +156,8 @@ return [
         'model' => env('STT_MODEL', 'whisper-1'),
         'language' => 'id',
         'timeout' => (int) env('STT_TIMEOUT', 20),
+        // Biaya STT: kuota detik audio per pengguna per jam (dicek sebelum transkripsi, selain AI_RATE_*).
+        'max_detik_per_jam' => (int) env('AI_STT_DETIK_PER_JAM', 600),
     ],
 
 ];

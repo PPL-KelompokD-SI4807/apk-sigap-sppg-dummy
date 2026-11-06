@@ -48,6 +48,16 @@ class BotAksi extends Model
 
     public const JENIS_BATAL_AKSI = 'batal_aksi';
 
+    // Konfirmasi draf Agen AI di chat (Tahap 1): Lanjutkan / "Ya, yakin" (langkah 2 aksi berbahaya) / Batal.
+    // subjek = ai_draft (id baris ai_drafts); token berlaku sampai draf kedaluwarsa (ai.drafts.ttl_minutes).
+    public const JENIS_AI_LANJUT = 'ai_lanjut';
+
+    public const JENIS_AI_YAKIN = 'ai_yakin';
+
+    public const JENIS_AI_BATAL = 'ai_batal';
+
+    public const SUBJEK_AI_DRAFT = 'ai_draft';
+
     public const SUBJEK_MENU = 'pengajuan_menu';
 
     public const SUBJEK_PENGELUARAN = 'pengeluaran';
