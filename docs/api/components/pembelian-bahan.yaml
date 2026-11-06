@@ -74,6 +74,7 @@ schemas:
           harga: { type: number }
           berlaku_mulai: { type: string, format: date }
           selisih_persen: { type: [number, 'null'], description: '(harga_satuan - harga) / harga x 100.' }
+      izin: { $ref: '#/components/schemas/IzinPembelianBahan' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   VerifikasiPembelianInput:

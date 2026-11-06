@@ -69,6 +69,52 @@ schemas:
         $ref: '#/components/schemas/PaginationLinks'
       meta:
         $ref: '#/components/schemas/PaginationMeta'
+  IzinUbahHapus:
+    type: object
+    required: [ubah, hapus]
+    description: |
+      Izin PER RECORD untuk pengguna login (hasil Policy yang sama dengan endpoint; lihat docs/api/peta-hak.md).
+      DEFINISI SERAGAM semua `izin`: HAK (Policy) DAN syarat keadaan yang dapat dibaca dari atribut record tanpa query
+      tambahan. `ubah` = PATCH/PUT diizinkan (relawan: hanya record buatannya sendiri pada hari yang sama); `hapus` =
+      DELETE diizinkan; untuk jadwal produksi hanya status direncanakan/dibatalkan, untuk jadwal distribusi hanya
+      menunggu/siap/dibatalkan. Syarat relasional yang butuh query (jadwal sudah punya log/distribusi aktif/bukti
+      distribusi) TIDAK termasuk dan tetap ditegakkan service (422), jadi `hapus=true` masih dapat berujung 422.
+      Klien yang tidak menerima `izin` menyembunyikan tombol aksi.
+    properties:
+      ubah: { type: boolean }
+      hapus: { type: boolean }
+  IzinPembelianBahan:
+    type: object
+    required: [ubah, hapus, lampirkan, verifikasi]
+    description: |
+      Izin per pembelian bahan (hak + keadaan atribut). `ubah` dan `lampirkan` false untuk pembelian `terverifikasi` (final); `hapus` selalu
+      false (tidak ada hapus); `verifikasi` true hanya untuk akuntan SPPG yang sama, BUKAN pencatat pembelian itu, dan
+      status `diajukan`.
+    properties:
+      ubah: { type: boolean }
+      hapus: { type: boolean }
+      lampirkan: { type: boolean, description: 'POST /lampiran (nota) ke pembelian ini diizinkan.' }
+      verifikasi: { type: boolean, description: 'POST /pembelian-bahan/{id}/verifikasi diizinkan (hak keputusan).' }
+  IzinPengeluaran:
+    type: object
+    required: [ubah, hapus, lampirkan, putuskan]
+    description: |
+      Izin per pengeluaran. `ubah`/`hapus`/`lampirkan` false untuk pengeluaran hasil verifikasi pembelian
+      (`pembelian_bahan_id` terisi); `lampirkan` juga false saat status `disetujui`; `putuskan` true hanya untuk investor pemilik SPPG aktif pada status
+      `diajukan` (hak keputusan, bukan hak tulis; investor tetap `baca_saja`).
+    properties:
+      ubah: { type: boolean }
+      hapus: { type: boolean }
+      lampirkan: { type: boolean }
+      putuskan: { type: boolean, description: 'POST /keuangan/pengeluaran/{id}/keputusan diizinkan.' }
+  IzinPerjalanan:
+    type: object
+    required: [ubah_status]
+    description: |
+      Izin per notifikasi perjalanan. `ubah_status` = POST /notifikasi-perjalanan/{id}/status diizinkan (hak C modul,
+      SPPG sama, relawan hanya perjalanan yang ia picu) DAN perjalanan belum final (tiba/dibatalkan = false).
+    properties:
+      ubah_status: { type: boolean }
 parameters:
   Page:
     name: page

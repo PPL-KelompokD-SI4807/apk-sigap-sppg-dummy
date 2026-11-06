@@ -28,7 +28,7 @@ schemas:
       - persetujuan-menu
   AuthUser:
     type: object
-    required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions]
+    required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions, unit_scope, aksi]
     properties:
       id: { type: integer, examples: [12] }
       name: { type: string, examples: ['Siti Rahayu'] }
@@ -63,6 +63,45 @@ schemas:
         additionalProperties: { type: string, pattern: '^C?R?\*?U?D?$' }
         examples:
           - { sppg: RU, jadwal: CRUD, keuangan: R, pengguna: R }
+      unit_scope:
+        type: object
+        description: |
+          Peta modul -> sub-jenis data yang boleh dikelola (Rbac::unitScope), hanya modul yang masih punya hak.
+          Relawan dapur: `{jadwal: produksi}`; relawan distribusi: `{jadwal: distribusi}`; peran lain dan relawan tanpa
+          unit: `{}`. Menggantikan salinan aturan unit di klien. Selalu objek JSON.
+        additionalProperties: { type: string }
+        examples:
+          - { jadwal: produksi }
+      aksi: { $ref: '#/components/schemas/AksiHak' }
+  AksiHak:
+    type: object
+    required: [undang_pengguna, reset_password_pengguna, kelola_kepemilikan_sppg, undang_pic, ajukan_menu, lihat_rincian_biaya, picu_perjalanan, susun_rekap, kirim_ulang_rekap, tindak_lanjut_keluhan, catat_mutasi_stok, catat_harga_pemasok, lihat_ringkasan_jadwal_produksi, dashboard]
+    description: |
+      Peta hak aksi di luar CRUD (docs/api/peta-hak.md). Setiap nilai = hasil Rbac/Policy yang SAMA dengan endpoint
+      terkait (tidak ada aturan baru). true = endpoint tidak akan menolak dengan 403 (tetap bisa 422/409 karena data);
+      false = endpoint menjawab 403. Pengguna nonaktif: semua false. Klien yang tidak menerima kunci ini menampilkan
+      TIDAK ADA tombol aksi (gagal tertutup). Hak "putuskan" tetap di `keputusan` dan `izin.putuskan`/`izin.verifikasi`.
+    properties:
+      undang_pengguna: { type: boolean, description: 'POST /pengguna/undangan (UserPolicy::create; Admin).' }
+      reset_password_pengguna: { type: boolean, description: 'POST /pengguna/{id}/reset-password (UserPolicy::update).' }
+      kelola_kepemilikan_sppg: { type: boolean, description: 'GET/PUT/POST/DELETE /pengguna/{id}/kepemilikan-sppg (UserPolicy::kelolaKepemilikan; Admin).' }
+      undang_pic: { type: boolean, description: 'POST /titik-layanan/{id}/undangan-pic (TitikLayananPolicy::update).' }
+      ajukan_menu: { type: boolean, description: 'POST /menu-gizi/{id}/ajukan (MenuPolicy::ajukan; hak C persetujuan-menu pada SPPG sendiri, bukan Admin).' }
+      lihat_rincian_biaya: { type: boolean, description: 'GET /menu-gizi/{id}/rincian-biaya (MenuPolicy::lihatRincianBiaya; memuat harga pemasok).' }
+      picu_perjalanan: { type: boolean, description: 'POST /notifikasi-perjalanan dan /pratinjau (NotifikasiPerjalananPolicy::create).' }
+      susun_rekap: { type: boolean, description: 'POST /rekap-harian (RekapHarianPolicy::create).' }
+      kirim_ulang_rekap: { type: boolean, description: 'POST /rekap-harian/{id}/kirim-ulang (RekapHarianPolicy::update).' }
+      tindak_lanjut_keluhan: { type: boolean, description: 'PATCH /keluhan/{id}: ubah status dan catatan tindak lanjut (FeedbackKeluhanPolicy::update).' }
+      catat_mutasi_stok: { type: boolean, description: 'POST /bahan-baku/{id}/mutasi (BahanBakuPolicy::update).' }
+      catat_harga_pemasok: { type: boolean, description: 'POST /pemasok/{id}/harga (PemasokPolicy::catatHarga).' }
+      lihat_ringkasan_jadwal_produksi: { type: boolean, description: 'GET /jadwal/produksi-ringkas (JadwalProduksiPolicy::viewRingkas): dropdown jadwal produksi di form distribusi/keluhan.' }
+      dashboard:
+        type: object
+        required: [tersedia, profil]
+        description: Konsisten dengan DashboardPolicy::lihat dan tombol bot `db` (RingkasanDashboard::tersediaUntuk).
+        properties:
+          tersedia: { type: boolean, description: 'false untuk relawan tanpa unit, pengguna nonaktif, dan siapa pun yang ditolak DashboardPolicy::lihat.' }
+          profil: { type: [string, 'null'], enum: [admin, investor, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan_dapur, relawan_distribusi, null], description: 'Kunci profil dashboard (sama dengan data.profil di GET /dashboard); null bila tidak tersedia.' }
   AuthError:
     type: object
     required: [message, alasan]

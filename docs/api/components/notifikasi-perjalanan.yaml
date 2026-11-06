@@ -86,6 +86,7 @@ schemas:
       terlambat: { type: boolean }
       terlambat_dideteksi_pada: { type: [string, 'null'], format: date-time }
       pesan: { type: [string, 'null'] }
+      izin: { $ref: '#/components/schemas/IzinPerjalanan' }
       created_at: { type: string, format: date-time }
     example:
       id: 7

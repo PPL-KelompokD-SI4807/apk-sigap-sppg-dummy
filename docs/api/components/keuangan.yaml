@@ -115,6 +115,7 @@ schemas:
         properties:
           id: { type: integer }
           name: { type: string }
+      izin: { $ref: '#/components/schemas/IzinPengeluaran' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   RingkasanKeuangan:

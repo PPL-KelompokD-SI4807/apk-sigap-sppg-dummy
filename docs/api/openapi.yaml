@@ -710,6 +710,72 @@ paths:
                 properties:
                   user: { $ref: '#/components/schemas/AuthUser' }
                   expires_at: { type: 'null', description: 'Selalu null: sesi login penuh tidak kedaluwarsa.' }
+              examples:
+                relawan_dapur:
+                  summary: Relawan unit dapur (peta hak ringkas)
+                  value:
+                    user:
+                      id: 12
+                      name: 'Siti Rahayu'
+                      username: 'siti.dapur'
+                      role: relawan
+                      role_label: Relawan
+                      unit: dapur
+                      sppg_id: 1
+                      sppg_name: 'SPPG Sukamaju'
+                      sppg_aktif_id: 1
+                      multi_sppg: false
+                      modules: [pengguna, sppg, titik-layanan, menu-gizi, jadwal, log-produksi, mutu, armada, keluhan]
+                      permissions: { pengguna: 'R*', sppg: R, 'titik-layanan': R, 'menu-gizi': R, jadwal: CRU, 'log-produksi': CRU, mutu: R, armada: R, keluhan: CR }
+                      baca_saja: false
+                      agregat: []
+                      keputusan: []
+                      unit_scope: { jadwal: produksi }
+                      aksi:
+                        undang_pengguna: false
+                        reset_password_pengguna: false
+                        kelola_kepemilikan_sppg: false
+                        undang_pic: false
+                        ajukan_menu: false
+                        lihat_rincian_biaya: false
+                        picu_perjalanan: false
+                        susun_rekap: false
+                        kirim_ulang_rekap: false
+                        tindak_lanjut_keluhan: false
+                        catat_mutasi_stok: false
+                        catat_harga_pemasok: false
+                        lihat_ringkasan_jadwal_produksi: true
+                        dashboard: { tersedia: true, profil: relawan_dapur }
+                    expires_at: null
+                kepala_sppg:
+                  summary: Kepala SPPG (aksi true sesuai Policy)
+                  value:
+                    user:
+                      id: 3
+                      name: 'Budi Santoso'
+                      role: kepala_sppg
+                      unit: null
+                      sppg_id: 1
+                      modules: [pengguna, notifikasi-perjalanan, sppg, titik-layanan, penerima-manfaat, bahan-baku, pemasok, menu-gizi, jadwal, log-produksi, mutu, armada, bukti-distribusi, keuangan, keluhan, rekap-harian, persetujuan-menu, pembelian-bahan]
+                      baca_saja: false
+                      keputusan: []
+                      unit_scope: {}
+                      aksi:
+                        undang_pengguna: false
+                        reset_password_pengguna: false
+                        kelola_kepemilikan_sppg: false
+                        undang_pic: true
+                        ajukan_menu: false
+                        lihat_rincian_biaya: true
+                        picu_perjalanan: true
+                        susun_rekap: true
+                        kirim_ulang_rekap: true
+                        tindak_lanjut_keluhan: true
+                        catat_mutasi_stok: false
+                        catat_harga_pemasok: false
+                        lihat_ringkasan_jadwal_produksi: true
+                        dashboard: { tersedia: true, profil: kepala_sppg }
+                    expires_at: null
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AuthForbidden' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
@@ -1396,17 +1462,21 @@ paths:
   /jadwal/produksi-ringkas:
     get:
       tags: [Jadwal]
-      summary: Ringkasan jadwal produksi per tanggal (untuk pilihan di form distribusi)
+      summary: Pilihan jadwal produksi untuk dropdown (kolom minimal)
       description: |
-        Daftar ringkas tanpa data sensitif (id, tanggal, nama menu, target porsi, status) agar form jadwal
-        distribusi/bukti dapat memilih jadwal produksi. Dibuka untuk SEMUA peran yang punya hak R modul
-        jadwal, termasuk relawan unit distribusi yang tidak boleh membaca jadwal produksi penuh
-        (`GET /jadwal`): admin, kepala_sppg, ahli_gizi, staf_gudang, relawan (unit dapur/distribusi).
-        Akuntan dan relawan tanpa unit mendapat 403. Dibatasi SPPG pengguna (Admin: opsional `sppg_id`).
-        Jadwal terhapus lunak tidak disertakan; status `dibatalkan` tetap disertakan (klien menyaring).
-        Tanpa paginasi, maks 200 baris, urut jam mulai masak.
+        Daftar minimal (HANYA `id`, `tanggal_produksi`, `nama_menu`, `status`) agar form jadwal distribusi/bukti dan
+        form keluhan (batch) dapat memilih jadwal produksi. Gerbang `viewRingkas`: hak R modul jadwal (bukan R*)
+        tanpa batasan sub-jenis unit relawan, sehingga relawan unit distribusi yang tidak boleh membaca jadwal
+        produksi penuh (`GET /jadwal` = 403) tetap dapat memilih. Boleh: admin, kepala_sppg, ahli_gizi, staf_gudang,
+        relawan (unit dapur/distribusi). Akuntan, investor, dan relawan tanpa unit mendapat 403. Dibatasi SPPG
+        pengguna (Admin: opsional `sppg_id`). Jadwal terhapus lunak tidak disertakan; status `dibatalkan` tetap
+        disertakan (klien menyaring). Tanpa paginasi, maks 200 baris, urut tanggal terbaru lalu jam mulai masak.
+        Tanpa `from`/`to`: satu hari (`tanggal`, default hari ini WIB). Dengan `from` dan/atau `to`: rentang
+        (selisih to - from maks 62 hari = 63 hari kalender inklusif; lebih dari itu 422), mis. batch keluhan 14 hari terakhir. Flag klien: `aksi.lihat_ringkasan_jadwal_produksi` pada `/auth/me`.
       parameters:
-        - { name: tanggal, in: query, description: 'YYYY-MM-DD; default hari ini (WIB)', schema: { type: string, format: date } }
+        - { name: tanggal, in: query, description: 'YYYY-MM-DD; default hari ini (WIB). Diabaikan bila from/to diberikan.', schema: { type: string, format: date } }
+        - { name: from, in: query, description: 'YYYY-MM-DD awal rentang (tanggal_produksi)', schema: { type: string, format: date } }
+        - { name: to, in: query, description: 'YYYY-MM-DD akhir rentang; >= from; selisih to - from maks 62 hari (63 hari kalender inklusif)', schema: { type: string, format: date } }
         - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
       responses:
         '200':
@@ -1421,7 +1491,7 @@ paths:
                     items: { $ref: '#/components/schemas/JadwalProduksiRingkas' }
               example:
                 data:
-                  - { id: 12, tanggal_produksi: '2026-11-02', nama_menu: 'Nasi, ayam suwir, sayur bayam', target_porsi: 2500, status: direncanakan, status_label: Direncanakan }
+                  - { id: 12, tanggal_produksi: '2026-11-02', nama_menu: 'Nasi, ayam suwir, sayur bayam', status: direncanakan }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
@@ -4763,6 +4833,52 @@ components:
           $ref: '#/components/schemas/PaginationLinks'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
+    IzinUbahHapus:
+      type: object
+      required: [ubah, hapus]
+      description: |
+        Izin PER RECORD untuk pengguna login (hasil Policy yang sama dengan endpoint; lihat docs/api/peta-hak.md).
+        DEFINISI SERAGAM semua `izin`: HAK (Policy) DAN syarat keadaan yang dapat dibaca dari atribut record tanpa query
+        tambahan. `ubah` = PATCH/PUT diizinkan (relawan: hanya record buatannya sendiri pada hari yang sama); `hapus` =
+        DELETE diizinkan; untuk jadwal produksi hanya status direncanakan/dibatalkan, untuk jadwal distribusi hanya
+        menunggu/siap/dibatalkan. Syarat relasional yang butuh query (jadwal sudah punya log/distribusi aktif/bukti
+        distribusi) TIDAK termasuk dan tetap ditegakkan service (422), jadi `hapus=true` masih dapat berujung 422.
+        Klien yang tidak menerima `izin` menyembunyikan tombol aksi.
+      properties:
+        ubah: { type: boolean }
+        hapus: { type: boolean }
+    IzinPembelianBahan:
+      type: object
+      required: [ubah, hapus, lampirkan, verifikasi]
+      description: |
+        Izin per pembelian bahan (hak + keadaan atribut). `ubah` dan `lampirkan` false untuk pembelian `terverifikasi` (final); `hapus` selalu
+        false (tidak ada hapus); `verifikasi` true hanya untuk akuntan SPPG yang sama, BUKAN pencatat pembelian itu, dan
+        status `diajukan`.
+      properties:
+        ubah: { type: boolean }
+        hapus: { type: boolean }
+        lampirkan: { type: boolean, description: 'POST /lampiran (nota) ke pembelian ini diizinkan.' }
+        verifikasi: { type: boolean, description: 'POST /pembelian-bahan/{id}/verifikasi diizinkan (hak keputusan).' }
+    IzinPengeluaran:
+      type: object
+      required: [ubah, hapus, lampirkan, putuskan]
+      description: |
+        Izin per pengeluaran. `ubah`/`hapus`/`lampirkan` false untuk pengeluaran hasil verifikasi pembelian
+        (`pembelian_bahan_id` terisi); `lampirkan` juga false saat status `disetujui`; `putuskan` true hanya untuk investor pemilik SPPG aktif pada status
+        `diajukan` (hak keputusan, bukan hak tulis; investor tetap `baca_saja`).
+      properties:
+        ubah: { type: boolean }
+        hapus: { type: boolean }
+        lampirkan: { type: boolean }
+        putuskan: { type: boolean, description: 'POST /keuangan/pengeluaran/{id}/keputusan diizinkan.' }
+    IzinPerjalanan:
+      type: object
+      required: [ubah_status]
+      description: |
+        Izin per notifikasi perjalanan. `ubah_status` = POST /notifikasi-perjalanan/{id}/status diizinkan (hak C modul,
+        SPPG sama, relawan hanya perjalanan yang ia picu) DAN perjalanan belum final (tiba/dibatalkan = false).
+      properties:
+        ubah_status: { type: boolean }
     AiDraft:
       type: object
       description: |
@@ -4887,7 +5003,7 @@ components:
         - persetujuan-menu
     AuthUser:
       type: object
-      required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions]
+      required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions, unit_scope, aksi]
       properties:
         id: { type: integer, examples: [12] }
         name: { type: string, examples: ['Siti Rahayu'] }
@@ -4922,6 +5038,45 @@ components:
           additionalProperties: { type: string, pattern: '^C?R?\*?U?D?$' }
           examples:
             - { sppg: RU, jadwal: CRUD, keuangan: R, pengguna: R }
+        unit_scope:
+          type: object
+          description: |
+            Peta modul -> sub-jenis data yang boleh dikelola (Rbac::unitScope), hanya modul yang masih punya hak.
+            Relawan dapur: `{jadwal: produksi}`; relawan distribusi: `{jadwal: distribusi}`; peran lain dan relawan tanpa
+            unit: `{}`. Menggantikan salinan aturan unit di klien. Selalu objek JSON.
+          additionalProperties: { type: string }
+          examples:
+            - { jadwal: produksi }
+        aksi: { $ref: '#/components/schemas/AksiHak' }
+    AksiHak:
+      type: object
+      required: [undang_pengguna, reset_password_pengguna, kelola_kepemilikan_sppg, undang_pic, ajukan_menu, lihat_rincian_biaya, picu_perjalanan, susun_rekap, kirim_ulang_rekap, tindak_lanjut_keluhan, catat_mutasi_stok, catat_harga_pemasok, lihat_ringkasan_jadwal_produksi, dashboard]
+      description: |
+        Peta hak aksi di luar CRUD (docs/api/peta-hak.md). Setiap nilai = hasil Rbac/Policy yang SAMA dengan endpoint
+        terkait (tidak ada aturan baru). true = endpoint tidak akan menolak dengan 403 (tetap bisa 422/409 karena data);
+        false = endpoint menjawab 403. Pengguna nonaktif: semua false. Klien yang tidak menerima kunci ini menampilkan
+        TIDAK ADA tombol aksi (gagal tertutup). Hak "putuskan" tetap di `keputusan` dan `izin.putuskan`/`izin.verifikasi`.
+      properties:
+        undang_pengguna: { type: boolean, description: 'POST /pengguna/undangan (UserPolicy::create; Admin).' }
+        reset_password_pengguna: { type: boolean, description: 'POST /pengguna/{id}/reset-password (UserPolicy::update).' }
+        kelola_kepemilikan_sppg: { type: boolean, description: 'GET/PUT/POST/DELETE /pengguna/{id}/kepemilikan-sppg (UserPolicy::kelolaKepemilikan; Admin).' }
+        undang_pic: { type: boolean, description: 'POST /titik-layanan/{id}/undangan-pic (TitikLayananPolicy::update).' }
+        ajukan_menu: { type: boolean, description: 'POST /menu-gizi/{id}/ajukan (MenuPolicy::ajukan; hak C persetujuan-menu pada SPPG sendiri, bukan Admin).' }
+        lihat_rincian_biaya: { type: boolean, description: 'GET /menu-gizi/{id}/rincian-biaya (MenuPolicy::lihatRincianBiaya; memuat harga pemasok).' }
+        picu_perjalanan: { type: boolean, description: 'POST /notifikasi-perjalanan dan /pratinjau (NotifikasiPerjalananPolicy::create).' }
+        susun_rekap: { type: boolean, description: 'POST /rekap-harian (RekapHarianPolicy::create).' }
+        kirim_ulang_rekap: { type: boolean, description: 'POST /rekap-harian/{id}/kirim-ulang (RekapHarianPolicy::update).' }
+        tindak_lanjut_keluhan: { type: boolean, description: 'PATCH /keluhan/{id}: ubah status dan catatan tindak lanjut (FeedbackKeluhanPolicy::update).' }
+        catat_mutasi_stok: { type: boolean, description: 'POST /bahan-baku/{id}/mutasi (BahanBakuPolicy::update).' }
+        catat_harga_pemasok: { type: boolean, description: 'POST /pemasok/{id}/harga (PemasokPolicy::catatHarga).' }
+        lihat_ringkasan_jadwal_produksi: { type: boolean, description: 'GET /jadwal/produksi-ringkas (JadwalProduksiPolicy::viewRingkas): dropdown jadwal produksi di form distribusi/keluhan.' }
+        dashboard:
+          type: object
+          required: [tersedia, profil]
+          description: Konsisten dengan DashboardPolicy::lihat dan tombol bot `db` (RingkasanDashboard::tersediaUntuk).
+          properties:
+            tersedia: { type: boolean, description: 'false untuk relawan tanpa unit, pengguna nonaktif, dan siapa pun yang ditolak DashboardPolicy::lihat.' }
+            profil: { type: [string, 'null'], enum: [admin, investor, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan_dapur, relawan_distribusi, null], description: 'Kunci profil dashboard (sama dengan data.profil di GET /dashboard); null bila tidak tersedia.' }
     AuthError:
       type: object
       required: [message, alasan]
@@ -5203,6 +5358,7 @@ components:
           properties:
             id: { type: integer }
             name: { type: string }
+        izin: { $ref: '#/components/schemas/IzinUbahHapus' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     Dashboard:
@@ -5967,18 +6123,21 @@ components:
         porsi_terjadwal_distribusi: { type: integer, description: 'Total porsi distribusi aktif (tidak dibatalkan)' }
         status_mutu: { type: [string, 'null'], enum: [layak, tidak_layak, null], description: 'Hasil pemeriksaan mutu terbaru; null = belum diperiksa' }
         layak_distribusi: { type: boolean, description: 'true bila pemeriksaan mutu terbaru Layak' }
+        izin: { $ref: '#/components/schemas/IzinUbahHapus' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     JadwalProduksiRingkas:
       type: object
-      description: Ringkasan jadwal produksi tanpa data sensitif (pilihan pada form distribusi)
+      required: [id, tanggal_produksi, nama_menu, status]
+      additionalProperties: false
+      description: |
+        Pilihan jadwal produksi untuk dropdown (form distribusi, keluhan): HANYA empat kolom ini. Tanpa target porsi,
+        catatan, anggaran, atau data pengguna.
       properties:
         id: { type: integer }
         tanggal_produksi: { type: string, format: date }
         nama_menu: { type: [string, 'null'] }
-        target_porsi: { type: integer }
         status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
-        status_label: { type: string }
     JadwalProduksiInput:
       type: object
       required: [menu_id, tanggal_produksi, target_porsi]
@@ -6013,6 +6172,7 @@ components:
         status_label: { type: string }
         layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
         catatan: { type: [string, 'null'] }
+        izin: { $ref: '#/components/schemas/IzinUbahHapus' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     JadwalDistribusiInput:
@@ -6282,6 +6442,7 @@ components:
           properties:
             id: { type: integer }
             name: { type: string }
+        izin: { $ref: '#/components/schemas/IzinPengeluaran' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     RingkasanKeuangan:
@@ -6388,6 +6549,7 @@ components:
           items: { $ref: '#/components/schemas/Lampiran' }
         dicatat_oleh: { type: [integer, 'null'] }
         pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
+        izin: { $ref: '#/components/schemas/IzinUbahHapus' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     LogProduksiInput:
@@ -6699,6 +6861,7 @@ components:
         terlambat: { type: boolean }
         terlambat_dideteksi_pada: { type: [string, 'null'], format: date-time }
         pesan: { type: [string, 'null'] }
+        izin: { $ref: '#/components/schemas/IzinPerjalanan' }
         created_at: { type: string, format: date-time }
       example:
         id: 7
@@ -6822,6 +6985,7 @@ components:
             harga: { type: number }
             berlaku_mulai: { type: string, format: date }
             selisih_persen: { type: [number, 'null'], description: '(harga_satuan - harga) / harga x 100.' }
+        izin: { $ref: '#/components/schemas/IzinPembelianBahan' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     VerifikasiPembelianInput:
