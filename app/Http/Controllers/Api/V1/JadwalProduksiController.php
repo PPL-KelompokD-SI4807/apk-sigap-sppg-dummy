@@ -17,6 +17,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /** Modul 9 Data Jadwal Produksi dan Distribusi: bagian jadwal produksi (FR-06). */
 class JadwalProduksiController extends ApiController
@@ -69,36 +70,51 @@ class JadwalProduksiController extends ApiController
         );
     }
 
-    /** Ringkasan jadwal produksi per tanggal untuk form distribusi (hak R jadwal, tanpa batasan unit). */
+    /**
+     * Pilihan jadwal produksi untuk dropdown (form distribusi, keluhan): HANYA id, tanggal, nama menu, status.
+     * Gerbang `viewRingkas` (hak R modul jadwal, bukan R*, tanpa batasan sub-jenis unit relawan); dibatasi SPPG
+     * oleh SppgScope. Tanpa target porsi, catatan, anggaran, atau data pengguna. Default hari ini (WIB);
+     * `from`/`to` (selisih to - from maks. 62 hari = 63 hari kalender inklusif) untuk rentang, mis. batch keluhan 14 hari terakhir.
+     */
     public function ringkas(Request $request): JsonResponse
     {
         $this->authorize('viewRingkas', JadwalProduksi::class);
 
         $request->validate([
             'tanggal' => ['nullable', 'date_format:Y-m-d'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
             'sppg_id' => ['nullable', 'integer'],
         ]);
 
-        $tanggal = $request->filled('tanggal')
-            ? (string) $request->query('tanggal')
-            : Carbon::now(config('operasional.timezone'))->toDateString();
-
+        $zona = config('operasional.timezone');
         $query = JadwalProduksi::query()
-            ->with('menu:id,nama_menu')
-            ->tanggal($tanggal);
+            ->select(['id', 'menu_id', 'tanggal_produksi', 'status'])
+            ->with('menu:id,nama_menu');
+
+        if ($request->filled('from') || $request->filled('to')) {
+            $dari = Carbon::parse((string) ($request->query('from') ?? $request->query('to')), $zona);
+            $sampai = Carbon::parse((string) ($request->query('to') ?? $request->query('from')), $zona);
+
+            if ($dari->diffInDays($sampai) > 62) {
+                throw ValidationException::withMessages(['to' => ['Selisih from dan to maksimal 62 hari.']]);
+            }
+
+            $query->whereDate('tanggal_produksi', '>=', $dari->toDateString())->whereDate('tanggal_produksi', '<=', $sampai->toDateString());
+        } else {
+            $query->tanggal($request->filled('tanggal') ? (string) $request->query('tanggal') : Carbon::now($zona)->toDateString());
+        }
 
         if ($request->user()->isAdmin() && $request->filled('sppg_id')) {
             $query->where('sppg_id', (int) $request->query('sppg_id'));
         }
 
-        $data = $query->orderBy('jam_mulai_masak')->orderBy('id')->limit(200)->get()
+        $data = $query->orderByDesc('tanggal_produksi')->orderBy('jam_mulai_masak')->orderBy('id')->limit(200)->get()
             ->map(fn (JadwalProduksi $j) => [
                 'id' => $j->id,
                 'tanggal_produksi' => $j->tanggal_produksi?->toDateString(),
                 'nama_menu' => $j->menu?->nama_menu,
-                'target_porsi' => $j->target_porsi,
                 'status' => $j->status->value,
-                'status_label' => $j->status->label(),
             ])->values();
 
         return response()->json(['data' => $data]);
