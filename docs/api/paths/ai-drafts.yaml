@@ -2,7 +2,7 @@
   get:
     tags: [Agen AI]
     summary: Daftar draf AI pending milik sendiri
-    description: 'Draf berstatus pending yang belum kedaluwarsa milik pengguna login (maks 10, terbaru dulu). Draf pengguna lain tidak pernah ditampilkan.'
+    description: 'Draf terbuka (pending / menunggu_konfirmasi_ulang) yang belum kedaluwarsa milik pengguna login (maks 10, terbaru dulu). Draf pengguna lain tidak pernah ditampilkan.'
     responses:
       '200':
         description: OK
@@ -23,8 +23,8 @@
     tags: [Agen AI]
     summary: Detail draf AI (prefill formulir)
     description: |
-      Hanya pemilik draf pada SPPG yang sama; selain itu 404. Draf kedaluwarsa (default 30 menit),
-      sudah disimpan, atau dibuang -> 410. `errors` = validasi dry-run Form Request modul saat ini.
+      Hanya pemilik draf pada SPPG yang sama (Admin: draf tanpa SPPG); selain itu 404. Draf kedaluwarsa (default 30 menit),
+      sudah disimpan/dijalankan dari chat, dibuang/dibatalkan, atau gagal -> 410. `errors` = validasi dry-run Form Request modul saat ini.
       Mini App lalu memanggil endpoint modul (mis. POST /titik-layanan) dengan `ai_draft_id`.
     responses:
       '200':
