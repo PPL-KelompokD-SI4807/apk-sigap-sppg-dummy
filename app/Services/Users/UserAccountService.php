@@ -81,6 +81,8 @@ class UserAccountService
             $this->assertNotLastAdmin($target);
         }
 
+        // Hapus lunak: hook User::deleted mencabut token Sanctum, perangkat tepercaya, tantangan token,
+        // dan tombol bot (bot_aksi). telegram_id dipertahankan agar daftar ulang memulihkan baris ini.
         DB::transaction(function () use ($target): void {
             Invitation::query()->aktif()->where('user_id', $target->getKey())->update(['revoked_at' => now()]);
             $target->delete();

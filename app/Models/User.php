@@ -90,7 +90,17 @@ class User extends Authenticatable
             }
         });
 
-        static::deleted(fn (User $user) => $user->cabutSemuaSesi());
+        // Dihapus lunak atau dipulihkan (daftar ulang lewat undangan): sesi lama dan tautan bot lama
+        // tidak pernah berlaku lagi untuk akun ini.
+        static::deleted(function (User $user): void {
+            $user->cabutSemuaSesi();
+            $user->cabutTautanBot();
+        });
+
+        static::restored(function (User $user): void {
+            $user->cabutSemuaSesi();
+            $user->cabutTautanBot();
+        });
     }
 
     /** No telepon selalu disimpan dalam format normal (E.164) bila dapat dikenali. */
@@ -124,6 +134,18 @@ class User extends Authenticatable
             ->update(['dicabut_at' => now()]);
 
         $this->tantanganToken()->terbuka()->update(['hangus_pada' => now(), 'payload' => null]);
+    }
+
+    /**
+     * Tombol aksi bot (bot_aksi) yang masih aktif atau menunggu balasan catatan dijadikan kedaluwarsa,
+     * sehingga callback/balasan lama tidak dapat dipakai lagi. Baris tetap disimpan (riwayat).
+     */
+    public function cabutTautanBot(): int
+    {
+        return BotAksi::query()
+            ->where('user_id', $this->getKey())
+            ->whereIn('status', [BotAksi::STATUS_AKTIF, BotAksi::STATUS_MENUNGGU_CATATAN])
+            ->update(['status' => BotAksi::STATUS_KEDALUWARSA]);
     }
 
     /**

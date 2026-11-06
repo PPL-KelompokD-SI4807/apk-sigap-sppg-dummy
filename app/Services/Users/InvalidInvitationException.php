@@ -25,6 +25,8 @@ class InvalidInvitationException extends RuntimeException
 
     public const DATA_TELEGRAM_TIDAK_VALID = 'data_telegram_tidak_valid';
 
+    public const SPPG_TIDAK_VALID = 'sppg_tidak_valid';
+
     private const MESSAGES = [
         self::TIDAK_VALID => 'Tautan undangan tidak valid.',
         self::DICABUT => 'Tautan undangan telah dicabut. Minta tautan baru kepada Admin.',
@@ -34,6 +36,7 @@ class InvalidInvitationException extends RuntimeException
         self::AKUN_SUDAH_TERHUBUNG => 'Akun SiGAP SPPG ini sudah terhubung dengan Telegram.',
         self::TIPE_TIDAK_SESUAI => 'Tautan undangan ini bukan untuk jenis pendaftaran tersebut.',
         self::DATA_TELEGRAM_TIDAK_VALID => 'Data akun Telegram tidak valid.',
+        self::SPPG_TIDAK_VALID => 'SPPG pada tautan undangan ini tidak lagi tersedia. Minta tautan baru kepada Admin.',
     ];
 
     public function __construct(public readonly string $reason)
