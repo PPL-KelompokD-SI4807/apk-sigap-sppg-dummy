@@ -87,7 +87,7 @@ final class LayarBeranda extends LayarBacaDasar
 
         $tombol = [];
 
-        foreach ($registry->tombolBeranda($user, $sppgId !== null) as $t) {
+        foreach ($registry->tombolBeranda($user, $sppgId !== null, $sppgId) as $t) {
             $tombol[] = $t['keputusan']
                 ? $this->aksi->tombol($t['label'], $this->aksi->terbitAtauPakai($user, $konteks->chatId, BotAksi::JENIS_DAFTAR, ['sppg_id' => $sppgId]))
                 : $konteks->tombol($t['label'], $t['layar'], $sppgId);

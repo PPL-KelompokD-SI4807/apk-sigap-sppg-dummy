@@ -326,24 +326,37 @@ class BotLayarRegistry
     }
 
     /**
+     * GERBANG TUNGGAL layar (satu-satunya tempat aturan ini): hak RBAC peran saat ini (hakRbac), hak aksi bila layar
+     * LayarAksi (tampilUntuk), lalu pemeriksaan tambahan layar (izinkan, mis. Policy). Dipakai BotNavigasi pada setiap
+     * klik DAN beranda untuk menyaring tombol, sehingga tombol tampil jika dan hanya jika layar akan mengizinkan.
+     * Pemanggil wajib berada dalam konteks ActingUser (+ SPPG) seperti BotNavigasi.
+     */
+    public static function layarBolehDibuka(User $user, LayarBaca $layar, ?int $sppgId): bool
+    {
+        return self::hakRbac($user, $layar->modul(), $layar->hak())
+            && (! $layar instanceof LayarAksi || $layar->tampilUntuk($user))
+            && $layar->izinkan($user, $sppgId);
+    }
+
+    /**
      * Tombol utama beranda untuk pengguna (belum termasuk baris tetap), urutan sesuai MENU. Layar data hanya bila
-     * `$adaSppg` (SPPG efektif sudah ada). Layar yang belum terdaftar tidak pernah dimasukkan.
+     * `$adaSppg` (SPPG efektif sudah ada). Layar yang belum terdaftar tidak pernah dimasukkan. Tombol layar tampil bila
+     * layarBolehDibuka() benar (gerbang yang sama dengan BotNavigasi). Dashboard: admin/investor boleh gabungan tanpa
+     * SPPG terpilih. HAK_PUTUSKAN bukan layar (callback keputusan `b1`, hak Rbac::canDecide).
      *
      * @return list<array{layar: string, label: string, keputusan: bool}>
      */
-    public function tombolBeranda(User $user, bool $adaSppg): array
+    public function tombolBeranda(User $user, bool $adaSppg, ?int $sppgId = null): array
     {
         $hasil = [];
 
         foreach (self::MENU[self::profil($user) ?? ''] ?? [] as [$id, $label, $modul, $hak]) {
+            $layar = $this->layar[$id] ?? null;
             $tampil = match ($hak) {
-                self::HAK_PILIH => isset($this->layar[$id]) && self::bisaMemilihSppg($user),
+                self::HAK_PILIH => $layar !== null && self::layarBolehDibuka($user, $layar, $sppgId),
                 self::HAK_PUTUSKAN => self::bisaMemutuskan($user),
-                // Dashboard: admin/investor boleh gabungan tanpa SPPG terpilih; peran lain butuh SPPG efektif.
-                self::HAK_DASHBOARD => isset($this->layar[$id]) && ($adaSppg || $user->isAdmin() || $user->role === Role::Investor) && $this->layar[$id]->izinkan($user, null),
-                // Layar aksi (PR-3, mis. Mulai Perjalanan): juga butuh hak aksi peran saat ini (LayarAksi::tampilUntuk).
-                default => $adaSppg && isset($this->layar[$id]) && self::hakRbac($user, $modul, $hak)
-                    && (! $this->layar[$id] instanceof LayarAksi || $this->layar[$id]->tampilUntuk($user)),
+                self::HAK_DASHBOARD => $layar !== null && ($adaSppg || $user->isAdmin() || $user->role === Role::Investor) && self::layarBolehDibuka($user, $layar, null),
+                default => $adaSppg && $layar !== null && self::layarBolehDibuka($user, $layar, $sppgId),
             };
 
             if ($tampil) {

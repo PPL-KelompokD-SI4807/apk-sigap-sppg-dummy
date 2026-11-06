@@ -25,7 +25,8 @@ use Illuminate\Support\Facades\RateLimiter;
  *      investor_sppg (SppgAktif::untuk); admin = SPPG ada & belum dihapus (SppgAktif::untukBacaAdmin, baca-saja);
  *      layar data tanpa SPPG efektif tidak pernah dirender;
  *   e. jeda per pengguna per layar (layar berat);
- *   f. di dalam ActingUser + konteks SPPG: LayarBaca::izinkan (Policy), lalu render.
+ *   f. di dalam ActingUser + konteks SPPG: BotLayarRegistry::layarBolehDibuka (hak RBAC + tampilUntuk + LayarBaca::izinkan,
+ *      gerbang yang sama dengan penyaring tombol beranda), lalu render.
  */
 class BotNavigasi
 {
@@ -111,7 +112,7 @@ class BotNavigasi
 
         // f. Policy + render dalam konteks pengguna dan SPPG.
         $jalankan = function () use ($user, $layar, $sppgId, $konteks): BotNavHasil {
-            if (! $layar->izinkan($user, $sppgId)) {
+            if (! BotLayarRegistry::layarBolehDibuka($user, $layar, $sppgId)) {
                 return BotNavHasil::gagal(BotNavHasil::TIDAK_BERHAK);
             }
 
