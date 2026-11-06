@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Http\Resources\Concerns\FormatsWib;
 use App\Models\NotifikasiPerjalanan;
+use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -42,7 +43,22 @@ class NotifikasiPerjalananResource extends JsonResource
             'terlambat' => $this->isTerlambat(),
             'terlambat_dideteksi_pada' => $this->wib($this->terlambat_dideteksi_pada),
             'pesan' => $this->pesan,
+            'izin' => $this->izin($request),
             'created_at' => $this->wib($this->created_at),
         ];
+    }
+
+    /**
+     * Hak ubah status = Policy `ubahStatus` (C notifikasi-perjalanan, SPPG sama, relawan hanya miliknya)
+     * dan perjalanan belum final (tiba/dibatalkan tidak punya transisi lanjutan).
+     *
+     * @return array<string, bool>
+     */
+    private function izin(Request $request): array
+    {
+        $izin = PetaHak::izin($request->user(), $this->resource, ['ubah_status' => 'ubahStatus']);
+        $izin['ubah_status'] = $izin['ubah_status'] && $this->status_perjalanan->transisiValid() !== [];
+
+        return $izin;
     }
 }

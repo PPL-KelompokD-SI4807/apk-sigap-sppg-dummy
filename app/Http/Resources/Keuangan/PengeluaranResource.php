@@ -2,10 +2,13 @@
 
 namespace App\Http\Resources\Keuangan;
 
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Http\Resources\Concerns\FormatsWib;
 use App\Http\Resources\LampiranResource;
 use App\Models\Pengeluaran;
+use App\Models\User;
 use App\Services\Keuangan\BudgetService;
+use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -40,10 +43,29 @@ class PengeluaranResource extends JsonResource
             'nota' => $nota === null ? null : ['lampiran_id' => $nota->id, 'url' => $nota->url(), 'mime' => $nota->mime, 'ukuran' => $nota->ukuran],
             'lampiran' => LampiranResource::collection($p->relationLoaded('lampirans') ? $p->lampirans : $p->lampirans()->get()),
             'dicatat_oleh' => $p->pencatat === null ? null : ['id' => $p->pencatat->id, 'name' => $p->pencatat->name],
+            'izin' => $this->izin($request->user(), $p),
             'created_at' => $this->wib($p->created_at),
             'updated_at' => $this->wib($p->updated_at),
         ] + ($p->relationLoaded('persetujuans') ? [
             'riwayat_persetujuan' => PersetujuanPengeluaranResource::collection($p->persetujuans),
         ] : []);
+    }
+
+    /**
+     * Izin per record = Policy yang sama dengan endpoint. `ubah`/`hapus` ditolak service untuk pengeluaran hasil
+     * verifikasi pembelian (pembelian_bahan_id terisi); `lampirkan` juga false saat status `disetujui`; `putuskan` hanya saat status `diajukan`.
+     *
+     * @return array<string, bool>
+     */
+    private function izin(?User $user, Pengeluaran $p): array
+    {
+        $izin = PetaHak::izin($user, $p, ['ubah' => 'update', 'hapus' => 'delete', 'lampirkan' => 'lampirkan', 'putuskan' => 'putuskan']);
+        $izin['ubah'] = $izin['ubah'] && $p->pembelian_bahan_id === null;
+        $izin['hapus'] = $izin['hapus'] && $p->pembelian_bahan_id === null;
+        // POST /lampiran ditolak 409 untuk pengeluaran yang sudah disetujui (harus diubah/diajukan ulang dulu).
+        $izin['lampirkan'] = $izin['lampirkan'] && $p->status_persetujuan !== StatusPersetujuanPengeluaran::Disetujui;
+        $izin['putuskan'] = $izin['putuskan'] && $p->status_persetujuan === StatusPersetujuanPengeluaran::Diajukan;
+
+        return $izin;
     }
 }

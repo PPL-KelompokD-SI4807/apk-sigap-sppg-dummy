@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\User;
+use App\Support\PetaHak;
 use App\Support\Rbac;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\DB;
  * X-SPPG-Id tervalidasi / SPPG satu-satunya; null = belum dipilih atau admin). `multi_sppg` = true
  * bila pengguna wajib memilih SPPG aktif lewat GET /sppg-saya. `baca_saja` = tanpa hak C/U/D di
  * modul mana pun. `agregat` = modul yang hanya boleh dibaca agregatnya (mis. penerima-manfaat).
+ * `unit_scope` (modul -> sub-jenis) dan `aksi` (aksi di luar CRUD + dashboard) berasal dari PetaHak, yakni Rbac/Policy
+ * yang sama dengan penegakan endpoint (lihat docs/api/peta-hak.md).
  *
  * @mixin User
  */
@@ -44,6 +47,9 @@ class AuthUserResource extends JsonResource
             'baca_saja' => Rbac::readOnly($user),
             'agregat' => Rbac::aggregateOnlyModules($user),
             'keputusan' => Rbac::decisionModules($user),
+            // Peta hak tambahan (sumber tunggal Rbac/Policy; klien gagal tertutup bila tidak menerimanya).
+            'unit_scope' => (object) PetaHak::unitScope($user),
+            'aksi' => PetaHak::aksi($user),
         ];
     }
 
