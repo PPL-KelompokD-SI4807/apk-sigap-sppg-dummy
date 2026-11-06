@@ -72,6 +72,7 @@ schemas:
       created_by: { type: integer }
       expires_at: { type: string, format: date-time }
       used_at: { type: [string, 'null'], format: date-time }
+      used_by: { type: [integer, 'null'], description: 'Akun yang memakai undangan. Pada daftar ulang akun terhapus mode user_id, berbeda dari user_id (placeholder yang dihapus lunak).' }
       revoked_at: { type: [string, 'null'], format: date-time }
       created_at: { type: string, format: date-time }
   UndanganDibuat:
@@ -94,6 +95,7 @@ schemas:
       created_by: 1
       expires_at: '2026-10-29T08:00:00+07:00'
       used_at: null
+      used_by: null
       revoked_at: null
       created_at: '2026-10-26T08:00:00+07:00'
       token: 'q8VxS2mT0b1kJ4n7Yp3Zc9HdWfLrAeUoIgNvBxKtMs0'

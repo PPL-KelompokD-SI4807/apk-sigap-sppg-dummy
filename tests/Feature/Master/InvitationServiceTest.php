@@ -236,15 +236,17 @@ class InvitationServiceTest extends MasterApiTestCase
         $this->assertSame(7_000_000_077, $this->service->consume($token, $this->tg(7_000_000_077))->telegram_id);
     }
 
-    public function test_telegram_id_milik_pengguna_terhapus_lunak_tetap_ditolak(): void
+    public function test_telegram_id_milik_pengguna_terhapus_lunak_memulihkan_baris_lama(): void
     {
+        // Rincian daftar ulang ada di DaftarUlangAkunTerhapusTest.
         $this->kepalaB->delete();
         [$token] = $this->issueForNewAccount();
 
-        $this->assertReason(
-            InvalidInvitationException::TELEGRAM_SUDAH_TERDAFTAR,
-            fn () => $this->service->consume($token, $this->tg($this->kepalaB->telegram_id)),
-        );
+        $user = $this->service->consume($token, $this->tg($this->kepalaB->telegram_id));
+
+        $this->assertSame($this->kepalaB->id, $user->id);
+        $this->assertFalse($user->fresh()->trashed());
+        $this->assertDatabaseCount('users', 7);
     }
 
     public function test_balapan_telegram_id_antar_undangan_ditangkap_indeks_unik(): void

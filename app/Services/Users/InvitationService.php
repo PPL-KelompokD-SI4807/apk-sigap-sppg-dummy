@@ -4,10 +4,15 @@ namespace App\Services\Users;
 
 use App\Enums\RelawanUnit;
 use App\Enums\Role;
+use App\Enums\StatusAiDraft;
+use App\Enums\StatusPermintaanReset;
 use App\Enums\TipeUndangan;
+use App\Models\AiDraft;
 use App\Models\AuditLog;
 use App\Models\Invitation;
+use App\Models\PermintaanResetPassword;
 use App\Models\Scopes\SppgScope;
+use App\Models\Sppg;
 use App\Models\TitikLayanan;
 use App\Models\User;
 use App\Support\Rbac;
@@ -25,6 +30,17 @@ use Illuminate\Validation\ValidationException;
  * - consume*(): transaksi + lockForUpdate + klaim atomik (UPDATE ... WHERE used_at IS NULL),
  *   sehingga dua pemakaian bersamaan tidak pernah sama-sama berhasil.
  * - telegram_id tidak pernah ganda: dicek (termasuk akun terhapus lunak) dan dijaga indeks unik DB.
+ *   ID milik akun AKTIF selalu ditolak (TELEGRAM_SUDAH_TERDAFTAR).
+ * - Daftar ulang akun terhapus lunak: bila telegram_id milik baris terhapus, baris LAMA dipulihkan
+ *   (id, audit, log, AiDraft tetap pada baris yang sama; telegram_id tidak pernah dilepas).
+ *   Hanya undangan pengguna yang masih sah dan diterbitkan akun aktif berhak C modul pengguna
+ *   yang dapat memicunya; /start tanpa undangan sah tetap ditolak. Peran/unit/SPPG/status aktif
+ *   diambil dari isian Admin (undangan peran, atau baris placeholder pada undangan user_id; placeholder
+ *   lalu dihapus lunak dan used_by menunjuk baris yang dipulihkan), BUKAN dari baris lama.
+ *   Kredensial lama dikosongkan (wajib aktivasi ulang lewat token bot); token Sanctum, perangkat
+ *   tepercaya, tantangan token, tombol bot, draf AI pending, permintaan reset aktif, dan kepemilikan
+ *   SPPG investor milik baris lama dicabut. Pemulihan tercatat di audit (updated + restored, sumber bot).
+ * - SPPG tujuan wajib ada dan belum dihapus saat undangan dipakai (SPPG_TIDAK_VALID).
  *
  * Bot memanggil consume($rawToken, $telegramUser) untuk undangan pengguna, consumePic() untuk
  * undangan PIC, atau consumeAny() bila jenis belum diketahui. Awalan "inv_" pada parameter
@@ -158,6 +174,10 @@ class InvitationService
             throw ValidationException::withMessages(['sppg_id' => ['SPPG wajib untuk peran satu-SPPG dan harus kosong untuk admin/investor.']]);
         }
 
+        if ($sppgId !== null && ! $this->sppgAda((int) $sppgId)) {
+            throw ValidationException::withMessages(['sppg_id' => ['SPPG tidak ditemukan.']]);
+        }
+
         return ['user_id' => null, 'role' => $role->value, 'unit' => $unit, 'sppg_id' => $sppgId];
     }
 
@@ -267,29 +287,29 @@ class InvitationService
     /** @param array<string, mixed> $telegramUser */
     private function linkOrCreateUser(Invitation $invitation, int $telegramId, array $telegramUser): User
     {
-        $taken = User::query()->withoutGlobalScopes()->where('telegram_id', $telegramId)->lockForUpdate()->exists();
+        // Termasuk baris terhapus lunak (withoutGlobalScopes): indeks unik telegram_id masih memegang ID-nya.
+        // Dikunci agar dua undangan bersamaan untuk ID yang sama berbaris; yang kedua melihat akun sudah aktif.
+        $pemilik = User::query()->withoutGlobalScopes()->where('telegram_id', $telegramId)->lockForUpdate()->first();
 
-        if ($taken) {
+        if ($pemilik !== null && ! $pemilik->trashed()) {
             throw new InvalidInvitationException(InvalidInvitationException::TELEGRAM_SUDAH_TERDAFTAR);
         }
 
         $username = $this->username($telegramUser);
+        $placeholder = $invitation->user_id !== null ? $this->lockPlaceholder($invitation) : null;
 
-        if ($invitation->user_id !== null) {
-            $user = User::query()->withoutGlobalScopes()->lockForUpdate()->find($invitation->user_id);
-
-            if ($user === null || $user->trashed()) {
-                throw new InvalidInvitationException(InvalidInvitationException::TIDAK_VALID);
-            }
-
-            if ($user->telegram_id !== null) {
-                throw new InvalidInvitationException(InvalidInvitationException::AKUN_SUDAH_TERHUBUNG);
-            }
-
-            $user->fill(['telegram_id' => $telegramId, 'telegram_username' => $username])->save();
-
-            return $user;
+        if ($pemilik !== null) {
+            return $this->restoreUser($invitation, $pemilik, $placeholder, $telegramUser, $username);
         }
+
+        if ($placeholder !== null) {
+            $this->assertTujuanValid($placeholder->role, $placeholder->sppg_id);
+            $placeholder->fill(['telegram_id' => $telegramId, 'telegram_username' => $username])->save();
+
+            return $placeholder;
+        }
+
+        $this->assertTujuanValid(Role::tryFrom((string) $invitation->role), $invitation->sppg_id);
 
         return User::query()->create([
             'sppg_id' => $invitation->sppg_id,
@@ -300,6 +320,140 @@ class InvitationService
             'unit' => $invitation->unit,
             'is_active' => true,
         ]);
+    }
+
+    /** Akun buatan Admin (undangan user_id): belum terhapus dan belum bertaut Telegram. */
+    private function lockPlaceholder(Invitation $invitation): User
+    {
+        $user = User::query()->withoutGlobalScopes()->lockForUpdate()->find($invitation->user_id);
+
+        if ($user === null || $user->trashed()) {
+            throw new InvalidInvitationException(InvalidInvitationException::TIDAK_VALID);
+        }
+
+        if ($user->telegram_id !== null) {
+            throw new InvalidInvitationException(InvalidInvitationException::AKUN_SUDAH_TERHUBUNG);
+        }
+
+        return $user;
+    }
+
+    /**
+     * Pulihkan baris terhapus lunak pemilik telegram_id (daftar ulang). Atribut akses dari isian Admin,
+     * bukan dari baris lama; kredensial lama dikosongkan; semua sesi/tautan lama dicabut (User::restored).
+     *
+     * @param  array<string, mixed>  $telegramUser
+     */
+    private function restoreUser(Invitation $invitation, User $lama, ?User $placeholder, array $telegramUser, ?string $username): User
+    {
+        $this->assertPenerbitBerhak($invitation);
+
+        if ($placeholder !== null) {
+            $this->assertTujuanValid($placeholder->role, $placeholder->sppg_id);
+            $atribut = [
+                'name' => $placeholder->name,
+                'role' => $placeholder->role,
+                'unit' => $placeholder->unit,
+                'sppg_id' => $placeholder->sppg_id,
+                'phone' => $placeholder->phone,
+                'is_active' => $placeholder->is_active,
+            ];
+            $kepemilikan = DB::table('investor_sppg')->where('user_id', $placeholder->getKey())->get(['sppg_id', 'created_by']);
+            $this->retirePlaceholder($placeholder);
+        } else {
+            $role = Role::tryFrom((string) $invitation->role);
+            $this->assertTujuanValid($role, $invitation->sppg_id);
+            $atribut = [
+                'name' => $this->displayName($telegramUser),
+                'role' => $role,
+                'unit' => $invitation->unit,
+                'sppg_id' => $invitation->sppg_id,
+                'phone' => null,
+                'is_active' => true,
+            ];
+            $kepemilikan = collect();
+        }
+
+        $id = $lama->getKey();
+
+        // Hak lama tidak boleh hidup kembali: kepemilikan SPPG investor diganti isian Admin (placeholder).
+        DB::table('investor_sppg')->where('user_id', $id)->delete();
+
+        if ($atribut['role'] === Role::Investor && $kepemilikan->isNotEmpty()) {
+            $now = now();
+            DB::table('investor_sppg')->insert($kepemilikan->map(fn ($r) => [
+                'user_id' => $id,
+                'sppg_id' => (int) $r->sppg_id,
+                'created_by' => $r->created_by,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ])->all());
+        }
+
+        Invitation::query()->aktif()->where('user_id', $id)->update(['revoked_at' => now()]);
+        PermintaanResetPassword::query()->withoutGlobalScopes()->aktif()->where('user_id', $id)
+            ->update(['status' => StatusPermintaanReset::Ditolak->value, 'diputuskan_pada' => now()]);
+        AiDraft::query()->withoutGlobalScopes()->pending()->where('user_id', $id)
+            ->update(['status' => StatusAiDraft::Expired->value]);
+
+        $lama->forceFill($atribut + [
+            'telegram_username' => $username,
+            'username' => null,
+            'password' => null,
+            'password_changed_at' => null,
+            'failed_login_attempts' => 0,
+            'locked_until' => null,
+        ]);
+
+        // restore(): audit "updated" (atribut baru) + "restored"; hook User::restored mencabut sesi & bot_aksi.
+        $lama->restore();
+
+        return $lama;
+    }
+
+    /** Placeholder undangan user_id digantikan baris yang dipulihkan: nilai unik dilepas lalu dihapus lunak. */
+    private function retirePlaceholder(User $placeholder): void
+    {
+        $placeholder->forceFill(['phone' => null])->save();
+        DB::table('investor_sppg')->where('user_id', $placeholder->getKey())->delete();
+        Invitation::query()->aktif()->where('user_id', $placeholder->getKey())->update(['revoked_at' => now()]);
+        $placeholder->delete();
+    }
+
+    /** Pemulihan hanya lewat undangan terbitan akun yang masih aktif dan berhak C modul pengguna. */
+    private function assertPenerbitBerhak(Invitation $invitation): void
+    {
+        $penerbit = $invitation->created_by === null
+            ? null
+            : User::query()->withoutGlobalScopes()->find($invitation->created_by);
+
+        if ($penerbit === null || ! $penerbit->canAuthenticate() || ! Rbac::can($penerbit, 'pengguna', 'C')) {
+            throw new InvalidInvitationException(InvalidInvitationException::TIDAK_VALID);
+        }
+    }
+
+    /** Peran sah dan SPPG tujuan sesuai peran: wajib ada dan belum dihapus (peran satu-SPPG), kosong untuk admin/investor. */
+    private function assertTujuanValid(?Role $role, mixed $sppgId): void
+    {
+        if ($role === null) {
+            throw new InvalidInvitationException(InvalidInvitationException::TIDAK_VALID);
+        }
+
+        $valid = $role->tanpaSppgId()
+            ? $sppgId === null
+            : $sppgId !== null && $this->sppgAda((int) $sppgId, kunci: true);
+
+        if (! $valid) {
+            throw new InvalidInvitationException(InvalidInvitationException::SPPG_TIDAK_VALID);
+        }
+    }
+
+    /** SPPG ada dan belum dihapus lunak. $kunci: kunci bersama sampai transaksi selesai (tidak dihapus di tengah jalan). */
+    private function sppgAda(int $sppgId, bool $kunci = false): bool
+    {
+        return Sppg::query()->withoutGlobalScopes()->whereKey($sppgId)->whereNull('deleted_at')
+            ->when($kunci, fn ($q) => $q->sharedLock())
+            ->value('id') !== null;
     }
 
     private function linkPic(Invitation $invitation, int $chatId): TitikLayanan

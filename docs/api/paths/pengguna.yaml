@@ -125,7 +125,11 @@
   delete:
     tags: [Pengguna]
     summary: Hapus lunak pengguna (Admin)
-    description: Token pengguna dicabut. Tidak dapat menghapus akun sendiri atau admin aktif terakhir (422, field `user`).
+    description: |
+      Token Sanctum, perangkat tepercaya, tantangan token, undangan aktif, dan tombol bot (bot_aksi aktif /
+      menunggu catatan) pengguna dicabut. `telegram_id` dipertahankan pada baris terhapus: akun dapat
+      didaftarkan ulang lewat undangan baru (lihat `POST /pengguna/undangan`). Tidak dapat menghapus akun
+      sendiri atau admin aktif terakhir (422, field `user`).
     responses:
       '204': { description: Dihapus }
       '401': { $ref: '#/components/responses/Unauthorized' }
@@ -334,6 +338,16 @@
       Kepala SPPG hak undang). Dua mode: (a) `user_id` = akun yang sudah dibuat dan belum bertaut
       Telegram; (b) `role` (+ `unit` untuk relawan, + `sppg_id` untuk non-admin) bila akun dibuat
       otomatis saat tautan dipakai. Undangan aktif sebelumnya untuk akun yang sama dicabut.
+      Daftar ulang akun terhapus: bila ID Telegram pemakai milik akun yang sudah dihapus lunak,
+      baris LAMA dipulihkan (id, audit, log, draf AI tetap) alih-alih membuat akun baru. Peran/unit/SPPG
+      (dan untuk mode `user_id`: nama, no telepon, status aktif, kepemilikan SPPG investor) diambil dari
+      isian Admin pada undangan, bukan dari baris lama; akun placeholder mode `user_id` dihapus lunak dan
+      `used_by` menunjuk baris yang dipulihkan. Username/password lama dikosongkan (wajib aktivasi ulang),
+      semua sesi, perangkat tepercaya, tantangan token, tombol bot, draf AI pending, dan permintaan
+      reset aktif milik baris lama dicabut. ID Telegram milik akun AKTIF tetap ditolak bot
+      ("Akun Telegram ini sudah terdaftar di SiGAP SPPG."). Hanya undangan yang diterbitkan akun aktif
+      berhak C modul pengguna yang dapat memicu pemulihan. SPPG tujuan yang sudah dihapus saat tautan
+      dipakai ditolak bot ("SPPG pada tautan undangan ini tidak lagi tersedia. ...").
       Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 72 jam, sekali pakai.
       `token` dan `deep_link` hanya ada pada respons ini; simpan/kirimkan segera.
     requestBody:
