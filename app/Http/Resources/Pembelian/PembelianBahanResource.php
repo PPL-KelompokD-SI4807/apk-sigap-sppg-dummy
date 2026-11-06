@@ -2,9 +2,12 @@
 
 namespace App\Http\Resources\Pembelian;
 
+use App\Enums\StatusPembelianBahan;
 use App\Http\Resources\Concerns\FormatsWib;
 use App\Http\Resources\LampiranResource;
 use App\Models\PembelianBahan;
+use App\Models\User;
+use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -46,6 +49,7 @@ class PembelianBahanResource extends JsonResource
             'diverifikasi_oleh' => $p->pemverifikasi === null ? null : ['id' => $p->pemverifikasi->id, 'name' => $p->pemverifikasi->name],
             'diverifikasi_pada' => $this->wib($p->diverifikasi_pada),
             'lampirans' => LampiranResource::collection($lampirans),
+            'izin' => $this->izin($request->user(), $p),
             'created_at' => $this->wib($p->created_at),
             'updated_at' => $this->wib($p->updated_at),
         ];
@@ -61,5 +65,20 @@ class PembelianBahanResource extends JsonResource
         }
 
         return $data;
+    }
+
+    /**
+     * Izin per record = Policy yang sama dengan endpoint. `ubah` dan `verifikasi` juga mensyaratkan keadaan yang
+     * ditegakkan service (terverifikasi bersifat final -> tidak dapat diubah; verifikasi hanya saat `diajukan`).
+     *
+     * @return array<string, bool>
+     */
+    private function izin(?User $user, PembelianBahan $p): array
+    {
+        $izin = PetaHak::izin($user, $p, ['ubah' => 'update', 'hapus' => 'delete', 'lampirkan' => 'lampirkan', 'verifikasi' => 'verifikasi']);
+        $izin['ubah'] = $izin['ubah'] && $p->status->bisaDiubah();
+        $izin['verifikasi'] = $izin['verifikasi'] && $p->status === StatusPembelianBahan::Diajukan;
+
+        return $izin;
     }
 }

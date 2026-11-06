@@ -4,8 +4,10 @@ namespace App\Http\Resources\Jadwal;
 
 use App\Enums\HasilMutu;
 use App\Enums\StatusJadwalDistribusi;
+use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusPersetujuanMenu;
 use App\Models\JadwalProduksi;
+use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -46,8 +48,23 @@ class JadwalProduksiResource extends JsonResource
             ),
             'status_mutu' => $mutu?->hasil?->value,
             'layak_distribusi' => $mutu?->hasil === HasilMutu::Layak,
+            'izin' => $this->izin($request, $j),
             'created_at' => $j->created_at?->toIso8601String(),
             'updated_at' => $j->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Hak (Policy) DAN keadaan dari atribut record: jadwal hanya dapat dihapus pada status direncanakan/dibatalkan.
+     * Syarat relasional (sudah ada log/distribusi aktif) butuh query dan tetap ditegakkan service (422).
+     *
+     * @return array<string, bool>
+     */
+    private function izin(Request $request, JadwalProduksi $j): array
+    {
+        $izin = PetaHak::izin($request->user(), $j, ['ubah' => 'update', 'hapus' => 'delete']);
+        $izin['hapus'] = $izin['hapus'] && in_array($j->status, [StatusJadwalProduksi::Direncanakan, StatusJadwalProduksi::Dibatalkan], true);
+
+        return $izin;
     }
 }

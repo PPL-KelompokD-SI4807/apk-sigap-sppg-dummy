@@ -71,17 +71,21 @@
 /jadwal/produksi-ringkas:
   get:
     tags: [Jadwal]
-    summary: Ringkasan jadwal produksi per tanggal (untuk pilihan di form distribusi)
+    summary: Pilihan jadwal produksi untuk dropdown (kolom minimal)
     description: |
-      Daftar ringkas tanpa data sensitif (id, tanggal, nama menu, target porsi, status) agar form jadwal
-      distribusi/bukti dapat memilih jadwal produksi. Dibuka untuk SEMUA peran yang punya hak R modul
-      jadwal, termasuk relawan unit distribusi yang tidak boleh membaca jadwal produksi penuh
-      (`GET /jadwal`): admin, kepala_sppg, ahli_gizi, staf_gudang, relawan (unit dapur/distribusi).
-      Akuntan dan relawan tanpa unit mendapat 403. Dibatasi SPPG pengguna (Admin: opsional `sppg_id`).
-      Jadwal terhapus lunak tidak disertakan; status `dibatalkan` tetap disertakan (klien menyaring).
-      Tanpa paginasi, maks 200 baris, urut jam mulai masak.
+      Daftar minimal (HANYA `id`, `tanggal_produksi`, `nama_menu`, `status`) agar form jadwal distribusi/bukti dan
+      form keluhan (batch) dapat memilih jadwal produksi. Gerbang `viewRingkas`: hak R modul jadwal (bukan R*)
+      tanpa batasan sub-jenis unit relawan, sehingga relawan unit distribusi yang tidak boleh membaca jadwal
+      produksi penuh (`GET /jadwal` = 403) tetap dapat memilih. Boleh: admin, kepala_sppg, ahli_gizi, staf_gudang,
+      relawan (unit dapur/distribusi). Akuntan, investor, dan relawan tanpa unit mendapat 403. Dibatasi SPPG
+      pengguna (Admin: opsional `sppg_id`). Jadwal terhapus lunak tidak disertakan; status `dibatalkan` tetap
+      disertakan (klien menyaring). Tanpa paginasi, maks 200 baris, urut tanggal terbaru lalu jam mulai masak.
+      Tanpa `from`/`to`: satu hari (`tanggal`, default hari ini WIB). Dengan `from` dan/atau `to`: rentang
+      (selisih to - from maks 62 hari = 63 hari kalender inklusif; lebih dari itu 422), mis. batch keluhan 14 hari terakhir. Flag klien: `aksi.lihat_ringkasan_jadwal_produksi` pada `/auth/me`.
     parameters:
-      - { name: tanggal, in: query, description: 'YYYY-MM-DD; default hari ini (WIB)', schema: { type: string, format: date } }
+      - { name: tanggal, in: query, description: 'YYYY-MM-DD; default hari ini (WIB). Diabaikan bila from/to diberikan.', schema: { type: string, format: date } }
+      - { name: from, in: query, description: 'YYYY-MM-DD awal rentang (tanggal_produksi)', schema: { type: string, format: date } }
+      - { name: to, in: query, description: 'YYYY-MM-DD akhir rentang; >= from; selisih to - from maks 62 hari (63 hari kalender inklusif)', schema: { type: string, format: date } }
       - { name: sppg_id, in: query, description: 'Hanya dipakai Admin', schema: { type: integer } }
     responses:
       '200':
@@ -96,7 +100,7 @@
                   items: { $ref: '#/components/schemas/JadwalProduksiRingkas' }
             example:
               data:
-                - { id: 12, tanggal_produksi: '2026-11-02', nama_menu: 'Nasi, ayam suwir, sayur bayam', target_porsi: 2500, status: direncanakan, status_label: Direncanakan }
+                - { id: 12, tanggal_produksi: '2026-11-02', nama_menu: 'Nasi, ayam suwir, sayur bayam', status: direncanakan }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '422': { $ref: '#/components/responses/ValidationFailed' }

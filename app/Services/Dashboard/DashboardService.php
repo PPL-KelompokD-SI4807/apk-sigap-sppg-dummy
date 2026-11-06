@@ -138,7 +138,7 @@ final class DashboardService
         return [
             'peran' => $user->role->value,
             'unit' => $user->unit?->value,
-            'profil' => $this->profil($user),
+            'profil' => self::profilDari($user),
             'mode' => $c->mode,
             'rentang_hari' => $c->rentang,
             'periode' => [
@@ -155,7 +155,8 @@ final class DashboardService
         ];
     }
 
-    private function profil(User $user): string
+    /** Kunci profil dashboard pengguna (admin, investor, kepala_sppg, ..., relawan_dapur|relawan_distribusi|relawan_tanpa_unit). */
+    public static function profilDari(User $user): string
     {
         return $user->role === Role::Relawan ? 'relawan_'.($user->unit?->value ?? 'tanpa_unit') : $user->role->value;
     }

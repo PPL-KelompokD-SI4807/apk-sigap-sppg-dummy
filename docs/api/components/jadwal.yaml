@@ -31,18 +31,21 @@ schemas:
       porsi_terjadwal_distribusi: { type: integer, description: 'Total porsi distribusi aktif (tidak dibatalkan)' }
       status_mutu: { type: [string, 'null'], enum: [layak, tidak_layak, null], description: 'Hasil pemeriksaan mutu terbaru; null = belum diperiksa' }
       layak_distribusi: { type: boolean, description: 'true bila pemeriksaan mutu terbaru Layak' }
+      izin: { $ref: '#/components/schemas/IzinUbahHapus' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   JadwalProduksiRingkas:
     type: object
-    description: Ringkasan jadwal produksi tanpa data sensitif (pilihan pada form distribusi)
+    required: [id, tanggal_produksi, nama_menu, status]
+    additionalProperties: false
+    description: |
+      Pilihan jadwal produksi untuk dropdown (form distribusi, keluhan): HANYA empat kolom ini. Tanpa target porsi,
+      catatan, anggaran, atau data pengguna.
     properties:
       id: { type: integer }
       tanggal_produksi: { type: string, format: date }
       nama_menu: { type: [string, 'null'] }
-      target_porsi: { type: integer }
       status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
-      status_label: { type: string }
   JadwalProduksiInput:
     type: object
     required: [menu_id, tanggal_produksi, target_porsi]
@@ -77,6 +80,7 @@ schemas:
       status_label: { type: string }
       layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
       catatan: { type: [string, 'null'] }
+      izin: { $ref: '#/components/schemas/IzinUbahHapus' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   JadwalDistribusiInput:

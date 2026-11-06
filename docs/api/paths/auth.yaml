@@ -379,6 +379,72 @@
               properties:
                 user: { $ref: '#/components/schemas/AuthUser' }
                 expires_at: { type: 'null', description: 'Selalu null: sesi login penuh tidak kedaluwarsa.' }
+            examples:
+              relawan_dapur:
+                summary: Relawan unit dapur (peta hak ringkas)
+                value:
+                  user:
+                    id: 12
+                    name: 'Siti Rahayu'
+                    username: 'siti.dapur'
+                    role: relawan
+                    role_label: Relawan
+                    unit: dapur
+                    sppg_id: 1
+                    sppg_name: 'SPPG Sukamaju'
+                    sppg_aktif_id: 1
+                    multi_sppg: false
+                    modules: [pengguna, sppg, titik-layanan, menu-gizi, jadwal, log-produksi, mutu, armada, keluhan]
+                    permissions: { pengguna: 'R*', sppg: R, 'titik-layanan': R, 'menu-gizi': R, jadwal: CRU, 'log-produksi': CRU, mutu: R, armada: R, keluhan: CR }
+                    baca_saja: false
+                    agregat: []
+                    keputusan: []
+                    unit_scope: { jadwal: produksi }
+                    aksi:
+                      undang_pengguna: false
+                      reset_password_pengguna: false
+                      kelola_kepemilikan_sppg: false
+                      undang_pic: false
+                      ajukan_menu: false
+                      lihat_rincian_biaya: false
+                      picu_perjalanan: false
+                      susun_rekap: false
+                      kirim_ulang_rekap: false
+                      tindak_lanjut_keluhan: false
+                      catat_mutasi_stok: false
+                      catat_harga_pemasok: false
+                      lihat_ringkasan_jadwal_produksi: true
+                      dashboard: { tersedia: true, profil: relawan_dapur }
+                  expires_at: null
+              kepala_sppg:
+                summary: Kepala SPPG (aksi true sesuai Policy)
+                value:
+                  user:
+                    id: 3
+                    name: 'Budi Santoso'
+                    role: kepala_sppg
+                    unit: null
+                    sppg_id: 1
+                    modules: [pengguna, notifikasi-perjalanan, sppg, titik-layanan, penerima-manfaat, bahan-baku, pemasok, menu-gizi, jadwal, log-produksi, mutu, armada, bukti-distribusi, keuangan, keluhan, rekap-harian, persetujuan-menu, pembelian-bahan]
+                    baca_saja: false
+                    keputusan: []
+                    unit_scope: {}
+                    aksi:
+                      undang_pengguna: false
+                      reset_password_pengguna: false
+                      kelola_kepemilikan_sppg: false
+                      undang_pic: true
+                      ajukan_menu: false
+                      lihat_rincian_biaya: true
+                      picu_perjalanan: true
+                      susun_rekap: true
+                      kirim_ulang_rekap: true
+                      tindak_lanjut_keluhan: true
+                      catat_mutasi_stok: false
+                      catat_harga_pemasok: false
+                      lihat_ringkasan_jadwal_produksi: true
+                      dashboard: { tersedia: true, profil: kepala_sppg }
+                  expires_at: null
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/AuthForbidden' }
       '429': { $ref: '#/components/responses/TooManyRequests' }

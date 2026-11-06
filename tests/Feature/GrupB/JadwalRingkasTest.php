@@ -35,7 +35,6 @@ class JadwalRingkasTest extends GrupBTestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $j->id)
             ->assertJsonPath('data.0.nama_menu', 'Menu Uji')
-            ->assertJsonPath('data.0.target_porsi', 800)
             ->assertJsonPath('data.0.status', 'direncanakan')
             ->assertJsonPath('data.0.tanggal_produksi', now()->toDateString());
     }
@@ -45,8 +44,69 @@ class JadwalRingkasTest extends GrupBTestCase
         $this->jadwal(['catatan' => 'rahasia internal']);
         $this->login(Role::Relawan, null, RelawanUnit::Distribusi);
 
-        $row = $this->getJson(self::URL)->assertOk()->json('data.0');
-        $this->assertEqualsCanonicalizing(['id', 'tanggal_produksi', 'nama_menu', 'target_porsi', 'status', 'status_label'], array_keys($row));
+        $respons = $this->getJson(self::URL)->assertOk();
+        $row = $respons->json('data.0');
+        // Kontrak minimal (peta hak): hanya 4 kolom; tanpa target porsi, catatan, anggaran, atau data pengguna.
+        $this->assertEqualsCanonicalizing(['id', 'tanggal_produksi', 'nama_menu', 'status'], array_keys($row));
+        $this->assertStringNotContainsString('rahasia internal', (string) $respons->getContent());
+        $this->assertStringNotContainsString('800', (string) $respons->getContent());
+    }
+
+    public function test_rentang_from_to_dipakai_untuk_pilihan_batch_keluhan_dan_dibatasi(): void
+    {
+        $lama = $this->jadwal(['tanggal_produksi' => now()->subDays(10)->toDateString()]);
+        $this->jadwal(['tanggal_produksi' => now()->subDays(40)->toDateString()]);
+        $hariIni = $this->jadwal();
+        $this->login(Role::Relawan, null, RelawanUnit::Distribusi);
+
+        $ids = collect($this->getJson(self::URL.'?from='.now()->subDays(14)->toDateString().'&to='.now()->toDateString())->assertOk()->json('data'))->pluck('id')->all();
+        $this->assertEqualsCanonicalizing([$lama->id, $hariIni->id], $ids);
+
+        $this->getJson(self::URL.'?from='.now()->subDays(100)->toDateString().'&to='.now()->toDateString())
+            ->assertUnprocessable()->assertJsonValidationErrors(['to']);
+        $this->getJson(self::URL.'?from='.now()->toDateString().'&to='.now()->subDay()->toDateString())
+            ->assertUnprocessable()->assertJsonValidationErrors(['to']);
+    }
+
+    public function test_batas_rentang_tepat_62_hari_lolos_dan_63_hari_ditolak(): void
+    {
+        $this->login(Role::Relawan, null, RelawanUnit::Distribusi);
+        $to = now()->toDateString();
+
+        $this->getJson(self::URL.'?from='.now()->subDays(62)->toDateString().'&to='.$to)->assertOk();
+        $this->getJson(self::URL.'?from='.now()->subDays(63)->toDateString().'&to='.$to)
+            ->assertUnprocessable()->assertJsonValidationErrors(['to']);
+    }
+
+    public function test_jalur_from_to_tidak_membocorkan_sppg_lain_dan_param_sppg_id_diabaikan_non_admin(): void
+    {
+        $milikA = $this->jadwal(['tanggal_produksi' => now()->subDays(3)->toDateString()]);
+        $milikB = $this->jadwal(['tanggal_produksi' => now()->subDays(3)->toDateString()], $this->sppgB->id);
+        $rentang = '?from='.now()->subDays(14)->toDateString().'&to='.now()->toDateString();
+
+        foreach ([[Role::Relawan, RelawanUnit::Distribusi], [Role::KepalaSppg, null]] as [$role, $unit]) {
+            $this->login($role, $this->sppgA, $unit);
+            $ids = collect($this->getJson(self::URL.$rentang.'&sppg_id='.$this->sppgB->id)->assertOk()->json('data'))->pluck('id')->all();
+
+            $this->assertSame([$milikA->id], $ids, $role->value);
+            $this->assertNotContains($milikB->id, $ids);
+        }
+
+        // Admin boleh memilih SPPG lewat sppg_id pada jalur rentang.
+        $this->login(Role::Admin);
+        $ids = collect($this->getJson(self::URL.$rentang.'&sppg_id='.$this->sppgB->id)->assertOk()->json('data'))->pluck('id')->all();
+        $this->assertSame([$milikB->id], $ids);
+    }
+
+    public function test_peran_di_luar_hak_baca_jadwal_ditolak_403_termasuk_investor(): void
+    {
+        $this->jadwal();
+
+        foreach ([Role::Akuntan, Role::Investor] as $role) {
+            $user = $this->user($role);
+            $this->masukPenuh($user);
+            $this->getJson(self::URL)->assertForbidden();
+        }
     }
 
     public function test_peran_dengan_hak_baca_jadwal_boleh_dan_tanpa_hak_ditolak(): void

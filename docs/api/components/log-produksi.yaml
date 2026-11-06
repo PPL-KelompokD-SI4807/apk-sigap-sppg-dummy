@@ -29,6 +29,7 @@ schemas:
         items: { $ref: '#/components/schemas/Lampiran' }
       dicatat_oleh: { type: [integer, 'null'] }
       pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
+      izin: { $ref: '#/components/schemas/IzinUbahHapus' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   LogProduksiInput:
