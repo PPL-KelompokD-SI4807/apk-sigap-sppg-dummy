@@ -2,7 +2,7 @@
 import { h } from '../../core/dom.js';
 import { api, request, newKey } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { resolve } from '../../core/router.js';
 import { toast, showConfirm } from '../../core/ui.js';
 import { rincianBiayaPanel } from '../../components/rincian-biaya.js';
@@ -20,15 +20,17 @@ const daftarBermasalah = (items) => h('ul', { class: 'stack-tight' }, items.map(
 
 /** Panel di detail menu: status persetujuan, tautan rincian biaya, dan tombol Ajukan (ahli gizi). */
 export function persetujuanPanel(rec) {
-  const p = userPerms(getUser(), SLUG);
+  const user = getUser();
   const box = h('div', { class: 'panel' }, h('h2', { class: 'panel-title' }, 'Persetujuan investor'),
     h('div', { class: 'card-row' }, h('span', { class: 'muted' }, 'Status'),
       h('span', {}, ...statusBadges(rec).map((b) => h('span', { class: `badge ${b.cls}`.trim() }, b.text), ' '))));
   if (rec.status_persetujuan !== 'disetujui') box.append(h('p', { class: 'muted small' }, 'Hanya menu yang disetujui investor yang dapat dipakai pada Jadwal Produksi.'));
-  const aksi = h('div', { class: 'row-actions' }, h('a', { class: 'btn', href: `#/menu-gizi/${rec.id}/rincian-biaya` }, 'Rincian biaya'));
-  if (userPerms(getUser(), SLUG).R) aksi.append(h('a', { class: 'btn', href: `#/${SLUG}` }, 'Pengajuan menu'));
-  box.append(aksi);
-  if (bolehAjukan(p, rec.status_persetujuan)) box.append(ajukanForm(rec));
+  const aksi = h('div', { class: 'row-actions' });
+  // Rincian biaya (harga, pemasok) hanya bagi yang berhak: aksi.lihat_rincian_biaya (relawan tidak).
+  if (bolehAksi(user, 'lihat_rincian_biaya')) aksi.append(h('a', { class: 'btn', href: `#/menu-gizi/${rec.id}/rincian-biaya` }, 'Rincian biaya'));
+  if (userPerms(user, SLUG).R) aksi.append(h('a', { class: 'btn', href: `#/${SLUG}` }, 'Pengajuan menu'));
+  if (aksi.childNodes.length) box.append(aksi);
+  if (bolehAjukan(user, rec.status_persetujuan)) box.append(ajukanForm(rec));
   return box;
 }
 

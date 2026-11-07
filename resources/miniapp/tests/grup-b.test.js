@@ -1,7 +1,8 @@
 // Tes unit modul grup B (logika murni): node --test resources/miniapp/tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { can, perms, userPerms } from '../core/permissions.js';
+import { userPerms, jadwalTabBoleh, permsDariIzin } from '../core/permissions.js';
+import { PROFIL } from './fixtures/peta.js';
 import { mapValidationErrors, errorMessage } from '../core/errors.js';
 import * as bahan from '../modules/bahan-baku/schema.js';
 import * as menu from '../modules/menu-gizi/schema.js';
@@ -12,37 +13,38 @@ import * as mutu from '../modules/mutu/schema.js';
 const names = (f) => f.map((x) => x.name);
 
 // ---------- hak akses ----------
-test('hak akses grup B sesuai Tabel 5', () => {
+test('hak akses grup B mengikuti peta server', () => {
+  const can = (nama, slug, k) => userPerms(PROFIL[nama], slug)[k];
   assert.equal(can('staf_gudang', 'bahan-baku', 'U'), true);
   assert.equal(can('kepala_sppg', 'bahan-baku', 'C'), false);
-  assert.equal(can('relawan', 'bahan-baku', 'R'), false);
+  assert.equal(can('relawan_dapur', 'bahan-baku', 'R'), false);
   assert.equal(can('ahli_gizi', 'menu-gizi', 'C'), true);
   assert.equal(can('staf_gudang', 'menu-gizi', 'C'), false);
-  assert.equal(can('relawan', 'menu-gizi', 'R'), true);
+  assert.equal(can('relawan_dapur', 'menu-gizi', 'R'), true);
   assert.equal(can('kepala_sppg', 'log-produksi', 'C'), false);
   assert.equal(can('kepala_sppg', 'log-produksi', 'D'), true);
-  assert.equal(can('relawan', 'log-produksi', 'D'), false);
+  assert.equal(can('relawan_dapur', 'log-produksi', 'D'), false);
   assert.equal(can('ahli_gizi', 'mutu', 'D'), true);
   assert.equal(can('kepala_sppg', 'mutu', 'U'), false);
   assert.equal(can('staf_gudang', 'mutu', 'R'), false);
-  assert.equal(userPerms({ role: 'ahli_gizi', modules: ['menu-gizi'] }, 'mutu').R, false, 'modul tak ada di user.modules');
-  assert.equal(perms('relawan', 'jadwal').C, true);
+  assert.equal(userPerms({ ...PROFIL.ahli_gizi, modules: ['menu-gizi'] }, 'mutu').R, false, 'modul tak ada di user.modules');
+  assert.equal(can('relawan_dapur', 'jadwal', 'C'), true);
 });
 
-test('unit relawan: dapur = produksi, distribusi = distribusi, peran lain keduanya', () => {
-  assert.equal(jadwal.unitBoleh({ role: 'relawan', unit: 'dapur' }, 'produksi'), true);
-  assert.equal(jadwal.unitBoleh({ role: 'relawan', unit: 'dapur' }, 'distribusi'), false);
-  assert.equal(jadwal.unitBoleh({ role: 'relawan', unit: 'distribusi' }, 'produksi'), false);
-  assert.equal(jadwal.unitBoleh({ role: 'relawan', unit: 'distribusi' }, 'distribusi'), true);
-  assert.equal(jadwal.unitBoleh({ role: 'relawan', unit: null }, 'produksi'), false);
-  assert.equal(jadwal.unitBoleh({ role: 'kepala_sppg' }, 'distribusi'), true);
-  assert.equal(jadwal.unitBoleh(null, 'produksi'), false);
+test('tab jadwal mengikuti unit_scope server: dapur = produksi, distribusi = distribusi, lainnya keduanya', () => {
+  assert.equal(jadwalTabBoleh(PROFIL.relawan_dapur, 'produksi'), true);
+  assert.equal(jadwalTabBoleh(PROFIL.relawan_dapur, 'distribusi'), false);
+  assert.equal(jadwalTabBoleh(PROFIL.relawan_distribusi, 'produksi'), false);
+  assert.equal(jadwalTabBoleh(PROFIL.relawan_distribusi, 'distribusi'), true);
+  assert.equal(jadwalTabBoleh(PROFIL.relawan_tanpa_unit, 'produksi'), false);
+  assert.equal(jadwalTabBoleh(PROFIL.kepala_sppg, 'distribusi'), true);
+  assert.equal(jadwalTabBoleh(null, 'produksi'), false);
 });
 
 // ---------- bahan baku ----------
 test('bahan: skema + payload', () => {
-  assert.deepEqual(names(bahan.bahanFields({ mode: 'update', user: { role: 'staf_gudang' } })), ['nama', 'kode', 'kategori', 'satuan', 'stok_minimum', 'pemasok_id']);
-  assert.equal(names(bahan.bahanFields({ mode: 'create', user: { role: 'admin' } }))[0], 'sppg_id');
+  assert.deepEqual(names(bahan.bahanFields({ mode: 'update', user: PROFIL.staf_gudang })), ['nama', 'kode', 'kategori', 'satuan', 'stok_minimum', 'pemasok_id']);
+  assert.equal(names(bahan.bahanFields({ mode: 'create', user: PROFIL.admin }))[0], 'sppg_id');
   const p = bahan.mapPayload({ nama: ' Beras ', kode: '', kategori: 'karbohidrat', satuan: 'kg', stok_minimum: '50', pemasok_id: '3', stok: 99 });
   assert.deepEqual(p, { nama: 'Beras', kode: null, kategori: 'karbohidrat', satuan: 'kg', stok_minimum: 50, pemasok_id: 3 });
   assert.equal('stok' in p, false, 'stok tidak boleh dikirim lewat form bahan');
@@ -166,7 +168,7 @@ test('jadwal: skema produksi, jadwal berjalan hanya catatan', () => {
 });
 
 test('jadwal: skema distribusi + validasi jam + payload', () => {
-  const f = jadwal.distribusiFields({ mode: 'create' });
+  const f = jadwal.distribusiFields({ mode: 'create', user: PROFIL.kepala_sppg });
   assert.equal(f[0].name, 'jadwal_produksi_id');
   assert.equal(jadwal.distribusiFields({ mode: 'update', record: { status: 'siap' } }).some((x) => x.name === 'jadwal_produksi_id'), false);
   const jb = f.find((x) => x.name === 'jam_berangkat');
@@ -185,17 +187,14 @@ test('jadwal: skema distribusi + validasi jam + payload', () => {
     { jadwal_produksi_id: 12, titik_layanan_id: 3, armada_id: null, pengemudi_id: 4, jam_berangkat: '08:30', jam_rencana_tiba: null, jumlah_porsi: 300 });
 });
 
-test('jadwal: hak per baris (kepemilikan relawan, status yang dapat dihapus)', () => {
-  const p = { C: true, R: true, U: true, D: true };
-  const relawan = { role: 'relawan', id: 7 };
-  assert.equal(jadwal.rowPermsJadwal('produksi', relawan, { dibuat_oleh: 7, status: 'direncanakan' }, p).U, true);
-  assert.equal(jadwal.rowPermsJadwal('produksi', relawan, { dibuat_oleh: 8, status: 'direncanakan' }, p).U, false);
-  assert.equal(jadwal.rowPermsJadwal('produksi', { role: 'kepala_sppg', id: 1 }, { dibuat_oleh: 8, status: 'direncanakan' }, p).U, true);
-  assert.equal(jadwal.rowPermsJadwal('produksi', { role: 'kepala_sppg', id: 1 }, { status: 'dimasak' }, p).D, false);
-  assert.equal(jadwal.rowPermsJadwal('produksi', { role: 'kepala_sppg', id: 1 }, { status: 'dibatalkan' }, p).D, true);
-  assert.equal(jadwal.rowPermsJadwal('distribusi', { role: 'kepala_sppg', id: 1 }, { status: 'berangkat' }, p).D, false);
-  assert.equal(jadwal.rowPermsJadwal('distribusi', { role: 'kepala_sppg', id: 1 }, { status: 'siap' }, p).D, true);
-  assert.equal(jadwal.rowPermsJadwal('produksi', { role: 'ahli_gizi', id: 1 }, { status: 'direncanakan' }, { ...p, D: false }).D, false);
+test('jadwal: hak per baris dari izin server (bukan hitung ulang kepemilikan/status di klien)', () => {
+  const relawan = userPerms(PROFIL.relawan_dapur, 'jadwal');
+  const kepala = userPerms(PROFIL.kepala_sppg, 'jadwal');
+  assert.equal(permsDariIzin(relawan, { dibuat_oleh: 6, izin: { ubah: true, hapus: false } }).U, true);
+  assert.equal(permsDariIzin(relawan, { dibuat_oleh: 6, izin: { ubah: false, hapus: false } }).U, false);
+  assert.equal(permsDariIzin(kepala, { status: 'dimasak', izin: { ubah: true, hapus: false } }).D, false);
+  assert.equal(permsDariIzin(kepala, { status: 'dibatalkan', izin: { ubah: true, hapus: true } }).D, true);
+  assert.equal(permsDariIzin(userPerms(PROFIL.ahli_gizi, 'jadwal'), { status: 'direncanakan', izin: { ubah: true, hapus: true } }).D, false, 'tanpa hak D modul');
 });
 
 test('jadwal: kebutuhan bahan, baris tak dapat dibandingkan diberi catatan', () => {
@@ -245,10 +244,10 @@ test('log produksi: skema (kode batch readonly), payload, hak per baris', () => 
   assert.deepEqual(log.logPayload({ jadwal_produksi_id: '12', realisasi_porsi: '980', sisa_makanan_kg: '3.5', waktu_mulai: '03:10', jam_selesai: '', kendala: 'Gas', kode_batch: 'X' }, { mode: 'create' }),
     { jadwal_produksi_id: 12, realisasi_porsi: 980, sisa_makanan_kg: 3.5, waktu_mulai: '03:10', jam_selesai: null, kendala: 'Gas' });
   assert.equal('jadwal_produksi_id' in log.logPayload({ jadwal_produksi_id: '12', realisasi_porsi: 1 }, { mode: 'update' }), false);
-  const p = { C: false, R: true, U: true, D: false };
-  assert.equal(log.rowPermsLog({ role: 'relawan', id: 3 }, { dicatat_oleh: 4 }, p).U, false);
-  assert.equal(log.rowPermsLog({ role: 'relawan', id: 3 }, { dicatat_oleh: 3 }, p).U, true);
-  assert.equal(log.rowPermsLog({ role: 'kepala_sppg', id: 1 }, { dicatat_oleh: 3 }, p).U, true);
+  const p = userPerms(PROFIL.relawan_dapur, 'log-produksi');
+  assert.equal(permsDariIzin(p, { dicatat_oleh: 4, izin: { ubah: false, hapus: false } }).U, false);
+  assert.equal(permsDariIzin(p, { dicatat_oleh: 6, izin: { ubah: true, hapus: false } }).U, true);
+  assert.equal(permsDariIzin(userPerms(PROFIL.kepala_sppg, 'log-produksi'), { izin: { ubah: true, hapus: true } }).D, true);
 });
 
 // ---------- mutu ----------

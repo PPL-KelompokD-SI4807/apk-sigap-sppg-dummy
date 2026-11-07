@@ -7,7 +7,7 @@ import { rowCard } from '../../components/row-card.js';
 import { h, clear, formatValue } from '../../core/dom.js';
 import { api, submitWithQueue } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { route, navigate } from '../../core/router.js';
 import { toast } from '../../core/ui.js';
 import { bahanFields, mapPayload, kategoriLabel, penandaBahan, fmtQty, sisaHariText, sisaHariCls, jenisMutasiLabel, mutasiFields, cekMutasi, mutasiPayload } from './schema.js';
@@ -95,7 +95,7 @@ const base = defineCrudModule({
     if (rec.stok_menipis) nodes.push(h('div', { class: 'alert-danger' }, `Stok menipis: ${fmtQty(rec.stok, rec.satuan)} (minimum ${fmtQty(rec.stok_minimum)}). Segera catat penerimaan dari pemasok.`));
     if (rec.akan_kedaluwarsa) nodes.push(h('div', { class: 'notice' }, 'Ada batch yang segera atau sudah kedaluwarsa. Pakai batch terdekat lebih dulu (FEFO).'));
     if (flags.length === 0 && Number(rec.stok) > 0) nodes.push(h('div', { class: 'alert-ok' }, 'Stok aman.'));
-    if (p.U) nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/bahan-baku/${rec.id}/mutasi` }, 'Catat mutasi stok'));
+    if (bolehAksi(getUser(), 'catat_mutasi_stok')) nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/bahan-baku/${rec.id}/mutasi` }, 'Catat mutasi stok'));
     nodes.push(await batchPanel(rec), await riwayatPanel(rec));
     return nodes;
   },
@@ -138,7 +138,7 @@ export default {
     // Rute statis harus didaftarkan SEBELUM /bahan-baku/:id.
     route('/bahan-baku/stok-menipis', listScreen('/bahan-baku/stok-menipis', 'menipis', 'Tidak ada bahan dengan stok menipis.'), { title: 'Stok Menipis', guard: () => me().R });
     route('/bahan-baku/kedaluwarsa-dekat', listScreen('/bahan-baku/kedaluwarsa-dekat', 'kedaluwarsa', 'Tidak ada bahan yang segera kedaluwarsa.'), { title: 'Kedaluwarsa Dekat', guard: () => me().R });
-    route('/bahan-baku/:id/mutasi', mutasiScreen, { title: 'Catat Mutasi Stok', guard: () => me().U });
+    route('/bahan-baku/:id/mutasi', mutasiScreen, { title: 'Catat Mutasi Stok', guard: () => bolehAksi(getUser(), 'catat_mutasi_stok') });
     base.register();
   },
 };

@@ -5,23 +5,23 @@ import {
   bolehAjukan, bolehMemutuskan, tombolKeputusanTampil, validasiCatatan, payloadKeputusan, payloadAjukan,
   filterMenuDisetujui, labelPilihanMenu, parseSppgHint, ringkasGalat, bahanBermasalah,
 } from '../modules/persetujuan-menu/logika.js';
-import { userPerms, perms } from '../core/permissions.js';
+import { userPerms } from '../core/permissions.js';
+import { PROFIL } from './fixtures/peta.js';
 import { perluGramPerSatuan, validasiHarga, hargaPayload, kelompokHarga, JENIS_PEMASOK } from '../modules/pemasok/schema.js';
 
-const investor = { role: 'investor', keputusan: ['persetujuan-menu'] };
-const ahliGizi = { role: 'ahli_gizi', keputusan: [] };
+const investor = PROFIL.investor;
+const ahliGizi = PROFIL.ahli_gizi;
 
-test('tombol Ajukan hanya untuk hak C (ahli gizi) pada status draf/ditolak/perlu_revisi', () => {
-  const p = userPerms(ahliGizi, 'persetujuan-menu');
-  for (const s of ['draf', 'ditolak', 'perlu_revisi']) assert.equal(bolehAjukan(p, s), true, s);
-  for (const s of ['diajukan', 'disetujui']) assert.equal(bolehAjukan(p, s), false, s);
-  for (const role of ['admin', 'kepala_sppg', 'investor']) assert.equal(bolehAjukan(userPerms({ role }, 'persetujuan-menu'), 'draf'), false, role);
+test('tombol Ajukan hanya bila aksi.ajukan_menu (ahli gizi) pada status draf/ditolak/perlu_revisi', () => {
+  for (const s of ['draf', 'ditolak', 'perlu_revisi']) assert.equal(bolehAjukan(ahliGizi, s), true, s);
+  for (const s of ['diajukan', 'disetujui']) assert.equal(bolehAjukan(ahliGizi, s), false, s);
+  for (const nama of ['admin', 'kepala_sppg', 'investor', 'akuntan', 'staf_gudang']) assert.equal(bolehAjukan(PROFIL[nama], 'draf'), false, nama);
 });
 
 test('tombol keputusan hanya untuk pemegang keputusan pada status diajukan', () => {
   assert.equal(bolehMemutuskan(investor), true);
-  assert.equal(bolehMemutuskan({ role: 'admin', keputusan: [] }), false);
-  assert.equal(bolehMemutuskan({ role: 'investor' }), false);
+  assert.equal(bolehMemutuskan(PROFIL.admin), false);
+  assert.equal(bolehMemutuskan({ role: 'investor' }), false, 'tanpa peta server: gagal tertutup');
   assert.equal(tombolKeputusanTampil(investor, { status: 'diajukan' }), true);
   assert.equal(tombolKeputusanTampil(investor, { status: 'disetujui' }), false);
   assert.equal(tombolKeputusanTampil(investor, { status: 'diajukan', kedaluwarsa: true }), false);
@@ -30,7 +30,7 @@ test('tombol keputusan hanya untuk pemegang keputusan pada status diajukan', () 
 
 test('investor tetap baca-saja pada menu-gizi/pemasok/jadwal, boleh baca persetujuan-menu', () => {
   for (const slug of ['menu-gizi', 'pemasok', 'jadwal']) assert.equal(userPerms(investor, slug).R, false, slug);
-  const p = perms('investor', 'persetujuan-menu');
+  const p = userPerms(investor, 'persetujuan-menu');
   assert.deepEqual([p.R, p.C, p.U, p.D], [true, false, false, false]);
 });
 

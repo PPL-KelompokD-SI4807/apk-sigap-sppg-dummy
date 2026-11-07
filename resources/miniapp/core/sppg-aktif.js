@@ -54,8 +54,6 @@ export function tentukanSppgAktif(res, tersimpan = null) {
   return { langkah: 'pilih' };
 }
 
-export const isInvestor = (user) => user?.role === 'investor';
-
 /** SPPG yang masih bisa ditautkan = semua SPPG dikurangi yang sudah dimiliki. */
 export function sppgBelumDimiliki(semua, dimiliki) {
   const punya = new Set((dimiliki || []).map((s) => s.id));

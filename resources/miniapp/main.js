@@ -11,7 +11,8 @@ import { registerAllRoutes } from './modules/registry.js';
 import { renderHome } from './home.js';
 import { renderPemilihSppg, muatSppgSaya } from './components/sppg-picker.js';
 import { renderAgregatPenerima } from './components/agregat-view.js';
-import { isInvestor, setSppgAktif } from './core/sppg-aktif.js';
+import { setSppgAktif } from './core/sppg-aktif.js';
+import { multiSppg, agregatBoleh } from './core/permissions.js';
 import { parseSppgHint } from './modules/persetujuan-menu/logika.js';
 import { getUser } from './core/auth.js';
 import { tujuanDraf } from './modules/pembelian-bahan/logika.js';
@@ -39,8 +40,8 @@ route('/draf/:uuid', async (ctx) => {
 }, { title: 'Draf AI' });
 route('/sesi', (ctx) => renderSesi(ctx, { onKeluar: () => { navigate('/', { replace: true }); location.reload(); } }), { title: 'Perangkat & Sesi' });
 route('/pilih-sppg', (ctx) => renderPemilihSppg(ctx.el, { onPilih: () => { navigate('/', { replace: true }); location.reload(); } }),
-  { title: 'Pilih SPPG', guard: () => isInvestor(getUser()) });
-route('/penerima-manfaat-agregat', renderAgregatPenerima, { title: 'Ringkasan Penerima Manfaat', guard: () => isInvestor(getUser()) });
+  { title: 'Pilih SPPG', guard: () => multiSppg(getUser()) });
+route('/penerima-manfaat-agregat', renderAgregatPenerima, { title: 'Ringkasan Penerima Manfaat', guard: () => agregatBoleh(getUser(), 'penerima-manfaat') });
 route('/password', renderUbahPassword, { title: 'Ubah Password' });
 registerAllRoutes();
 
@@ -85,8 +86,8 @@ async function doLogin() {
 async function masukBeranda() {
   flow?.destroy();
   flow = null;
-  if (isInvestor(getUser())) {
-    // Investor multi-SPPG: pastikan SPPG aktif ada (header X-SPPG-Id) sebelum membuka data.
+  if (multiSppg(getUser())) {
+    // Pengguna multi-SPPG (investor): pastikan SPPG aktif ada (header X-SPPG-Id) sebelum membuka data.
     // Deep link bot (?sppg=<id>) hanya petunjuk: dipakai bila ada dalam daftar /sppg-saya; server tetap memvalidasi.
     const hint = parseSppgHint(location.search, location.hash);
     if (hint) setSppgAktif(hint);

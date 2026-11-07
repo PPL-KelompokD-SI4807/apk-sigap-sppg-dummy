@@ -1,8 +1,10 @@
 // Skema Feedback dan Keluhan (fitur 15). Kontrak: docs/api/paths/keluhan.yaml, components/keluhan.yaml.
 // Murni (tanpa DOM) agar bisa diuji. Foto keluhan: lampiran_ids dari POST /lampiran (kolom `lampiranField` di index.js).
 import { buildPayload, sppgField } from '../../core/schema-helpers.js';
+import { bolehAksi, userPerms } from '../../core/permissions.js';
+import { jendelaRingkas, ringkasOptionLabel } from '../jadwal/schema.js';
 import { lampiranIdsPayload } from '../../core/lampiran-uploader.js';
-import { tanggalJamWIB, addDays, todayWIB } from '../../core/waktu.js';
+import { tanggalJamWIB } from '../../core/waktu.js';
 
 export const KATEGORI = [
   { value: 'makanan_basi', label: 'Makanan basi' },
@@ -77,15 +79,21 @@ export function validasiBatch(all) {
   return 'Keluhan kritis wajib dikaitkan dengan batch: pilih jadwal produksi, pilih titik layanan, atau tekan "Batch tidak diketahui".';
 }
 
-/** Hak per baris: kepala/ahli gizi tak dapat mengubah keluhan yang sudah final; Admin bebas. */
+/**
+ * Sunting penuh (semua kolom) = hak Tambah DAN Ubah pada modul keluhan (menurut peta server; hanya Admin).
+ * Yang hanya punya Ubah (kepala/ahli gizi) memakai form tindak lanjut (status + catatan).
+ */
+export const suntingPenuh = (user) => { const p = userPerms(user, 'keluhan'); return p.C && p.U; };
+
+/** Hak per baris: yang hanya menindaklanjuti tak dapat mengubah keluhan final (keadaan dari status record). */
 export function rowPermsKeluhan(user, rec, p) {
-  if (user?.role === 'admin') return p;
-  return { ...p, U: p.U && !isFinal(rec?.status), D: false };
+  if (suntingPenuh(user)) return p;
+  return { ...p, U: p.U && !isFinal(rec?.status) };
 }
 
 /** Muatan POST/PUT. Non-admin ubah: hanya status + tindak_lanjut. */
 export function keluhanPayload(values, { mode, user }) {
-  const admin = user?.role === 'admin';
+  const admin = suntingPenuh(user);
   if (mode === 'update' && !admin) {
     return buildPayload(values, { keys: ['status', 'tindak_lanjut'], nullable: ['tindak_lanjut'] });
   }
@@ -102,11 +110,10 @@ export function keluhanPayload(values, { mode, user }) {
   return out;
 }
 
-const jadwalFormat = (j) => `${String(j.tanggal_produksi ?? '').slice(0, 10)} · ${j.menu?.nama_menu ?? `Jadwal #${j.id}`}`;
 
 /** Skema form. mode: create | update | detail. */
 export function keluhanFields({ mode, user, record }) {
-  const admin = user?.role === 'admin';
+  const admin = suntingPenuh(user);
   if (mode === 'detail') {
     return [
       { name: 'kategori', label: 'Kategori', display: (r) => r.kategori_label || kategoriLabel(r.kategori) },
@@ -138,13 +145,14 @@ export function keluhanFields({ mode, user, record }) {
     ...(mode === 'create' ? sppgField(user, mode) : []),
     { name: 'sumber', label: 'Sumber', type: 'select', required: true, options: SUMBER, default: user?.role === 'relawan' ? 'relawan' : undefined },
     { name: 'kategori', label: 'Kategori', type: 'select', required: true, options: KATEGORI },
-    { name: 'titik_layanan_id', label: 'Titik layanan', type: 'relasi', relation: { endpoint: '/titik-layanan', label: 'nama', value: 'id' } },
-    {
+    // Dropdown hanya bagi yang berhak membacanya; keluhan kritis tetap dapat diselesaikan lewat "Batch tidak diketahui".
+    ...(userPerms(user, 'titik-layanan').R ? [{ name: 'titik_layanan_id', label: 'Titik layanan', type: 'relasi', relation: { endpoint: '/titik-layanan', label: 'nama', value: 'id' } }] : []),
+    // Batch: GET /jadwal/produksi-ringkas?from=&to= (14 hari terakhir), bukan GET /jadwal (relawan distribusi tidak berhak).
+    ...(bolehAksi(user, 'lihat_ringkasan_jadwal_produksi') ? [{
       name: 'jadwal_produksi_id', label: 'Jadwal produksi terkait (batch)', type: 'relasi',
-      relation: { endpoint: '/jadwal', query: { from: addDays(todayWIB(), -14) }, format: jadwalFormat, label: 'id', value: 'id' },
+      relation: { endpoint: '/jadwal/produksi-ringkas', query: jendelaRingkas({ hariLalu: 14, hariDepan: 0 }), format: ringkasOptionLabel, label: 'id', value: 'id' },
       help: 'Bila diketahui. Wajib untuk keluhan kritis kecuali titik layanan dipilih atau batch tidak diketahui.',
-      validate: mode === 'create' ? (v, all) => validasiBatch(all) : undefined,
-    },
+    }] : []),
     { name: 'deskripsi', label: 'Deskripsi', type: 'textarea', required: true, maxlength: 2000, help: 'Jangan menulis nama anak atau nomor telepon.' },
   ];
   if (mode === 'create') return isi;

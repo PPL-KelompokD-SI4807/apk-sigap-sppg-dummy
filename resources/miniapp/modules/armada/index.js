@@ -14,6 +14,7 @@ export default defineCrudModule({
   title: 'Armada',
   icon: '🚐',
   description: 'Kendaraan distribusi dan statusnya',
+  menuInfo: () => ({ title: 'Armada dan Pengemudi', description: 'Kendaraan, pengemudi, dan masa berlaku SIM' }),
   endpoint: '/armada',
   columns: [
     { key: 'plat_nomor', primary: true },

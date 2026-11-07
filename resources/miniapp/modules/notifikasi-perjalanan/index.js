@@ -4,20 +4,21 @@ import { rowCard } from '../../components/row-card.js';
 import { h } from '../../core/dom.js';
 import { api, request, newKey } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehAksi, jadwalTabBoleh } from '../../core/permissions.js';
 import { route, resolve } from '../../core/router.js';
 import { showConfirm, toast, setMainButton } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
 import { todayWIB, jamWIB } from '../../core/waktu.js';
 import {
-  STATUS_PERJALANAN, statusLabel, statusBadge, transisiValid, aksiLabel, unitPerjalananBoleh, bolehUbahStatus,
+  STATUS_PERJALANAN, statusLabel, statusBadge, transisiValid, aksiLabel, bolehUbahStatus,
   validasiAlasan, statusPayload, PENANDA_PIC, picDialihkan, kirimLabel, kirimBadge, ringkasEstimasi,
   perjalananFields, perjalananPayload,
 } from './schema.js';
 
 const SLUG = 'notifikasi-perjalanan';
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
-const me = () => (unitPerjalananBoleh(getUser()) ? userPerms(getUser(), SLUG) : { C: false, R: false, U: false, D: false });
+const me = () => userPerms(getUser(), SLUG);
+const bolehPicu = () => bolehAksi(getUser(), 'picu_perjalanan');
 
 // Filter daftar (mutable; dibaca list-view tiap muat). Default: hari ini WIB.
 const listQuery = { tanggal: todayWIB(), status: '' };
@@ -54,7 +55,7 @@ function formTop({ form, collect }) {
 
 // ---- Tombol transisi (dipakai detail dan layar terakhir) ----
 function aksiPerjalanan(rec) {
-  if (!bolehUbahStatus(getUser(), rec, me())) return null;
+  if (!bolehUbahStatus(rec)) return null;
   const box = h('div', { class: 'stack-tight' }, h('h2', { class: 'panel-title' }, 'Ubah status perjalanan'));
   const row = h('div', { class: 'row-actions' });
   const batalBox = h('div', { class: 'field', hidden: true });
@@ -129,7 +130,7 @@ async function terakhirScreen(ctx) {
     if (aksi) ctx.el.append(aksi);
     ctx.el.append(h('a', { class: 'btn btn-block', href: `#/${SLUG}/${rec.id}` }, 'Lihat detail'));
   }
-  if (me().C) setMainButton({ text: 'Berangkat & Kirim Notifikasi', onClick: () => { location.hash = `#/${SLUG}/baru`; } });
+  if (me().C && bolehPicu()) setMainButton({ text: 'Berangkat & Kirim Notifikasi', onClick: () => { location.hash = `#/${SLUG}/baru`; } });
 }
 
 function listTop() {
@@ -157,7 +158,8 @@ const base = defineCrudModule({
   fields: ({ mode }) => perjalananFields({ mode }),
   mapPayload: (v) => perjalananPayload(v),
   itemTitle: (r) => `Perjalanan ${r.titik_layanan?.nama ?? `#${r.id}`}`,
-  extraGuard: unitPerjalananBoleh,
+  // Memicu perjalanan = aksi.picu_perjalanan DAN dropdown jadwal distribusi terbaca.
+  bolehTambah: (u) => bolehAksi(u, 'picu_perjalanan') && jadwalTabBoleh(u, 'distribusi'),
   searchable: false,
   queueOffline: false,
   listQuery,

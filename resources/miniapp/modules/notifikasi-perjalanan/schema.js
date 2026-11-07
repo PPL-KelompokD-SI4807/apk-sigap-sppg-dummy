@@ -1,6 +1,7 @@
 // Skema Notifikasi Perjalanan Mobil (fitur 2). Kontrak: docs/api/paths/notifikasi-perjalanan.yaml,
 // docs/api/components/notifikasi-perjalanan.yaml. Murni (tanpa DOM) agar bisa diuji.
 import { buildPayload } from '../../core/schema-helpers.js';
+import { bolehIzin } from '../../core/permissions.js';
 import { jamWIB, tanggalJamWIB, todayWIB } from '../../core/waktu.js';
 
 export const STATUS_PERJALANAN = [
@@ -24,18 +25,12 @@ export const TRANSISI = {
 export const transisiValid = (status) => [...(TRANSISI[status] ?? [])];
 export const aksiLabel = (to) => ({ dalam_perjalanan: 'Mulai perjalanan', tiba: 'Tandai tiba', dibatalkan: 'Batalkan perjalanan' }[to] ?? labelOf(to));
 
-/** Relawan hanya dari unit distribusi; peran lain mengikuti matriks. */
-export function unitPerjalananBoleh(user) {
-  if (!user) return false;
-  if (user.role !== 'relawan') return true;
-  return user.unit === 'distribusi';
-}
-
-/** Tombol transisi: perlu hak C (p.C), masih ada transisi, dan relawan hanya perjalanan yang ia picu sendiri. */
-export function bolehUbahStatus(user, rec, p) {
-  if (!p?.C || !transisiValid(rec?.status).length) return false;
-  if (user?.role === 'relawan') return rec?.dipicu_oleh?.id != null && rec.dipicu_oleh.id === user.id;
-  return true;
+/**
+ * Tombol transisi status: izin.ubah_status dari server (hak, kepemilikan relawan, dan perjalanan belum tiba/batal)
+ * DAN masih ada transisi valid menurut status record. Tanpa izin di record => false.
+ */
+export function bolehUbahStatus(rec) {
+  return bolehIzin(rec, 'ubah_status') && transisiValid(rec?.status).length > 0;
 }
 
 export const ALASAN_MAX = 500;

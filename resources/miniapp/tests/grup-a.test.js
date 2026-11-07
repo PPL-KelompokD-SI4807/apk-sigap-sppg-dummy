@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { perms, can, userPerms } from '../core/permissions.js';
+import { userPerms, bolehAksi, petaValid } from '../core/permissions.js';
+import { PROFIL } from './fixtures/peta.js';
 import * as V from '../core/validators.js';
 import { firstError, mapValidationErrors, errorMessage } from '../core/errors.js';
 import { buildShareUrl, isTelegramLink, hoursLeft } from '../core/share.js';
@@ -18,28 +19,29 @@ import * as pengguna from '../modules/pengguna/schema.js';
 const names = (fields) => fields.map((f) => f.name);
 
 // ---------- permissions ----------
-test('matriks hak: pengguna R* untuk non-admin, CRUD admin, R kepala', () => {
-  assert.deepEqual(perms('admin', 'pengguna'), { C: true, R: true, U: true, D: true, selfOnly: false });
-  assert.equal(perms('relawan', 'pengguna').selfOnly, true);
-  assert.equal(can('kepala_sppg', 'pengguna', 'C'), false);
-  assert.equal(can('kepala_sppg', 'sppg', 'U'), true);
-  assert.equal(can('kepala_sppg', 'sppg', 'C'), false);
-  assert.equal(can('staf_gudang', 'pemasok', 'D'), false);
-  assert.equal(can('staf_gudang', 'pemasok', 'U'), true);
-  assert.equal(can('ahli_gizi', 'penerima-manfaat', 'C'), false);
-  assert.equal(can('kepala_sppg', 'penerima-manfaat', 'D'), false);
-  assert.equal(can('relawan', 'penerima-manfaat', 'R'), false);
-  assert.equal(can('x', 'tidak-ada', 'R'), false);
+test('hak dari peta server: pengguna R* untuk non-admin, CRUD admin, R kepala', () => {
+  const huruf = (nama, slug) => { const p = userPerms(PROFIL[nama], slug); return ['C', 'R', 'U', 'D'].filter((k) => p[k]).join(''); };
+  assert.deepEqual(userPerms(PROFIL.admin, 'pengguna'), { C: true, R: true, U: true, D: true, selfOnly: false });
+  assert.equal(userPerms(PROFIL.relawan_dapur, 'pengguna').selfOnly, true);
+  assert.equal(huruf('kepala_sppg', 'pengguna'), 'R');
+  assert.equal(huruf('kepala_sppg', 'sppg'), 'RU');
+  assert.equal(huruf('staf_gudang', 'pemasok'), 'CRU');
+  assert.equal(huruf('ahli_gizi', 'penerima-manfaat'), 'R');
+  assert.equal(huruf('kepala_sppg', 'penerima-manfaat'), 'CRU');
+  assert.equal(huruf('relawan_dapur', 'penerima-manfaat'), '');
+  assert.equal(userPerms(PROFIL.admin, 'tidak-ada').R, false);
 });
 
-test('userPerms: irisan matriks, user.modules, dan user.permissions', () => {
-  const admin = { role: 'admin' };
+test('userPerms: irisan user.modules dan user.permissions dari server', () => {
+  const admin = PROFIL.admin;
   assert.equal(userPerms(admin, 'sppg').D, true);
-  assert.equal(userPerms({ role: 'admin', modules: ['sppg'] }, 'pemasok').R, false, 'modul tak ada di user.modules');
-  assert.equal(userPerms({ role: 'admin', modules: ['sppg'], permissions: { sppg: 'RU' } }, 'sppg').D, false, 'huruf efektif membatasi');
-  assert.equal(userPerms({ role: 'relawan', permissions: { armada: 'CRUD' } }, 'armada').C, false, 'matriks tetap membatasi');
-  assert.equal(userPerms({ role: 'ahli_gizi', modules: ['pengguna'], permissions: { pengguna: 'R*' } }, 'pengguna').selfOnly, true);
+  assert.equal(userPerms({ ...admin, modules: ['sppg'] }, 'pemasok').R, false, 'modul tak ada di user.modules');
+  assert.equal(userPerms({ ...admin, modules: ['sppg'], permissions: { sppg: 'RU' } }, 'sppg').D, false, 'huruf efektif membatasi');
+  assert.equal(userPerms({ ...admin, modules: ['armada'], permissions: {} }, 'armada').R, false, 'modul tanpa huruf = tanpa hak');
+  assert.equal(userPerms(PROFIL.ahli_gizi, 'pengguna').selfOnly, true);
   assert.equal(userPerms(null, 'sppg').R, false);
+  assert.equal(petaValid({ role: 'admin' }), false, 'login lama tanpa peta = gagal tertutup');
+  assert.equal(bolehAksi({ role: 'admin' }, 'undang_pengguna'), false);
 });
 
 // ---------- validators ----------
@@ -116,28 +118,28 @@ test('buildPayload: tipe, null, boolean, kolom hilang dilewati', () => {
   assert.deepEqual(out, { a: 'x', b: 5, c: null, d: true, e: 2.5 });
 });
 
-test('sppgField hanya Admin saat tambah', () => {
-  assert.deepEqual(names(sppgField({ role: 'admin' }, 'create')), ['sppg_id']);
-  assert.deepEqual(sppgField({ role: 'admin' }, 'update'), []);
-  assert.deepEqual(sppgField({ role: 'kepala_sppg' }, 'create'), []);
+test('sppgField hanya untuk pengguna tanpa SPPG sendiri (Admin) saat tambah', () => {
+  assert.deepEqual(names(sppgField(PROFIL.admin, 'create')), ['sppg_id']);
+  assert.deepEqual(sppgField(PROFIL.admin, 'update'), []);
+  assert.deepEqual(sppgField(PROFIL.kepala_sppg, 'create'), []);
 });
 
 test('SPPG: kode readonly untuk Kepala SPPG, payload tanpa kode bila tak dikirim', () => {
-  const kepala = sppg.sppgFields({ mode: 'update', user: { role: 'kepala_sppg' } });
+  const kepala = sppg.sppgFields({ mode: 'update', user: PROFIL.kepala_sppg });
   assert.equal(kepala.find((f) => f.name === 'kode').readonly, true);
-  const admin = sppg.sppgFields({ mode: 'update', user: { role: 'admin' } });
+  const admin = sppg.sppgFields({ mode: 'update', user: PROFIL.admin });
   assert.equal(!!admin.find((f) => f.name === 'kode').readonly, false);
   const p = sppg.mapPayload({ nama: 'SPPG A', alamat: 'Jl. X', kapasitas_porsi_harian: '2000', status_operasional: 'aktif', telepon: '', mitra_yayasan: '' });
   assert.deepEqual(p, { nama: 'SPPG A', alamat: 'Jl. X', kapasitas_porsi_harian: 2000, status_operasional: 'aktif', telepon: null, mitra_yayasan: null });
   assert.ok(!('kode' in p));
-  assert.equal(sppg.sppgFields({ mode: 'create', user: { role: 'admin' } }).find((f) => f.name === 'kapasitas_porsi_harian').min, 1);
+  assert.equal(sppg.sppgFields({ mode: 'create', user: PROFIL.admin }).find((f) => f.name === 'kapasitas_porsi_harian').min, 1);
 });
 
 test('Titik layanan: payload, sppg_id Admin, jarak', () => {
   const p = titik.mapPayload({ sppg_id: '1', nama: 'SD Contoh 1', jenis: 'sekolah', alamat: 'Jl. A', jarak_km: '1.20', jumlah_sasaran: '240', pic_nama: 'Ibu Ani', pic_telepon: '', is_active: 'true' });
   assert.deepEqual(p, { sppg_id: 1, nama: 'SD Contoh 1', jenis: 'sekolah', alamat: 'Jl. A', jarak_km: 1.2, jumlah_sasaran: 240, pic_nama: 'Ibu Ani', pic_telepon: null, is_active: true });
-  assert.equal(names(titik.titikFields({ mode: 'create', user: { role: 'admin' } }))[0], 'sppg_id');
-  assert.equal(names(titik.titikFields({ mode: 'create', user: { role: 'kepala_sppg' } }))[0], 'nama');
+  assert.equal(names(titik.titikFields({ mode: 'create', user: PROFIL.admin }))[0], 'sppg_id');
+  assert.equal(names(titik.titikFields({ mode: 'create', user: PROFIL.kepala_sppg }))[0], 'nama');
   assert.equal(titik.jarakText('3.50'), '3,5 km');
   assert.equal(titik.jarakText(null), '-');
 });

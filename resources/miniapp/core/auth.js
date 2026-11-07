@@ -1,9 +1,12 @@
 import { api, setToken, getToken, ApiError } from './api.js';
 import { getTg } from './telegram.js';
 import { hapusSppgAktif } from './sppg-aktif.js';
+import { KUNCI_AKSI } from './permissions.js';
 
 let user = null;
 export const getUser = () => user;
+/** Hanya untuk tes dan pengembangan: set pengguna sesi tanpa login. */
+export function setUserSesi(u) { user = u; }
 export const getRole = () => user?.role ?? null;
 
 const JENIS_KEY = 'sigap_token_jenis';
@@ -66,7 +69,7 @@ export async function login() {
     if (import.meta.env.DEV && tg.__shim && (e.offline || e.status === 404 || e.status >= 500)) {
       console.warn('[SiGAP] Backend tidak tersedia, memakai pengguna tiruan dev.');
       setToken('dev-token');
-      user = { id: 0, name: 'Pengguna Dev', role: tg.initDataUnsafe?.dev_role || 'kepala_sppg', sppg_id: 1, sppg_name: 'SPPG Contoh (dev)' };
+      user = penggunaTiruanDev(tg.initDataUnsafe?.dev_role || 'kepala_sppg');
       return { langkah: 'sesi_aktif' };
     }
     throw e;
@@ -80,6 +83,18 @@ export async function login() {
   setJenis('pra_login');
   user = null;
   return { langkah: res.langkah, akun: res.akun ?? {} };
+}
+
+// Pengguna tiruan dev (tanpa backend): SEMUA hak terbuka agar layar dapat dicoba. Bukan salinan matriks hak;
+// di produksi peta selalu dari server (build produksi membuang cabang ini).
+const SLUG_DEV = ['pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal',
+  'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'];
+function penggunaTiruanDev(role) {
+  return {
+    id: 0, name: 'Pengguna Dev', role, unit: null, sppg_id: 1, sppg_name: 'SPPG Contoh (dev)', multi_sppg: false, baca_saja: false,
+    modules: SLUG_DEV, permissions: Object.fromEntries(SLUG_DEV.map((m) => [m, 'CRUD'])), keputusan: [], agregat: [], unit_scope: {},
+    aksi: { ...Object.fromEntries(KUNCI_AKSI.map((k) => [k, true])), dashboard: { tersedia: true, profil: role } },
+  };
 }
 
 const opts = { silent: true };

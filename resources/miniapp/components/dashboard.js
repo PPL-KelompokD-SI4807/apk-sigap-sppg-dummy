@@ -1,12 +1,13 @@
 import { h } from '../core/dom.js';
 
-// Slot dasbor beranda. Modul mendaftarkan widget: registerWidget({id, title, roles, render(el)}).
+// Slot dasbor beranda. Modul mendaftarkan widget: registerWidget({id, title, bolehFor(user), render(el)}).
+// bolehFor(user) membaca peta hak server (mis. aksi.susun_rekap); tanpa bolehFor widget tidak tampil (gagal tertutup).
 // render boleh async dan boleh memakai renderChart() dari core/charts.js (lazy).
 const widgets = [];
 export const registerWidget = (w) => { if (!widgets.some((x) => x.id === w.id)) widgets.push(w); };
 
-export function renderDashboard(role) {
-  const mine = widgets.filter((w) => !w.roles || w.roles.includes(role));
+export function renderDashboard(user) {
+  const mine = widgets.filter((w) => typeof w.bolehFor === 'function' && w.bolehFor(user) === true);
   const slot = h('section', { class: 'dash-slot', id: 'dash-slot', 'aria-label': 'Dasbor' });
   for (const w of mine) {
     const body = h('div', { class: 'dash-body' }, h('p', { class: 'muted small' }, 'Memuat...'));

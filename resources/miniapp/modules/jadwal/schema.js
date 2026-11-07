@@ -1,7 +1,9 @@
 // Skema Jadwal Produksi + Distribusi (fitur 9). Kontrak: docs/api/paths/jadwal.yaml, components/jadwal.yaml.
 import { buildPayload } from '../../core/schema-helpers.js';
+import { bolehAksi, userPerms } from '../../core/permissions.js';
 import { menuDisetujui } from '../persetujuan-menu/logika.js';
 import { notBeforeToday, todayISO } from '../../core/validators.js';
+import { addDays, todayWIB } from '../../core/waktu.js';
 
 export const STATUS_PRODUKSI = [
   { value: 'direncanakan', label: 'Direncanakan' },
@@ -33,27 +35,22 @@ export const aksiLabel = (kind, to) => ({
   siap: 'Tandai siap', berangkat: 'Berangkatkan', diterima: 'Tandai diterima',
 }[to] ?? (kind === 'produksi' ? statusProduksiLabel(to) : statusDistribusiLabel(to)));
 
-/** Tab yang boleh dilihat: relawan dapur = produksi saja, relawan distribusi = distribusi saja, peran lain keduanya. */
-export function unitBoleh(user, kind) {
-  if (!user) return false;
-  if (user.role !== 'relawan') return true;
-  return kind === 'produksi' ? user.unit === 'dapur' : user.unit === 'distribusi';
-}
 
-/** Relawan hanya mengubah/menghapus data buatannya sendiri (server menegakkan juga batas "hari yang sama"). */
-export function bolehUbahMilik(user, rec, ownerKey = 'dibuat_oleh') {
-  if (user?.role !== 'relawan') return true;
-  return rec?.[ownerKey] == null || rec[ownerKey] === user.id;
+// ---- Dropdown jadwal produksi dari GET /jadwal/produksi-ringkas (kolom datar: id, tanggal_produksi, nama_menu, status) ----
+/** Jendela tanggal dropdown: from/to (selisih maks 62 hari menurut kontrak). */
+export function jendelaRingkas({ hariLalu = 0, hariDepan = 13 } = {}, today = todayWIB()) {
+  return { from: addDays(today, -hariLalu), to: addDays(today, hariDepan) };
 }
+/** Label opsi dari baris ringkas (tanpa target porsi: kolom itu tidak dikirim server). */
+export const ringkasOptionLabel = (j) => `${String(j.tanggal_produksi ?? '').slice(0, 10)} · ${j.nama_menu ?? `Jadwal #${j.id}`}`;
+/** Jadwal produksi yang masih dapat dipilih untuk distribusi (bukan dibatalkan). */
+export const ringkasDapatDipilih = (j) => j?.status !== 'dibatalkan';
 
-/** Hak per baris: sembunyikan U/D sesuai kepemilikan relawan dan status yang dapat dihapus. */
-export function rowPermsJadwal(kind, user, rec, p) {
-  const dapatHapus = kind === 'produksi' ? ['direncanakan', 'dibatalkan'] : ['menunggu', 'siap', 'dibatalkan'];
-  const milik = bolehUbahMilik(user, rec);
-  return { ...p, U: p.U && milik, D: p.D && milik && dapatHapus.includes(rec.status) };
-}
-
-export const jadwalOptionLabel = (j) => `${j.tanggal_produksi} · ${j.menu?.nama_menu ?? 'Menu'} (${j.target_porsi} porsi)`;
+/**
+ * Formulir Jadwal Distribusi hanya dapat diselesaikan bila dropdown WAJIB-nya terbaca: jadwal produksi
+ * (aksi.lihat_ringkasan_jadwal_produksi) dan titik layanan (hak R modul titik-layanan). Selain itu tombol Tambah disembunyikan.
+ */
+export const distribusiBisaDibuat = (user) => bolehAksi(user, 'lihat_ringkasan_jadwal_produksi') && userPerms(user, 'titik-layanan').R;
 
 // ---- Kapasitas ----
 /** Sisa kapasitas harian: jadwal tidak dibatalkan pada tanggal itu, tidak menghitung jadwal yang sedang diubah. */
@@ -100,14 +97,17 @@ export const produksiPayload = (values) => buildPayload(values, {
 
 // ---- Skema form distribusi ----
 const before = (a, b) => a && b && String(a).slice(0, 5) >= String(b).slice(0, 5);
-export function distribusiFields({ mode, record } = {}) {
+export function distribusiFields({ mode, record, user } = {}) {
   const berjalan = mode === 'update' && record && !['menunggu', 'siap'].includes(record.status);
   const ro = berjalan;
   return [
-    ...(mode === 'create' ? [{ name: 'jadwal_produksi_id', label: 'Jadwal produksi', type: 'relasi', required: true, relation: { endpoint: '/jadwal', filter: (j) => j.status !== 'dibatalkan', format: jadwalOptionLabel } }] : []),
+    ...(mode === 'create' ? [{ name: 'jadwal_produksi_id', label: 'Jadwal produksi', type: 'relasi', required: true, relation: { endpoint: '/jadwal/produksi-ringkas', query: jendelaRingkas(), filter: ringkasDapatDipilih, format: ringkasOptionLabel, opsiNilaiAwal: (id) => `Jadwal produksi #${id}` } }] : []),
     { name: 'titik_layanan_id', label: 'Titik layanan', type: 'relasi', required: true, readonly: ro, relation: { endpoint: '/titik-layanan', label: 'nama', value: 'id', as: 'titik_layanan' } },
-    { name: 'armada_id', label: 'Armada', type: 'relasi', readonly: ro, relation: { endpoint: '/armada', label: 'plat_nomor', value: 'id', filter: (a) => a.status !== 'servis', format: (a) => `${a.plat_nomor} (${a.jenis ?? 'armada'})` } },
-    { name: 'pengemudi_id', label: 'Pengemudi', type: 'relasi', readonly: ro, relation: { endpoint: '/pengemudi', label: 'nama', value: 'id' } },
+    // Dropdown Armada/Pengemudi (hak baca modul armada) disembunyikan bagi yang tak berhak; keduanya opsional.
+    ...(userPerms(user, 'armada').R ? [
+      { name: 'armada_id', label: 'Armada', type: 'relasi', readonly: ro, relation: { endpoint: '/armada', label: 'plat_nomor', value: 'id', filter: (a) => a.status !== 'servis', format: (a) => `${a.plat_nomor} (${a.jenis ?? 'armada'})` } },
+      { name: 'pengemudi_id', label: 'Pengemudi', type: 'relasi', readonly: ro, relation: { endpoint: '/pengemudi', label: 'nama', value: 'id' } },
+    ] : []),
     { name: 'tanggal_distribusi', label: 'Tanggal distribusi', type: 'date', readonly: ro, help: 'Kosongkan untuk memakai tanggal produksi.' },
     { name: 'jam_berangkat', label: 'Jam berangkat', type: 'time', readonly: ro, validate: (v, all) => (!v && (all.armada_id || all.pengemudi_id) ? 'Jam berangkat wajib bila armada/pengemudi diisi.' : '') },
     { name: 'jam_rencana_tiba', label: 'Jam rencana tiba', type: 'time', readonly: ro, validate: (v, all) => (v && all.jam_berangkat && before(all.jam_berangkat, v) ? 'Jam tiba harus setelah jam berangkat.' : '') },

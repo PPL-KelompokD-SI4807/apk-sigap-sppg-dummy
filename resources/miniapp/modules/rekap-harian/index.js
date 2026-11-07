@@ -5,7 +5,7 @@ import { rowCard } from '../../components/row-card.js';
 import { h, clear } from '../../core/dom.js';
 import { api, request, newKey } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehAksi, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route, resolve, navigate } from '../../core/router.js';
 import { showConfirm, toast, setMainButton } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
@@ -18,7 +18,7 @@ import {
 const SLUG = 'rekap-harian';
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const me = () => userPerms(getUser(), SLUG);
-const isAdmin = () => getUser()?.role === 'admin';
+const isAdmin = () => tanpaSppgSendiri(getUser()); // Admin lintas SPPG: wajib pilih sppg_id (pelingkupan data, bukan hak)
 
 // Filter riwayat (mutable; dibaca list-view tiap muat).
 const listQuery = { from: '', to: '' };
@@ -50,7 +50,8 @@ async function renderWidget(el) {
     el.append(h('div', { class: 'empty' }, h('span', { class: 'kpi-sub' }, errorMessage(e, 'Dasbor gagal dimuat.')), h('button', { class: 'btn', type: 'button', onclick: () => renderWidget(el) }, 'Coba lagi')));
   }
 }
-registerWidget({ id: 'rekap-kepala', title: 'Dasbor hari ini', roles: ['kepala_sppg'], render: renderWidget });
+// Widget beranda untuk yang berhak menyusun rekap (aksi.susun_rekap) dan boleh membaca rekap.
+registerWidget({ id: 'rekap-kepala', title: 'Dasbor hari ini', bolehFor: (u) => bolehAksi(u, 'susun_rekap') && userPerms(u, SLUG).R, render: renderWidget });
 
 // ---- Layar ringkasan langsung (tanggal bebas) ----
 async function ringkasanScreen(ctx) {
@@ -70,8 +71,7 @@ async function ringkasanScreen(ctx) {
   const charts = chartsBlock(ringkasan, riwayat);
   ctx.el.append(kpiGrid(ringkasan), charts.el);
   if (tersimpan) ctx.el.append(h('a', { class: 'btn btn-block', href: `#/${SLUG}/${tersimpan.id}` }, `Lihat rekap tersimpan (${statusKirimLabel(tersimpan.status_kirim)})`));
-  const p = me();
-  if (p.C && (!tersimpan || p.U)) {
+  if (bolehAksi(getUser(), 'susun_rekap')) {
     setMainButton({ text: tersimpan ? 'Susun ulang rekap' : 'Susun rekap', onClick: () => navigate(`/${SLUG}/baru?tanggal=${tanggal}`) });
   }
   return charts.destroy;
@@ -138,6 +138,7 @@ const base = defineCrudModule({
   description: 'Laporan rekapitulasi harian dan dasbor',
   endpoint: '/rekap-harian',
   createLabel: '+ Susun Rekap',
+  bolehTambah: (u) => bolehAksi(u, 'susun_rekap'),
   searchable: false,
   columns: [{ key: 'tanggal', primary: true, type: 'date' }],
   fields: ({ mode }) => (mode === 'detail'
@@ -169,14 +170,15 @@ const base = defineCrudModule({
     });
   },
   detailExtras: (rec) => {
-    const p = me();
+    // Catatan (PATCH) dan kirim ulang = RekapHarianPolicy::update -> aksi.kirim_ulang_rekap; susun ulang = aksi.susun_rekap.
+    const ubah = bolehAksi(getUser(), 'kirim_ulang_rekap');
     const charts = chartsBlock(rec.ringkasan, [], { tren: false });
     return [
-      rec.catatan && !p.U ? h('div', { class: 'panel' }, h('strong', {}, 'Catatan'), h('p', {}, rec.catatan)) : null,
+      rec.catatan && !ubah ? h('div', { class: 'panel' }, h('strong', {}, 'Catatan'), h('p', {}, rec.catatan)) : null,
       kpiGrid(rec.ringkasan), charts.el,
-      p.U ? catatanEditor(rec) : null,
-      p.U ? kirimUlang(rec) : null,
-      p.C ? h('a', { class: 'btn btn-block', href: `#/${SLUG}/baru?tanggal=${String(rec.tanggal).slice(0, 10)}` }, 'Susun ulang rekap') : null,
+      ubah ? catatanEditor(rec) : null,
+      ubah ? kirimUlang(rec) : null,
+      bolehAksi(getUser(), 'susun_rekap') ? h('a', { class: 'btn btn-block', href: `#/${SLUG}/baru?tanggal=${String(rec.tanggal).slice(0, 10)}` }, 'Susun ulang rekap') : null,
     ].filter(Boolean);
   },
 });

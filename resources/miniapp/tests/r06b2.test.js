@@ -2,41 +2,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  bolehUbahPembelian, tombolVerifikasiTampil, validasiJumlah, validasiHargaSatuan, validasiTanggalBeli, validasiNota, hitungTotal,
+  tombolVerifikasiTampil, validasiJumlah, validasiHargaSatuan, validasiTanggalBeli, validasiNota, hitungTotal,
   payloadPembelian, validasiAlasan, payloadVerifikasi, ringkasHargaReferensi, statusLabel, statusBadge,
 } from '../modules/pembelian-bahan/logika.js';
 import {
-  tombolKeputusanPengeluaranTampil, validasiCatatanKeputusan, payloadKeputusanPengeluaran, rowPermsPengeluaran, teksMenunggu, statusPengeluaran,
+  tombolKeputusanPengeluaranTampil, validasiCatatanKeputusan, payloadKeputusanPengeluaran, teksMenunggu, statusPengeluaran, dariPembelian,
 } from '../modules/keuangan/persetujuan.js';
 
-import { userPerms } from '../core/permissions.js';
+import { userPerms, permsDariIzin } from '../core/permissions.js';
+import { PROFIL } from './fixtures/peta.js';
 
 
-test('hak pembelian-bahan per peran', () => {
-  assert.deepEqual(['C', 'R', 'U'].map((k) => userPerms({ role: 'staf_gudang' }, 'pembelian-bahan')[k]), [true, true, true]);
-  for (const role of ['admin', 'kepala_sppg', 'akuntan']) {
-    const p = userPerms({ role }, 'pembelian-bahan');
-    assert.deepEqual([p.R, p.C, p.U], [true, false, false], role);
+test('hak pembelian-bahan per profil dari peta server', () => {
+  assert.deepEqual(['C', 'R', 'U'].map((k) => userPerms(PROFIL.staf_gudang, 'pembelian-bahan')[k]), [true, true, true]);
+  for (const nama of ['admin', 'kepala_sppg', 'akuntan']) {
+    const p = userPerms(PROFIL[nama], 'pembelian-bahan');
+    assert.deepEqual([p.R, p.C, p.U], [true, false, false], nama);
   }
-  for (const role of ['ahli_gizi', 'relawan', 'investor']) assert.equal(userPerms({ role }, 'pembelian-bahan').R, false, role);
+  for (const nama of ['ahli_gizi', 'relawan_dapur', 'investor']) assert.equal(userPerms(PROFIL[nama], 'pembelian-bahan').R, false, nama);
 });
 
-test('ubah pembelian hanya saat diajukan/ditolak', () => {
-  const p = { U: true };
-  assert.equal(bolehUbahPembelian(p, { status: 'diajukan' }), true);
-  assert.equal(bolehUbahPembelian(p, { status: 'ditolak' }), true);
-  assert.equal(bolehUbahPembelian(p, { status: 'terverifikasi' }), false);
-  assert.equal(bolehUbahPembelian({ U: false }, { status: 'diajukan' }), false);
+test('ubah pembelian mengikuti izin.ubah server (false bila terverifikasi)', () => {
+  const p = userPerms(PROFIL.staf_gudang, 'pembelian-bahan');
+  assert.equal(permsDariIzin(p, { status: 'diajukan', izin: { ubah: true } }).U, true);
+  assert.equal(permsDariIzin(p, { status: 'ditolak', izin: { ubah: true } }).U, true);
+  assert.equal(permsDariIzin(p, { status: 'terverifikasi', izin: { ubah: false } }).U, false);
+  assert.equal(permsDariIzin(userPerms(PROFIL.akuntan, 'pembelian-bahan'), { status: 'diajukan', izin: { ubah: true } }).U, false, 'akuntan tak punya U modul');
   assert.equal(statusLabel('diajukan'), 'Menunggu verifikasi');
   assert.equal(statusBadge('terverifikasi'), 'badge-ok');
 });
 
-test('tombol verifikasi: akuntan, status diajukan, bukan pencatat', () => {
-  const akuntan = { id: 5, role: 'akuntan', keputusan: ['pembelian-bahan'] };
-  assert.equal(tombolVerifikasiTampil(akuntan, { status: 'diajukan', dicatat_oleh: { id: 9 } }), true);
-  assert.equal(tombolVerifikasiTampil(akuntan, { status: 'diajukan', dicatat_oleh: { id: 5 } }), false);
-  assert.equal(tombolVerifikasiTampil(akuntan, { status: 'terverifikasi', dicatat_oleh: { id: 9 } }), false);
-  assert.equal(tombolVerifikasiTampil({ id: 1, role: 'staf_gudang', keputusan: [] }, { status: 'diajukan', dicatat_oleh: { id: 9 } }), false);
+test('tombol verifikasi: murni izin.verifikasi server', () => {
+  const pembelian = (verifikasi) => ({ status: 'diajukan', dicatat_oleh: { id: 9 }, izin: { ubah: false, hapus: false, lampirkan: false, verifikasi } });
+  assert.equal(tombolVerifikasiTampil(pembelian(true)), true);
+  assert.equal(tombolVerifikasiTampil(pembelian(false)), false, 'pencatat sendiri / bukan akuntan SPPG yang sama');
+  assert.equal(tombolVerifikasiTampil({ status: 'diajukan', dicatat_oleh: { id: 9 } }), false, 'tanpa izin: tanpa tombol');
 });
 
 test('validasi angka pembelian dan total tanpa float', () => {
@@ -84,15 +84,17 @@ test('harga referensi dan selisih', () => {
 });
 
 test('keputusan investor atas pengeluaran', () => {
-  const inv = { role: 'investor', keputusan: ['persetujuan-menu', 'keuangan'] };
-  assert.equal(tombolKeputusanPengeluaranTampil(inv, { status_persetujuan: 'diajukan' }), true);
-  assert.equal(tombolKeputusanPengeluaranTampil(inv, { status_persetujuan: 'disetujui' }), false);
-  assert.equal(tombolKeputusanPengeluaranTampil({ role: 'akuntan', keputusan: ['pembelian-bahan'] }, { status_persetujuan: 'diajukan' }), false);
+  const peng = (putuskan) => ({ status_persetujuan: 'diajukan', izin: { ubah: false, hapus: false, lampirkan: false, putuskan } });
+  assert.equal(tombolKeputusanPengeluaranTampil(peng(true)), true);
+  assert.equal(tombolKeputusanPengeluaranTampil(peng(false)), false);
+  assert.equal(tombolKeputusanPengeluaranTampil({ status_persetujuan: 'diajukan' }), false, 'tanpa izin');
   assert.match(validasiCatatanKeputusan('ditolak', ' '), /wajib/);
   assert.equal(validasiCatatanKeputusan('disetujui', ''), '');
   assert.deepEqual(payloadKeputusanPengeluaran({ keputusan: 'ditolak', catatan: ' Tunda dulu ', versi: 3 }), { keputusan: 'ditolak', catatan: 'Tunda dulu', versi: 3 });
   assert.deepEqual(payloadKeputusanPengeluaran({ keputusan: 'disetujui', catatan: '', versi: 1 }), { keputusan: 'disetujui', versi: 1 });
   assert.equal(statusPengeluaran({}), 'disetujui');
-  assert.deepEqual(rowPermsPengeluaran({ pembelian_bahan_id: 4 }, { U: true, D: true, R: true }), { U: false, D: false, R: true });
-  assert.equal(rowPermsPengeluaran({ pembelian_bahan_id: null }, { U: true }).U, true);
+  const akt = userPerms(PROFIL.akuntan, 'keuangan');
+  assert.equal(dariPembelian({ pembelian_bahan_id: 4 }), true);
+  assert.deepEqual([permsDariIzin(akt, { pembelian_bahan_id: 4, izin: { ubah: false, hapus: false } }).U, permsDariIzin(akt, { pembelian_bahan_id: 4, izin: { ubah: false, hapus: false } }).D], [false, false]);
+  assert.equal(permsDariIzin(akt, { pembelian_bahan_id: null, izin: { ubah: true, hapus: true } }).U, true);
 });

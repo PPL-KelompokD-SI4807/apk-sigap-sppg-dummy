@@ -1,8 +1,8 @@
 // Logika murni persetujuan pengeluaran oleh investor (R-06b-2), tanpa DOM agar bisa diuji node --test.
 // Kontrak: docs/api/paths/keuangan.yaml (POST /keuangan/pengeluaran/{id}/keputusan), components/keuangan.yaml.
 import { formatRupiah } from './schema.js';
+import { bolehIzin } from '../../core/permissions.js';
 
-export const SLUG_KEPUTUSAN = 'keuangan';
 export const MIN_CATATAN = 5;
 export const MAKS_CATATAN = 500;
 
@@ -23,9 +23,8 @@ export const KEPUTUSAN_PENGELUARAN = [
   { value: 'ditolak', label: 'Tolak' },
 ];
 
-/** Investor = user.keputusan memuat "keuangan"; hanya saat pengajuan masih `diajukan`. Server tetap memvalidasi SPPG. */
-export const bolehMemutuskanPengeluaran = (user) => Array.isArray(user?.keputusan) && user.keputusan.includes(SLUG_KEPUTUSAN);
-export const tombolKeputusanPengeluaranTampil = (user, rec) => bolehMemutuskanPengeluaran(user) && rec?.status_persetujuan === 'diajukan';
+/** Tombol Setujui/Tolak: murni dari izin.putuskan server (investor pemilik SPPG aktif, status `diajukan`). */
+export const tombolKeputusanPengeluaranTampil = (rec) => bolehIzin(rec, 'putuskan');
 
 /** Pengeluaran hasil pembelian bahan terverifikasi tidak dapat diubah/dihapus lewat jalur pengeluaran (409 di server). */
 export const dariPembelian = (rec) => rec?.pembelian_bahan_id != null;
@@ -37,7 +36,6 @@ export function pesanLampiranTerkunci(rec) {
   if (rec?.status_persetujuan === 'disetujui') return PESAN_NOTA_DISETUJUI;
   return null;
 }
-export const rowPermsPengeluaran = (rec, p) => (dariPembelian(rec) ? { ...p, U: false, D: false } : p);
 
 /** Catatan wajib 5..500 karakter bila ditolak; opsional (maks 500) bila disetujui. '' bila valid. */
 export function validasiCatatanKeputusan(keputusan, catatan) {

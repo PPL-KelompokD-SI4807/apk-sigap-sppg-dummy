@@ -13,23 +13,36 @@ Mode dev (`import.meta.env.DEV`) memasang shim `Telegram.WebApp` bila `initData`
 ## Dashboard (R-07)
 `modules/dashboard/` (rute `#/dashboard`, deep link `?r=/dashboard`, tautan di beranda): `logika.js` murni (diuji di `tests/dashboard.test.js`), `view.js` tabel renderer kunci widget -> kartu (kunci tak dikenal memakai fallback skalar), `index.js` rute, pemilih rentang 7/30 dan pemilih SPPG investor. Kartu `null` disembunyikan; grafik lewat `core/charts.js` dan dihancurkan saat render ulang/pindah layar.
 
+## Hak akses: klien hanya membaca peta hak server
+Sumber kebenaran hak = server (`docs/api/peta-hak.md`). `core/permissions.js` TIDAK memuat matriks atau aturan unit/kepemilikan; ia hanya
+membaca `user` dari `GET /auth/me`: `modules`, `permissions` (huruf C/R/U/D per modul), `unit_scope`, `aksi.<kunci>`, `aksi.dashboard`,
+`keputusan`, `agregat`, `baca_saja`, `multi_sppg`, dan `izin` per record pada 7 resource (jadwal produksi/distribusi, log produksi, bukti
+distribusi, pembelian bahan, pengeluaran, notifikasi perjalanan).
+- **Gagal tertutup**: peta tidak ada/rusak/bentuk tak dikenal => tanpa menu dan tanpa tombol aksi (`petaValid`). Record tanpa `izin` => tanpa Ubah/Hapus.
+- Menu: `modules/menu.js` (`menuUntuk`). Aksi di luar CRUD: `bolehAksi(user, 'catat_mutasi_stok')`. Tab Jadwal: `jadwalTabBoleh` (dari `unit_scope`).
+- Tombol per record: `defineCrudModule({ izin: true })` memakai `izin.ubah`/`izin.hapus` dari server (`permsDariIzin`); jangan menghitung ulang
+  kepemilikan relawan atau hari yang sama di klien. `rowPerms` hanya untuk KEADAAN yang terbaca di record (mis. status final).
+- Penjaga rute yang gagal => dialihkan ke beranda dengan pesan singkat (`alihkanKeBeranda`); rute `/ubah` juga memeriksa `izin.ubah` setelah record dimuat.
+- Dropdown jadwal produksi untuk form Distribusi dan batch Keluhan: `GET /jadwal/produksi-ringkas` (kolom datar `nama_menu`), hanya bila `aksi.lihat_ringkasan_jadwal_produksi`.
+- Tes parity per peran: `tests/peta-hak.test.js` dengan fixture `tests/fixtures/peta.js` (cermin keluaran server; perbarui bila `config/rbac.php` berubah).
+
 ## Menambah modul CRUD baru
-1. Pastikan slug ada di `core/permissions.js` (16 slug resmi sudah ada).
+1. Pastikan slug modul ada di `config/rbac.php` (server) sehingga muncul di `user.modules`/`user.permissions`; klien tidak menyimpan daftar hak.
 2. Buat `modules/<nama>/index.js` (salin `modules/_contoh/`). `modules/registry.js` memuatnya otomatis lewat `import.meta.glob`.
 3. Hapus `modules/_contoh` bila modul asli bertabrakan slug (modul asli otomatis menang).
 
 ```js
 import { defineCrudModule } from '../../components/crud-module.js';
 export default defineCrudModule({
-  slug: 'bahan-baku',          // kunci permissions + rute #/bahan-baku
+  slug: 'bahan-baku',          // kunci user.permissions + rute #/bahan-baku
   title: 'Bahan Baku', icon: '🥬', description: '...',
   endpoint: '/bahan-baku',     // /api/v1/bahan-baku
   columns: [{ key: 'nama', primary: true }, { key: 'stok', label: 'Stok', type: 'number' }],
   fields:  [{ name: 'nama', label: 'Nama', type: 'text', required: true }],
-  // opsional: permissionSlug, mapPayload(values,{mode}), listQuery, itemTitle(rec)
+  // opsional: permissionSlug, mapPayload(values,{mode}), listQuery, itemTitle(rec), izin, bolehTambah(user), akses(user), menuInfo(user), prefillDraf(payload)
 });
 ```
-Rute otomatis: `#/slug` (daftar), `#/slug/baru`, `#/slug/:id` (detail), `#/slug/:id/ubah`. Tombol Tambah/Ubah/Hapus muncul sesuai `permissions.js`; modul masuk menu bila peran punya `R`. Peran `R*` (pengguna) langsung diarahkan ke profil sendiri.
+Rute otomatis: `#/slug` (daftar), `#/slug/baru`, `#/slug/:id` (detail), `#/slug/:id/ubah`. Tombol Tambah/Ubah/Hapus muncul sesuai peta hak server (`user.permissions`, dan `izin` per record bila `izin: true`); modul masuk menu bila peta memuat `R`. Peran `R*` (pengguna) langsung diarahkan ke profil sendiri.
 
 ## Skema kolom (`fields`)
 `{name,label,type,required,options,min,max,maxlength,step,pattern,placeholder,help,default,readonly}`.
@@ -64,4 +77,4 @@ Hanya jalur `/api/v1/lampiran/{id}` yang diterima (`lampiranPath`), sehingga tok
 ## Lainnya
 - `core/api.js`: `api.get/post/put/del`, `fetchList`, `submitWithQueue` (offline -> IndexedDB + Idempotency-Key, dikirim ulang saat online).
 - `core/ui.js`: `toast`, `showConfirm`, `setMainButton`/`hideMainButton` (MainButton Telegram; bilah bawah di dev).
-- `components/dashboard.js`: `registerWidget({id,title,roles,render(el)})`; `core/charts.js`: `renderChart(canvas, config)` (Chart.js lazy).
+- `components/dashboard.js`: `registerWidget({id,title,bolehFor(user),render(el)})` (`bolehFor` membaca peta hak server; tanpa itu widget tidak tampil); `core/charts.js`: `renderChart(canvas, config)` (Chart.js lazy).

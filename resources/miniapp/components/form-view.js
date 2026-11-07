@@ -191,6 +191,10 @@ async function loadRelation(f, select, getInitial) {
     items.filter((it) => (rel.filter ? rel.filter(it) : true))
       .forEach((it) => select.append(h('option', { value: it[rel.value || 'id'] }, rel.format ? rel.format(it) : (it[rel.label || 'nama'] ?? it.name ?? it.id))));
     const init = getInitial();
+    // Nilai awal (mis. prefill ?jadwal= atau draf) di luar daftar yang dimuat: tambahkan sebagai opsi agar tidak hilang.
+    if (init != null && init !== '' && typeof rel.opsiNilaiAwal === 'function' && ![...select.options].some((o) => o.value === String(init))) {
+      select.append(h('option', { value: init }, rel.opsiNilaiAwal(init)));
+    }
     if (init != null) select.value = init;
   } catch {
     select.append(h('option', { value: '', disabled: true }, 'Gagal memuat pilihan'));

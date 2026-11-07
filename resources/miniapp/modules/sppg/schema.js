@@ -1,6 +1,7 @@
 // Skema Data SPPG (fitur 3). Kontrak: docs/api/paths/sppg.yaml + components/sppg.yaml (SppgInput).
 import { buildPayload } from '../../core/schema-helpers.js';
 import { phone } from '../../core/validators.js';
+import { userPerms } from '../../core/permissions.js';
 
 export const STATUS_OPERASIONAL = [
   { value: 'aktif', label: 'Aktif' },
@@ -9,9 +10,9 @@ export const STATUS_OPERASIONAL = [
 ];
 export const statusBadge = (s) => ({ aktif: 'badge-ok', libur: 'badge-warn', nonaktif: 'badge-danger' }[s] || '');
 
-/** kode: hanya Admin yang boleh mengisi/ubah (Kepala SPPG: baca saja). */
+/** kode: hanya yang berhak Tambah SPPG (Admin) yang boleh mengisi/ubah; hak ubah lain (Kepala SPPG) membaca saja. */
 export function sppgFields({ mode, user }) {
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = userPerms(user, 'sppg').C;
   return [
     { name: 'kode', label: 'Kode SPPG', type: 'text', required: true, maxlength: 30, readonly: mode !== 'create' && !isAdmin, help: isAdmin ? null : 'Kode hanya dapat diubah Admin.' },
     { name: 'nama', label: 'Nama SPPG', type: 'text', required: true, maxlength: 255 },

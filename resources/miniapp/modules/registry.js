@@ -1,5 +1,4 @@
-import { userPerms } from '../core/permissions.js';
-import { getUser } from '../core/auth.js';
+import { menuUntuk } from './menu.js';
 
 // Setiap modules/<nama>/index.js mengekspor default: objek modul (hasil defineCrudModule) atau array-nya.
 // Modul baru cukup menambah folder; tidak ada daftar yang perlu diedit.
@@ -18,10 +17,6 @@ for (const [path, mod] of entries) {
 }
 
 export const getModules = () => modules;
-// Menu disaring matriks peran (permissions.js) DAN user.modules/permissions dari respons login.
-export const menuFor = (role) => {
-  const u = getUser();
-  const user = u && u.role === role ? u : { role };
-  return modules.filter((m) => !m.hidden && (typeof m.visibleFor !== 'function' || m.visibleFor(user)) && userPerms(user, m.permissionSlug ?? m.slug).R);
-};
+// Menu disusun dari peta hak server (user.modules/permissions); peta tak valid => kosong (lihat modules/menu.js).
+export const menuFor = (user) => menuUntuk(user, modules);
 export function registerAllRoutes() { modules.forEach((m) => m.register?.()); }

@@ -8,14 +8,14 @@ import { lampiranField } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
 import { fetchList, request, newKey } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, punyaKeputusan } from '../../core/permissions.js';
 import { resolve } from '../../core/router.js';
 import { toast, showConfirm } from '../../core/ui.js';
 import { ringkasGalatAksi } from '../../core/errors.js';
 import { todayWIB } from '../../core/waktu.js';
 import { formatRupiah } from '../keuangan/schema.js';
 import {
-  SLUG, MAKS_NOTA, STATUS_PEMBELIAN, statusBadge, statusLabel, bolehUbahPembelian, tombolVerifikasiTampil, KEPUTUSAN_VERIFIKASI,
+  SLUG, MAKS_NOTA, STATUS_PEMBELIAN, statusBadge, statusLabel, tombolVerifikasiTampil, KEPUTUSAN_VERIFIKASI,
   validasiJumlah, validasiHargaSatuan, validasiTanggalBeli, validasiNota, hitungTotal, payloadPembelian,
   validasiAlasan, payloadVerifikasi, ringkasHargaReferensi, MAKS_ALASAN,
 } from './logika.js';
@@ -168,9 +168,10 @@ function detailExtras(rec, p) {
   nodes.push(h('section', { class: 'panel stack-tight', 'aria-label': 'Foto nota' }, h('h2', { class: 'panel-title' }, 'Foto nota'),
     nota.length ? h('div', { class: 'photo-grid' }, nota.map((l, i) => createAuthImage(l, { alt: `Foto nota ${i + 1}` }))) : h('p', { class: 'muted small' }, 'Tidak ada foto nota.')));
   nodes.push(hargaReferensiPanel(rec));
-  if (tombolVerifikasiTampil(user, rec)) nodes.push(verifikasiPanel(rec));
-  else if (rec.status === 'diajukan' && rec.dicatat_oleh?.id != null && rec.dicatat_oleh.id === user?.id && Array.isArray(user?.keputusan) && user.keputusan.includes(SLUG)) {
-    nodes.push(h('div', { class: 'notice' }, 'Anda yang mencatat pembelian ini, sehingga tidak dapat memverifikasinya sendiri.'));
+  if (tombolVerifikasiTampil(rec)) nodes.push(verifikasiPanel(rec));
+  else if (rec.status === 'diajukan' && punyaKeputusan(user, SLUG)) {
+    // Pemegang hak verifikasi tetapi izin record false (mis. pemisahan tugas pencatat/pemverifikasi): beri tahu, tanpa menghitung ulang aturannya.
+    nodes.push(h('div', { class: 'notice' }, 'Pembelian ini tidak dapat Anda verifikasi (misalnya Anda sendiri yang mencatatnya).'));
   }
   return nodes;
 }
@@ -193,7 +194,7 @@ export default defineCrudModule({
   listQuery,
   listTop,
   formTop,
-  rowPerms: (rec, p) => ({ ...p, U: bolehUbahPembelian(p, rec), D: false }),
+  izin: true, // Ubah mengikuti izin.ubah server; Hapus selalu false (tidak ada endpoint)
   renderCard: (r, href) => rowCard({
     href,
     title: r.bahan_baku?.nama ?? `Pembelian #${r.id}`,
