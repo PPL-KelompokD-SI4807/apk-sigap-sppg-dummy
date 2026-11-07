@@ -1,15 +1,14 @@
 import { h, clear, formatValue } from '../core/dom.js';
 import { api, submitWithQueue, request, newKey } from '../core/api.js';
 import { getUser } from '../core/auth.js';
-import { userPerms } from '../core/permissions.js';
+import { userPerms, permsDariIzin, PESAN_BUKAN_HAK } from '../core/permissions.js';
 import { errorMessage, ringkasGalatAksi } from '../core/errors.js';
-import { navigate, route, resolve } from '../core/router.js';
+import { navigate, route, resolve, alihkanKeBeranda } from '../core/router.js';
 import { toast, showConfirm, setMainButton } from '../core/ui.js';
 import { createListView } from './list-view.js';
 import { createFormView } from './form-view.js';
 
 const unwrap = (res) => (res && res.data !== undefined && !Array.isArray(res) ? res.data : res);
-const NONE = { C: false, R: false, U: false, D: false, selfOnly: false };
 
 // Kirim tanpa antrian offline (aksi yang tidak boleh tertunda, mis. memicu notifikasi). Kunci idempotensi tetap dikirim.
 async function submitDirect(method, path, body) {
@@ -47,18 +46,33 @@ function displayValue(field, rec) {
  *   filters, renderCard, searchPlaceholder  -> diteruskan ke list-view
  *   listTop(perms) -> Node di atas daftar; detailExtras(rec, perms, ctx) -> Node(s) setelah panel detail
  *   listRedirect(user, perms) -> path|null: lewati daftar (mis. Kepala SPPG langsung ke SPPG-nya)
- *   rowPerms(rec, perms) -> perms yang disesuaikan per baris (mis. tak bisa hapus akun sendiri)
+ *   rowPerms(rec, perms) -> perms yang disesuaikan per baris untuk KEADAAN yang terbaca di record (mis. tak bisa hapus akun sendiri)
+ *   izin: true -> resource memuat `izin` dari server ({ubah, hapus, ...}); tombol Ubah/Hapus dan rute /ubah HANYA mengikuti
+ *     izin.ubah/izin.hapus (tanpa izin = tanpa tombol, fail closed). Klien tidak menghitung ulang aturan unit/kepemilikan.
+ *   akses(user) -> boolean: syarat tambahan rute baru/detail/ubah (daftar tetap lewat listRedirect), mis. sub-jenis jadwal sesuai unit_scope
+ *   bolehTambah(user) -> boolean: syarat tambahan Tambah (mis. formulir tak dapat diselesaikan tanpa hak baca dropdown)
+ *   menuInfo(user) -> {title?, description?}: label kartu menu bergantung hak (mis. "Profil Saya" bagi hak R*)
  *   formTop({mode,record,form,collect,values}) -> Node di atas form; onSaved({mode,res}) setelah simpan; prefill(query) -> nilai awal form baru
+ *   prefillDraf(payloadBersih) -> nilai form dari payload draf AI (default: payload apa adanya tanpa kunci berawalan "_")
  *   field.onlyIfPresent: kolom detail disembunyikan bila kuncinya tak ada di respons (mis. no_sim untuk peran R)
  * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register()}
  */
 export function defineCrudModule(def) {
   const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill } = def;
-  // Opsi tambahan (aditif): extraGuard(user)->bool (penyaring selain matriks, mis. unit relawan), searchable=false,
-  // queueOffline=false (tanpa antrian offline), beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
+  // Opsi tambahan (aditif): searchable=false, queueOffline=false (tanpa antrian offline),
+  // beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
   // sertakanVersi (R-06b-2): kunci optimistik; saat ubah, body memuat `versi` = versi draf AI (dari server) atau versi record yang dimuat.
-  const { extraGuard, searchable = true, queueOffline = true, beforeSave, sertakanVersi = false } = def;
-  const me = (s) => (extraGuard && !extraGuard(getUser()) ? NONE : userPerms(getUser(), s));
+  const { searchable = true, queueOffline = true, beforeSave, sertakanVersi = false, izin: berIzin = false, bolehTambah, menuInfo, prefillDraf, akses } = def;
+  const me = (s) => userPerms(getUser(), s);
+  // akses(user) -> boolean: syarat tambahan untuk rute record (baru/detail/ubah), mis. sub-jenis jadwal sesuai unit_scope.
+  const aksesRecord = () => typeof akses !== 'function' || akses(getUser()) === true;
+  const bolehBuat = () => me(permissionSlug).C && aksesRecord() && (typeof bolehTambah !== 'function' || bolehTambah(getUser()) === true);
+  // Hak per record: modul berizin -> dari izin server; lalu penyesuaian keadaan (rowPerms) bila ada.
+  const permsRecord = (rec) => {
+    const dasar = me(permissionSlug);
+    const p = berIzin ? permsDariIzin(dasar, rec) : dasar;
+    return rowPerms ? rowPerms(rec, p) : p;
+  };
   const fieldsFor = (mode, record) => (typeof fieldsDef === 'function' ? fieldsDef({ mode, user: getUser(), record }) : fieldsDef);
   const base = `/${slug}`;
   const recTitle = (rec) => (itemTitle ? itemTitle(rec) : rec[(columns.find((c) => c.primary) || columns[0]).key] ?? `#${rec.id}`);
@@ -81,7 +95,7 @@ export function defineCrudModule(def) {
     try {
       const d = await api.get(`/ai-drafts/${encodeURIComponent(uuid)}`, null, { silent: true });
       const draft = unwrap(d);
-      if (draft.module && draft.module !== slug) toast('Draf ini untuk modul lain.', 'error');
+      if (draft.module && draft.module !== slug && draft.module !== permissionSlug) toast('Draf ini untuk modul lain.', 'error');
       return draft;
     } catch (e) {
       toast(e.status === 404 ? 'Draf AI tidak ditemukan atau sudah kedaluwarsa.' : 'Draf AI gagal dimuat.', 'error');
@@ -93,11 +107,14 @@ export function defineCrudModule(def) {
     const draftUuid = ctx.query.get('draft');
     const draft = draftUuid ? await loadDraft(draftUuid) : null;
     if (ctx.isStale()) return;
-    const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}), ...(draft?.payload || {}) };
+    // Kunci berawalan "_" pada payload draf (mis. `_resource`, `_peringatan`) adalah penanda server, bukan isian form.
+    const bersih = Object.fromEntries(Object.entries(draft?.payload || {}).filter(([k]) => !k.startsWith('_')));
+    const isianDraf = typeof prefillDraf === 'function' ? prefillDraf(bersih) : bersih; // prefillDraf: petakan payload draf -> nilai form
+    const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}), ...isianDraf };
     clear(ctx.el);
     if (draft) ctx.el.append(h('div', { class: 'notice' }, 'Diisi otomatis oleh Agen AI. Periksa kolom bertanda "Perlu dicek", lalu simpan.'));
     const konflik = h('div', { 'aria-live': 'assertive' });
-    const versi = draft?.payload?.versi ?? record?.versi ?? null;
+    const versi = isianDraf.versi ?? record?.versi ?? null;
     // 409 versi/status: data di layar basi. Draf AI basi tidak boleh dikirim ulang, jadi arahkan ke data terbaru tanpa draf.
     function tampilkanKonflik(e) {
       const g = ringkasGalatAksi(e);
@@ -130,25 +147,25 @@ export function defineCrudModule(def) {
       if (p.selfOnly) return navigate(`${base}/${getUser().id}`, { replace: true });
       const redirect = def.listRedirect ? def.listRedirect(getUser(), p) : null;
       if (redirect) return navigate(redirect, { replace: true });
-      const top = listTop ? listTop(p) : null;
+      const top = listTop ? listTop({ ...p, C: bolehBuat() }) : null;
       if (top) ctx.el.append(top);
       const lv = createListView({
         endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder, createLabel,
-        createHref: p.C ? `#${base}/baru` : null,
+        createHref: bolehBuat() ? `#${base}/baru` : null,
         itemHref: (r) => `#${base}/${r.id}`,
       });
       ctx.el.append(lv.el);
     }, { title: title, guard: () => me(permissionSlug).R });
 
     // Baru (didaftarkan sebelum :id)
-    route(`${base}/baru`, (ctx) => renderForm(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: () => me(permissionSlug).C });
+    route(`${base}/baru`, (ctx) => renderForm(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: bolehBuat });
 
     // Detail
     route(`${base}/:id`, async (ctx) => {
       const res = await api.get(`${endpoint}/${ctx.params.id}`);
       if (ctx.isStale()) return;
       const rec = unwrap(res);
-      const p = rowPerms ? rowPerms(rec, me(permissionSlug)) : me(permissionSlug);
+      const p = permsRecord(rec);
       ctx.setTitle(recTitle(rec));
       const dl = h('dl', { class: 'detail' });
       for (const f of fieldsFor('detail', rec)) {
@@ -181,15 +198,17 @@ export function defineCrudModule(def) {
         }, 'Hapus'));
       }
       if (p.U) setMainButton({ text: 'Ubah', onClick: () => navigate(`${base}/${rec.id}/ubah`) });
-    }, { title, guard: () => me(permissionSlug).R });
+    }, { title, guard: () => me(permissionSlug).R && aksesRecord() });
 
     // Ubah
     route(`${base}/:id/ubah`, async (ctx) => {
       const rec = unwrap(await api.get(`${endpoint}/${ctx.params.id}`));
       if (ctx.isStale()) return;
+      // Akses langsung ke /ubah: izin per record dari server menentukan (relawan hari lalu, record terkunci, dst.).
+      if (!permsRecord(rec).U) return alihkanKeBeranda(PESAN_BUKAN_HAK);
       return renderForm(ctx, { mode: 'update', record: rec });
-    }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U });
+    }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U && aksesRecord() });
   }
 
-  return { slug, title, icon, description, permissionSlug, register, visibleFor: extraGuard };
+  return { slug, title, icon, description, permissionSlug, register, menuInfo };
 }

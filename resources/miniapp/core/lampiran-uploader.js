@@ -1,3 +1,4 @@
+import { bacaSaja } from './permissions.js';
 // Status unggah foto untuk form modul (keluhan, mutu, log produksi): murni, tanpa DOM, agar dapat diuji dengan node --test.
 //
 // Alur kontrak (docs/api/paths/lampiran.yaml): tiap foto langsung diunggah ke POST /lampiran TANPA lampiranable_id
@@ -129,4 +130,5 @@ export function bodyUnggahTertunda({ modul, kategori, file, sppgId }) {
 export const lampiranIdsPayload = (ids) => (Array.isArray(ids) && ids.length ? [...new Set(ids.map(Number))] : undefined);
 
 /** Investor tidak boleh melihat/mengunggah lampiran foto (backend 403): sembunyikan seluruh bagian lampiran. */
-export const lampiranDisembunyikan = (user, rec = null) => user?.role === 'investor' || rec?.lampiran_disembunyikan === true;
+// Pengguna baca-saja (investor) tidak melihat lampiran; record juga dapat menandai sendiri dari server.
+export const lampiranDisembunyikan = (user, rec = null) => bacaSaja(user) || rec?.lampiran_disembunyikan === true;

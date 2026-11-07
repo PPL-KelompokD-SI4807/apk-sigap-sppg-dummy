@@ -1,3 +1,4 @@
+import { tanpaSppgSendiri, multiSppg } from './permissions.js';
 // Helper agregat penerima manfaat (Investor). Hanya hitungan; tidak pernah ada nama/data pribadi.
 // Sel yang disamarkan server bernilai null + penanda ("<5"): tampilkan penanda, jangan jumlahkan di klien.
 const num = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.trunc(Number(v))) : 0);
@@ -36,5 +37,5 @@ export function normalisasiAgregat(res) {
   };
 }
 
-/** Admin wajib mengirim sppg_id; Investor memakai header X-SPPG-Id. */
-export const queryAgregat = (user, sppgId) => (user?.role === 'admin' && sppgId ? { sppg_id: sppgId } : undefined);
+/** Pengguna lintas SPPG tanpa SPPG sendiri (Admin) mengirim sppg_id; Investor memakai header X-SPPG-Id. */
+export const queryAgregat = (user, sppgId) => (tanpaSppgSendiri(user) && !multiSppg(user) && sppgId ? { sppg_id: sppgId } : undefined);

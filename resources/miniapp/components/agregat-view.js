@@ -2,6 +2,7 @@
 import { h } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { getUser } from '../core/auth.js';
+import { multiSppg } from '../core/permissions.js';
 import { errorMessage } from '../core/errors.js';
 import { normalisasiAgregat, LEGENDA_PENYAMARAN } from '../core/agregat.js';
 
@@ -30,7 +31,7 @@ export async function renderAgregatPenerima(ctx) {
     return;
   }
   ctx.el.replaceChildren(
-    h('p', { class: 'muted small' }, `Ringkasan jumlah penerima manfaat${getUser()?.role === 'investor' ? ' SPPG terpilih' : ''}. Data pribadi tidak ditampilkan.`),
+    h('p', { class: 'muted small' }, `Ringkasan jumlah penerima manfaat${multiSppg(getUser()) ? ' SPPG terpilih' : ''}. Data pribadi tidak ditampilkan.`),
     h('div', { class: 'stack' }, kartuAngka('Total', a.totalTampil), kartuAngka('Aktif', a.aktifTampil), kartuAngka('Nonaktif', a.nonaktifTampil)),
     daftarBaris('Per kelompok sasaran', a.kelompok),
     daftarBaris('Per titik layanan', a.titik),

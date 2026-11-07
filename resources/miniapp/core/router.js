@@ -1,6 +1,6 @@
 import { h, clear } from './dom.js';
 import { getTg, isNative } from './telegram.js';
-import { hideMainButton } from './ui.js';
+import { hideMainButton, toast } from './ui.js';
 
 const routes = [];
 let outlet = null;
@@ -12,7 +12,8 @@ let current = { path: '/', query: new URLSearchParams() };
  * route('/modul/:id', handler, {guard, title})
  * handler(ctx) -> boleh async, boleh mengembalikan fungsi pembersih.
  * ctx = {el, params, query, path, setTitle(t), isStale()}
- * guard() -> false menampilkan "Anda tidak punya hak akses".
+ * guard(params) -> false: pengguna dialihkan ke beranda dengan pesan singkat (bukan layar kosong). Rute yang
+ * bergantung pada izin per record memeriksanya lagi setelah record dimuat (lihat crud-module: alihkanKeBeranda).
  */
 export function route(pattern, handler, opts = {}) {
   const keys = [];
@@ -29,6 +30,23 @@ export function parseHashString(hash = '') {
   if (!hash.startsWith('#/')) return { path: '/', query: new URLSearchParams() };
   const [path, qs = ''] = hash.slice(1).split('?');
   return { path: path || '/', query: new URLSearchParams(qs) };
+}
+
+/**
+ * Cek penjaga rute tanpa merender (untuk tes dan pemeriksaan): -> 'tidak-ada' | 'ditolak' | 'boleh'.
+ * Rute tanpa guard = 'boleh'.
+ */
+export function cekAkses(path) {
+  const hit = routes.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
+  if (!hit) return 'tidak-ada';
+  const params = Object.fromEntries(hit.r.keys.map((k, i) => [k, decodeURIComponent(hit.m[i + 1])]));
+  return hit.r.guard && !hit.r.guard(params) ? 'ditolak' : 'boleh';
+}
+
+/** Alihkan ke beranda dengan pesan singkat (akses langsung ke rute/record yang bukan hak). */
+export function alihkanKeBeranda(pesan = 'Halaman itu bukan hak akses Anda.') {
+  toast(pesan, 'error', 4000);
+  navigate('/', { replace: true });
 }
 
 export const adaRuteTerdaftar = (path) => path !== '/' && routes.some((r) => r.re.test(path));
@@ -95,7 +113,7 @@ export async function resolve() {
   const { r, m } = hit;
   const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
   setTitle(typeof r.title === 'function' ? r.title(params) : r.title || 'SiGAP SPPG');
-  if (r.guard && !r.guard(params)) return forbiddenPanel(outlet);
+  if (r.guard && !r.guard(params)) return alihkanKeBeranda();
 
   const ctx = { el: outlet, params, query, path, setTitle, isStale: () => id !== renderId };
   const run = async () => {
