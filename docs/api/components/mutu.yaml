@@ -40,7 +40,7 @@ schemas:
       catatan_koreksi: { type: [string, 'null'] }
       dikoreksi_pada: { type: [string, 'null'], format: date-time }
       dikoreksi_oleh: { type: [integer, 'null'] }
-      memengaruhi_distribusi: { type: boolean, description: 'Hanya pada detail/simpan; true = tidak dapat dihapus, hanya dikoreksi' }
+      memengaruhi_distribusi: { type: boolean, description: 'Ada di daftar (GET /mutu), detail, dan simpan dengan nilai identik (aturan sama: PemeriksaanMutuService; daftar dihitung dengan satu query agregat per halaman). true = tidak dapat dihapus, hanya dikoreksi' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   PemeriksaanMutuInput:

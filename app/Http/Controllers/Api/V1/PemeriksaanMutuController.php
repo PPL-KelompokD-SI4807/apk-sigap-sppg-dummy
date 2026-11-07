@@ -51,7 +51,15 @@ class PemeriksaanMutuController extends ApiController
             $query->where('sppg_id', (int) $request->query('sppg_id'));
         }
 
-        return PemeriksaanMutuResource::collection($this->paginate($query->orderByDesc('waktu_pemeriksaan')->orderByDesc('id'), $request));
+        $halaman = $this->paginate($query->orderByDesc('waktu_pemeriksaan')->orderByDesc('id'), $request);
+
+        // Satu perhitungan agregat untuk seluruh halaman (bukan per baris), aturan yang sama dengan detail.
+        $peta = $this->service->memengaruhiDistribusiBanyak($halaman->getCollection());
+        $halaman->getCollection()->each(
+            fn (PemeriksaanMutu $p) => $p->setAttribute('memengaruhi_distribusi', $peta[$p->id] ?? false)
+        );
+
+        return PemeriksaanMutuResource::collection($halaman);
     }
 
     public function store(StorePemeriksaanMutuRequest $request): JsonResponse
