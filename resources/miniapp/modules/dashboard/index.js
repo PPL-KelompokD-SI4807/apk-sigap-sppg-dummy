@@ -3,6 +3,7 @@
 import { h, formatValue } from '../../core/dom.js';
 import { api } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
+import { dashboardTersedia, multiSppg, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route } from '../../core/router.js';
 import { getSppgAktif, setSppgAktif } from '../../core/sppg-aktif.js';
 import { SLUG, RENTANG, RENTANG_BAWAAN, bangunQuery, widgetTampil, pilihanSppg, labelMode, pesanGalat, rentangValid } from './logika.js';
@@ -14,8 +15,8 @@ const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data :
  * Tanpa sppg_id, investor/admin ingin mode gabungan; header X-SPPG-Id dari pilihan SPPG aktif akan
  * mempersempitnya. request() menyusun header secara sinkron, jadi pilihan dilepas sesaat lalu dipulihkan.
  */
-function ambilDashboard(query, role) {
-  const lepas = query.sppg_id == null && (role === 'investor' || role === 'admin');
+function ambilDashboard(query, user) {
+  const lepas = query.sppg_id == null && (multiSppg(user) || tanpaSppgSendiri(user));
   const simpan = getSppgAktif();
   if (lepas && simpan != null) setSppgAktif(null);
   try {
@@ -45,7 +46,7 @@ function dashboardScreen(ctx) {
   const tandaiRentang = () => tombol.forEach((b, i) => { const aktif = RENTANG[i] === rentang; b.classList.toggle('active', aktif); b.setAttribute('aria-pressed', String(aktif)); });
 
   function gambarPemilih(pilihan) {
-    if (user?.role !== 'investor' || pilihan.length < 1) { pilihWadah.hidden = true; return; }
+    if (!multiSppg(user) || pilihan.length < 1) { pilihWadah.hidden = true; return; }
     // Hanya digambar ulang bila daftar berubah, agar fokus pemilih tidak hilang.
     const kunci = JSON.stringify(pilihan.map((s) => [s.id, s.nama]));
     if (kunci === JSON.stringify(pilihanTerakhir.map((s) => [s.id, s.nama]))) return;
@@ -69,7 +70,7 @@ function dashboardScreen(ctx) {
     tandaiRentang();
     isi.replaceChildren(h('p', { class: 'muted pad center', role: 'status' }, 'Memuat dashboard...'));
     try {
-      const d = unwrap(await ambilDashboard(bangunQuery({ rentang, sppgId }), user?.role));
+      const d = unwrap(await ambilDashboard(bangunQuery({ rentang, sppgId }), user));
       if (saya !== nomor || ctx.isStale()) return;
       gambarPemilih(pilihanSppg(d));
       gambarMeta(d);
@@ -98,8 +99,8 @@ export default {
   title: 'Dashboard',
   icon: '📊',
   description: 'Ringkasan operasional sesuai peran',
-  hidden: true, // tidak ada slug izin R/W; tautan di beranda (home.js), rute untuk semua peran login penuh
+  hidden: true, // tautan di beranda (home.js) hanya bila aksi.dashboard.tersedia; rute dijaga hal yang sama
   register() {
-    route(`/${SLUG}`, dashboardScreen, { title: 'Dashboard', guard: () => !!getUser() });
+    route(`/${SLUG}`, dashboardScreen, { title: 'Dashboard', guard: () => dashboardTersedia(getUser()) });
   },
 };

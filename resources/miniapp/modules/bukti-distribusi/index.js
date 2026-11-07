@@ -4,14 +4,15 @@ import { rowCard } from '../../components/row-card.js';
 import { createAuthImage } from '../../components/photo-upload.js';
 import { createLampiranPanel } from '../../components/lampiran-field.js';
 import { h } from '../../core/dom.js';
-import { api, fetchList } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
+import { jadwalTabBoleh } from '../../core/permissions.js';
+import { api, fetchList } from '../../core/api.js';
 import { resolve } from '../../core/router.js';
 import { todayWIB, jamWIB, tanggalJamWIB } from '../../core/waktu.js';
 import { errorMessage } from '../../core/errors.js';
 import {
-  unitDistribusiBoleh, jadwalDapatDipilih, jadwalOptionLabel, peringatanJadwal, statusJadwalLabel,
-  terlambatLabel, terlambatBadge, selisihLabel, rowPermsBukti, buktiFields, buktiDetailFields, buktiPayload,
+  jadwalDapatDipilih, jadwalOptionLabel, peringatanJadwal, statusJadwalLabel,
+  terlambatLabel, terlambatBadge, selisihLabel, buktiFields, buktiDetailFields, buktiPayload,
 } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
@@ -48,15 +49,14 @@ function jadwalPicker(initialId) {
 
       (async () => {
         try {
-          const user = getUser();
           const { items } = await fetchList('/jadwal/distribusi', { perPage: 100, extra: { tanggal: todayWIB() } });
-          list = items.filter((j) => jadwalDapatDipilih(j, user));
+          list = items.filter(jadwalDapatDipilih);
           const want = value ?? initialId;
           if (want && !list.some((x) => String(x.id) === String(want))) {
             try { const one = unwrap(await api.get(`/jadwal/distribusi/${encodeURIComponent(want)}`, null, { silent: true })); if (one) list.unshift(one); } catch { /* abaikan */ }
           }
           sel.replaceChildren(h('option', { value: '' }, list.length ? '- Pilih jadwal -' : 'Tidak ada jadwal yang dapat dipilih'), ...list.map((j) => h('option', { value: j.id }, jadwalOptionLabel(j))));
-          if (!list.length) info.append(h('div', { class: 'notice' }, user?.role === 'relawan' ? 'Tidak ada jadwal distribusi hari ini yang ditugaskan kepada Anda atau belum memiliki petugas.' : 'Tidak ada jadwal distribusi aktif hari ini.'), h('a', { class: 'btn', href: '#/jadwal/distribusi' }, 'Lihat jadwal distribusi'));
+          if (!list.length) info.append(...[h('div', { class: 'notice' }, 'Tidak ada jadwal distribusi aktif hari ini yang dapat Anda catat buktinya.'), jadwalTabBoleh(getUser(), 'distribusi') ? h('a', { class: 'btn', href: '#/jadwal/distribusi' }, 'Lihat jadwal distribusi') : null].filter(Boolean));
           if (want && list.some((x) => String(x.id) === String(want))) { sel.value = String(want); render(); }
         } catch (e) {
           sel.replaceChildren(h('option', { value: '' }, 'Gagal memuat jadwal'));
@@ -147,7 +147,7 @@ export default defineCrudModule({
   endpoint: '/bukti-distribusi',
   createLabel: '+ Bukti',
   columns: [{ key: 'titik', primary: true, format: (r) => r.jadwal_distribusi?.titik_layanan?.nama ?? `Bukti #${r.id}` }],
-  extraGuard: unitDistribusiBoleh,
+  izin: true, // Ubah/Hapus mengikuti izin per record dari server (relawan: hanya milik sendiri di hari yang sama)
   fields,
   mapPayload: buktiPayload,
   itemTitle: (r) => `Bukti ${r.jadwal_distribusi?.titik_layanan?.nama ?? `#${r.id}`}`,
@@ -155,7 +155,6 @@ export default defineCrudModule({
   listQuery,
   listTop,
   prefill: (q) => (q.get('jadwal') ? { jadwal_distribusi_id: q.get('jadwal') } : {}),
-  rowPerms: (rec, p) => rowPermsBukti(getUser(), rec, p),
   renderCard: (r, href) => rowCard({
     href,
     title: r.jadwal_distribusi?.titik_layanan?.nama ?? `Bukti #${r.id}`,

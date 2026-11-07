@@ -2,27 +2,19 @@
 // docs/api/components/bukti-distribusi.yaml. Murni (tanpa DOM) agar dapat diuji dengan node --test.
 import { buildPayload } from '../../core/schema-helpers.js';
 import { noNik } from '../../core/validators.js';
-import { todayWIB, tanggalJamWIB, jamWIB } from '../../core/waktu.js';
+import { tanggalJamWIB, jamWIB } from '../../core/waktu.js';
 
 export const TERLAMBAT_BATAS_MENIT = 15; // config server; hanya untuk teks bantuan
 
 export const STATUS_JADWAL = { menunggu: 'Menunggu', siap: 'Siap', berangkat: 'Berangkat', diterima: 'Diterima', dibatalkan: 'Dibatalkan' };
 export const statusJadwalLabel = (v) => STATUS_JADWAL[v] ?? v ?? '-';
 
-/** Relawan hanya unit distribusi; peran lain mengikuti matriks. */
-export function unitDistribusiBoleh(user) {
-  if (!user) return false;
-  return user.role !== 'relawan' || user.unit === 'distribusi';
-}
-
-/** Jadwal yang boleh dipilih untuk mencatat bukti: aktif; relawan hanya hari ini dan milik sendiri/belum bertugas. */
-export function jadwalDapatDipilih(j, user, today = todayWIB()) {
-  if (!j || !['menunggu', 'siap', 'berangkat'].includes(j.status)) return false;
-  if (user?.role === 'relawan') {
-    if (String(j.tanggal_distribusi ?? '').slice(0, 10) !== today) return false;
-    if (j.petugas_id != null && j.petugas_id !== user.id) return false;
-  }
-  return true;
+/**
+ * Jadwal yang dapat dipilih untuk mencatat bukti: status aktif saja. Daftar sudah dibatasi server menurut hak
+ * (dan query tanggal hari ini); klien tidak menyalin aturan unit/kepemilikan relawan.
+ */
+export function jadwalDapatDipilih(j) {
+  return !!j && ['menunggu', 'siap', 'berangkat'].includes(j.status);
 }
 
 export function jadwalOptionLabel(j) {
@@ -64,14 +56,6 @@ export function validasiPorsi(diterima, dikirim) {
 export function validasiCatatanSelisih(catatan, diterima, dikirim) {
   if (dikirim != null && diterima != null && diterima < dikirim && !String(catatan ?? '').trim()) return 'Catatan selisih wajib diisi bila porsi diterima kurang dari porsi dikirim.';
   return '';
-}
-
-/** Relawan hanya mengubah bukti yang ia catat pada hari yang sama; relawan tidak menghapus. */
-export function rowPermsBukti(user, rec, p, today = todayWIB()) {
-  if (user?.role !== 'relawan') return p;
-  const milik = rec?.dicatat_oleh?.id != null && rec.dicatat_oleh.id === user.id;
-  const hariIni = rec?.waktu_tiba ? todayWIB(new Date(rec.waktu_tiba)) === today : false;
-  return { ...p, U: p.U && milik && hariIni, D: false };
 }
 
 /**

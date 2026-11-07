@@ -6,13 +6,13 @@ import { navTabs } from '../../components/nav-tabs.js';
 import { h, formatValue } from '../../core/dom.js';
 import { api, request, newKey } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, jadwalTabBoleh } from '../../core/permissions.js';
 import { route, resolve } from '../../core/router.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
 import {
   STATUS_PRODUKSI, STATUS_DISTRIBUSI, statusProduksiLabel, statusDistribusiLabel, statusBadge, transisiValid, aksiLabel,
-  unitBoleh, rowPermsJadwal, hitungKapasitas, sisaPorsiDistribusi,
+  distribusiBisaDibuat, hitungKapasitas, sisaPorsiDistribusi,
   produksiFields, produksiDetailFields, produksiPayload, distribusiFields, distribusiDetailFields, distribusiPayload,
   statusKebutuhan, ringkasKebutuhan, catatanTidakDapat, menuBelumDisetujui, masakDitahanMenu, pesanGagalStatus,
 } from './schema.js';
@@ -20,15 +20,14 @@ import { statusLabel as statusMenuLabel } from '../persetujuan-menu/logika.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const SLUG = 'jadwal';
-const me = () => userPerms(getUser(), SLUG);
 const jam = (v) => (v ? String(v).slice(0, 5) : null);
 const porsi = (n) => `${Number(n ?? 0).toLocaleString('id-ID')} porsi`;
 
 export function jadwalTabs(active) {
   const u = getUser();
   const items = [];
-  if (unitBoleh(u, 'produksi')) items.push({ key: 'produksi', href: '#/jadwal', label: 'Produksi' });
-  if (unitBoleh(u, 'distribusi')) items.push({ key: 'distribusi', href: '#/jadwal/distribusi', label: 'Distribusi' });
+  if (jadwalTabBoleh(u, 'produksi')) items.push({ key: 'produksi', href: '#/jadwal', label: 'Produksi' });
+  if (jadwalTabBoleh(u, 'distribusi')) items.push({ key: 'distribusi', href: '#/jadwal/distribusi', label: 'Distribusi' });
   return items.length > 1 ? navTabs(items, active, 'Jadwal') : null;
 }
 
@@ -132,7 +131,8 @@ function distribusiFormTop({ record, form, collect, values }) {
   async function refresh() {
     const my = ++tick;
     const id = record?.jadwal_produksi_id ?? collect().jadwal_produksi_id;
-    if (!id) return box.replaceChildren();
+    // Detail jadwal produksi hanya boleh dibaca yang berhak jadwal produksi (relawan distribusi tidak): lewati tanpa 403.
+    if (!id || !jadwalTabBoleh(getUser(), 'produksi')) return box.replaceChildren();
     let j = null;
     try { j = unwrap(await api.get(`/jadwal/${id}`, null, { silent: true })); } catch { /* abaikan */ }
     if (my !== tick || !j) return;
@@ -158,12 +158,16 @@ const distribusiModule = defineCrudModule({
   description: 'Pengantaran ke titik layanan',
   endpoint: '/jadwal/distribusi',
   columns: [{ key: 'titik_layanan', primary: true, format: (r) => r.titik_layanan?.nama ?? `#${r.id}` }],
-  fields: ({ mode, record }) => (mode === 'detail' ? distribusiDetailFields : distribusiFields({ mode, record })),
+  fields: ({ mode, record, user }) => (mode === 'detail' ? distribusiDetailFields : distribusiFields({ mode, record, user })),
   mapPayload: (v, { mode }) => { const o = distribusiPayload(v); if (mode === 'update') delete o.jadwal_produksi_id; return o; },
   itemTitle: (r) => `Distribusi ${r.titik_layanan?.nama ?? `#${r.id}`}`,
   searchPlaceholder: 'Cari titik layanan...',
   filters: { param: 'status', label: 'Status distribusi', options: [{ value: '', label: 'Semua' }, ...STATUS_DISTRIBUSI] },
-  listRedirect: (u) => (unitBoleh(u, 'distribusi') ? null : '/jadwal'),
+  listRedirect: (u) => (jadwalTabBoleh(u, 'distribusi') ? null : '/jadwal'),
+  akses: (u) => jadwalTabBoleh(u, 'distribusi'),
+  izin: true,
+  // Form hanya dapat diselesaikan bila dropdown wajib terbaca; selain itu tombol Tambah disembunyikan.
+  bolehTambah: (u) => jadwalTabBoleh(u, 'distribusi') && distribusiBisaDibuat(u),
   listTop: () => jadwalTabs('distribusi'),
   prefill: (q) => (q.get('jadwal') ? { jadwal_produksi_id: q.get('jadwal') } : {}),
   formTop: distribusiFormTop,
@@ -175,7 +179,6 @@ const distribusiModule = defineCrudModule({
     asideSub: 'porsi',
     badge: { text: r.status_label || statusDistribusiLabel(r.status), cls: statusBadge(r.status) },
   }),
-  rowPerms: (rec, p) => rowPermsJadwal('distribusi', getUser(), rec, p),
   detailExtras: (rec, p) => {
     const nodes = [];
     if (rec.status === 'siap' && rec.layak_distribusi === false) nodes.push(h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.'));
@@ -206,7 +209,10 @@ const produksiBase = defineCrudModule({
   itemTitle: (r) => `Produksi ${r.menu?.nama_menu ?? `#${r.id}`}`,
   searchPlaceholder: 'Cari menu atau catatan...',
   filters: { param: 'status', label: 'Status produksi', options: [{ value: '', label: 'Semua' }, ...STATUS_PRODUKSI] },
-  listRedirect: (u) => (unitBoleh(u, 'produksi') ? null : '/jadwal/distribusi'),
+  listRedirect: (u) => (jadwalTabBoleh(u, 'produksi') ? null : '/jadwal/distribusi'),
+  akses: (u) => jadwalTabBoleh(u, 'produksi'),
+  izin: true,
+  bolehTambah: (u) => jadwalTabBoleh(u, 'produksi'),
   listQuery: produksiQuery,
   listTop: listTopProduksi,
   formTop: produksiFormTop,
@@ -223,7 +229,6 @@ const produksiBase = defineCrudModule({
     badge: { text: r.status_label || statusProduksiLabel(r.status), cls: statusBadge(r.status) },
     badges: menuBelumDisetujui(r) ? [{ text: 'Menu belum disetujui', cls: 'badge-warn' }] : [],
   }),
-  rowPerms: (rec, p) => rowPermsJadwal('produksi', getUser(), rec, p),
   detailExtras: (rec, p) => {
     const nodes = [];
     if (menuBelumDisetujui(rec) && rec.status !== 'selesai' && rec.status !== 'dibatalkan') {
@@ -237,7 +242,7 @@ const produksiBase = defineCrudModule({
     const aktif = rec.status !== 'dibatalkan';
     const links = h('div', { class: 'row-actions' });
     links.append(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
-    if (aktif && userPerms(getUser(), 'jadwal').C && unitBoleh(getUser(), 'distribusi')) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
+    if (aktif && userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser())) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
     if (aktif && userPerms(getUser(), 'log-produksi').C) links.append(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
     if (aktif && userPerms(getUser(), 'mutu').C) links.append(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
     nodes.push(links);
@@ -248,7 +253,7 @@ const produksiBase = defineCrudModule({
 const produksiModule = {
   ...produksiBase,
   register() {
-    route('/jadwal/:id/kebutuhan', kebutuhanScreen, { title: 'Kebutuhan Bahan', guard: () => me().R });
+    route('/jadwal/:id/kebutuhan', kebutuhanScreen, { title: 'Kebutuhan Bahan', guard: () => jadwalTabBoleh(getUser(), 'produksi') });
     produksiBase.register();
   },
 };

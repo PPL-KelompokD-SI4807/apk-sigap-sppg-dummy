@@ -59,9 +59,3 @@ export function hitungCapaian(realisasi, target) {
   const peringatan = selisih === 0 ? null : selisih < 0 ? `Realisasi ${-selisih} porsi di bawah target.` : `Realisasi ${selisih} porsi di atas target.`;
   return { selisih, persen, peringatan };
 }
-
-/** Relawan hanya mengubah log buatannya sendiri; Kepala SPPG bebas (U) dan satu-satunya D. */
-export function rowPermsLog(user, rec, p) {
-  const milik = user?.role !== 'relawan' || rec?.dicatat_oleh == null || rec.dicatat_oleh === user.id;
-  return { ...p, U: p.U && milik };
-}

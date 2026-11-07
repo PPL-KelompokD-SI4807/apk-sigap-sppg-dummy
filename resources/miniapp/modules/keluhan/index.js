@@ -7,11 +7,12 @@ import { h } from '../../core/dom.js';
 import { api } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
 import { lampiranDisembunyikan } from '../../core/lampiran-uploader.js';
+import { bolehAksi, tanpaSppgSendiri } from '../../core/permissions.js';
 import { resolve } from '../../core/router.js';
 import { tanggalJamWIB } from '../../core/waktu.js';
 import {
   STATUS, PRIORITAS, kategoriLabel, statusLabel, prioritasLabel, prioritasBadge, statusBadge,
-  isKritis, prioritasOtomatis, transisiValid, keluhanFields, keluhanPayload, rowPermsKeluhan,
+  isKritis, validasiBatch, prioritasOtomatis, transisiValid, keluhanFields, keluhanPayload, rowPermsKeluhan, suntingPenuh,
 } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
@@ -23,6 +24,8 @@ const listQuery = { status: '', prioritas: '', from: '', to: '' };
 const batchField = {
   name: 'batch_tidak_diketahui', label: 'Batch', type: 'custom',
   showIf: (cur) => isKritis(cur.kategori),
+  // Aturan batch kritis dipasang di sini (bukan di dropdown jadwal) agar tetap berlaku bila dropdown disembunyikan karena tak berhak.
+  validate: (v, all) => validasiBatch(all),
   build: ({ value, onChange }) => {
     let on = value === true;
     const btn = h('button', { type: 'button', class: 'btn btn-block', 'aria-pressed': 'false' });
@@ -37,18 +40,21 @@ const batchField = {
 const fotoField = ({ user, record }) => lampiranField({
   modul: 'keluhan', label: 'Foto keluhan', existing: record?.lampiran || [],
   // Admin wajib menyertakan sppg_id pada unggahan tertunda: ikut kolom SPPG di form (baru) atau SPPG record (ubah).
-  sppgId: () => (user?.role === 'admin' ? document.getElementById('f-sppg_id')?.value || record?.sppg_id || null : null),
+  sppgId: () => (tanpaSppgSendiri(user) ? document.getElementById('f-sppg_id')?.value || record?.sppg_id || null : null),
   help: 'Opsional, maks 5 foto (JPEG/PNG/WebP, maks 5 MB). Terunggah langsung; Simpan menunggu semua foto selesai.',
 });
 
-function fields({ mode, user, record }) {
+export function fields({ mode, user, record }) {
   const f = keluhanFields({ mode, user, record });
   if (mode === 'detail') return f;
   const i = f.findIndex((x) => x.name === 'deskripsi');
   const denganFoto = i < 0 ? f : [...f.slice(0, i + 1), fotoField({ user, record }), ...f.slice(i + 1)];
   if (mode !== 'create') return denganFoto;
+  // Tombol batch menempel setelah dropdown jadwal; bila dropdown tak ada (tanpa hak), sebelum Deskripsi.
   const j = denganFoto.findIndex((x) => x.name === 'jadwal_produksi_id');
-  return [...denganFoto.slice(0, j + 1), batchField, ...denganFoto.slice(j + 1)];
+  const d = denganFoto.findIndex((x) => x.name === 'deskripsi');
+  const at = j >= 0 ? j + 1 : d >= 0 ? d : denganFoto.length;
+  return [...denganFoto.slice(0, at), batchField, ...denganFoto.slice(at)];
 }
 
 // ---- Atas form: peringatan prioritas (baru) / ringkasan keluhan (tindak lanjut) ----
@@ -127,7 +133,7 @@ export default defineCrudModule({
     const nodes = [];
     if (rec.prioritas === 'kritis') nodes.push(h('div', { class: 'alert-danger' }, 'Keluhan KRITIS',
       rec.dieskalasi_pada ? ` · dieskalasi ${tanggalJamWIB(rec.dieskalasi_pada)}` : '', rec.jadwal_produksi_id ? '' : ' · batch tidak diketahui'));
-    if (p.U && transisiValid(rec.status).length && getUser()?.role !== 'admin') {
+    if (p.U && transisiValid(rec.status).length && !suntingPenuh(getUser()) && bolehAksi(getUser(), 'tindak_lanjut_keluhan')) {
       nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/keluhan/${rec.id}/ubah` }, rec.status === 'baru' ? 'Proses keluhan' : 'Selesaikan / tolak dengan catatan'));
     }
     if (lampiranDisembunyikan(getUser(), rec) || (rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ disembunyikan: lampiranDisembunyikan(getUser(), rec), modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto keluhan' }));

@@ -8,7 +8,7 @@ import { createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
 import { api, fetchList, request, newKey } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehIzin, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route, resolve, navigate } from '../../core/router.js';
 import { setMainButton, toast, showConfirm } from '../../core/ui.js';
 import { renderChart } from '../../core/charts.js';
@@ -21,7 +21,7 @@ import {
 } from './schema.js';
 import {
   statusPersetujuanBadge, statusPersetujuanLabel, statusPengeluaran, STATUS_PERSETUJUAN, KEPUTUSAN_PENGELUARAN, tombolKeputusanPengeluaranTampil,
-  validasiCatatanKeputusan, payloadKeputusanPengeluaran, rowPermsPengeluaran, dariPembelian, pesanLampiranTerkunci, teksMenunggu, MAKS_CATATAN, MIN_CATATAN,
+  validasiCatatanKeputusan, payloadKeputusanPengeluaran, dariPembelian, pesanLampiranTerkunci, teksMenunggu, MAKS_CATATAN, MIN_CATATAN,
 } from './persetujuan.js';
 
 const SLUG = 'keuangan';
@@ -213,7 +213,7 @@ function persetujuanPanels(rec) {
   const nodes = [];
   if (st === 'diajukan') nodes.push(h('div', { class: 'notice' }, 'Menunggu persetujuan investor. Belum dihitung ke anggaran.'));
   if (st === 'ditolak') nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, h('strong', {}, 'Ditolak investor. '), terakhirCatatan(rec) ?? '-'));
-  if (tombolKeputusanPengeluaranTampil(getUser(), rec)) nodes.push(keputusanPanel(rec));
+  if (tombolKeputusanPengeluaranTampil(rec)) nodes.push(keputusanPanel(rec));
   nodes.push(riwayatPanel(rec));
   return nodes;
 }
@@ -230,7 +230,7 @@ const pengeluaranModule = defineCrudModule({
   fields: ({ mode, record }) => (mode === 'detail' ? pengeluaranDetailFields : pengeluaranFields({ custom, record })),
   mapPayload: (v) => pengeluaranPayload(v),
   sertakanVersi: true,
-  rowPerms: rowPermsPengeluaran,
+  izin: true, // Ubah/Hapus/Lampirkan/Putuskan mengikuti izin per record dari server
   itemTitle: (r) => r.uraian ?? `Pengeluaran #${r.id}`,
   searchPlaceholder: 'Cari uraian pengeluaran...',
   listQuery: pengeluaranQuery,
@@ -259,14 +259,15 @@ const pengeluaranModule = defineCrudModule({
     const lain = (rec.lampiran || []).filter((l) => l.id !== rec.nota?.lampiran_id);
     // Server menolak lampiran baru pada pengeluaran disetujui (409) atau hasil pembelian (403).
     const terkunci = pesanLampiranTerkunci(rec);
+    const bisaLampir = bolehIzin(rec, 'lampirkan');
     if (terkunci) {
       // Panel unggah disembunyikan; lampiran yang sudah ada tetap bisa dilihat tanpa tombol tambah.
       if (lain.length) nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: false, title: 'Lampiran lain' }));
       const info = h('p', { class: 'muted small', role: 'note' });
       info.textContent = terkunci;
       nodes.push(info);
-    } else if (lain.length || p.U) {
-      nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: !!p.U, title: 'Lampiran lain' }));
+    } else if (lain.length || bisaLampir) {
+      nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: bisaLampir, title: 'Lampiran lain' }));
     }
     return nodes;
   },
@@ -314,7 +315,7 @@ function kategoriPanel(r) {
 
 async function ringkasanScreen(ctx) {
   const user = getUser();
-  const admin = user?.role === 'admin';
+  const admin = tanpaSppgSendiri(user); // Admin lintas SPPG: pilih SPPG eksplisit
   const periode = ctx.query.get('periode') || periodeSekarang();
   const sppgId = ctx.query.get('sppg_id') || '';
   ctx.setTitle(`Keuangan · ${labelPeriode(periode)}`);

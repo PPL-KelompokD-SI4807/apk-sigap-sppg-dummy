@@ -75,11 +75,11 @@ function formTambah(rec, onSaved) {
     field('Bahan', 'hg-bahan', bahanSel), field('Harga per satuan (Rp)', 'hg-harga', harga), gramWrap, field('Berlaku mulai', 'hg-mulai', mulai), field('Catatan', 'hg-catatan', catatan), err, btn);
 }
 
-/** Panel harga untuk detail pemasok. perms.C = peran boleh menambah harga. */
-export function hargaPanel(rec, perms) {
+/** Panel harga untuk detail pemasok. opsi.tambah = aksi.catat_harga_pemasok dari server. */
+export function hargaPanel(rec, opsi) {
   const list = h('div', { class: 'stack' });
   const panel = h('div', { class: 'panel' }, h('h2', { class: 'panel-title' }, 'Harga bahan'), list);
   daftarHarga(list, rec.id);
-  if (perms?.C) panel.append(formTambah(rec, () => daftarHarga(list, rec.id)));
+  if (opsi?.tambah === true) panel.append(formTambah(rec, () => daftarHarga(list, rec.id)));
   return panel;
 }

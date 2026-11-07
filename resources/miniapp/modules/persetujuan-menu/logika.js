@@ -1,6 +1,7 @@
 // Logika murni Persetujuan Menu (R-06b-1), tanpa DOM agar bisa diuji node --test.
 // Kontrak: docs/api/paths/persetujuan-menu.yaml, components/persetujuan-menu.yaml. Server tetap otoritas akhir.
 import { normalisasiId } from '../../core/sppg-aktif.js';
+import { bolehAksi, punyaKeputusan } from '../../core/permissions.js';
 
 export const SLUG = 'persetujuan-menu';
 export const MIN_CATATAN = 5;
@@ -37,12 +38,12 @@ export const SUMBER_PORSI = {
 };
 export const sumberPorsiLabel = (s) => SUMBER_PORSI[s] ?? s ?? '-';
 
-/** Hak C modul persetujuan-menu (ahli_gizi) dan status menu yang boleh diajukan. */
+/** Tombol Ajukan: aksi.ajukan_menu dari server DAN status menu yang boleh diajukan (keadaan terbaca di record). */
 export const STATUS_BISA_DIAJUKAN = ['draf', 'ditolak', 'perlu_revisi'];
-export const bolehAjukan = (permsPersetujuan, statusMenu) => !!permsPersetujuan?.C && STATUS_BISA_DIAJUKAN.includes(statusMenu);
+export const bolehAjukan = (user, statusMenu) => bolehAksi(user, 'ajukan_menu') && STATUS_BISA_DIAJUKAN.includes(statusMenu);
 
-/** Investor = pengguna dengan user.keputusan berisi "persetujuan-menu". */
-export const bolehMemutuskan = (user) => Array.isArray(user?.keputusan) && user.keputusan.includes(SLUG);
+/** Pemegang hak memutuskan persetujuan menu = user.keputusan (daftar dari server) memuat "persetujuan-menu". */
+export const bolehMemutuskan = (user) => punyaKeputusan(user, SLUG);
 export const tombolKeputusanTampil = (user, pengajuan) => bolehMemutuskan(user) && pengajuan?.status === 'diajukan' && !pengajuan?.kedaluwarsa;
 
 /** Catatan wajib (min 5 karakter) untuk ditolak/perlu_revisi; opsional untuk disetujui. '' bila valid. */

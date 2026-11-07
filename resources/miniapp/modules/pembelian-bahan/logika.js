@@ -1,6 +1,7 @@
 // Logika murni Pembelian Bahan (R-06b-2), tanpa DOM agar bisa diuji node --test.
 // Kontrak: docs/api/paths/pembelian-bahan.yaml, components/pembelian-bahan.yaml. Server tetap otoritas akhir.
 import { buildPayload } from '../../core/schema-helpers.js';
+import { bolehIzin } from '../../core/permissions.js';
 import { lampiranIdsPayload } from '../../core/lampiran-uploader.js';
 import { todayWIB } from '../../core/waktu.js';
 
@@ -20,14 +21,11 @@ const BADGE = { diajukan: 'badge-info', terverifikasi: 'badge-ok', ditolak: 'bad
 export const statusBadge = (s) => BADGE[s] ?? '';
 export const statusLabel = (s) => STATUS_PEMBELIAN.find((x) => x.value === s)?.label ?? s ?? '-';
 
-/** Staf gudang boleh mengubah hanya saat diajukan/ditolak (ditolak -> diajukan otomatis). Terverifikasi final. */
-export const STATUS_BISA_DIUBAH = ['diajukan', 'ditolak'];
-export const bolehUbahPembelian = (p, rec) => !!p?.U && STATUS_BISA_DIUBAH.includes(rec?.status);
-
-/** Akuntan = user.keputusan memuat "pembelian-bahan"; pencatat tidak boleh memverifikasi sendiri (pemisahan tugas). */
-export const bolehMemverifikasi = (user) => Array.isArray(user?.keputusan) && user.keputusan.includes(SLUG);
-export const tombolVerifikasiTampil = (user, rec) =>
-  bolehMemverifikasi(user) && rec?.status === 'diajukan' && !(user?.id != null && rec?.dicatat_oleh?.id === user.id);
+/**
+ * Tombol Verifikasi: murni dari izin.verifikasi server (akuntan SPPG sama, bukan pencatat, status `diajukan`).
+ * Tombol Ubah mengikuti izin.ubah (false bila terverifikasi), diterapkan oleh crud-module (izin: true).
+ */
+export const tombolVerifikasiTampil = (rec) => bolehIzin(rec, 'verifikasi');
 
 // ---- Angka ----
 function desimalMaks(v, n) {
@@ -117,19 +115,36 @@ export function ringkasHargaReferensi(ref) {
   return { ada: true, teks: 'Sama dengan harga referensi', tone: 'badge-info' };
 }
 
+const bersih = (v) => String(v ?? '').replace(/[^a-z0-9_-]/gi, '');
+
 /**
- * Tujuan form Mini App dari draf AI (GET /ai-drafts/{uuid}). Modul `keuangan` dipakai bersama oleh pencairan dan
- * pengeluaran: dibedakan lewat isi payload (sumber_dana/periode = pencairan, selain itu = pengeluaran).
- * Hanya path internal yang dikenal; modul tidak dikenal memakai pola standar /{module}/baru atau /{module}/{id}/ubah.
+ * Tujuan layar Mini App dari draf AI (GET /ai-drafts/{uuid}). Hanya path internal yang dikenal; modul tidak
+ * dikenal memakai pola standar /{module}/baru atau /{module}/{id}/ubah.
+ *  - Modul `keuangan` dipakai bersama pencairan dan pengeluaran: dibedakan lewat payload (sumber_dana/periode = pencairan).
+ *  - Penanda sub-modul `payload._resource` (server: DraftToolResolver) memilih layar: undangan -> /pengguna/undangan,
+ *    distribusi -> /jadwal/distribusi, pengemudi -> /pengemudi, standar_gizi -> /menu-gizi/standar-gizi.
+ *  - Draf HAPUS tidak pernah dipetakan ke form /baru: ke detail record (tempat tombol Hapus) atau, bila tanpa target, daftar.
+ *    Draf cabut undangan menuju daftar undangan.
+ *  - Draf UBAH tanpa target_id valid menuju daftar (bukan form baru).
  */
 export function tujuanDraf(d) {
-  const modul = String(d?.module ?? '').replace(/[^a-z0-9-]/gi, '');
-  const id = d?.target_id ?? d?.payload?.id ?? null;
-  const update = d?.action === 'update' && id != null && Number.isInteger(Number(id));
+  const modul = bersih(d?.module);
+  const marker = bersih(d?.payload?._resource);
+  const idMentah = d?.target_id ?? d?.payload?.id ?? null;
+  const id = idMentah != null && Number.isInteger(Number(idMentah)) && Number(idMentah) > 0 ? Number(idMentah) : null;
+  const aksi = d?.action;
+
   let base = `/${modul}`;
   if (modul === 'keuangan') {
     const p = d?.payload ?? {};
     base = ('sumber_dana' in p || 'periode' in p || 'tanggal_cair' in p) ? '/keuangan/pencairan' : '/keuangan/pengeluaran';
-  }
-  return update ? `${base}/${Number(id)}/ubah` : `${base}/baru`;
+  } else if (modul === 'pengguna' && marker === 'undangan') base = '/pengguna/undangan';
+  else if (modul === 'jadwal' && marker === 'distribusi') base = '/jadwal/distribusi';
+  else if (modul === 'armada' && marker === 'pengemudi') base = '/pengemudi';
+  else if (modul === 'menu-gizi' && marker === 'standar_gizi') base = '/menu-gizi/standar-gizi';
+
+  if (aksi === 'delete') return base === '/pengguna/undangan' || id == null ? base : `${base}/${id}`;
+  if (aksi === 'update') return id == null ? base : `${base}/${id}/ubah`;
+  if (aksi == null || aksi === 'create') return `${base}/baru`;
+  return base; // aksi tak dikenal: jangan pernah membuka form tambah
 }

@@ -4,6 +4,8 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { showInviteLink } from '../../components/invite-dialog.js';
 import { h } from '../../core/dom.js';
+import { getUser } from '../../core/auth.js';
+import { bolehAksi } from '../../core/permissions.js';
 import { api } from '../../core/api.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
@@ -59,8 +61,8 @@ export default defineCrudModule({
     const nodes = [h('div', { class: 'panel' },
       h('h2', { class: 'panel-title' }, 'PIC & Telegram'),
       h('p', {}, rec.pic_terhubung ? 'PIC sudah menghubungkan Telegram dan menerima notifikasi perjalanan mobil.' : 'PIC belum menghubungkan Telegram, notifikasi perjalanan belum dapat dikirim.'))];
-    // Hak ubah titik layanan (Admin/Kepala SPPG) = hak menerbitkan undangan PIC.
-    if (p.U) {
+    // Undangan PIC = aksi.undang_pic dari server (Policy update titik layanan).
+    if (bolehAksi(getUser(), 'undang_pic')) {
       const btn = h('button', { class: 'btn btn-primary btn-block', type: 'button' }, rec.pic_terhubung ? 'Buat ulang undangan PIC' : 'Undang PIC lewat Telegram');
       btn.addEventListener('click', () => undangPic(rec, btn));
       nodes.push(btn);

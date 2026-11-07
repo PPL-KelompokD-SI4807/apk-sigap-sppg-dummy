@@ -9,7 +9,7 @@ import { GIZI, KELOMPOK, kelompokLabel, menuFields, menuDetailFields, mapPayload
 import { komposisiField } from './komposisi.js';
 import { statusBadges, persetujuanPanel, rincianBiayaScreen } from './persetujuan.js';
 import { route } from '../../core/router.js';
-import { userPerms } from '../../core/permissions.js';
+import { bolehAksi } from '../../core/permissions.js';
 import { getUser } from '../../core/auth.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
@@ -134,7 +134,7 @@ const menuModule = defineCrudModule({
 const menuDenganRincian = {
   ...menuModule,
   register() {
-    route('/menu-gizi/:id/rincian-biaya', rincianBiayaScreen, { title: 'Rincian Biaya Menu', guard: () => userPerms(getUser(), 'menu-gizi').R });
+    route('/menu-gizi/:id/rincian-biaya', rincianBiayaScreen, { title: 'Rincian Biaya Menu', guard: () => bolehAksi(getUser(), 'lihat_rincian_biaya') });
     menuModule.register();
   },
 };
