@@ -105,3 +105,11 @@ export function mutasiPayload(v) {
   if (base.jenis !== 'keluar') delete base.jadwal_produksi_id;
   return base;
 }
+
+/**
+ * Gating riwayat mutasi stok: kunci final `aksi.lihat_mutasi_stok` dari /auth/me (boleh: Admin, Kepala SPPG, Staf Gudang, Akuntan).
+ * FAIL CLOSED: panel Riwayat dirender hanya bila flag === true; tidak ada/bukan boolean true = tidak dirender.
+ * Aturan peran TIDAK dihitung di klien.
+ */
+export const KUNCI_RIWAYAT_MUTASI = 'lihat_mutasi_stok';
+export const bolehRiwayatMutasi = (user, aksiOpsionalFn) => aksiOpsionalFn(user, KUNCI_RIWAYAT_MUTASI) === true;

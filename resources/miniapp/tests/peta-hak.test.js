@@ -247,11 +247,11 @@ test('investor tanpa satu pun rute tulis (baru/ubah/mutasi/undangan)', () => {
 // ---------------------------------------------------------------------------------------------
 test('aksi di luar CRUD mengikuti aksi.* server per profil', () => {
   const harap = {
-    admin: ['undang_pengguna', 'reset_password_pengguna', 'kelola_kepemilikan_sppg', 'undang_pic', 'lihat_rincian_biaya', 'tindak_lanjut_keluhan', 'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi'],
-    kepala_sppg: ['undang_pic', 'lihat_rincian_biaya', 'picu_perjalanan', 'susun_rekap', 'kirim_ulang_rekap', 'tindak_lanjut_keluhan', 'lihat_ringkasan_jadwal_produksi'],
+    admin: ['undang_pengguna', 'reset_password_pengguna', 'kelola_kepemilikan_sppg', 'undang_pic', 'lihat_rincian_biaya', 'tindak_lanjut_keluhan', 'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi', 'lihat_mutasi_stok'],
+    kepala_sppg: ['lihat_mutasi_stok', 'undang_pic', 'lihat_rincian_biaya', 'picu_perjalanan', 'susun_rekap', 'kirim_ulang_rekap', 'tindak_lanjut_keluhan', 'lihat_ringkasan_jadwal_produksi'],
     ahli_gizi: ['ajukan_menu', 'lihat_rincian_biaya', 'tindak_lanjut_keluhan', 'lihat_ringkasan_jadwal_produksi'],
-    akuntan: [],
-    staf_gudang: ['lihat_rincian_biaya', 'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi'],
+    akuntan: ['lihat_mutasi_stok'],
+    staf_gudang: ['lihat_mutasi_stok', 'lihat_rincian_biaya', 'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi'],
     relawan_dapur: ['lihat_ringkasan_jadwal_produksi'],
     relawan_distribusi: ['picu_perjalanan', 'lihat_ringkasan_jadwal_produksi'],
     relawan_tanpa_unit: [],

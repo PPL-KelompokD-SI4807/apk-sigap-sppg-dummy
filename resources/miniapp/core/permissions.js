@@ -22,6 +22,7 @@ export const KUNCI_AKSI = [
   'undang_pengguna', 'reset_password_pengguna', 'kelola_kepemilikan_sppg', 'undang_pic', 'ajukan_menu',
   'lihat_rincian_biaya', 'picu_perjalanan', 'susun_rekap', 'kirim_ulang_rekap', 'tindak_lanjut_keluhan',
   'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi',
+  'lihat_mutasi_stok',
 ];
 
 const NONE = Object.freeze({ C: false, R: false, U: false, D: false, selfOnly: false });
@@ -80,6 +81,16 @@ export function userPerms(user, slug) {
 export function bolehAksi(user, kunci) {
   const p = petaHak(user);
   return !!p && KUNCI_AKSI.includes(kunci) && p.aksi[kunci] === true;
+}
+
+/**
+ * Flag `aksi` OPSIONAL (belum tentu dikirim server): boolean bila server mengirimnya, selain itu null.
+ * Beda dengan bolehAksi: kunci tak ada TIDAK berarti ditolak, supaya fitur lama tidak hilang sebelum server siap.
+ * Pemanggil yang memakai ini wajib menaati nilai false (tombol/panel tidak ada).
+ */
+export function aksiOpsional(user, kunci) {
+  const v = petaHak(user)?.aksi?.[kunci];
+  return typeof v === 'boolean' ? v : null;
 }
 
 /** Kartu/rute Dashboard: hanya bila server menyatakan tersedia (relawan tanpa unit = false). */
