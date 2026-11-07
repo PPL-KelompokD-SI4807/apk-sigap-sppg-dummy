@@ -80,7 +80,7 @@ schemas:
       status_label: { type: string }
       layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
       catatan: { type: [string, 'null'] }
-      izin: { $ref: '#/components/schemas/IzinUbahHapus' }
+      izin: { $ref: '#/components/schemas/IzinJadwalDistribusi' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   JadwalDistribusiInput:

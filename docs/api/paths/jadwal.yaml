@@ -111,7 +111,8 @@
     description: |
       Hak R pada jadwal distribusi (relawan unit distribusi dan peran non-relawan). Filter: `status`,
       `tanggal`, `from`/`to` (tanggal_distribusi), `jadwal_produksi_id`, `titik_layanan_id`, `armada_id`,
-      `pengemudi_id`, `sppg_id` (Admin).
+      `pengemudi_id`, `sppg_id` (Admin). Tiap baris memuat `izin.catat_bukti` (boleh mencatat bukti distribusi untuk
+      jadwal itu; relawan tidak melihat tombol/pilihan untuk jadwal petugas lain). Tidak ada query per baris.
     parameters:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'

@@ -87,12 +87,23 @@ selalu 403; `true` tidak pernah 403; `false` karena keadaan tidak pernah sukses 
 | Resource | `izin` | Hak | Keadaan atribut (ikut dihitung) | Hanya service (tidak ikut) |
 |---|---|---|---|---|
 | `GET /jadwal` (produksi) | `{ubah, hapus}` | Policy update/delete | `hapus`: status direncanakan/dibatalkan | `hapus`: sudah ada log/distribusi aktif; `ubah`: field terkunci setelah berjalan |
-| `GET /jadwal/distribusi` | `{ubah, hapus}` | Policy update/delete | `hapus`: status menunggu/siap/dibatalkan | `hapus`: sudah ada bukti distribusi; `ubah`: field terkunci setelah berangkat |
+| `GET /jadwal/distribusi` | `{ubah, hapus, catat_bukti}` | update/delete; `catat_bukti`: Policy create bukti di SPPG jadwal (`AturanCatatBukti`, sumber tunggal yang sama dengan `POST /bukti-distribusi`) | `hapus`: status menunggu/siap/dibatalkan; `catat_bukti`: relawan hanya jadwal tanpa petugas atau miliknya (`petugas_id`) dan `tanggal_distribusi` = hari ini WIB, status bukan menunggu/dibatalkan, gerbang mutu Layak (dari relasi yang sudah dimuat) | `hapus`: sudah ada bukti distribusi; `ubah`: field terkunci setelah berangkat; `catat_bukti`: jadwal sudah punya bukti (422) |
 | `GET /log-produksi` | `{ubah, hapus}` | Policy update/delete | (tidak ada) | (tidak ada) |
 | `GET /bukti-distribusi` | `{ubah, hapus}` | Policy update/delete | (tidak ada) | (tidak ada) |
 | `GET /pembelian-bahan` | `{ubah, hapus, lampirkan, verifikasi}` | update, `lampirkan`, `verifikasi` (akuntan SPPG sama, bukan pencatat); `hapus` selalu false (tidak ada endpoint) | `ubah`/`lampirkan` false bila `terverifikasi`; `verifikasi` hanya status `diajukan` | versi konflik (409) |
 | `GET /keuangan/pengeluaran` | `{ubah, hapus, lampirkan, putuskan}` | update/delete, `lampirkan`, `putuskan` (investor pemilik SPPG aktif) | `ubah`/`hapus`/`lampirkan` false bila `pembelian_bahan_id` terisi; `lampirkan` juga false bila `disetujui`; `putuskan` hanya status `diajukan` | versi konflik (409), pengajuan tidak ada |
 | `GET /notifikasi-perjalanan` | `{ubah_status}` | `ubahStatus` (hak C modul, relawan hanya miliknya) | false bila perjalanan sudah tiba/dibatalkan | transisi tidak valid (422) |
+
+Contoh `izin.catat_bukti` (relawan distribusi; baris 51 ditugaskan ke petugas lain, baris 52 miliknya, baris 53 tanggal kemarin):
+
+```json
+{ "id": 51, "petugas_id": 9, "status": "siap", "izin": { "ubah": false, "hapus": false, "catat_bukti": false } }
+{ "id": 52, "petugas_id": 7, "status": "siap", "izin": { "ubah": false, "hapus": false, "catat_bukti": true } }
+{ "id": 53, "petugas_id": null, "tanggal_distribusi": "2026-11-01", "status": "siap", "izin": { "ubah": false, "hapus": false, "catat_bukti": false } }
+```
+
+Dropdown jadwal pada form Bukti Distribusi cukup memfilter `izin.catat_bukti === true` (jangan menyimpulkan dari `petugas_id`).
+Peran tanpa hak C `bukti-distribusi` (admin, ahli_gizi, akuntan, staf_gudang, investor, relawan dapur/tanpa unit) selalu `false`.
 
 Klien tidak boleh menyimpulkan HAK dari peran/ID; klien boleh tetap memakai `status` record untuk keadaan relasional di atas.
 

@@ -1,0 +1,500 @@
+{
+    "admin": {
+        "unit_scope": {},
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": true,
+            "catat_mutasi_stok": true,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "admin"
+            },
+            "kelola_kepemilikan_sppg": true,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": true,
+            "lihat_ringkasan_jadwal_produksi": true,
+            "picu_perjalanan": false,
+            "reset_password_pengguna": true,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": true,
+            "undang_pengguna": true,
+            "undang_pic": true
+        },
+        "baca_saja": false,
+        "keputusan": [],
+        "modules": [
+            "armada",
+            "bahan-baku",
+            "bukti-distribusi",
+            "jadwal",
+            "keluhan",
+            "keuangan",
+            "log-produksi",
+            "menu-gizi",
+            "mutu",
+            "notifikasi-perjalanan",
+            "pemasok",
+            "pembelian-bahan",
+            "penerima-manfaat",
+            "pengguna",
+            "persetujuan-menu",
+            "rekap-harian",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "armada": "CRUD",
+            "bahan-baku": "CRUD",
+            "bukti-distribusi": "R",
+            "jadwal": "R",
+            "keluhan": "CRUD",
+            "keuangan": "R",
+            "log-produksi": "R",
+            "menu-gizi": "R",
+            "mutu": "R",
+            "notifikasi-perjalanan": "R",
+            "pemasok": "CRUD",
+            "pembelian-bahan": "R",
+            "penerima-manfaat": "CRUD",
+            "pengguna": "CRUD",
+            "persetujuan-menu": "R",
+            "rekap-harian": "R",
+            "sppg": "CRUD",
+            "titik-layanan": "CRUD"
+        },
+        "role": "admin",
+        "unit": null
+    },
+    "kepala_sppg": {
+        "unit_scope": {},
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": false,
+            "catat_mutasi_stok": false,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "kepala_sppg"
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": true,
+            "lihat_rincian_biaya": true,
+            "lihat_ringkasan_jadwal_produksi": true,
+            "picu_perjalanan": true,
+            "reset_password_pengguna": false,
+            "susun_rekap": true,
+            "tindak_lanjut_keluhan": true,
+            "undang_pengguna": false,
+            "undang_pic": true
+        },
+        "baca_saja": false,
+        "keputusan": [],
+        "modules": [
+            "armada",
+            "bahan-baku",
+            "bukti-distribusi",
+            "jadwal",
+            "keluhan",
+            "keuangan",
+            "log-produksi",
+            "menu-gizi",
+            "mutu",
+            "notifikasi-perjalanan",
+            "pemasok",
+            "pembelian-bahan",
+            "penerima-manfaat",
+            "pengguna",
+            "persetujuan-menu",
+            "rekap-harian",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "armada": "CRUD",
+            "bahan-baku": "R",
+            "bukti-distribusi": "CRUD",
+            "jadwal": "CRUD",
+            "keluhan": "RU",
+            "keuangan": "R",
+            "log-produksi": "RUD",
+            "menu-gizi": "R",
+            "mutu": "R",
+            "notifikasi-perjalanan": "CR",
+            "pemasok": "R",
+            "pembelian-bahan": "R",
+            "penerima-manfaat": "CRU",
+            "pengguna": "R",
+            "persetujuan-menu": "R",
+            "rekap-harian": "CRU",
+            "sppg": "RU",
+            "titik-layanan": "CRUD"
+        },
+        "role": "kepala_sppg",
+        "unit": null
+    },
+    "ahli_gizi": {
+        "unit_scope": {},
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": true,
+            "catat_harga_pemasok": false,
+            "catat_mutasi_stok": false,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "ahli_gizi"
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": true,
+            "lihat_ringkasan_jadwal_produksi": true,
+            "picu_perjalanan": false,
+            "reset_password_pengguna": false,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": true,
+            "undang_pengguna": false,
+            "undang_pic": false
+        },
+        "baca_saja": false,
+        "keputusan": [],
+        "modules": [
+            "bahan-baku",
+            "bukti-distribusi",
+            "jadwal",
+            "keluhan",
+            "log-produksi",
+            "menu-gizi",
+            "mutu",
+            "pemasok",
+            "penerima-manfaat",
+            "pengguna",
+            "persetujuan-menu",
+            "rekap-harian",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "bahan-baku": "R",
+            "bukti-distribusi": "R",
+            "jadwal": "CRU",
+            "keluhan": "RU",
+            "log-produksi": "R",
+            "menu-gizi": "CRUD",
+            "mutu": "CRUD",
+            "pemasok": "R",
+            "penerima-manfaat": "R",
+            "pengguna": "R*",
+            "persetujuan-menu": "CR",
+            "rekap-harian": "R",
+            "sppg": "R",
+            "titik-layanan": "R"
+        },
+        "role": "ahli_gizi",
+        "unit": null
+    },
+    "akuntan": {
+        "unit_scope": {},
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": false,
+            "catat_mutasi_stok": false,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "akuntan"
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": false,
+            "lihat_ringkasan_jadwal_produksi": false,
+            "picu_perjalanan": false,
+            "reset_password_pengguna": false,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": false,
+            "undang_pengguna": false,
+            "undang_pic": false
+        },
+        "baca_saja": false,
+        "keputusan": [
+            "pembelian-bahan"
+        ],
+        "modules": [
+            "armada",
+            "bahan-baku",
+            "bukti-distribusi",
+            "keuangan",
+            "log-produksi",
+            "pemasok",
+            "pembelian-bahan",
+            "pengguna",
+            "rekap-harian",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "armada": "R",
+            "bahan-baku": "R",
+            "bukti-distribusi": "R",
+            "keuangan": "CRUD",
+            "log-produksi": "R",
+            "pemasok": "R",
+            "pembelian-bahan": "R",
+            "pengguna": "R*",
+            "rekap-harian": "R",
+            "sppg": "R",
+            "titik-layanan": "R"
+        },
+        "role": "akuntan",
+        "unit": null
+    },
+    "staf_gudang": {
+        "unit_scope": {},
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": true,
+            "catat_mutasi_stok": true,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "staf_gudang"
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": true,
+            "lihat_ringkasan_jadwal_produksi": true,
+            "picu_perjalanan": false,
+            "reset_password_pengguna": false,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": false,
+            "undang_pengguna": false,
+            "undang_pic": false
+        },
+        "baca_saja": false,
+        "keputusan": [],
+        "modules": [
+            "bahan-baku",
+            "jadwal",
+            "log-produksi",
+            "menu-gizi",
+            "pemasok",
+            "pembelian-bahan",
+            "pengguna",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "bahan-baku": "CRUD",
+            "jadwal": "R",
+            "log-produksi": "R",
+            "menu-gizi": "R",
+            "pemasok": "CRU",
+            "pembelian-bahan": "CRU",
+            "pengguna": "R*",
+            "sppg": "R",
+            "titik-layanan": "R"
+        },
+        "role": "staf_gudang",
+        "unit": null
+    },
+    "relawan_dapur": {
+        "unit_scope": {
+            "jadwal": "produksi"
+        },
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": false,
+            "catat_mutasi_stok": false,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "relawan_dapur"
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": false,
+            "lihat_ringkasan_jadwal_produksi": true,
+            "picu_perjalanan": false,
+            "reset_password_pengguna": false,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": false,
+            "undang_pengguna": false,
+            "undang_pic": false
+        },
+        "baca_saja": false,
+        "keputusan": [],
+        "modules": [
+            "armada",
+            "jadwal",
+            "keluhan",
+            "log-produksi",
+            "menu-gizi",
+            "mutu",
+            "pengguna",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "armada": "R",
+            "jadwal": "CRU",
+            "keluhan": "CR",
+            "log-produksi": "CRU",
+            "menu-gizi": "R",
+            "mutu": "R",
+            "pengguna": "R*",
+            "sppg": "R",
+            "titik-layanan": "R"
+        },
+        "role": "relawan",
+        "unit": "dapur"
+    },
+    "relawan_distribusi": {
+        "unit_scope": {
+            "jadwal": "distribusi"
+        },
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": false,
+            "catat_mutasi_stok": false,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "relawan_distribusi"
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": false,
+            "lihat_ringkasan_jadwal_produksi": true,
+            "picu_perjalanan": true,
+            "reset_password_pengguna": false,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": false,
+            "undang_pengguna": false,
+            "undang_pic": false
+        },
+        "baca_saja": false,
+        "keputusan": [],
+        "modules": [
+            "armada",
+            "bukti-distribusi",
+            "jadwal",
+            "keluhan",
+            "menu-gizi",
+            "mutu",
+            "notifikasi-perjalanan",
+            "pengguna",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "armada": "R",
+            "bukti-distribusi": "CRU",
+            "jadwal": "CRU",
+            "keluhan": "CR",
+            "menu-gizi": "R",
+            "mutu": "R",
+            "notifikasi-perjalanan": "CR",
+            "pengguna": "R*",
+            "sppg": "R",
+            "titik-layanan": "R"
+        },
+        "role": "relawan",
+        "unit": "distribusi"
+    },
+    "relawan_tanpa_unit": {
+        "unit_scope": {},
+        "agregat": [],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": false,
+            "catat_mutasi_stok": false,
+            "dashboard": {
+                "tersedia": false,
+                "profil": null
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": false,
+            "lihat_ringkasan_jadwal_produksi": false,
+            "picu_perjalanan": false,
+            "reset_password_pengguna": false,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": false,
+            "undang_pengguna": false,
+            "undang_pic": false
+        },
+        "baca_saja": false,
+        "keputusan": [],
+        "modules": [
+            "armada",
+            "keluhan",
+            "menu-gizi",
+            "mutu",
+            "pengguna",
+            "sppg",
+            "titik-layanan"
+        ],
+        "permissions": {
+            "armada": "R",
+            "keluhan": "CR",
+            "menu-gizi": "R",
+            "mutu": "R",
+            "pengguna": "R*",
+            "sppg": "R",
+            "titik-layanan": "R"
+        },
+        "role": "relawan",
+        "unit": null
+    },
+    "investor": {
+        "unit_scope": {},
+        "agregat": [
+            "penerima-manfaat"
+        ],
+        "aksi": {
+            "ajukan_menu": false,
+            "catat_harga_pemasok": false,
+            "catat_mutasi_stok": false,
+            "dashboard": {
+                "tersedia": true,
+                "profil": "investor"
+            },
+            "kelola_kepemilikan_sppg": false,
+            "kirim_ulang_rekap": false,
+            "lihat_rincian_biaya": false,
+            "lihat_ringkasan_jadwal_produksi": false,
+            "picu_perjalanan": false,
+            "reset_password_pengguna": false,
+            "susun_rekap": false,
+            "tindak_lanjut_keluhan": false,
+            "undang_pengguna": false,
+            "undang_pic": false
+        },
+        "baca_saja": true,
+        "keputusan": [
+            "persetujuan-menu",
+            "keuangan"
+        ],
+        "modules": [
+            "bahan-baku",
+            "keluhan",
+            "keuangan",
+            "mutu",
+            "pengguna",
+            "persetujuan-menu",
+            "rekap-harian",
+            "sppg"
+        ],
+        "permissions": {
+            "bahan-baku": "R",
+            "keluhan": "R",
+            "keuangan": "R",
+            "mutu": "R",
+            "pengguna": "R*",
+            "persetujuan-menu": "R",
+            "rekap-harian": "R",
+            "sppg": "R"
+        },
+        "role": "investor",
+        "unit": null
+    }
+}

@@ -5,6 +5,8 @@ namespace App\Http\Resources\Jadwal;
 use App\Enums\HasilMutu;
 use App\Enums\StatusJadwalDistribusi;
 use App\Models\JadwalDistribusi;
+use App\Models\User;
+use App\Services\Distribusi\AturanCatatBukti;
 use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -65,7 +67,8 @@ class JadwalDistribusiResource extends JsonResource
     }
 
     /**
-     * Hak (Policy) DAN keadaan dari atribut record: distribusi hanya dapat dihapus pada status menunggu/siap/dibatalkan.
+     * Hak (Policy) DAN keadaan dari atribut record: distribusi hanya dapat dihapus pada status menunggu/siap/dibatalkan;
+     * `catat_bukti` = boleh POST bukti untuk jadwal ini.
      * Syarat relasional (sudah ada bukti distribusi) butuh query dan tetap ditegakkan service (422).
      *
      * @return array<string, bool>
@@ -74,7 +77,33 @@ class JadwalDistribusiResource extends JsonResource
     {
         $izin = PetaHak::izin($request->user(), $d, ['ubah' => 'update', 'hapus' => 'delete']);
         $izin['hapus'] = $izin['hapus'] && in_array($d->status, [StatusJadwalDistribusi::Menunggu, StatusJadwalDistribusi::Siap, StatusJadwalDistribusi::Dibatalkan], true);
+        $izin['catat_bukti'] = $this->bolehCatatBukti($request->user(), $d);
 
         return $izin;
+    }
+
+    /**
+     * Aturan SAMA dengan penegakan POST /bukti-distribusi (AturanCatatBukti: hak, petugas, hari ini, status, gerbang mutu).
+     * Gerbang mutu dibaca dari relasi `jadwalProduksi.pemeriksaanTerbaru` yang sudah di-eager-load (tanpa query per baris,
+     * produksi terhapus lunak ikut dimuat seperti di service). GAGAL TERTUTUP: bila relasi tidak dimuat atau batch tidak
+     * ada, hasilnya false (tombol tersembunyi; server tetap menegakkan).
+     */
+    private function bolehCatatBukti(?User $pengguna, JadwalDistribusi $d): bool
+    {
+        if ($pengguna === null) {
+            return false;
+        }
+
+        $layak = function () use ($d): bool {
+            if (! $d->relationLoaded('jadwalProduksi') || $d->jadwalProduksi === null) {
+                return false;
+            }
+
+            $produksi = $d->jadwalProduksi;
+
+            return $produksi->relationLoaded('pemeriksaanTerbaru') && $produksi->pemeriksaanTerbaru?->hasil === HasilMutu::Layak;
+        };
+
+        return AturanCatatBukti::boleh($pengguna, $d, $layak);
     }
 }
