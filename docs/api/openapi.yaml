@@ -1502,7 +1502,8 @@ paths:
       description: |
         Hak R pada jadwal distribusi (relawan unit distribusi dan peran non-relawan). Filter: `status`,
         `tanggal`, `from`/`to` (tanggal_distribusi), `jadwal_produksi_id`, `titik_layanan_id`, `armada_id`,
-        `pengemudi_id`, `sppg_id` (Admin).
+        `pengemudi_id`, `sppg_id` (Admin). Tiap baris memuat `izin.catat_bukti` (boleh mencatat bukti distribusi untuk
+        jadwal itu; relawan tidak melihat tombol/pilihan untuk jadwal petugas lain). Tidak ada query per baris.
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -4847,6 +4848,21 @@ components:
       properties:
         ubah: { type: boolean }
         hapus: { type: boolean }
+    IzinJadwalDistribusi:
+      type: object
+      required: [ubah, hapus, catat_bukti]
+      description: |
+        Izin per jadwal distribusi. `ubah`/`hapus` = lihat IzinUbahHapus. `catat_bukti` = pengguna boleh `POST /bukti-distribusi`
+        untuk jadwal ini, dihitung dengan aturan SAMA dengan penegakan POST (`AturanCatatBukti`): hak Policy create bukti di
+        SPPG jadwal; relawan: jadwal tidak ditugaskan kepada petugas lain (`petugas_id` kosong atau dirinya) dan
+        `tanggal_distribusi` = hari ini (WIB); status bukan `menunggu`/`dibatalkan`; gerbang mutu batch produksi Layak
+        (dibaca dari relasi yang sudah dimuat, tanpa query per baris; relasi tak dimuat = false, gagal tertutup). `true` = POST bukan 403 (bukan jaminan sukses: jadwal
+        yang sudah punya bukti tetap 422); `false` = POST ditolak (403/422). Klien memakainya untuk memfilter dropdown jadwal
+        pada form Bukti Distribusi.
+      properties:
+        ubah: { type: boolean }
+        hapus: { type: boolean }
+        catat_bukti: { type: boolean }
     IzinPembelianBahan:
       type: object
       required: [ubah, hapus, lampirkan, verifikasi]
@@ -6172,7 +6188,7 @@ components:
         status_label: { type: string }
         layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
         catatan: { type: [string, 'null'] }
-        izin: { $ref: '#/components/schemas/IzinUbahHapus' }
+        izin: { $ref: '#/components/schemas/IzinJadwalDistribusi' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     JadwalDistribusiInput:

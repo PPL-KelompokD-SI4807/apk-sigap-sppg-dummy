@@ -70,11 +70,11 @@ class PetaHakIzinRecordTest extends PetaHakTestCase
         $kemarin = JadwalDistribusi::factory()->create(['sppg_id' => $this->sppgA, 'dibuat_oleh' => $this->relawanDistribusiA->id, 'created_at' => $this->kemarin()]);
         $kepala = JadwalDistribusi::factory()->create(['sppg_id' => $this->sppgA, 'dibuat_oleh' => $this->kepalaA->id]);
 
-        $this->assertSame(['ubah' => true, 'hapus' => false], $this->izinDetail($this->relawanDistribusiA, "/api/v1/jadwal/distribusi/{$hariIni->id}"));
-        $this->assertSame(['ubah' => false, 'hapus' => false], $this->izinDetail($this->relawanDistribusiA, "/api/v1/jadwal/distribusi/{$kemarin->id}"));
-        $this->assertSame(['ubah' => false, 'hapus' => false], $this->izinDetail($this->relawanDistribusiA, "/api/v1/jadwal/distribusi/{$kepala->id}"));
-        $this->assertSame(['ubah' => true, 'hapus' => true], $this->izinDetail($this->kepalaA, "/api/v1/jadwal/distribusi/{$kemarin->id}"));
-        $this->assertSame(['ubah' => false, 'hapus' => false], $this->izinDetail($this->stafGudangA, "/api/v1/jadwal/distribusi/{$kemarin->id}"));
+        $this->assertSame(['ubah' => true, 'hapus' => false, 'catat_bukti' => false], $this->izinDetail($this->relawanDistribusiA, "/api/v1/jadwal/distribusi/{$hariIni->id}"));
+        $this->assertSame(['ubah' => false, 'hapus' => false, 'catat_bukti' => false], $this->izinDetail($this->relawanDistribusiA, "/api/v1/jadwal/distribusi/{$kemarin->id}"));
+        $this->assertSame(['ubah' => false, 'hapus' => false, 'catat_bukti' => false], $this->izinDetail($this->relawanDistribusiA, "/api/v1/jadwal/distribusi/{$kepala->id}"));
+        $this->assertSame(['ubah' => true, 'hapus' => true, 'catat_bukti' => false], $this->izinDetail($this->kepalaA, "/api/v1/jadwal/distribusi/{$kemarin->id}"));
+        $this->assertSame(['ubah' => false, 'hapus' => false, 'catat_bukti' => false], $this->izinDetail($this->stafGudangA, "/api/v1/jadwal/distribusi/{$kemarin->id}"));
 
         // Relawan dapur tidak mengelola jadwal distribusi.
         $this->masuk($this->relawanA)->getJson("/api/v1/jadwal/distribusi/{$hariIni->id}")->assertForbidden();
