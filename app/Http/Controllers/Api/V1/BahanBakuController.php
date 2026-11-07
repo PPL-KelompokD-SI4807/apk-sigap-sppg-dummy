@@ -145,7 +145,7 @@ class BahanBakuController extends ApiController
 
     public function mutasi(Request $request, BahanBaku $bahanBaku): AnonymousResourceCollection
     {
-        $this->authorize('view', $bahanBaku);
+        $this->authorize('lihatMutasi', $bahanBaku);
 
         $query = MutasiStok::query()->where('bahan_baku_id', $bahanBaku->id)->with(['pemasok:id,nama', 'pencatat:id,name']);
 

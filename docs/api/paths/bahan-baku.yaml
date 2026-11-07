@@ -172,7 +172,10 @@
   get:
     tags: [Bahan Baku]
     summary: Riwayat mutasi stok bahan
-    description: Hak R. Filter `jenis`, `from`/`to` (tanggal_mutasi).
+    description: |
+      Hak aksi `aksi.lihat_mutasi_stok` (BahanBakuPolicy::lihatMutasi): admin, kepala_sppg, staf_gudang, akuntan
+      (R modul bahan-baku + SPPG sama). ahli_gizi dan investor 403 walau boleh R daftar/detail bahan baku; relawan 403.
+      Filter `jenis`, `from`/`to` (tanggal_mutasi).
     parameters:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'

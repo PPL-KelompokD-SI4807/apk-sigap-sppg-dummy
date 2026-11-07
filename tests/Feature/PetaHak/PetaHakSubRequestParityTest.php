@@ -54,6 +54,7 @@ class PetaHakSubRequestParityTest extends PetaHakTestCase
             'catat_mutasi_stok' => fn () => $this->postJson("/api/v1/bahan-baku/{$this->berasA->id}/mutasi", []),
             'catat_harga_pemasok' => fn () => $this->postJson("/api/v1/pemasok/{$this->pemasokA->id}/harga", []),
             'lihat_ringkasan_jadwal_produksi' => fn () => $this->getJson('/api/v1/jadwal/produksi-ringkas'),
+            'lihat_mutasi_stok' => fn () => $this->getJson("/api/v1/bahan-baku/{$this->berasA->id}/mutasi"),
         ];
     }
 
@@ -92,7 +93,7 @@ class PetaHakSubRequestParityTest extends PetaHakTestCase
             }
         }
 
-        $this->assertSame(9 * 13, $diperiksa);
+        $this->assertSame(9 * 14, $diperiksa);
     }
 
     private function panggilResetPassword(User $user): TestResponse

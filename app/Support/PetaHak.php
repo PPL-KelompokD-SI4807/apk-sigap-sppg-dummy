@@ -40,6 +40,7 @@ final class PetaHak
         'catat_mutasi_stok',
         'catat_harga_pemasok',
         'lihat_ringkasan_jadwal_produksi',
+        'lihat_mutasi_stok',
     ];
 
     /**
@@ -93,6 +94,7 @@ final class PetaHak
         $hasil['catat_mutasi_stok'] = $gate->allows('update', $probe(BahanBaku::class));
         $hasil['catat_harga_pemasok'] = $gate->allows('catatHarga', $probe(Pemasok::class));
         $hasil['lihat_ringkasan_jadwal_produksi'] = $gate->allows('viewRingkas', JadwalProduksi::class);
+        $hasil['lihat_mutasi_stok'] = $gate->allows('lihatMutasi', $probe(BahanBaku::class));
 
         $tersedia = RingkasanDashboard::tersediaUntuk($user);
         $hasil['dashboard'] = ['tersedia' => $tersedia, 'profil' => $tersedia ? DashboardService::profilDari($user) : null];
