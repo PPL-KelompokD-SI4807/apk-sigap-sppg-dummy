@@ -10,6 +10,9 @@ use App\Services\Ai\ActingUser;
 use App\Services\Ai\Eksekusi\AiDraftExecutor;
 use App\Services\Ai\Eksekusi\HasilEksekusi;
 use App\Services\Ai\Eksekusi\RingkasanDraf;
+use App\Services\Ai\Referensi\HasilPilihan;
+use App\Services\Ai\Referensi\PilihanReferensiDraf;
+use App\Services\Ai\Referensi\ResolverReferensi;
 use App\Services\Ai\Tools\WriteDraftTool;
 use App\Services\Telegram\TelegramBotService;
 use App\Services\Telegram\TelegramUpdateHandler;
@@ -28,6 +31,8 @@ use Throwable;
  * - Lanjutkan hanya tampil bila draf dapat dijalankan dari chat (rute REST, tanpa berkas, isian lolos Form Request dan
  *   tidak berkeyakinan rendah); selain itu hanya Ubah (Mini App ?draft=) + Batal.
  * - Balasan teks/suara "ya/oke/lanjut" tidak pernah menjalankan apa pun: hanya callback tombol sah.
+ * - Rujukan nama ambigu (mis. dua bahan "Ayam"): layar PILIHAN `ai_pilih` lebih dulu; memilih hanya mengubah payload
+ *   draf (PilihanReferensiDraf), lalu layar konfirmasi/pratinjau biasa.
  */
 class BotAksiAiService
 {
@@ -47,26 +52,39 @@ class BotAksiAiService
 
     public const MAKS_TRANSKRIP = 300;
 
+    public const LABEL_PERIKSA = 'Periksa & Simpan';
+
     public function __construct(
         private readonly AiDraftExecutor $executor,
         private readonly BotAksiService $aksi,
         private readonly TelegramBotService $bot,
+        private readonly PilihanReferensiDraf $pilihan,
     ) {}
 
     public static function milik(?string $jenis): bool
     {
-        return in_array($jenis, [BotAksi::JENIS_AI_LANJUT, BotAksi::JENIS_AI_YAKIN, BotAksi::JENIS_AI_BATAL], true);
+        return in_array($jenis, [BotAksi::JENIS_AI_LANJUT, BotAksi::JENIS_AI_YAKIN, BotAksi::JENIS_AI_BATAL, BotAksi::JENIS_AI_PILIH], true);
     }
 
     /**
      * Layar konfirmasi untuk draf yang tool-nya punya eksekusi(); null = draf memakai jalur lama (tombol web_app
      * "Periksa & Simpan"). Dipanggil tepat setelah Agen AI membuat draf, di chat pribadi pemilik.
+     * Draf dengan rujukan nama ambigu -> layar PILIHAN (tombol per kandidat) lebih dulu; draf tool berujukan tanpa
+     * eksekusi chat (mis. menu) -> layar PRATINJAU (ringkasan server + Periksa & Simpan + Batal).
      */
     public function layarKonfirmasi(User $user, int $chatId, AiDraft $draft, ?string $transkrip = null, ?string $catatan = null): ?BotLayar
     {
+        if (PilihanReferensiDraf::tertunda($draft) !== []) {
+            return $this->layarPilihan($user, $chatId, $draft, $catatan);
+        }
+
         $tool = $this->executor->toolUntuk($draft);
 
-        if ($tool === null || (int) $draft->user_id !== (int) $user->getKey() || $user->telegram_id === null) {
+        if ($tool === null) {
+            return $this->layarPratinjau($user, $chatId, $draft, $catatan);
+        }
+
+        if ((int) $draft->user_id !== (int) $user->getKey() || $user->telegram_id === null) {
             return null;
         }
 
@@ -159,6 +177,10 @@ class BotAksiAiService
             return ['hasil' => 'batal', 'layar' => new BotLayar('Dibatalkan. Tidak ada perubahan data.', null, true, true), 'rahasia' => null];
         }
 
+        if ($token->jenis === BotAksi::JENIS_AI_PILIH) {
+            return $this->tanganiPilihan($user, $draftId, (int) $token->subjek_versi, $chatId);
+        }
+
         // Judul/target untuk layar hasil diambil SEBELUM eksekusi (target hapus tidak ada lagi sesudahnya).
         $draft = AiDraft::query()->withoutGlobalScopes()->find($draftId);
         $tool = $draft === null ? null : $this->executor->toolUntuk($draft);
@@ -194,6 +216,144 @@ class BotAksiAiService
                 ? 'Undangan sempat dibuat, tetapi tautannya gagal dikirim ke chat ini. Demi keamanan undangan tersebut sudah DICABUT otomatis. Ulangi permintaan Anda untuk membuat tautan baru.'
                 : 'Aksi sudah dijalankan, tetapi tautan gagal dikirim dan tidak dapat dicabut otomatis. Cabut undangan tersebut di Mini App (Pengguna > Undangan), lalu buat ulang.'),
         ];
+    }
+
+    /**
+     * Layar PILIHAN rujukan ambigu (slot pertama): satu tombol `ai_pilih` per kandidat (nama + satuan + ID dari basis data
+     * SPPG pengguna, escape HTML), + Batal + Ubah di Mini App. Semua tombol satu grup (sekali pakai per layar); makna
+     * tombol (draf + slot + posisi kandidat) hanya di baris bot_aksi dan diverifikasi ulang saat ditekan (PilihanReferensiDraf).
+     */
+    public function layarPilihan(User $user, int $chatId, AiDraft $draft, ?string $catatan = null): ?BotLayar
+    {
+        if ((int) $draft->user_id !== (int) $user->getKey() || $user->telegram_id === null || ! $draft->bisaDikonfirmasi()
+            || ! ($this->pilihan->tool($draft)?->isAvailableFor($user) ?? false)) {
+            return null;
+        }
+
+        $tampil = $this->pilihan->berikut($user, $draft);
+
+        if ($tampil === null) {
+            return null;
+        }
+
+        $jenis = $tampil['jenis'];
+        $slot = $tampil['slot'];
+        $sisa = count(PilihanReferensiDraf::tertunda($draft)) - 1;
+        $isi = ['<b>'.self::e(WriteDraftTool::satuBaris('Pilih '.$jenis->label.' untuk "'.$slot['dicari'].'"', 120)).'</b>'];
+        $isi[] = self::e(WriteDraftTool::satuBaris('Takaran: '.$tampil['keterangan'].'.', 120));
+        $isi[] = $tampil['kandidat'] === []
+            ? self::e('Data yang cocok sudah tidak tersedia. Lengkapi di Mini App atau ulangi permintaan.')
+            : self::e('Ada beberapa '.$jenis->label.' dengan nama mirip di SPPG Anda. Pilih yang dimaksud (sistem tidak menebak):');
+
+        if ($slot['lebih_banyak']) {
+            $isi[] = self::e('Ada lebih dari '.ResolverReferensi::MAKS_PILIHAN.' yang cocok. Bila tidak ada di daftar, tekan Batal lalu ulangi dengan nama yang lebih spesifik, atau pilih di Mini App.');
+        }
+
+        if ($sisa > 0) {
+            $isi[] = self::e('Setelah ini masih ada '.$sisa.' nama lain yang perlu dipilih.');
+        }
+
+        if ($catatan !== null) {
+            $isi[] = '';
+            $isi[] = self::e(WriteDraftTool::satuBaris($catatan, 300));
+        }
+
+        $isi[] = '';
+        $isi[] = 'Data BELUM berubah. Tombol berlaku sampai '.self::jam($draft->expires_at).' WIB.';
+
+        $grup = BotAksiService::grupBaru();
+        $opsi = $this->opsi($draft);
+        $keyboard = [];
+
+        foreach ($tampil['kandidat'] as $k) {
+            // subjek_versi = kode slot + posisi kandidat (PilihanReferensiDraf::kode): token tidak berlaku untuk slot lain.
+            $kode = PilihanReferensiDraf::kode($slot, $k->id);
+
+            if ($kode === null) {
+                continue;
+            }
+
+            $label = mb_substr($k->label(), 0, 50).' #'.$k->id;
+            $keyboard[] = [$this->aksi->tombol($label, $this->aksi->terbit($user, $chatId, BotAksi::JENIS_AI_PILIH, $opsi + ['subjek_versi' => $kode], $grup))];
+        }
+
+        $bawah = [$this->aksi->tombol(self::LABEL_BATAL, $this->aksi->terbit($user, $chatId, BotAksi::JENIS_AI_BATAL, $opsi, $grup))];
+        $ubah = TelegramBotService::webAppButton(self::LABEL_UBAH.' di Mini App', $this->bot->miniAppUrl(['draft' => $draft->uuid]));
+
+        if ($ubah !== null) {
+            $bawah[] = $ubah;
+        }
+
+        $keyboard[] = $bawah;
+
+        return new BotLayar(implode("\n", $isi), ['inline_keyboard' => $keyboard], true, true);
+    }
+
+    /**
+     * PRATINJAU draf tool berujukan yang hanya disimpan lewat Mini App (mis. menu): ringkasan server (nama + satuan bahan
+     * terpilih dari basis data) + "Periksa & Simpan" (web_app ?draft=) + Batal. Tidak ada tombol yang menyimpan data.
+     */
+    private function layarPratinjau(User $user, int $chatId, AiDraft $draft, ?string $catatan = null): ?BotLayar
+    {
+        $tool = $this->pilihan->tool($draft);
+
+        if ($tool === null || $tool->eksekusi() !== null || (int) $draft->user_id !== (int) $user->getKey() || $user->telegram_id === null
+            || ! $draft->bisaDikonfirmasi() || ! $tool->isAvailableFor($user)) {
+            return null;
+        }
+
+        $cek = ActingUser::run($user, fn () => $tool->revalidate($user, $draft));
+
+        if ($cek !== null && ! $cek->authorized) {
+            return null;
+        }
+
+        $isi = $this->isiRingkasan(ActingUser::run($user, fn () => $tool->ringkasan($user, $draft)), 'Pratinjau draf');
+        $galat = $cek === null ? [] : array_slice(array_values(array_filter(collect($cek->errors)->flatten()->all(), 'is_string')), 0, 3);
+
+        if ($galat !== []) {
+            $isi[] = '';
+            $isi[] = 'Perlu dilengkapi: '.self::e(WriteDraftTool::satuBaris(implode(' ', $galat), 300));
+        }
+
+        if ($catatan !== null) {
+            $isi[] = '';
+            $isi[] = self::e(WriteDraftTool::satuBaris($catatan, 300));
+        }
+
+        $isi[] = '';
+        $isi[] = 'Data BELUM disimpan. Tekan <b>'.self::e(self::LABEL_PERIKSA).'</b> untuk memeriksa dan menyimpan di Mini App, atau <b>Batal</b>. Tombol berlaku sampai '.self::jam($draft->expires_at).' WIB.';
+
+        $keyboard = [];
+        $periksa = TelegramBotService::webAppButton(self::LABEL_PERIKSA, $this->bot->miniAppUrl(['draft' => $draft->uuid]));
+
+        if ($periksa !== null) {
+            $keyboard[] = [$periksa];
+        }
+
+        $keyboard[] = [$this->aksi->tombol(self::LABEL_BATAL, $this->aksi->terbit($user, $chatId, BotAksi::JENIS_AI_BATAL, $this->opsi($draft), BotAksiService::grupBaru()))];
+
+        return new BotLayar(implode("\n", $isi), ['inline_keyboard' => $keyboard], true, true);
+    }
+
+    /** @return array{hasil: string, layar: BotLayar, rahasia: null} */
+    private function tanganiPilihan(User $user, int $draftId, int $kode, int $chatId): array
+    {
+        $hasil = $this->pilihan->pilih($user, $draftId, $kode);
+        $draft = $hasil->draft;
+
+        $layar = match ($hasil->kode) {
+            HasilPilihan::DIPILIH => $draft === null
+                ? $this->pesan(self::PESAN_TIDAK_BERLAKU)
+                : ($this->layarKonfirmasi($user, $chatId, $draft, null, 'Pilihan disimpan pada draf.') ?? $this->pesan('Pilihan disimpan pada draf. Periksa dan simpan draf di Mini App.')),
+            HasilPilihan::TIDAK_ADA, HasilPilihan::TIDAK_COCOK => $draft === null
+                ? $this->pesan(self::PESAN_TIDAK_BERLAKU)
+                : ($this->layarPilihan($user, $chatId, $draft, $hasil->pesan) ?? $this->pesan(($hasil->pesan ?? 'Pilihan tidak dapat dipakai.').' Lengkapi di Mini App.')),
+            HasilPilihan::DITOLAK => $this->pesan(self::PESAN_DITOLAK),
+            default => $this->pesan(self::PESAN_TIDAK_BERLAKU),
+        };
+
+        return ['hasil' => $hasil->kode, 'layar' => $layar, 'rahasia' => null];
     }
 
     private function layarHasil(User $user, int $chatId, HasilEksekusi $hasil, ?RingkasanDraf $ringkasan, ?WriteDraftTool $tool): BotLayar

@@ -56,6 +56,11 @@ class BotAksi extends Model
 
     public const JENIS_AI_BATAL = 'ai_batal';
 
+    // Pilihan rujukan ambigu pada draf Agen AI (mis. dua bahan "Ayam"): subjek = ai_draft, subjek_versi = kode slot +
+    // posisi kandidat (PilihanReferensiDraf::kode; ID kandidat diambil ulang dari draf, dicek SPPG pengguna). Hanya
+    // mengubah payload draf.
+    public const JENIS_AI_PILIH = 'ai_pilih';
+
     public const SUBJEK_AI_DRAFT = 'ai_draft';
 
     public const SUBJEK_MENU = 'pengajuan_menu';
