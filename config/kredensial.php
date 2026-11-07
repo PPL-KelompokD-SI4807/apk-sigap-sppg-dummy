@@ -7,11 +7,28 @@
 |
 | Lapis 1: initData Telegram -> token pra-login (ability auth:pra-login, umur pendek).
 | Lapis 2: username/no telepon + password (+ token 6 digit dari bot) -> token login penuh
-| (ability auth:penuh, tanpa kedaluwarsa; berakhir hanya karena logout/pencabutan).
-| Nilai di sini sengaja tidak dibaca dari env agar tidak dilonggarkan per server.
+| (ability auth:penuh, masa sesi bergeser + batas absolut, lihat 'sesi'; dicabut seketika saat
+| logout/pencabutan). Nilai di sini sengaja tidak dibaca dari env agar tidak dilonggarkan per
+| server, KECUALI 'sesi': env SIGAP_SESI_* hanya dapat MENGETATKAN. SesiService menjepit ke batas
+| keras di kode (absolut <= 180 hari, masa <= 90 hari, masa Admin <= 30 hari dan <= masa peran
+| biasa, masa <= absolut, maks 5 sesi); nilai lebih besar diabaikan.
 */
 
 return [
+    // Sesi login penuh (token Sanctum ability auth:penuh).
+    'sesi' => [
+        // Masa sesi bergeser (hari sejak terakhir dipakai). Maks keras 90; Admin maks keras 30.
+        'masa_hari' => (int) env('SIGAP_SESI_MASA_HARI', 90),
+        'masa_hari_admin' => (int) env('SIGAP_SESI_MASA_HARI_ADMIN', 30),
+        // Batas absolut (hari sejak login, = personal_access_tokens.created_at). Maks keras 180.
+        'batas_absolut_hari' => (int) env('SIGAP_SESI_BATAS_ABSOLUT_HARI', 180),
+        // Maks token login penuh (perangkat) per pengguna, maks keras 5; login baru melebihi batas
+        // mencabut sesi yang paling lama tidak dipakai.
+        'maks_per_pengguna' => (int) env('SIGAP_SESI_MAKS_PER_PENGGUNA', 5),
+        // Jeda minimum antar-penulisan last_used_at/expires_at per token (menit). Tidak dari env.
+        'perpanjang_tiap_menit' => 60,
+    ],
+
     // Umur token pra-login (menit). Hanya untuk rute login/aktivasi/reset/token.
     'pra_login_menit' => 15,
 

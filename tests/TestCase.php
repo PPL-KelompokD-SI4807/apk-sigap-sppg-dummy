@@ -26,7 +26,8 @@ abstract class TestCase extends BaseTestCase
      */
     protected function beriSesiPenuh(User $user, string $deviceId = 'perangkat-uji-aaaaaaaaaaaaaaaaaa'): string
     {
-        return app(SesiService::class)->terbitkanPenuh($user, SesiService::hashPerangkat($deviceId), 'Perangkat uji', null)['token'];
+        // Setara jalur token bot (perangkat diverifikasi sekarang).
+        return app(SesiService::class)->terbitkanPenuh($user, SesiService::hashPerangkat($deviceId), 'Perangkat uji', null, lewatTokenBot: true)['token'];
     }
 
     protected function setUp(): void

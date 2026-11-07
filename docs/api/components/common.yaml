@@ -155,11 +155,36 @@ parameters:
     schema: { type: string, format: date }
 responses:
   Unauthorized:
-    description: Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
+    description: |
+      Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
+      - Token dikenali tetapi masa sesinya habis: 90 hari tidak dipakai (Admin 30), 180 hari sejak login,
+        atau kepercayaan perangkatnya berakhir (180 hari sejak token bot terakhir, atau perangkat dicabut):
+        `alasan: sesi_kedaluwarsa` + header `WWW-Authenticate: Bearer error="invalid_token"`.
+      - Token tidak ada, tidak dikenal, atau dicabut: hanya `message` (tanpa `alasan`).
+      - `alasan: sesi_kedaluwarsa` hanya muncul selama baris token kedaluwarsa masih tersimpan. Token
+        yang expires_at-nya lewat > 24 jam dipangkas harian (`sanctum:prune-expired --hours=24`);
+        setelah itu token yang sama menghasilkan 401 umum tanpa `alasan`. Klien wajib memperlakukan
+        keduanya dengan alur ulang yang sama.
+      Klien: pada 401 dari rute data, buang token lalu POST /auth/telegram SEKALI dengan
+      Telegram.WebApp.initData dan device_id; ikuti `langkah`. initData TIDAK diperbarui selama Mini App
+      terbuka (nilainya tetap sejak Mini App dibuka) dan hanya sah TELEGRAM_INIT_DATA_MAX_AGE detik
+      (bawaan 3600) sejak auth_date. Bila /auth/telegram juga 401 (initData basi), minta pengguna menutup
+      lalu membuka ulang Mini App. Jangan mengulang lebih dari sekali.
+    headers:
+      WWW-Authenticate:
+        description: Hanya pada sesi_kedaluwarsa.
+        schema: { type: string, example: 'Bearer error="invalid_token"' }
     content:
       application/json:
-        schema: { $ref: '#/components/schemas/Error' }
-        example: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' }
+        schema:
+          type: object
+          required: [message]
+          properties:
+            message: { type: string }
+            alasan: { type: string, enum: [sesi_kedaluwarsa] }
+        examples:
+          umum: { value: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' } }
+          sesi_kedaluwarsa: { value: { message: 'Sesi Anda telah berakhir. Silakan masuk kembali.', alasan: sesi_kedaluwarsa } }
   Forbidden:
     description: |
       Peran tidak memiliki hak (Tabel 5), akun nonaktif, atau token bukan login penuh

@@ -152,6 +152,7 @@ schemas:
     required: [langkah, user]
     properties:
       langkah: { type: string, const: sesi_aktif }
+      expires_at: { type: string, format: date-time, description: 'Akhir masa sesi setelah digeser oleh pembukaan Mini App ini.' }
       user: { $ref: '#/components/schemas/AuthUser' }
   LoginPenuhResponse:
     type: object
@@ -159,10 +160,17 @@ schemas:
     properties:
       langkah: { type: string, const: selesai }
       tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi, reset_password] }
-      token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Simpan di localStorage perangkat ini.' }
+      token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Rahasia; jangan dicatat/dikirim ke pihak lain. Klien Mini App saat ini menyimpannya di sessionStorage (resources/miniapp/core/api.js), sehingga hilang saat Mini App ditutup; device_id disimpan di localStorage.' }
       token_type: { type: string, const: Bearer }
       token_jenis: { type: string, const: penuh }
-      expires_at: { type: 'null', description: 'Tidak kedaluwarsa; berakhir hanya karena logout/dicabut.' }
+      expires_at:
+        type: string
+        format: date-time
+        description: |
+          Akhir masa sesi awal = sekarang + 90 hari (Admin 30). Bergeser setiap kali token dipakai (ditulis
+          maks sekali per jam), tidak pernah melewati login + 180 hari maupun akhir kepercayaan perangkat
+          (token bot terakhir + 180 hari). Tetap dicabut seketika oleh logout,
+          perubahan peran/SPPG/status, hapus/pulih akun, perubahan password, atau batas 5 sesi.
       user: { $ref: '#/components/schemas/AuthUser' }
     example:
       langkah: selesai
@@ -170,7 +178,7 @@ schemas:
       token: '52|penuhQ8Vx...'
       token_type: Bearer
       token_jenis: penuh
-      expires_at: null
+      expires_at: '2027-01-24T07:30:00+07:00'
       user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 1, sppg_name: SPPG Sukamaju, telegram_username: siti_rahayu, last_login_at: '2026-10-26T07:30:00+07:00', modules: [sppg, jadwal], permissions: { sppg: RU, jadwal: CRUD } }
   TantanganResponse:
     type: object
@@ -214,13 +222,14 @@ schemas:
           sppg_id: { type: [integer, 'null'] }
   Sesi:
     type: object
-    required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, diverifikasi_pada, sesi_ini]
+    required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
     properties:
       id: { type: integer }
       perangkat: { type: [string, 'null'], description: 'label_perangkat saat login.' }
       dibuat_pada: { type: [string, 'null'], format: date-time }
-      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time }
-      diverifikasi_pada: { type: [string, 'null'], format: date-time }
+      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam (ditulis paling sering sekali per jam).' }
+      berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat).' }
+      diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya.' }
       sesi_ini: { type: boolean }
 responses:
   AuthForbidden:

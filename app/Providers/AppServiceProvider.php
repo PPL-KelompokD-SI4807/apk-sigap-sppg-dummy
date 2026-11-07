@@ -3,14 +3,19 @@
 namespace App\Providers;
 
 use App\Policies\DashboardPolicy;
+use App\Services\Auth\SesiService;
 use App\Services\Telegram\InitDataValidator;
 use App\Support\SppgAktif;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\Events\TokenAuthenticated;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -34,6 +39,13 @@ class AppServiceProvider extends ServiceProvider
 
             return ['App\\Policies\\'.Str::after($modelClass, 'App\\Models\\').'Policy'];
         });
+
+        // Sesi login (R-03): masa sesi bergeser + batas absolut diperiksa di setiap request ber-Bearer;
+        // pemakaian (last_used_at/expires_at) ditulis maksimal sekali per jam per token (SesiService).
+        Sanctum::authenticateAccessTokensUsing(
+            fn (PersonalAccessToken $token, bool $sah): bool => app(SesiService::class)->validasiToken($token, $sah),
+        );
+        Event::listen(TokenAuthenticated::class, fn (TokenAuthenticated $e) => app(SesiService::class)->catatPemakaian($e->token));
 
         // R-07: gerbang dashboard per peran (isi disaring lagi per modul oleh DashboardService).
         Gate::define('dashboard.lihat', [DashboardPolicy::class, 'lihat']);

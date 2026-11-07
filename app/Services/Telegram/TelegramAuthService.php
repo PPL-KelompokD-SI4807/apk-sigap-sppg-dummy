@@ -17,8 +17,12 @@ use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
  * Lapis 1 login R-03 (FR-01): initData Telegram divalidasi setiap Mini App dibuka.
  *
  * Hasil `langkah`:
- * - `sesi_aktif` : klien mengirim token login penuh miliknya (header Authorization) untuk akun
- *                  Telegram yang sama dan perangkat (device_id) yang sama; tidak ada token baru.
+ * - `sesi_aktif` : klien mengirim token login penuh BERLAKU miliknya (header Authorization) untuk akun
+ *                  Telegram yang sama dan perangkat (device_id) yang sama; tidak ada token baru, masa
+ *                  sesi digeser (SesiService::catatPemakaian). Token kedaluwarsa -> `masuk` (password).
+ *                  initData selalu diverifikasi penuh (HMAC + auth_date) sebelum langkah apa pun.
+ *                  Telegram.WebApp.initData tetap sama sejak Mini App dibuka dan hanya sah
+ *                  config('telegram.init_data_max_age') detik; "segar" = Mini App baru dibuka ulang.
  *                  Token penuh milik akun LAIN dicabut (SesiService::cabutBilaMilikAkunLain).
  * - `masuk`      : token pra-login diterbitkan; lanjut username/no telepon + password.
  * - `aktivasi`   : token pra-login diterbitkan; akun belum punya password (undangan baru,
@@ -53,8 +57,13 @@ class TelegramAuthService
             $this->sesi->cabutBilaMilikAkunLain($user, $bearer);
         }
 
-        if (! $dev && $this->sesi->sesiAktifUntuk($user, $bearer, $deviceHash)) {
-            return ['langkah' => 'sesi_aktif', 'token' => null, 'expires_at' => null, 'user' => $user];
+        $sesiAktif = $dev ? null : $this->sesi->sesiAktifUntuk($user, $bearer, $deviceHash);
+
+        if ($sesiAktif !== null) {
+            // Membuka Mini App = memakai sesi: masa sesi bergeser (maks sekali per jam, batas absolut tetap).
+            $this->sesi->catatPemakaian($sesiAktif);
+
+            return ['langkah' => 'sesi_aktif', 'token' => null, 'expires_at' => $this->sesi->kedaluwarsaEfektif($sesiAktif, $user), 'user' => $user];
         }
 
         $pra = $this->sesi->terbitkanPraLogin($user, $deviceHash, $dev);
