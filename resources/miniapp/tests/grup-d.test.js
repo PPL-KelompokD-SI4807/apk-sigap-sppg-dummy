@@ -248,14 +248,25 @@ test('fetchLampiranBlob memakai header Authorization dan memetakan galat', async
 });
 
 // ---------- bukti distribusi ----------
-test('jadwal yang dapat dipilih: hanya status aktif; pembatasan relawan (hari ini, milik sendiri) ada di server', () => {
-  const j = (o) => ({ id: 1, status: 'siap', tanggal_distribusi: '2026-11-20', petugas_id: null, ...o });
-  assert.equal(bukti.jadwalDapatDipilih(j({})), true);
-  assert.equal(bukti.jadwalDapatDipilih(j({ status: 'menunggu' })), true);
-  assert.equal(bukti.jadwalDapatDipilih(j({ status: 'berangkat' })), true);
-  assert.equal(bukti.jadwalDapatDipilih(j({ status: 'diterima' })), false);
-  assert.equal(bukti.jadwalDapatDipilih(j({ status: 'dibatalkan' })), false);
+test('pemilih jadwal bukti: hanya izin.catat_bukti === true; status/tanggal/petugas tidak dicek di klien', () => {
+  const j = (id, izin, o = {}) => ({ id, status: 'siap', tanggal_distribusi: '2026-11-20', petugas_id: null, ...(izin === undefined ? {} : { izin }), ...o });
+  const daftar = [
+    j(1, { ubah: false, hapus: false, catat_bukti: true }),
+    j(2, { ubah: false, hapus: false, catat_bukti: false }),
+    j(3, undefined), // flag izin hilang -> fail closed
+    j(4, { ubah: false, hapus: false }), // catat_bukti hilang -> fail closed
+    j(5, { catat_bukti: 'true' }), // bukan boolean true
+    j(6, { catat_bukti: true }, { status: 'diterima', petugas_id: 99, tanggal_distribusi: '2020-01-01' }), // server yang memutuskan
+  ];
+  assert.deepEqual(daftar.filter(bukti.jadwalDapatDipilih).map((x) => x.id), [1, 6]);
   assert.equal(bukti.jadwalDapatDipilih(null), false);
+  assert.equal(bukti.jadwalDapatDipilih(undefined), false);
+});
+
+test('pemilih jadwal bukti: tak ada yang ber-izin -> daftar kosong dan pesan keadaan kosong tersedia', () => {
+  const daftar = [{ id: 1, status: 'siap' }, { id: 2, status: 'siap', izin: { catat_bukti: false } }];
+  assert.equal(daftar.filter(bukti.jadwalDapatDipilih).length, 0);
+  assert.equal(bukti.PESAN_TANPA_JADWAL_BUKTI, 'Belum ada jadwal yang bisa dicatat buktinya');
 });
 
 test('peringatan jadwal: ditahan mutu, belum siap, belum berangkat', () => {
