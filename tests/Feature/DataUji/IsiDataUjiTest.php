@@ -189,6 +189,9 @@ class IsiDataUjiTest extends TestCase
         $this->artisan('sigap:isi-data-uji', ['--confirm' => true])->assertSuccessful();
         $id = $this->sppgUjiId();
         $penguji = User::factory()->role(Role::Akuntan)->create(['sppg_id' => $id]);
+        $this->beriSesiPenuh($penguji);
+        $lain = User::factory()->role(Role::Akuntan)->create(['sppg_id' => Sppg::factory()->create()->id]);
+        $this->beriSesiPenuh($lain);
 
         $sebelum = $this->hitungSemuaTabel();
         $this->artisan('sigap:isi-data-uji', ['--hapus' => true, '--confirm' => true])
@@ -202,6 +205,13 @@ class IsiDataUjiTest extends TestCase
         $akun = User::query()->withoutGlobalScopes()->find($penguji->getKey());
         $this->assertNotNull($akun);
         $this->assertNull($akun->sppg_id);
+        // sppg_id dilepas lewat query builder: sesi lama tetap dicabut seketika dan tercatat di audit.
+        $this->assertSame(0, $akun->tokens()->count());
+        $audit = DB::table('audit_logs')->where('event', 'auth.sesi_dicabut_otomatis')->where('auditable_id', $penguji->id)->sole();
+        $this->assertSame(['pemicu' => 'sppg_uji_dihapus', 'jumlah_token' => 1, 'kolom' => ['sppg_id']], json_decode($audit->new_values, true));
+        // Akun SPPG lain tidak tersentuh.
+        $this->assertSame(1, $lain->tokens()->count());
+        $this->assertSame(0, DB::table('audit_logs')->where('event', 'auth.sesi_dicabut_otomatis')->where('auditable_id', $lain->id)->count());
     }
 
     public function test_hapus_menolak_sppg_berkode_uji_tanpa_sufiks_nama(): void

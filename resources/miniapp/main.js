@@ -3,7 +3,7 @@ import { h, clear } from './core/dom.js';
 import { getTg, isNative } from './core/telegram.js';
 import { initTheme } from './core/theme.js';
 import { login } from './core/auth.js';
-import { onAuthRequired, onSppgDiperlukan, flushQueue } from './core/api.js';
+import { onAuthRequired, onSesiBerakhir, onPerluLoginUlang, onSppgDiperlukan, flushQueue } from './core/api.js';
 import { route, startRouter, navigate, parseHash, adaRuteTerdaftar } from './core/router.js';
 import { parseRuteDeepLink } from './core/deeplink.js';
 import { api } from './core/api.js';
@@ -78,7 +78,12 @@ async function doLogin() {
     const text = e.status === 403 ? 'Akun Telegram Anda belum terdaftar. Hubungi admin SPPG.' : e.message || 'Gagal masuk.';
     return showMessage('Gagal masuk', text, 'Coba lagi', doLogin);
   }
+  return lanjutkanHasil(hasil);
+}
+
+function lanjutkanHasil(hasil) {
   if (hasil.langkah === 'sesi_aktif') return masukBeranda();
+  flow?.destroy();
   clear(view);
   flow = showLoginFlow(view, { langkah: hasil.langkah, akun: hasil.akun, onDone: masukBeranda, onRestart: doLogin });
 }
@@ -125,6 +130,12 @@ async function masukBeranda() {
 }
 
 onAuthRequired(() => showMessage('Sesi berakhir', 'Silakan masuk kembali.', 'Masuk ulang', doLogin));
+onSesiBerakhir(() => {
+  flow?.destroy();
+  flow = null;
+  showMessage('Sesi berakhir', 'Sesi Anda berakhir. Tutup dan buka ulang Mini App dari Telegram.');
+});
+onPerluLoginUlang(lanjutkanHasil);
 onSppgDiperlukan(() => { if (started) navigate('/pilih-sppg', { replace: true }); });
 window.addEventListener('online', flushQueue);
 start();

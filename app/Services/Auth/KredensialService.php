@@ -40,7 +40,7 @@ class KredensialService
     ) {}
 
     /**
-     * @return array{langkah: string, token?: string, user?: User, tantangan?: TantanganToken}
+     * @return array{langkah: string, token?: string, user?: User, expires_at?: Carbon, tantangan?: TantanganToken}
      */
     public function masuk(User $user, string $identitas, string $password, string $deviceHash, ?string $label, PersonalAccessToken $praLogin): array
     {
@@ -67,10 +67,16 @@ class KredensialService
         User::withoutGlobalScopes()->whereKey($user->getKey())->update(['failed_login_attempts' => 0, 'locked_until' => null]);
 
         if ($this->sesi->perangkatAktif($user, $deviceHash) !== null) {
-            $hasil = $this->sesi->terbitkanPenuh($user, $deviceHash, $label, $praLogin);
-            AuditAuth::catat($user, AuditAuth::MASUK_BERHASIL, ['metode' => $this->metode($identitas), 'perangkat' => AuditAuth::sidik($deviceHash), 'perangkat_tepercaya' => true]);
+            try {
+                // Diperiksa ULANG di bawah kunci (terbitkanPenuh): kepercayaan yang dicabut/kedaluwarsa di antara
+                // pemeriksaan ini dan penerbitan tidak pernah diperbarui tanpa token bot (TOCTOU).
+                $hasil = $this->sesi->terbitkanPenuh($user, $deviceHash, $label, $praLogin, lewatTokenBot: false);
+                AuditAuth::catat($user, AuditAuth::MASUK_BERHASIL, ['metode' => $this->metode($identitas), 'perangkat' => AuditAuth::sidik($deviceHash), 'perangkat_tepercaya' => true]);
 
-            return ['langkah' => 'selesai'] + $hasil;
+                return ['langkah' => 'selesai'] + $hasil;
+            } catch (PerangkatTidakTepercayaException) {
+                // Lanjut ke token bot seperti perangkat baru.
+            }
         }
 
         $tantangan = $this->token->buat($user, $praLogin, TantanganToken::TUJUAN_PERANGKAT_BARU, $deviceHash, [
@@ -156,7 +162,7 @@ class KredensialService
     /**
      * Konfirmasi token 6 digit lalu selesaikan tujuan tantangan dan terbitkan login penuh.
      *
-     * @return array{langkah: string, token: string, user: User, tujuan: string}
+     * @return array{langkah: string, token: string, user: User, tujuan: string, expires_at: Carbon}
      */
     public function selesaikan(User $user, string $tantanganId, string $kode, string $deviceHash, PersonalAccessToken $praLogin): array
     {
@@ -174,7 +180,7 @@ class KredensialService
             $label = isset($payload['label']) && is_string($payload['label']) ? $payload['label'] : null;
 
             return ['tujuan' => $tantangan->tujuan, 'metode' => $payload['metode'] ?? null]
-                + $this->sesi->terbitkanPenuh($user->refresh(), $deviceHash, $label, $praLogin);
+                + $this->sesi->terbitkanPenuh($user->refresh(), $deviceHash, $label, $praLogin, lewatTokenBot: true);
         });
 
         $event = match ($hasil['tujuan']) {
@@ -188,7 +194,7 @@ class KredensialService
             'perangkat_tepercaya' => false,
         ], fn ($v) => $v !== null));
 
-        return ['langkah' => 'selesai', 'token' => $hasil['token'], 'user' => $hasil['user'], 'tujuan' => $hasil['tujuan']];
+        return ['langkah' => 'selesai', 'token' => $hasil['token'], 'user' => $hasil['user'], 'tujuan' => $hasil['tujuan'], 'expires_at' => $hasil['expires_at']];
     }
 
     /**

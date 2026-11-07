@@ -9,6 +9,25 @@ let renderId = 0;
 let current = { path: '/', query: new URLSearchParams() };
 
 /**
+ * Parameter rute dari hash: didekode lalu WAJIB cocok whitelist (huruf, angka, "_" dan "-", 1-128 karakter: id numerik,
+ * uuid, slug). Parameter dipakai menyusun URL API ber-Bearer, jadi tidak boleh membawa pemisah path/query atau
+ * dot-segment, termasuk yang lolos lewat encode ganda (%252e%252e -> %2e%2e). Pemakai tetap memakai
+ * encodeURIComponent saat menyusun URL (lapis kedua).
+ */
+const PARAM_AMAN = /^[A-Za-z0-9_-]{1,128}$/;
+export function bacaParams(keys, m) {
+  try {
+    const out = {};
+    for (let i = 0; i < keys.length; i++) {
+      const v = decodeURIComponent(m[i + 1]);
+      if (!PARAM_AMAN.test(v)) return null;
+      out[keys[i]] = v;
+    }
+    return out;
+  } catch { return null; }
+}
+
+/**
  * route('/modul/:id', handler, {guard, title})
  * opts.alihan(params) -> tujuan pengalihan (truthy) bila rute ini hanya mengalihkan; dipakai goBack agar tidak loop.
  * handler(ctx) -> boleh async, boleh mengembalikan fungsi pembersih.
@@ -40,7 +59,8 @@ export function parseHashString(hash = '') {
 export function cekAkses(path) {
   const hit = routes.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
   if (!hit) return 'tidak-ada';
-  const params = Object.fromEntries(hit.r.keys.map((k, i) => [k, decodeURIComponent(hit.m[i + 1])]));
+  const params = bacaParams(hit.r.keys, hit.m);
+  if (!params) return 'tidak-ada';
   return hit.r.guard && !hit.r.guard(params) ? 'ditolak' : 'boleh';
 }
 
@@ -78,7 +98,7 @@ export function jalurKembali(path) {
   let p = parentPath(path);
   while (p !== '/') {
     const hit = routes.map((r) => ({ r, m: p.match(r.re) })).find((x) => x.m);
-    const params = hit ? Object.fromEntries(hit.r.keys.map((k, i) => [k, decodeURIComponent(hit.m[i + 1])])) : null;
+    const params = hit ? bacaParams(hit.r.keys, hit.m) : null;
     const bisa = hit && !(hit.r.guard && !hit.r.guard(params)) && !(hit.r.alihan && hit.r.alihan(params));
     if (bisa) return p;
     p = parentPath(p);
@@ -123,14 +143,15 @@ export async function resolve() {
   syncBack(path);
   window.scrollTo(0, 0);
 
-  const hit = routes.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
+  const hitMentah = routes.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
+  const params = hitMentah ? bacaParams(hitMentah.r.keys, hitMentah.m) : null;
+  const hit = params ? hitMentah : null;
   clear(outlet);
   if (!hit) {
     outlet.append(h('div', { class: 'empty' }, h('h2', {}, 'Halaman tidak ditemukan'), h('a', { class: 'btn', href: '#/' }, 'Ke beranda')));
     return setTitle('SiGAP SPPG');
   }
-  const { r, m } = hit;
-  const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
+  const { r } = hit;
   setTitle(typeof r.title === 'function' ? r.title(params) : r.title || 'SiGAP SPPG');
   if (r.guard && !r.guard(params)) return alihkanKeBeranda();
 

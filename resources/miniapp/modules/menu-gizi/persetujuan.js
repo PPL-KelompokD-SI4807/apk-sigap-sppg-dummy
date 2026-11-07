@@ -62,7 +62,7 @@ function ajukanForm(rec) {
 
 /** Layar #/menu-gizi/:id/rincian-biaya. */
 export async function rincianBiayaScreen(ctx) {
-  const d = unwrap(await api.get(`/menu-gizi/${ctx.params.id}/rincian-biaya`));
+  const d = unwrap(await api.get(`/menu-gizi/${encodeURIComponent(ctx.params.id)}/rincian-biaya`));
   if (ctx.isStale()) return;
   ctx.setTitle('Rincian Biaya Menu');
   ctx.el.append(h('div', { class: 'notice' }, `Pratinjau memakai harga pemasok terkini (acuan ${d.tanggal_acuan ?? '-'}). Menu versi ${d.menu_versi}.`));
@@ -71,5 +71,5 @@ export async function rincianBiayaScreen(ctx) {
     ctx.el.append(h('div', { class: 'alert-danger' }, 'Rincian belum lengkap, menu belum dapat diajukan. Lengkapi harga/konversi bahan berikut di Pemasok:', daftarBermasalah(masalah)));
   }
   ctx.el.append(rincianBiayaPanel(d));
-  ctx.el.append(h('a', { class: 'btn', href: `#/menu-gizi/${ctx.params.id}` }, 'Kembali ke menu'));
+  ctx.el.append(h('a', { class: 'btn', href: `#/menu-gizi/${encodeURIComponent(ctx.params.id)}` }, 'Kembali ke menu'));
 }

@@ -68,6 +68,18 @@ final class AuditAuth
     /** Token penuh dikirim bersama initData akun Telegram lain lalu dicabut. */
     public const SESI_DICABUT_AKUN_BERBEDA = 'auth.sesi_dicabut_akun_berbeda';
 
+    /** Masa sesi login penuh diperpanjang (sliding); dicatat sekali per token per hari kalender. */
+    public const SESI_DIPERPANJANG = 'auth.sesi_diperpanjang';
+
+    /** Sesi tertua dicabut karena login baru melebihi config('kredensial.sesi.maks_per_pengguna'). */
+    public const SESI_DICABUT_BATAS = 'auth.sesi_dicabut_batas';
+
+    /** Kepercayaan perangkat tertua dicabut karena perangkat tepercaya melebihi config('kredensial.sesi.maks_per_pengguna'). */
+    public const PERANGKAT_DICABUT_BATAS = 'auth.perangkat_dicabut_batas';
+
+    /** Semua sesi dicabut otomatis karena hak akses berubah, akun dihapus, atau akun dipulihkan. */
+    public const SESI_DICABUT_OTOMATIS = 'auth.sesi_dicabut_otomatis';
+
     /** @param array<string, mixed> $konteks */
     public static function catat(User $subjek, string $event, array $konteks = [], ?User $aktor = null): void
     {

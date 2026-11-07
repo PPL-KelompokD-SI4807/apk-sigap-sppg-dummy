@@ -43,7 +43,8 @@ class SessionTest extends TestCase
         $this->withToken($this->tokenFor($user))->getJson('/api/v1/auth/me')
             ->assertOk()
             ->assertHeader('Cache-Control', 'no-store, private')
-            ->assertJsonPath('expires_at', null)
+            // Token tanpa expires_at (gaya lama) mendapat masa sesi bergeser saat dipakai: 90 hari.
+            ->assertJsonPath('expires_at', fn (string $v) => abs(now()->addDays(90)->diffInSeconds($v)) < 5)
             ->assertJsonPath('user.username', 'akuntan.mawar')
             ->assertJsonPath('user.role', 'akuntan')
             ->assertJsonPath('user.role_label', 'Akuntan')
@@ -79,17 +80,19 @@ class SessionTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/auth/me')->assertUnauthorized();
     }
 
-    public function test_sesi_login_penuh_tidak_kedaluwarsa_waktu_maupun_tidak_aktif(): void
+    public function test_sesi_login_penuh_tidak_abadi_walau_tanpa_expires_at(): void
     {
         $this->assertNull(config('sanctum.expiration'));
 
         $user = User::factory()->create(['sppg_id' => $this->createSppg()]);
         $token = $this->tokenFor($user);
 
-        // Tidak dipakai selama setahun: tetap berlaku (berakhir hanya karena dicabut).
+        // Tidak dipakai selama setahun: kedaluwarsa (masa bergeser 90 hari), bukan abadi.
         $this->travel(366)->days();
 
-        $this->withToken($token)->getJson('/api/v1/auth/me')->assertOk();
+        $this->withToken($token)->getJson('/api/v1/auth/me')
+            ->assertUnauthorized()
+            ->assertJsonPath('alasan', 'sesi_kedaluwarsa');
     }
 
     public function test_pengguna_dinonaktifkan_setelah_login_kehilangan_akses(): void
