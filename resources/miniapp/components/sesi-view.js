@@ -18,7 +18,8 @@ function kartuSesi(s, onCabut, labelTombol = 'Hapus') {
     h('span', { class: 'rc-main' },
       h('span', { class: 'rc-title' }, s.perangkat || 'Perangkat tidak dikenal'),
       h('div', { class: 'rc-sub' }, `Terakhir dipakai ${formatValue(s.terakhir_dipakai_pada, 'datetime')}`),
-      h('div', { class: 'rc-sub' }, `Masuk ${formatValue(s.diverifikasi_pada || s.dibuat_pada, 'datetime')}`)),
+      h('div', { class: 'rc-sub' }, `Masuk ${formatValue(s.diverifikasi_pada || s.dibuat_pada, 'datetime')}`),
+      s.berlaku_sampai ? h('div', { class: 'rc-sub' }, `Berlaku sampai ${formatValue(s.berlaku_sampai, 'datetime')}`) : null),
     s.sesi_ini ? h('span', { class: 'badge badge-ok' }, 'Perangkat ini') : null,
     btn);
 }
