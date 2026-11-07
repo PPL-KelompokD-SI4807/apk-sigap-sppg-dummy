@@ -92,6 +92,25 @@ class BuatPemasokTool extends WriteDraftTool
 - Controller modul Anda **sudah** menerima `ai_draft_id` (trait `HasAiDraftId` + `AiDraftConfirmer::confirm()` di dalam transaksi store/update). Pastikan `module` draf = slug yang dipakai controller saat `confirm()`.
 - Pengguna tanpa SPPG (Admin) tidak ditawari tool tulis modul ber-tenant (`butuhSppg()` = true, bawaan); Admin memakai Mini App langsung. Pengecualian: tool modul pengguna (`butuhSppg()` = false, draf Admin tanpa SPPG). Pemilihan SPPG tujuan untuk aksi tulis modul Admin = titik ekstensi tahap 2.
 - Agar draf dapat dijalankan dari chat, isi `eksekusi()` (lihat bagian berikut); tanpa itu draf tetap memakai tombol Mini App.
+- Data master dirujuk dengan NAMA, bukan ID: pakai hook `rujukan()` + `ResolverReferensi` (bagian "Resolusi nama -> ID"). Pengguna tidak pernah diminta ID.
+
+## Resolusi nama -> ID (server)
+
+`App\Services\Ai\Referensi\ResolverReferensi` memetakan `{nama}` atau `{id}` dari LLM ke satu data master SPPG pengguna. Konfigurasi per jenis di `JenisReferensi::semua()` (model, kolom nama, kolom satuan, kolom SPPG, modul RBAC, tool pembuat): `bahan_baku`, `pemasok`, `titik_layanan`, `menu`, `armada` (jenis berisi nama orang sengaja tidak ada). Dipakai pertama oleh `buat_menu`/`ubah_menu` (`Catalog\MenuWriteTool`, `ResourceSpec::$kelasTulis`).
+
+| Aspek | Aturan |
+|---|---|
+| Hak | Rbac R (bukan `*`) + Policy `viewAny` jenis itu + `users.sppg_id` (sumber SPPG sama dengan `PilihanReferensiDraf::milik`, `AiDraftExecutor`, `StoreMenuRequest`). Admin/Investor/tanpa SPPG = ditolak. Tanpa hak baca -> tool `ditolak`, tidak ada draf |
+| Isolasi | `where sppg = SPPG aktif` + SppgScope; soft delete tidak ikut. Bila NAMA disebut, resolusi SELALU memakai nama (ID dari LLM diabaikan; nama ambigu tetap menjadi pilihan walau LLM mengirim ID salah satu kandidat). ID hanya dipakai bila nama tidak disebut, dicek dengan batasan yang sama; ID SPPG lain = "tidak ditemukan" (tanpa membocorkan keberadaan). Float bulat (`5.0`) diperlakukan sebagai int |
+| Urutan cocok | sama persis (tanpa beda huruf besar, spasi dirapikan, karakter format dibuang) -> awalan -> mengandung. Tingkat pertama yang berisi data menentukan |
+| Hasil | 1 = dipakai. >1 = TIDAK menebak: kandidat yang pasti tak terpakai disaring (satuan tak kompatibel dengan takaran, atau bahan sudah dirujuk tepat di baris lain); sisa >= 1 = draf dengan baris placeholder (tanpa ID, gagal Form Request) + `_pilihan` (ID kandidat saja, maks 5, `lebih_banyak`); sisa 0 = tidak ada draf, ditanyakan (pesan satuan, atau "sudah ada di komposisi"). Hasil tool ke LLM: `perlu_dipilih` berisi nama + satuan saja (tanpa ID) dan galat baris placeholder (`bahan.N.bahan_baku_id`) tidak ikut `perlu_dicek` (galat lengkap tetap di `errors` API Mini App). 0 = TIDAK ada draf; model menyampaikan "tidak ditemukan" dan menawarkan draf bahan terpisah (`buat_bahan_baku`) hanya bila peran berhak dan pengguna setuju; bahan tidak pernah dibuat otomatis |
+| Keamanan | Nama = parameter terikat; `! % _` di-escape (`ESCAPE '!'`) sehingga `%`, `_`, `\` harfiah; maks 100 karakter. Nama dari DB diratakan satu baris + dipotong 60 (`KandidatReferensi`) dan hanya masuk hasil tool (dibungkus `<hasil_tool_{nonce}>`) / layar escape HTML, tidak pernah ke prompt sistem |
+
+Skema item `bahan` (buat/ubah menu): `{nama?, bahan_baku_id?, jumlah, satuan}`. Takaran -> `gram_per_porsi` (`TakaranPerPorsi`, aritmetika desimal string): hanya pasangan pasti mg/g/kg dan ml/l; bahan bersatuan stok volume menerima ml/l (disimpan sebagai ml, konvensi `config/produksi.php`), bahan lain menerima berat (gram). Massa <-> volume, satuan tak dikenal (butir, sdm), > 2 desimal, <= 0, > 100000 -> tidak ada draf, model menanyakan ulang. Prompt sistem aturan 9: jangan meminta ID; kirim nama.
+
+**Pilihan di Bot** (`BotAksiAiService::layarPilihan`): satu tombol `ai_pilih` per kandidat ("Ayam Fillet (kg) #12"), + Batal + Ubah di Mini App; satu grup sekali pakai per layar; `subjek_id` = draf, `subjek_versi` = `PilihanReferensiDraf::kode()` = indeks slot x 8 + posisi kandidat (token terikat slot; ID kandidat diambil ulang dari `_pilihan` draf). Saat ditekan (`PilihanReferensiDraf::pilih`, transaksi + `lockForUpdate`): pengguna dimuat ulang, draf milik penekan + SPPG sama + pending + belum kedaluwarsa, tool masih tersedia untuk peran, kode untuk slot PERTAMA (slot lain/layar basi = tidak berlaku) dan kandidat masih milik SPPG (cek ulang `denganId`), satuan kompatibel. Hanya payload draf yang berubah; layar berikutnya = slot berikut, lalu pratinjau server ("Bahan: Ayam Fillet (kg) - 10 gram per porsi") + Periksa & Simpan + Batal (menu = Mini App saja). Draf dengan `_pilihan` tertunda tidak pernah dijalankan dari chat (`AiDraftExecutor::hambatan`).
+
+**Pilihan di Mini App**: `GET /ai-drafts/{uuid}` -> `pilihan_referensi` (lihat OpenAPI `AiDraft`); `_pilihan` tidak disajikan di `payload`. Simpan seperti biasa ke endpoint modul + `ai_draft_id` (Form Request memverifikasi ID milik SPPG).
 
 ## Katalog tool 16 modul
 
@@ -189,6 +208,7 @@ Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDA
 | Eskalasi via chat | Tool pengguna hanya Admin (Rbac); role divalidasi enum + Form Request; undangan Admin dua langkah | `test_peran_selain_admin_*`, `test_argumen_role_*` |
 | Bocor token undangan | Lihat "Token undangan" di atas | `test_admin_buat_undangan_*_tanpa_bocor` |
 | Banjir draf | Maks draf pending per pengguna | `test_jumlah_draf_*` |
+| Nama rujukan berisi perintah/SQL/wildcard, ID karangan/SPPG lain | Resolusi nama -> ID di server (binding + escape LIKE, scope SPPG, hak baca); ambigu = tombol pilihan, tidak menebak; tidak ada = tanpa draf | `ResolusiReferensiTest`, `AiPilihanReferensiBotTest` |
 | Draf orang lain | GET/DELETE hanya pemilik + SPPG sama (lainnya 404) | `AiDraftApiTest` |
 | Loop tool tak berujung | Maks iterasi + maks tool call per langkah + anggaran waktu | `test_loop_*`, `test_jumlah_tool_call_*` |
 | Keluaran model berisi HTML/Markdown | Dikirim tanpa `parse_mode` (teks polos), dipotong `max_output_chars` | `TelegramWebhookTest::test_pesan_teks_*` |

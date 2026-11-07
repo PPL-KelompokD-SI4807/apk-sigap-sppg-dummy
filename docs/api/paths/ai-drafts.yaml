@@ -26,6 +26,7 @@
       Hanya pemilik draf pada SPPG yang sama (Admin: draf tanpa SPPG); selain itu 404. Draf kedaluwarsa (default 30 menit),
       sudah disimpan/dijalankan dari chat, dibuang/dibatalkan, atau gagal -> 410. `errors` = validasi dry-run Form Request modul saat ini.
       Mini App lalu memanggil endpoint modul (mis. POST /titik-layanan) dengan `ai_draft_id`.
+      `pilihan_referensi` (tidak kosong) = nama yang ambigu; tampilkan kandidatnya pada baris placeholder sebelum Simpan.
     responses:
       '200':
         description: OK

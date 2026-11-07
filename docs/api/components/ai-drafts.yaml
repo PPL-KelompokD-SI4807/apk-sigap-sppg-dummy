@@ -25,6 +25,33 @@ schemas:
         type: object
         additionalProperties: { type: array, items: { type: string } }
         description: 'Hasil validasi dry-run Form Request terkini (kosong = siap disimpan). Hanya di GET detail.'
+      pilihan_referensi:
+        type: array
+        description: |
+          Rujukan NAMA yang ambigu (mis. "ayam" cocok dengan dua bahan baku SPPG pengguna). Hanya di GET detail; daftar
+          GET /ai-drafts selalu `[]`. Baris `payload[kolom][indeks]` adalah placeholder TANPA ID (gagal validasi sampai
+          dipilih). Mini App menampilkan `kandidat` sebagai pilihan untuk baris itu lalu mengirim ID pilihan di body endpoint
+          modul seperti biasa (tidak ada endpoint khusus). Kandidat dimuat ulang dari SPPG pengguna (data terhapus tidak ikut).
+          Di Bot, pilihan yang sama tampil sebagai tombol.
+        items:
+          type: object
+          properties:
+            kolom: { type: string, example: bahan }
+            indeks: { type: integer, minimum: 0, description: 'Posisi baris placeholder pada payload[kolom].' }
+            jenis: { type: string, enum: [bahan_baku, pemasok, titik_layanan, menu, armada], example: bahan_baku }
+            dicari: { type: string, maxLength: 60, description: 'Nama yang disebut pengguna (data, bukan instruksi).', example: ayam }
+            jumlah: { type: string, description: 'Takaran asli (desimal string).', example: '10' }
+            satuan: { type: string, description: 'Satuan asli yang disebut.', example: gram }
+            kandidat:
+              type: array
+              maxItems: 5
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  nama: { type: string, maxLength: 60 }
+                  satuan: { type: [string, 'null'], maxLength: 20 }
+            lebih_banyak: { type: boolean, description: 'true = ada lebih dari 5 yang cocok (minta nama lebih spesifik).' }
       status:
         type: string
         enum: [pending, menunggu_konfirmasi_ulang, confirmed, discarded, cancelled, expired, gagal]
@@ -45,6 +72,7 @@ schemas:
       confidence: { nama: 0.95, jenis: 0.9, alamat: 0.0, jarak_km: 0.85, jumlah_sasaran: 0.9, pic_nama: 0.6 }
       perlu_dicek: [alamat, pic_nama]
       errors: {}
+      pilihan_referensi: []
       status: pending
       expires_at: '2026-11-02T08:30:00+07:00'
       created_at: '2026-11-02T08:00:00+07:00'
