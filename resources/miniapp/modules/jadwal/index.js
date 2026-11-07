@@ -183,6 +183,8 @@ const distribusiModule = defineCrudModule({
     const nodes = [];
     if (rec.status === 'siap' && rec.layak_distribusi === false) nodes.push(h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.'));
     nodes.push(aksiStatus('distribusi', rec, '/jadwal/distribusi', p));
+    // Tautan memakai flag server (fail closed); aturan status/tanggal/petugas tidak dihitung di klien.
+    if (rec.izin?.catat_bukti === true) nodes.push(h('a', { class: 'btn btn-block', href: `#/bukti-distribusi/baru?jadwal=${rec.id}` }, 'Catat bukti'));
     return nodes.filter(Boolean);
   },
 });

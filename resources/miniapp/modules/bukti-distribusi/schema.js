@@ -10,12 +10,15 @@ export const STATUS_JADWAL = { menunggu: 'Menunggu', siap: 'Siap', berangkat: 'B
 export const statusJadwalLabel = (v) => STATUS_JADWAL[v] ?? v ?? '-';
 
 /**
- * Jadwal yang dapat dipilih untuk mencatat bukti: status aktif saja. Daftar sudah dibatasi server menurut hak
- * (dan query tanggal hari ini); klien tidak menyalin aturan unit/kepemilikan relawan.
+ * Jadwal yang boleh dipilih untuk mencatat bukti: HANYA bila server menandai `izin.catat_bukti === true`
+ * (AturanCatatBukti; docs/api/peta-hak.md). Fail closed: flag hilang/bukan true = tidak ditampilkan.
+ * Klien tidak mengecek status, tanggal, atau petugas. `true` bukan jaminan sukses (server tetap bisa 422).
  */
 export function jadwalDapatDipilih(j) {
-  return !!j && ['menunggu', 'siap', 'berangkat'].includes(j.status);
+  return j?.izin?.catat_bukti === true;
 }
+
+export const PESAN_TANPA_JADWAL_BUKTI = 'Belum ada jadwal yang bisa dicatat buktinya';
 
 export function jadwalOptionLabel(j) {
   const jam = j.jam_rencana_tiba ? ` · tiba ${String(j.jam_rencana_tiba).slice(0, 5)}` : '';

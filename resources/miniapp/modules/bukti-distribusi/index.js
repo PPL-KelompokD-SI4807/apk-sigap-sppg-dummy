@@ -11,7 +11,7 @@ import { resolve } from '../../core/router.js';
 import { todayWIB, jamWIB, tanggalJamWIB } from '../../core/waktu.js';
 import { errorMessage } from '../../core/errors.js';
 import {
-  jadwalDapatDipilih, jadwalOptionLabel, peringatanJadwal, statusJadwalLabel,
+  jadwalDapatDipilih, PESAN_TANPA_JADWAL_BUKTI, jadwalOptionLabel, peringatanJadwal, statusJadwalLabel,
   terlambatLabel, terlambatBadge, selisihLabel, buktiFields, buktiDetailFields, buktiPayload,
 } from './schema.js';
 
@@ -53,10 +53,10 @@ function jadwalPicker(initialId) {
           list = items.filter(jadwalDapatDipilih);
           const want = value ?? initialId;
           if (want && !list.some((x) => String(x.id) === String(want))) {
-            try { const one = unwrap(await api.get(`/jadwal/distribusi/${encodeURIComponent(want)}`, null, { silent: true })); if (one) list.unshift(one); } catch { /* abaikan */ }
+            try { const one = unwrap(await api.get(`/jadwal/distribusi/${encodeURIComponent(want)}`, null, { silent: true })); if (jadwalDapatDipilih(one)) list.unshift(one); } catch { /* abaikan */ }
           }
-          sel.replaceChildren(h('option', { value: '' }, list.length ? '- Pilih jadwal -' : 'Tidak ada jadwal yang dapat dipilih'), ...list.map((j) => h('option', { value: j.id }, jadwalOptionLabel(j))));
-          if (!list.length) info.append(...[h('div', { class: 'notice' }, 'Tidak ada jadwal distribusi aktif hari ini yang dapat Anda catat buktinya.'), jadwalTabBoleh(getUser(), 'distribusi') ? h('a', { class: 'btn', href: '#/jadwal/distribusi' }, 'Lihat jadwal distribusi') : null].filter(Boolean));
+          sel.replaceChildren(h('option', { value: '' }, list.length ? '- Pilih jadwal -' : PESAN_TANPA_JADWAL_BUKTI), ...list.map((j) => h('option', { value: j.id }, jadwalOptionLabel(j))));
+          if (!list.length) info.append(...[h('div', { class: 'notice' }, `${PESAN_TANPA_JADWAL_BUKTI}.`), jadwalTabBoleh(getUser(), 'distribusi') ? h('a', { class: 'btn', href: '#/jadwal/distribusi' }, 'Lihat jadwal distribusi') : null].filter(Boolean));
           if (want && list.some((x) => String(x.id) === String(want))) { sel.value = String(want); render(); }
         } catch (e) {
           sel.replaceChildren(h('option', { value: '' }, 'Gagal memuat jadwal'));
@@ -133,10 +133,16 @@ function listTop() {
   }).catch(() => { /* filter opsional */ });
   titik.addEventListener('change', () => setF('titik_layanan_id', titik.value));
   const chip = (value, label) => h('button', { type: 'button', class: `seg-btn${listQuery.terlambat === value ? ' active' : ''}`, 'aria-pressed': listQuery.terlambat === value ? 'true' : 'false', onclick: () => setF('terlambat', value) }, label);
-  return h('div', { class: 'stack' },
+  const root = h('div', { class: 'stack' },
     h('div', { class: 'filter-row' }, tgl, titik),
     h('div', { class: 'seg', role: 'group', 'aria-label': 'Ketepatan waktu' }, chip('', 'Semua'), chip('1', 'Terlambat')),
     listQuery.tanggal ? null : h('p', { class: 'muted small' }, 'Menampilkan semua tanggal.'));
+  // Sembunyikan "+ Bukti" bila tak ada jadwal ber-izin (agar tidak menuju 403/formulir kosong). Gagal muat = biarkan.
+  fetchList('/jadwal/distribusi', { perPage: 100, extra: { tanggal: todayWIB() } }).then(({ items }) => {
+    if (items.some(jadwalDapatDipilih)) return;
+    root.parentElement?.querySelector('.list-head a[href$="/baru"]')?.remove();
+  }).catch(() => { /* biarkan tombol; formulir menampilkan kesalahan */ });
+  return root;
 }
 
 export default defineCrudModule({
