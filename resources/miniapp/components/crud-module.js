@@ -155,7 +155,11 @@ export function defineCrudModule(def) {
         itemHref: (r) => `#${base}/${r.id}`,
       });
       ctx.el.append(lv.el);
-    }, { title: title, guard: () => me(permissionSlug).R });
+    }, {
+      title: title,
+      guard: () => me(permissionSlug).R,
+      alihan: () => (me(permissionSlug).selfOnly ? `${base}/${getUser().id}` : (def.listRedirect ? def.listRedirect(getUser(), me(permissionSlug)) : null)),
+    });
 
     // Baru (didaftarkan sebelum :id)
     route(`${base}/baru`, (ctx) => renderForm(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: bolehBuat });

@@ -183,7 +183,9 @@ export function createPhotoUpload({ name, existing = null, existingUrl = null, m
   const old = hasExisting ? h('div', { class: 'photo-old' }, createAuthImage(existingRef, { alt: `${label} tersimpan`, caption: 'Foto tersimpan' })) : null;
   const progress = h('progress', { class: 'photo-progress', hidden: true, 'aria-label': 'Memampatkan foto' });
   const status = h('p', { class: 'muted small', role: 'status', 'aria-live': 'polite' });
-  const cam = h('input', { type: 'file', accept: 'image/*', capture: 'environment', id: `f-${name}`, class: 'sr-only', multiple: max > 1 });
+  const cam = h('input', { type: 'file', accept: 'image/*', capture: 'environment', id: `f-${name}`, class: 'sr-only' });
+  // Input kamera TIDAK boleh `multiple`: dengan atribut itu Android/Chrome mengabaikan capture dan membuka pemilih galeri.
+  // Galeri boleh multiple; jepretan kamera masuk satu per satu.
   const gal = h('input', { type: 'file', accept: 'image/*', id: `f-${name}-galeri`, class: 'sr-only', multiple: max > 1 });
   const camBtn = h('label', { class: 'btn', for: `f-${name}` }, 'Ambil foto');
   const galBtn = h('label', { class: 'btn', for: `f-${name}-galeri` }, 'Pilih dari galeri');
