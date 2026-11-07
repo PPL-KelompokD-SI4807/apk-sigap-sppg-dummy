@@ -33,6 +33,7 @@ class AuthController extends ApiController
         if ($hasil['langkah'] === 'sesi_aktif') {
             return response()->json([
                 'langkah' => 'sesi_aktif',
+                'expires_at' => $hasil['expires_at']?->toIso8601String(),
                 'user' => (new AuthUserResource($user))->resolve($request),
             ]);
         }
@@ -51,14 +52,18 @@ class AuthController extends ApiController
     }
 
     /** GET /api/v1/auth/me */
-    public function me(Request $request): JsonResponse
+    public function me(Request $request, SesiService $sesi): JsonResponse
     {
-        $token = $request->user()->currentAccessToken();
+        $user = $request->user();
+        $token = $user->currentAccessToken();
+        $tersimpan = $token instanceof PersonalAccessToken && $token->exists;
 
         return response()->json([
-            'user' => (new AuthUserResource($request->user()))->resolve($request),
-            // Sesi login penuh: selalu null (tidak kedaluwarsa).
-            'expires_at' => $token instanceof PersonalAccessToken && $token->exists ? $token->expires_at?->toIso8601String() : null,
+            'user' => (new AuthUserResource($user))->resolve($request),
+            // Masa sesi bergeser saat ini (sudah termasuk perpanjangan request ini) dan batas absolutnya.
+            'expires_at' => $tersimpan ? $sesi->kedaluwarsaEfektif($token, $user)->toIso8601String() : null,
+            // min(login + 180 hari, akhir kepercayaan perangkat = token bot terakhir + 180 hari).
+            'batas_absolut_at' => $tersimpan ? $sesi->batasAkhir($token, $user)->toIso8601String() : null,
         ]);
     }
 

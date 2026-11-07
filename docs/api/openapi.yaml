@@ -339,8 +339,15 @@ paths:
         user.id dengan akun aktif. Panggil SETIAP kali Mini App dibuka.
 
         - Bila klien menyimpan token login penuh, kirim di header `Authorization: Bearer <token>`
-          beserta `device_id` yang sama: bila sesi itu milik akun Telegram yang sama dan perangkat yang
-          sama, respons `langkah: sesi_aktif` (tanpa token baru). Bila token login penuh itu milik akun
+          beserta `device_id` yang sama: bila sesi itu BERLAKU, milik akun Telegram yang sama, dan perangkat
+          yang sama, respons `langkah: sesi_aktif` (tanpa token baru) dan masa sesi digeser (`expires_at`
+          baru). Sesi kedaluwarsa/dicabut -> `langkah: masuk` (password; perangkat yang masih tepercaya, yaitu
+          < 180 hari sejak token bot terakhir, tanpa token bot).
+          initData TIDAK PERNAH cukup untuk login penuh, dan initData basi selalu 401 walau token berlaku.
+          Catatan: Telegram.WebApp.initData tetap sama sejak Mini App dibuka (tidak diperbarui selama
+          terbuka) dan hanya sah TELEGRAM_INIT_DATA_MAX_AGE detik sejak auth_date; initData baru hanya
+          didapat dengan menutup lalu membuka ulang Mini App.
+          Bila token login penuh itu milik akun
           LAIN dari akun Telegram initData, token tersebut DICABUT (beserta kepercayaan perangkatnya)
           dan klien wajib membuangnya; respons tetap 200 untuk akun initData (`langkah: masuk`).
         - Selain itu diterbitkan token PRA-LOGIN (ability `auth:pra-login`, 15 menit) yang hanya berlaku
@@ -406,6 +413,7 @@ paths:
                 sesi_aktif:
                   value:
                     langkah: sesi_aktif
+                    expires_at: '2027-01-24T07:30:00+07:00'
                     user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 1, sppg_name: SPPG Sukamaju, telegram_username: siti_rahayu, last_login_at: '2026-10-26T07:30:00+07:00', modules: [sppg, jadwal], permissions: { sppg: RU, jadwal: CRUD } }
         '401':
           description: initData tidak sah, kedaluwarsa, atau waktu di masa depan.
@@ -433,8 +441,10 @@ paths:
         Identitas HANYA dicocokkan dengan akun pemilik token pra-login (akun Telegram dari initData).
         Identitas milik akun lain ditolak dengan pesan yang sama seperti password salah (dan dicatat
         di audit). 5 kali salah -> akun dikunci 15 menit (429 `alasan: terkunci`).
-        Perangkat dengan sesi aktif -> 200 login penuh langsung; perangkat/sesi baru -> 202, token 6 digit
-        dikirim bot ke chat Telegram pengguna, lanjut POST /auth/token/verifikasi.
+        Perangkat tepercaya -> 200 login penuh langsung; perangkat baru, dicabut, atau kepercayaannya lewat
+        180 hari sejak token bot terakhir (tidak bergeser karena dipakai) -> 202, token 6 digit dikirim bot ke
+        chat Telegram pengguna, lanjut POST /auth/token/verifikasi. Maks 5 perangkat tepercaya per pengguna:
+        kelebihan dicabut (perangkat tanpa sesi lebih dulu, lalu yang paling lama diverifikasi).
         Throttle 10/menit per akun dan 30/menit per IP (semua rute pra-login).
       requestBody:
         required: true
@@ -628,8 +638,9 @@ paths:
         memintanya. Bila Mini App ditutup lalu dibuka ulang (token pra-login baru), tantangan lama
         tidak berlaku (`alasan: token_tidak_valid`): ulangi dari Masuk/Aktivasi. Simpan token pra-login
         dan `tantangan.id` di memori selama layar token terbuka. 5 kali salah -> tantangan hangus.
-        Respons sukses berisi token login penuh (ability `auth:penuh`, `expires_at: null`). Token
-        pra-login yang dipakai otomatis dicabut.
+        Respons sukses berisi token login penuh (ability `auth:penuh`, `expires_at` = sekarang + 90 hari;
+        Admin 30 hari; lihat skema LoginPenuhResponse). Token pra-login yang dipakai otomatis dicabut.
+        Login di atas 5 sesi per pengguna mencabut sesi yang paling lama tidak dipakai.
       requestBody:
         required: true
         content:
@@ -699,6 +710,10 @@ paths:
     get:
       tags: [Auth]
       summary: Profil pengguna login dan hak akses efektif (login penuh)
+      description: |
+        `expires_at` = akhir masa sesi bergeser saat ini (sudah termasuk perpanjangan oleh permintaan ini),
+        `batas_absolut_at` = batas yang tidak dapat diperpanjang = min(login + 180 hari, akhir kepercayaan
+        perangkat = token bot terakhir + 180 hari); dapat lebih awal dari login + 180 hari.
       responses:
         '200':
           description: OK
@@ -709,7 +724,8 @@ paths:
                 required: [user]
                 properties:
                   user: { $ref: '#/components/schemas/AuthUser' }
-                  expires_at: { type: 'null', description: 'Selalu null: sesi login penuh tidak kedaluwarsa.' }
+                  expires_at: { type: [string, 'null'], format: date-time, description: 'Akhir masa sesi bergeser (90 hari sejak terakhir dipakai; Admin 30). null hanya untuk token tiruan tes.' }
+                  batas_absolut_at: { type: [string, 'null'], format: date-time, description: 'Batas efektif yang tidak dapat diperpanjang: min(login + 180 hari, token bot terakhir perangkat + 180 hari); expires_at tidak pernah melewatinya.' }
               examples:
                 relawan_dapur:
                   summary: Relawan unit dapur (peta hak ringkas)
@@ -746,7 +762,8 @@ paths:
                         catat_harga_pemasok: false
                         lihat_ringkasan_jadwal_produksi: true
                         dashboard: { tersedia: true, profil: relawan_dapur }
-                    expires_at: null
+                    expires_at: '2027-02-07T09:12:00+07:00'
+                    batas_absolut_at: '2027-04-24T07:30:00+07:00'
                 kepala_sppg:
                   summary: Kepala SPPG (aksi true sesuai Policy)
                   value:
@@ -775,7 +792,8 @@ paths:
                         catat_harga_pemasok: false
                         lihat_ringkasan_jadwal_produksi: true
                         dashboard: { tersedia: true, profil: kepala_sppg }
-                    expires_at: null
+                    expires_at: '2027-02-07T09:12:00+07:00'
+                    batas_absolut_at: '2027-04-24T07:30:00+07:00'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AuthForbidden' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
@@ -797,6 +815,7 @@ paths:
     get:
       tags: [Auth]
       summary: Daftar sesi/perangkat aktif milik sendiri
+      description: Hanya sesi yang masih berlaku (sesi kedaluwarsa tidak ditampilkan). Maks 5 sesi per pengguna.
       responses:
         '200':
           description: OK
@@ -811,8 +830,8 @@ paths:
                     items: { $ref: '#/components/schemas/Sesi' }
               example:
                 data:
-                  - { id: 51, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: true }
-                  - { id: 47, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
+                  - { id: 51, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: true }
+                  - { id: 47, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AuthForbidden' }
   /auth/sesi/{id}:
@@ -5143,6 +5162,7 @@ components:
       required: [langkah, user]
       properties:
         langkah: { type: string, const: sesi_aktif }
+        expires_at: { type: string, format: date-time, description: 'Akhir masa sesi setelah digeser oleh pembukaan Mini App ini.' }
         user: { $ref: '#/components/schemas/AuthUser' }
     LoginPenuhResponse:
       type: object
@@ -5150,10 +5170,17 @@ components:
       properties:
         langkah: { type: string, const: selesai }
         tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi, reset_password] }
-        token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Simpan di localStorage perangkat ini.' }
+        token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Rahasia; jangan dicatat/dikirim ke pihak lain. Klien Mini App saat ini menyimpannya di sessionStorage (resources/miniapp/core/api.js), sehingga hilang saat Mini App ditutup; device_id disimpan di localStorage.' }
         token_type: { type: string, const: Bearer }
         token_jenis: { type: string, const: penuh }
-        expires_at: { type: 'null', description: 'Tidak kedaluwarsa; berakhir hanya karena logout/dicabut.' }
+        expires_at:
+          type: string
+          format: date-time
+          description: |
+            Akhir masa sesi awal = sekarang + 90 hari (Admin 30). Bergeser setiap kali token dipakai (ditulis
+            maks sekali per jam), tidak pernah melewati login + 180 hari maupun akhir kepercayaan perangkat
+            (token bot terakhir + 180 hari). Tetap dicabut seketika oleh logout,
+            perubahan peran/SPPG/status, hapus/pulih akun, perubahan password, atau batas 5 sesi.
         user: { $ref: '#/components/schemas/AuthUser' }
       example:
         langkah: selesai
@@ -5161,7 +5188,7 @@ components:
         token: '52|penuhQ8Vx...'
         token_type: Bearer
         token_jenis: penuh
-        expires_at: null
+        expires_at: '2027-01-24T07:30:00+07:00'
         user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 1, sppg_name: SPPG Sukamaju, telegram_username: siti_rahayu, last_login_at: '2026-10-26T07:30:00+07:00', modules: [sppg, jadwal], permissions: { sppg: RU, jadwal: CRUD } }
     TantanganResponse:
       type: object
@@ -5205,13 +5232,14 @@ components:
             sppg_id: { type: [integer, 'null'] }
     Sesi:
       type: object
-      required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, diverifikasi_pada, sesi_ini]
+      required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
       properties:
         id: { type: integer }
         perangkat: { type: [string, 'null'], description: 'label_perangkat saat login.' }
         dibuat_pada: { type: [string, 'null'], format: date-time }
-        terakhir_dipakai_pada: { type: [string, 'null'], format: date-time }
-        diverifikasi_pada: { type: [string, 'null'], format: date-time }
+        terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam (ditulis paling sering sekali per jam).' }
+        berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat).' }
+        diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya.' }
         sesi_ini: { type: boolean }
     KategoriBahan:
       type: string
@@ -7538,11 +7566,36 @@ components:
       schema: { type: integer, minimum: 1, maximum: 99999999999999999 }
   responses:
     Unauthorized:
-      description: Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
+      description: |
+        Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
+        - Token dikenali tetapi masa sesinya habis: 90 hari tidak dipakai (Admin 30), 180 hari sejak login,
+          atau kepercayaan perangkatnya berakhir (180 hari sejak token bot terakhir, atau perangkat dicabut):
+          `alasan: sesi_kedaluwarsa` + header `WWW-Authenticate: Bearer error="invalid_token"`.
+        - Token tidak ada, tidak dikenal, atau dicabut: hanya `message` (tanpa `alasan`).
+        - `alasan: sesi_kedaluwarsa` hanya muncul selama baris token kedaluwarsa masih tersimpan. Token
+          yang expires_at-nya lewat > 24 jam dipangkas harian (`sanctum:prune-expired --hours=24`);
+          setelah itu token yang sama menghasilkan 401 umum tanpa `alasan`. Klien wajib memperlakukan
+          keduanya dengan alur ulang yang sama.
+        Klien: pada 401 dari rute data, buang token lalu POST /auth/telegram SEKALI dengan
+        Telegram.WebApp.initData dan device_id; ikuti `langkah`. initData TIDAK diperbarui selama Mini App
+        terbuka (nilainya tetap sejak Mini App dibuka) dan hanya sah TELEGRAM_INIT_DATA_MAX_AGE detik
+        (bawaan 3600) sejak auth_date. Bila /auth/telegram juga 401 (initData basi), minta pengguna menutup
+        lalu membuka ulang Mini App. Jangan mengulang lebih dari sekali.
+      headers:
+        WWW-Authenticate:
+          description: Hanya pada sesi_kedaluwarsa.
+          schema: { type: string, example: 'Bearer error="invalid_token"' }
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-          example: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' }
+          schema:
+            type: object
+            required: [message]
+            properties:
+              message: { type: string }
+              alasan: { type: string, enum: [sesi_kedaluwarsa] }
+          examples:
+            umum: { value: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' } }
+            sesi_kedaluwarsa: { value: { message: 'Sesi Anda telah berakhir. Silakan masuk kembali.', alasan: sesi_kedaluwarsa } }
     Forbidden:
       description: |
         Peran tidak memiliki hak (Tabel 5), akun nonaktif, atau token bukan login penuh

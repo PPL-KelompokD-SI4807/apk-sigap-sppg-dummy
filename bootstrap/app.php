@@ -4,6 +4,7 @@ use App\Http\Middleware\ApiSecurityHeaders;
 use App\Http\Middleware\EnsureTokenAbility;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\ResolveSppgAktif;
+use App\Services\Auth\GalatAuth;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -55,9 +56,10 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($e instanceof AuthenticationException) {
-                return response()->json([
-                    'message' => 'Tidak terautentikasi. Silakan buka ulang Mini App.',
-                ], 401);
+                // Token kedaluwarsa: + `alasan: sesi_kedaluwarsa` (GalatAuth::tidakTerautentikasi).
+                [$body, $headers] = GalatAuth::tidakTerautentikasi($request);
+
+                return response()->json($body, 401, $headers);
             }
 
             $status = $e instanceof HttpExceptionInterface ? $e->getStatusCode() : 500;

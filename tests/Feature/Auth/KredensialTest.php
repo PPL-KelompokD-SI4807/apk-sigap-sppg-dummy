@@ -69,7 +69,8 @@ class KredensialTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('langkah', 'selesai')
             ->assertJsonPath('token_jenis', 'penuh')
-            ->assertJsonPath('expires_at', null)
+            // Masa sesi bergeser awal: 90 hari (bukan Admin).
+            ->assertJsonPath('expires_at', fn (string $v) => abs(now()->addDays(90)->diffInSeconds($v)) < 5)
             ->assertJsonPath('user.id', $this->siti->id)
             ->assertJsonPath('user.username', 'siti.dapur')
             ->assertJsonPath('user.permissions.jadwal', 'CRUD');
@@ -77,7 +78,7 @@ class KredensialTest extends TestCase
         $penuh = PersonalAccessToken::findToken($res->json('token'));
         $this->assertContains(SesiService::ABILITY_PENUH, $penuh->abilities);
         $this->assertContains('role:kepala_sppg', $penuh->abilities);
-        $this->assertNull($penuh->expires_at);
+        $this->assertEqualsWithDelta(now()->addDays(90)->getTimestamp(), $penuh->expires_at->getTimestamp(), 5);
         $this->assertNull(PersonalAccessToken::findToken($pra), 'Token pra-login habis dipakai.');
 
         $perangkat = PerangkatTepercaya::query()->sole();

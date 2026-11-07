@@ -6,6 +6,7 @@ use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
+use App\Services\Auth\AuditAuth;
 use App\Support\SppgAktif;
 use App\Support\Telepon;
 use Database\Factories\UserFactory;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\HasApiTokens;
 
 /**
@@ -84,23 +86,54 @@ class User extends Authenticatable
     {
         // Perubahan hak akses berlaku segera: token, perangkat tepercaya, dan tantangan dicabut.
         // Password diubah/di-reset juga mencabut semua sesi (R-03).
+        // Tidak bergantung pada sisa masa sesi (90/30 hari): token baru wajib diterbitkan lewat login ulang,
+        // sehingga ability peran lama tidak pernah terbawa.
         static::updated(function (User $user): void {
             if ($user->wasChanged([...self::TOKEN_SENSITIVE, 'password'])) {
-                $user->cabutSemuaSesi();
+                $jumlah = $user->cabutSemuaSesi();
+
+                // Perubahan password sudah punya event audit sendiri (auth.password_*/reset_*).
+                $kolom = array_values(array_filter(self::TOKEN_SENSITIVE, fn (string $k) => $user->wasChanged($k)));
+
+                if ($jumlah > 0 && $kolom !== []) {
+                    $user->catatPencabutanOtomatis('hak_akses_berubah', $jumlah, ['kolom' => $kolom]);
+                }
             }
         });
 
         // Dihapus lunak atau dipulihkan (daftar ulang lewat undangan): sesi lama dan tautan bot lama
         // tidak pernah berlaku lagi untuk akun ini.
         static::deleted(function (User $user): void {
-            $user->cabutSemuaSesi();
+            $jumlah = $user->cabutSemuaSesi();
             $user->cabutTautanBot();
+
+            if ($jumlah > 0) {
+                $user->catatPencabutanOtomatis('akun_dihapus', $jumlah);
+            }
         });
 
         static::restored(function (User $user): void {
-            $user->cabutSemuaSesi();
+            $jumlah = $user->cabutSemuaSesi();
             $user->cabutTautanBot();
+
+            if ($jumlah > 0) {
+                $user->catatPencabutanOtomatis('akun_dipulihkan', $jumlah);
+            }
         });
+    }
+
+    /**
+     * Audit pencabutan sesi otomatis (tanpa nilai token). Dipakai hook model dan jalur yang mengubah kolom
+     * TOKEN_SENSITIVE tanpa event (mis. PenghapusDataUji).
+     *
+     * @param  array<string, mixed>  $tambahan
+     */
+    public function catatPencabutanOtomatis(string $pemicu, int $jumlah, array $tambahan = []): void
+    {
+        $aktor = Auth::hasUser() ? Auth::user() : null;
+
+        AuditAuth::catat($this, AuditAuth::SESI_DICABUT_OTOMATIS, ['pemicu' => $pemicu, 'jumlah_token' => $jumlah] + $tambahan,
+            $aktor instanceof User ? $aktor : null);
     }
 
     /** No telepon selalu disimpan dalam format normal (E.164) bila dapat dikenali. */
@@ -124,16 +157,19 @@ class User extends Authenticatable
     /**
      * Cabut semua sesi: token (penuh + pra-login), kepercayaan perangkat, dan tantangan terbuka.
      * $kecualiTokenId/$kecualiPerangkatId dipertahankan (mis. sesi yang sedang mengubah password).
+     * Mengembalikan jumlah token yang dihapus.
      */
-    public function cabutSemuaSesi(?int $kecualiTokenId = null, ?int $kecualiPerangkatId = null): void
+    public function cabutSemuaSesi(?int $kecualiTokenId = null, ?int $kecualiPerangkatId = null): int
     {
-        $this->tokens()->when($kecualiTokenId !== null, fn ($q) => $q->whereKeyNot($kecualiTokenId))->delete();
+        $jumlah = (int) $this->tokens()->when($kecualiTokenId !== null, fn ($q) => $q->whereKeyNot($kecualiTokenId))->delete();
 
-        $this->perangkatTepercaya()->aktif()
+        $this->perangkatTepercaya()->belumDicabut()
             ->when($kecualiPerangkatId !== null, fn ($q) => $q->whereKeyNot($kecualiPerangkatId))
             ->update(['dicabut_at' => now()]);
 
         $this->tantanganToken()->terbuka()->update(['hangus_pada' => now(), 'payload' => null]);
+
+        return $jumlah;
     }
 
     /**

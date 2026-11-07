@@ -54,3 +54,18 @@ Schedule::command('sigap:bersihkan-aksi-bot')
     ->timezone(config('app.timezone'))
     ->withoutOverlapping()
     ->onOneServer();
+
+// R-03: hapus baris token Sanctum yang expires_at-nya lewat > 24 jam (sesi login penuh & pra-login), harian.
+// Token lama tanpa expires_at tidak dihapus di sini; keberlakuannya tetap dibatasi SesiService::kedaluwarsaEfektif.
+Schedule::command('sanctum:prune-expired', ['--hours' => 24])
+    ->dailyAt('03:45')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// R-03: kepercayaan perangkat yang lewat 180 hari sejak token bot terakhir ditandai dicabut (baris tetap), harian.
+Schedule::command('sigap:bersihkan-perangkat')
+    ->dailyAt('03:50')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();

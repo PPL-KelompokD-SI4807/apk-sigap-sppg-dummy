@@ -17,6 +17,7 @@ use App\Services\Auth\SesiService;
 use App\Services\Auth\TokenSekaliPakaiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\PersonalAccessToken;
 
 /**
@@ -41,7 +42,7 @@ class KredensialController extends ApiController
         );
 
         return $hasil['langkah'] === 'selesai'
-            ? $this->loginPenuh($hasil['token'], $hasil['user'], $request)
+            ? $this->loginPenuh($hasil['token'], $hasil['user'], $request, expiresAt: $hasil['expires_at'])
             : $this->tantangan($hasil['tantangan']);
     }
 
@@ -105,7 +106,7 @@ class KredensialController extends ApiController
             $this->praLogin($request),
         );
 
-        return $this->loginPenuh($hasil['token'], $hasil['user'], $request, $hasil['tujuan']);
+        return $this->loginPenuh($hasil['token'], $hasil['user'], $request, $hasil['tujuan'], $hasil['expires_at']);
     }
 
     /** POST /api/v1/auth/token/kirim-ulang */
@@ -129,16 +130,16 @@ class KredensialController extends ApiController
         return $token;
     }
 
-    private function loginPenuh(string $token, User $user, Request $request, ?string $tujuan = null): JsonResponse
+    private function loginPenuh(string $token, User $user, Request $request, ?string $tujuan = null, ?Carbon $expiresAt = null): JsonResponse
     {
-        // expires_at selalu null: sesi login penuh tidak kedaluwarsa (berakhir hanya karena dicabut).
+        // expires_at = masa sesi bergeser awal (90 hari; Admin 30). Diperpanjang saat dipakai, batas absolut 180 hari.
         return response()->json([
             'langkah' => 'selesai',
             'tujuan' => $tujuan ?? 'masuk',
             'token' => $token,
             'token_type' => 'Bearer',
             'token_jenis' => 'penuh',
-            'expires_at' => null,
+            'expires_at' => $expiresAt?->toIso8601String(),
             'user' => (new AuthUserResource($user))->resolve($request),
         ]);
     }
