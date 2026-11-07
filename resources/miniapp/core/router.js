@@ -10,6 +10,7 @@ let current = { path: '/', query: new URLSearchParams() };
 
 /**
  * route('/modul/:id', handler, {guard, title})
+ * opts.alihan(params) -> tujuan pengalihan (truthy) bila rute ini hanya mengalihkan; dipakai goBack agar tidak loop.
  * handler(ctx) -> boleh async, boleh mengembalikan fungsi pembersih.
  * ctx = {el, params, query, path, setTitle(t), isStale()}
  * guard(params) -> false: pengguna dialihkan ke beranda dengan pesan singkat (bukan layar kosong). Rute yang
@@ -67,10 +68,28 @@ export const parentPath = (path) => {
   return '/' + parts.join('/');
 };
 
+/**
+ * Tujuan tombol kembali dari `path`: induk terdekat yang benar-benar bisa ditampilkan. Induk dilewati bila
+ * rutenya tidak ada, ditolak penjaga, atau hanya mengalihkan (opsi `alihan` mengembalikan tujuan, mis. daftar SPPG
+ * -> detail SPPG sendiri, daftar Jadwal -> tab Distribusi). Tanpa ini, kembali dari tujuan pengalihan memantul
+ * ke tujuan yang sama (loop) dan pengguna tidak pernah sampai ke beranda.
+ */
+export function jalurKembali(path) {
+  let p = parentPath(path);
+  while (p !== '/') {
+    const hit = routes.map((r) => ({ r, m: p.match(r.re) })).find((x) => x.m);
+    const params = hit ? Object.fromEntries(hit.r.keys.map((k, i) => [k, decodeURIComponent(hit.m[i + 1])])) : null;
+    const bisa = hit && !(hit.r.guard && !hit.r.guard(params)) && !(hit.r.alihan && hit.r.alihan(params));
+    if (bisa) return p;
+    p = parentPath(p);
+  }
+  return '/';
+}
+
 export function goBack() {
   const { path } = parseHash();
   if (path === '/') return;
-  navigate(parentPath(path));
+  navigate(jalurKembali(path));
 }
 
 export function forbiddenPanel(el) {
