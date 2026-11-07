@@ -87,6 +87,39 @@ export const undanganFields = () => [
   { name: 'sppg_id', label: 'SPPG', type: 'relasi', required: true, relation: { endpoint: '/sppg', label: 'nama', value: 'id' }, showIf: (v) => v.mode === 'baru' && needsSppg(v.role) },
 ];
 
+// ---- Prefill dari draf Agen AI (?draft=<uuid>) ----
+const jernih = (payload) => Object.fromEntries(Object.entries(payload && typeof payload === 'object' ? payload : {}).filter(([k]) => !k.startsWith('_')));
+
+/**
+ * Isian form undangan dari payload draf `buat_undangan_pengguna` ({role, unit?, sppg_id?, _resource:'undangan'}).
+ * Hanya kolom yang ada di form; `_resource` dibuang. Draf berisi user_id => mode 'akun', selain itu 'baru'.
+ */
+export function isianUndanganDariDraf(payload) {
+  const p = jernih(payload);
+  if (p.user_id != null) return { mode: 'akun', user_id: p.user_id };
+  const out = { mode: 'baru' };
+  if (ROLES[p.role]) out.role = p.role;
+  if (UNIT_OPTIONS.some((u) => u.value === p.unit)) out.unit = p.unit;
+  if (p.sppg_id != null && p.sppg_id !== '') out.sppg_id = p.sppg_id;
+  return out;
+}
+
+/**
+ * Isian form Ubah pengguna dari payload draf `ubah_peran_pengguna` ({role, unit?, sppg_id?}) atau
+ * `nonaktifkan_pengguna`/`aktifkan_pengguna` ({is_active}). Kolom lain dan penanda `_*` dibuang;
+ * is_active boolean dipetakan ke nilai pilihan 'true'/'false'.
+ */
+export function isianPenggunaDariDraf(payload) {
+  const p = jernih(payload);
+  const out = {};
+  if (ROLES[p.role]) out.role = p.role;
+  if (p.role !== undefined && ROLES[p.role] && !needsUnit(p.role)) out.unit = '';
+  else if (UNIT_OPTIONS.some((u) => u.value === p.unit)) out.unit = p.unit;
+  if (p.sppg_id != null && p.sppg_id !== '') out.sppg_id = p.sppg_id;
+  if (typeof p.is_active === 'boolean') out.is_active = p.is_active ? 'true' : 'false';
+  return out;
+}
+
 /** user_id TIDAK boleh bersama role/unit/sppg_id (UndanganInput). */
 export function buildInvitePayload(values) {
   if (values.mode === 'baru') {

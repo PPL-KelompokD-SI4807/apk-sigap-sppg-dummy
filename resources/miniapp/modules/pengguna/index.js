@@ -11,17 +11,20 @@ import { kepemilikanSppgPanel } from '../../components/kepemilikan-sppg.js';
 import { h } from '../../core/dom.js';
 import { api } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { route, navigate } from '../../core/router.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
 import {
   penggunaFields, mapPayload, unitLabel, statusLabel, statusCls,
   STATUS_UNDANGAN, undanganCls, undanganLabel, undanganTarget, undanganFields, buildInvitePayload,
+  isianUndanganDariDraf, isianPenggunaDariDraf,
 } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
-const canInvite = () => { const p = userPerms(getUser(), 'pengguna'); return p.C && p.U; }; // hanya Admin
+// Aksi pengguna mengikuti peta hak server (aksi.*), bukan huruf modul/peran.
+const bolehUndang = () => bolehAksi(getUser(), 'undang_pengguna');
+const bolehResetSesi = () => bolehAksi(getUser(), 'reset_password_pengguna');
 
 async function terbitkanUndangan(body, { title, shareText }) {
   const inv = unwrap(await api.post('/pengguna/undangan', body, { silent: true }));
@@ -54,17 +57,20 @@ const base = defineCrudModule({
     sub: [r.role_label, unitLabel(r.unit)].filter(Boolean).join(' · '),
     badge: { text: statusLabel(r.status), cls: statusCls(r.status) },
   }),
-  listTop: (p) => (p.C ? h('div', { class: 'stack' },
-    h('a', { class: 'btn btn-block', href: '#/pengguna/undangan' }, 'Kelola tautan undangan'),
-    h('a', { class: 'btn btn-block', href: '#/pengguna/permintaan-reset' }, 'Permintaan reset password'),
-    h('p', { class: 'notice' }, 'Tautan undangan Telegram berlaku sekali pakai dan kedaluwarsa dalam 72 jam. Akun Telegram terhubung otomatis saat tautan dibuka. Buat akun, lalu buka detailnya untuk menerbitkan tautan.')) : null),
+  listTop: () => (bolehUndang() || bolehResetSesi() ? h('div', { class: 'stack' },
+    bolehUndang() ? h('a', { class: 'btn btn-block', href: '#/pengguna/undangan' }, 'Kelola tautan undangan') : null,
+    bolehResetSesi() ? h('a', { class: 'btn btn-block', href: '#/pengguna/permintaan-reset' }, 'Permintaan reset password') : null,
+    bolehUndang() ? h('p', { class: 'notice' }, 'Tautan undangan Telegram berlaku sekali pakai dan kedaluwarsa dalam 72 jam. Akun Telegram terhubung otomatis saat tautan dibuka. Buat akun, lalu buka detailnya untuk menerbitkan tautan.') : null) : null),
+  // Kartu menu: bagi hak "R*" (profil sendiri) judulnya "Profil Saya", bukan daftar "Data Pengguna".
+  menuInfo: (user) => (userPerms(user, 'pengguna').selfOnly ? { title: 'Profil Saya', description: 'Akun, peran, dan perangkat Anda' } : {}),
+  prefillDraf: isianPenggunaDariDraf,
   // Admin tidak boleh menghapus akunnya sendiri (422 di server): sembunyikan tombol hapus.
   rowPerms: (rec, p) => (rec.id === getUser()?.id ? { ...p, D: false } : p),
-  detailExtras: (rec, p) => {
-    if (!canInvite()) return null;
-    const out = [akunKredensial(rec)];
-    if (rec.role === 'investor') out.push(kepemilikanSppgPanel(rec));
-    if (rec.status !== 'menunggu_telegram') return out;
+  detailExtras: (rec) => {
+    const out = [];
+    if (bolehResetSesi()) out.push(akunKredensial(rec));
+    if (rec.role === 'investor' && bolehAksi(getUser(), 'kelola_kepemilikan_sppg')) out.push(kepemilikanSppgPanel(rec));
+    if (!bolehUndang() || rec.status !== 'menunggu_telegram') return out.length ? out : null;
     const btn =h('button', { class: 'btn btn-primary btn-block', type: 'button' }, 'Buat tautan undangan Telegram');
     btn.addEventListener('click', async () => {
       btn.disabled = true;
@@ -142,14 +148,30 @@ function registerUndangan() {
       },
     });
     ctx.el.append(h('p', { class: 'muted small' }, 'Token tidak dapat ditampilkan ulang. Bila tautan hilang, buat undangan baru (undangan aktif sebelumnya otomatis dicabut).'), lv.el);
-  }, { title: 'Undangan Telegram', guard: canInvite });
+  }, { title: 'Undangan Telegram', guard: bolehUndang });
 
-  route('/pengguna/permintaan-reset', renderPermintaanReset, { title: 'Permintaan Reset Password', guard: canInvite });
-  route('/pengguna/:id/sesi', renderSesiPengguna, { title: 'Sesi Pengguna', guard: canInvite });
+  route('/pengguna/permintaan-reset', renderPermintaanReset, { title: 'Permintaan Reset Password', guard: bolehResetSesi });
+  route('/pengguna/:id/sesi', renderSesiPengguna, { title: 'Sesi Pengguna', guard: bolehResetSesi });
 
-  route('/pengguna/undangan/baru', (ctx) => {
+  // Form undangan terisi dari draf Agen AI: /pengguna/undangan/baru?draft=<uuid> (tombol "Ubah" di chat bot).
+  // Endpoint undangan tidak menerima ai_draft_id, jadi setelah terbit draf dibuang lewat DELETE /ai-drafts/{uuid}.
+  route('/pengguna/undangan/baru', async (ctx) => {
+    const uuid = ctx.query.get('draft');
+    let draf = null;
+    if (uuid) {
+      try {
+        draf = unwrap(await api.get(`/ai-drafts/${encodeURIComponent(uuid)}`, null, { silent: true }));
+      } catch (e) {
+        if (e?.status === 401) throw e;
+        toast(e?.status === 404 ? 'Draf AI tidak ditemukan atau sudah kedaluwarsa.' : 'Draf AI gagal dimuat.', 'error');
+      }
+      if (ctx.isStale()) return;
+      if (draf && draf.module !== 'pengguna') { toast('Draf ini untuk modul lain.', 'error'); draf = null; }
+    }
     const fv = createFormView({
       fields: undanganFields(),
+      values: draf ? isianUndanganDariDraf(draf.payload) : {},
+      confidence: draf?.confidence || {},
       submitText: 'Buat tautan undangan',
       onSubmit: async (values) => {
         try {
@@ -158,12 +180,14 @@ function registerUndangan() {
           if (e?.status !== 422 && e?.status !== 401) toast(errorMessage(e, 'Gagal membuat undangan.'), 'error');
           throw e; // 422 -> galat per kolom oleh form-view
         }
+        if (draf) api.del(`/ai-drafts/${encodeURIComponent(draf.uuid || uuid)}`, { silent: true }).catch(() => { /* draf kedaluwarsa sendiri */ });
         navigate('/pengguna/undangan', { replace: true });
       },
     });
+    if (draf) ctx.el.append(h('div', { class: 'notice' }, 'Diisi otomatis oleh Agen AI. Periksa kolom bertanda "Perlu dicek", lalu buat tautan.'));
     ctx.el.append(fv.el);
     return fv.destroy;
-  }, { title: 'Buat Undangan', guard: canInvite });
+  }, { title: 'Buat Undangan', guard: bolehUndang });
 }
 
 export default {
