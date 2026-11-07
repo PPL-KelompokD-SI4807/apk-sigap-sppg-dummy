@@ -37,12 +37,14 @@ final class ToolResult
     }
 
     /**
-     * @param  array<string, list<string>>  $errors
+     * @param  array<string, list<string>>  $errors  galat untuk model (tanpa galat baris slot pilihan tertunda)
      * @param  bool  $konfirmasiChat  draf dapat dijalankan dari tombol konfirmasi di chat (bukan hanya Mini App)
+     * @param  list<array<string, mixed>>  $perluDipilih  rujukan ambigu (nama dicari + pilihan nama/satuan, TANPA ID)
+     *                                                    yang dipilih pengguna lewat tombol sistem
      */
-    public static function draft(AiDraft $draft, array $errors = [], bool $konfirmasiChat = false): self
+    public static function draft(AiDraft $draft, array $errors = [], bool $konfirmasiChat = false, array $perluDipilih = []): self
     {
-        return new self(self::DRAFT, [
+        $data = [
             'draf_dibuat' => true,
             'modul' => $draft->module,
             'aksi' => $draft->action->value,
@@ -50,7 +52,14 @@ final class ToolResult
             'catatan' => $konfirmasiChat
                 ? 'Data BELUM disimpan. Sistem menampilkan ringkasan dengan tombol Lanjutkan/Batal; aksi hanya berjalan bila pengguna menekan tombol itu. Jangan meminta pengguna mengetik "ya".'
                 : 'Data BELUM disimpan. Pengguna harus memeriksa dan menekan Simpan di Mini App.',
-        ], null, $draft);
+        ];
+
+        if ($perluDipilih !== []) {
+            $data['perlu_dipilih'] = $perluDipilih;
+            $data['catatan'] = 'Data BELUM disimpan. Beberapa nama cocok dengan lebih dari satu data; sistem sudah menampilkan tombol pilihan kepada pengguna. Minta pengguna memilih lewat tombol itu. Jangan menebak, jangan meminta ID, dan jangan memanggil tool lagi untuk nama ini.';
+        }
+
+        return new self(self::DRAFT, $data, null, $draft);
     }
 
     public static function invalid(string $message): self

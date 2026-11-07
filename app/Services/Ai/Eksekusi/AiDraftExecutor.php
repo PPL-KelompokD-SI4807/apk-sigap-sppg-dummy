@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\Ai\ActingUser;
 use App\Services\Ai\Catalog\DraftToolResolver;
+use App\Services\Ai\Referensi\PilihanReferensiDraf;
 use App\Services\Ai\Tools\WriteDraftTool;
 use App\Services\Auth\SesiService;
 use App\Support\SppgAktif;
@@ -73,7 +74,8 @@ class AiDraftExecutor
             return HasilEksekusi::DITOLAK;
         }
 
-        if (! ($tool->eksekusi()?->dapatDijalankan() ?? false) || $this->perluDicek($draft) !== []) {
+        // Rujukan nama yang masih ambigu (payload `_pilihan`) harus dipilih pengguna lebih dulu: tidak pernah dijalankan.
+        if (! ($tool->eksekusi()?->dapatDijalankan() ?? false) || $this->perluDicek($draft) !== [] || PilihanReferensiDraf::tertunda($draft) !== []) {
             return HasilEksekusi::HANYA_MINIAPP;
         }
 

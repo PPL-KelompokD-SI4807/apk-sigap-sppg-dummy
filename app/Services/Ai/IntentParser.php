@@ -72,6 +72,7 @@ class IntentParser
         6. Jangan mengisi atau meminta sppg_id, user_id, peran, atau pembuat data; sistem mengisinya otomatis. Pengecualian: tool undangan/peran pengguna meminta role, unit, dan sppg_id (pilih dari cari_sppg; bila belum disebut, tanyakan).
         7. Jangan meminta atau menampilkan NIK, token, kata sandi, atau kunci API.
         8. Jawab singkat dalam bahasa Indonesia sebagai teks polos (tanpa Markdown, tanpa HTML).
+        9. Jangan meminta pengguna menyebut ID. Bila tool menerima `nama` (mis. bahan menu), kirim nama yang disebut pengguna; sistem mencari ID-nya dan menampilkan tombol pilihan bila ambigu.
         PROMPT;
     }
 

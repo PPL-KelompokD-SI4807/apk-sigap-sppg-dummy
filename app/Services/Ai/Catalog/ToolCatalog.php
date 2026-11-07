@@ -17,6 +17,9 @@ final class ToolCatalog
         $tools = [];
 
         foreach (CatalogDefinitions::all() as $spec) {
+            // Subkelas buat_/ubah_ (mis. MenuWriteTool: nama bahan -> ID di server); hapus_ selalu generik.
+            $tulis = $spec->kelasTulis !== null && is_subclass_of($spec->kelasTulis, CatalogWriteTool::class) ? $spec->kelasTulis : CatalogWriteTool::class;
+
             foreach ($spec->actions as $letter) {
                 if (in_array($spec->toolName($letter), $spec->skip, true)) {
                     continue;
@@ -24,8 +27,8 @@ final class ToolCatalog
 
                 $tools[] = match ($letter) {
                     'R' => new CatalogReadTool($spec),
-                    'C' => $spec->store === null ? null : new CatalogWriteTool($spec, 'C'),
-                    'U' => $spec->update === null ? null : new CatalogWriteTool($spec, 'U'),
+                    'C' => $spec->store === null ? null : new $tulis($spec, 'C'),
+                    'U' => $spec->update === null ? null : new $tulis($spec, 'U'),
                     'D' => new CatalogWriteTool($spec, 'D'),
                 };
             }

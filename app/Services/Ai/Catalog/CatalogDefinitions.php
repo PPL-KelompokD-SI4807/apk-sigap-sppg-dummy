@@ -195,7 +195,8 @@ final class CatalogDefinitions
                 rute: 'api.v1.pemasok',
             ),
 
-            // 8. Data Menu dan Gizi: menu + standar gizi (penanda 'standar_gizi' pada draf).
+            // 8. Data Menu dan Gizi: menu + standar gizi (penanda 'standar_gizi' pada draf). Komposisi bahan pada
+            //    buat_/ubah_menu dirujuk dengan NAMA (MenuWriteTool + ResolverReferensi; ID dipetakan server).
             new ResourceSpec(
                 key: 'menu', module: 'menu-gizi', label: 'menu', model: Menu::class,
                 search: ['nama_menu', 'siklus'],
@@ -204,6 +205,7 @@ final class CatalogDefinitions
                 filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => self::values(KelompokSasaran::class)]],
                 date: 'tanggal_sajian', order: [['tanggal_sajian', 'desc'], ['id', 'desc']],
                 store: StoreMenuRequest::class, update: UpdateMenuRequest::class, routeParameter: 'menu',
+                kelasTulis: MenuWriteTool::class,
             ),
             new ResourceSpec(
                 key: 'standar_gizi', module: 'menu-gizi', label: 'standar gizi', model: StandarGizi::class,
