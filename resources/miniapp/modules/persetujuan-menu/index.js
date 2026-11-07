@@ -68,7 +68,7 @@ function keputusanPanel(rec) {
 }
 
 async function detailScreen(ctx) {
-  const rec = unwrap(await api.get(`/persetujuan-menu/${ctx.params.id}`));
+  const rec = unwrap(await api.get(`/persetujuan-menu/${encodeURIComponent(ctx.params.id)}`));
   if (ctx.isStale()) return;
   ctx.setTitle(rec.nama_menu ?? 'Pengajuan Menu');
   const ket = h('dl', { class: 'detail' });

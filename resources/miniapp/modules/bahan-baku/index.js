@@ -111,7 +111,7 @@ function listScreen(endpoint, tab, emptyText) {
 }
 
 async function mutasiScreen(ctx) {
-  const rec = unwrap(await api.get(`/bahan-baku/${ctx.params.id}`));
+  const rec = unwrap(await api.get(`/bahan-baku/${encodeURIComponent(ctx.params.id)}`));
   if (ctx.isStale()) return;
   ctx.setTitle(`Mutasi: ${rec.nama}`);
   clear(ctx.el);

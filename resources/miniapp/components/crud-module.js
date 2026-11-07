@@ -6,6 +6,7 @@ import { errorMessage, ringkasGalatAksi } from '../core/errors.js';
 import { navigate, route, resolve, alihkanKeBeranda } from '../core/router.js';
 import { toast, showConfirm, setMainButton } from '../core/ui.js';
 import { createListView } from './list-view.js';
+import { createAuthImage } from './photo-upload.js';
 import { createFormView } from './form-view.js';
 
 const unwrap = (res) => (res && res.data !== undefined && !Array.isArray(res) ? res.data : res);
@@ -166,7 +167,7 @@ export function defineCrudModule(def) {
 
     // Detail
     route(`${base}/:id`, async (ctx) => {
-      const res = await api.get(`${endpoint}/${ctx.params.id}`);
+      const res = await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`);
       if (ctx.isStale()) return;
       const rec = unwrap(res);
       const p = permsRecord(rec);
@@ -176,7 +177,7 @@ export function defineCrudModule(def) {
         if (f.onlyIfPresent && !(f.name in rec)) continue;
         const dt = h('dt', {}, f.label || f.name);
         const v = rec[f.name];
-        const dd = f.type === 'photo' && v ? h('dd', {}, h('img', { class: 'photo-preview', src: v, alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
+        const dd = f.type === 'photo' && v ? h('dd', {}, createAuthImage(v, { alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
         dl.append(dt, dd);
       }
       ctx.el.append(h('div', { class: 'panel' }, dl));
@@ -206,7 +207,7 @@ export function defineCrudModule(def) {
 
     // Ubah
     route(`${base}/:id/ubah`, async (ctx) => {
-      const rec = unwrap(await api.get(`${endpoint}/${ctx.params.id}`));
+      const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
       if (ctx.isStale()) return;
       // Akses langsung ke /ubah: izin per record dari server menentukan (relawan hari lalu, record terkunci, dst.).
       if (!permsRecord(rec).U) return alihkanKeBeranda(PESAN_BUKAN_HAK);

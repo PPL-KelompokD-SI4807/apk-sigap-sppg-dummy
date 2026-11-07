@@ -71,7 +71,7 @@ function aksiStatus(kind, rec, base, p) {
 
 // ---- Layar kebutuhan bahan ----
 async function kebutuhanScreen(ctx) {
-  const d = unwrap(await api.get(`/jadwal/${ctx.params.id}/kebutuhan-bahan`));
+  const d = unwrap(await api.get(`/jadwal/${encodeURIComponent(ctx.params.id)}/kebutuhan-bahan`));
   if (ctx.isStale()) return;
   ctx.setTitle('Kebutuhan Bahan');
   const r = ringkasKebutuhan(d);
