@@ -21,7 +21,7 @@ jobs:
       DB_CONNECTION: sqlite
       DB_DATABASE: ":memory:"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup PHP 8.4
         if: hashFiles('artisan') != ''
@@ -33,7 +33,7 @@ jobs:
 
       - name: Cache composer
         if: hashFiles('artisan') != ''
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.composer/cache
           key: composer-${{ hashFiles('composer.lock') }}
@@ -65,11 +65,11 @@ jobs:
     name: Frontend (Vite build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node 22
         if: hashFiles('package.json') != ''
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
