@@ -6,7 +6,8 @@ import {
   setSppgAktif, getSppgAktif, hapusSppgAktif, sppgBelumDimiliki, normalisasiId,
 } from '../core/sppg-aktif.js';
 import { request, onSppgDiperlukan } from '../core/api.js';
-import { perms, userPerms, roleLabel, ROLES, MODULE_ORDER } from '../core/permissions.js';
+import { userPerms, roleLabel, ROLES } from '../core/permissions.js';
+import { PROFIL } from './fixtures/peta.js';
 import { normalisasiAgregat, queryAgregat } from '../core/agregat.js';
 import { needsSppg, mapPayload, buildInvitePayload, ROLE_OPTIONS } from '../modules/pengguna/schema.js';
 
@@ -77,18 +78,23 @@ test('tentukanSppgAktif: satu SPPG langsung terpilih, banyak harus memilih', () 
   assert.deepEqual(tentukanSppgAktif({ data: [s(1), s(2)], wajib_pilih: false, sppg_aktif_id: null }, 99), { langkah: 'pilih' });
 });
 
-test('matriks investor: baca-saja pada modul ber-R, modul lain tertutup', () => {
+test('peta investor dari server: baca-saja pada modul ber-R, modul lain tertutup', () => {
   assert.equal(roleLabel('investor'), 'Investor');
   const boleh = ['sppg', 'bahan-baku', 'mutu', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu'];
-  for (const slug of MODULE_ORDER) {
-    const p = perms('investor', slug);
+  const SEMUA = ['pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'];
+  for (const slug of SEMUA) {
+    const p = userPerms(PROFIL.investor, slug);
     if (boleh.includes(slug)) assert.deepEqual([p.R, p.C, p.U, p.D], [true, false, false, false], slug);
     else if (slug === 'pengguna') assert.deepEqual([p.R, p.C, p.U, p.D, p.selfOnly], [true, false, false, false, true]);
     else assert.deepEqual([p.R, p.C, p.U, p.D], [false, false, false, false], slug);
   }
-  assert.equal(userPerms({ role: 'investor' }, 'penerima-manfaat').R, false);
-  // irisan dengan permissions dari server tidak bisa menambah hak
-  assert.equal(userPerms({ role: 'investor', permissions: { keuangan: 'CRUD' } }, 'keuangan').C, false);
+  assert.equal(userPerms(PROFIL.investor, 'penerima-manfaat').R, false);
+  // modul/huruf yang tidak ada di peta server tidak pernah dianggap hak (tanpa fallback ke matriks klien)
+  const tanpaPeta = { role: 'investor' };
+  assert.equal(userPerms(tanpaPeta, 'keuangan').R, false);
+  // baca_saja dari server menekan huruf tulis walau permissions keliru
+  const keliru = userPerms({ ...PROFIL.investor, permissions: { ...PROFIL.investor.permissions, keuangan: 'CRUD' } }, 'keuangan');
+  assert.deepEqual([keliru.C, keliru.R, keliru.U, keliru.D], [false, true, false, false]);
 });
 
 test('agregat penerima manfaat: sel tersamar tampil sebagai penanda, bukan 0', () => {
@@ -109,8 +115,9 @@ test('agregat penerima manfaat: sel tersamar tampil sebagai penanda, bukan 0', (
   assert.equal(b.disamarkan, false);
   assert.deepEqual(b.kelompok, [{ label: 'Siswa', jumlah: 60, tampil: '60', persen: 50 }]);
   assert.equal(normalisasiAgregat(null).totalTampil, '<5');
-  assert.deepEqual(queryAgregat({ role: 'admin' }, 4), { sppg_id: 4 });
-  assert.equal(queryAgregat({ role: 'investor' }, 4), undefined);
+  assert.deepEqual(queryAgregat(PROFIL.admin, 4), { sppg_id: 4 });
+  assert.equal(queryAgregat(PROFIL.investor, 4), undefined);
+  assert.equal(queryAgregat({ ...PROFIL.investor, sppg_aktif_id: null }, 4), undefined, 'investor memakai header X-SPPG-Id, bukan query');
 });
 
 test('agregat: aktif disamarkan tetapi total terlihat -> nonaktif tidak memakai total', () => {
@@ -151,8 +158,8 @@ test('daftar SPPG yang belum dimiliki', () => {
 test('lampiran disembunyikan untuk investor atau flag server; legenda penyamaran', async () => {
   const { lampiranDisembunyikan } = await import('../core/lampiran-uploader.js');
   const { LEGENDA_PENYAMARAN } = await import('../core/agregat.js');
-  assert.equal(lampiranDisembunyikan({ role: 'investor' }), true);
-  assert.equal(lampiranDisembunyikan({ role: 'kepala_sppg' }, { lampiran_disembunyikan: true }), true);
-  assert.equal(lampiranDisembunyikan({ role: 'kepala_sppg' }, { lampiran: [] }), false);
+  assert.equal(lampiranDisembunyikan(PROFIL.investor), true);
+  assert.equal(lampiranDisembunyikan(PROFIL.kepala_sppg, { lampiran_disembunyikan: true }), true);
+  assert.equal(lampiranDisembunyikan(PROFIL.kepala_sppg, { lampiran: [] }), false);
   assert.match(LEGENDA_PENYAMARAN, /^<5 = jumlah disamarkan demi privasi/);
 });

@@ -1,7 +1,8 @@
 // Tes unit modul grup C (logika murni): node --test resources/miniapp/tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { can, userPerms } from '../core/permissions.js';
+import { userPerms, bolehAksi } from '../core/permissions.js';
+import { PROFIL } from './fixtures/peta.js';
 import { mapValidationErrors, errorMessage } from '../core/errors.js';
 import { todayWIB, jamWIB, addDays, hariLengkap } from '../core/waktu.js';
 import * as trip from '../modules/notifikasi-perjalanan/schema.js';
@@ -11,13 +12,14 @@ import * as rekap from '../modules/rekap-harian/schema.js';
 const names = (f) => f.map((x) => x.name);
 
 // ---------- hak akses ----------
-test('hak akses grup C sesuai Tabel 5', () => {
-  assert.equal(can('relawan', 'notifikasi-perjalanan', 'C'), true);
+test('hak akses grup C mengikuti peta server', () => {
+  const can = (nama, slug, k) => userPerms(PROFIL[nama], slug)[k];
+  assert.equal(can('relawan_distribusi', 'notifikasi-perjalanan', 'C'), true);
   assert.equal(can('kepala_sppg', 'notifikasi-perjalanan', 'C'), true);
   assert.equal(can('admin', 'notifikasi-perjalanan', 'C'), false);
   assert.equal(can('ahli_gizi', 'notifikasi-perjalanan', 'R'), false);
-  assert.equal(can('relawan', 'keluhan', 'C'), true);
-  assert.equal(can('relawan', 'keluhan', 'U'), false);
+  assert.equal(can('relawan_dapur', 'keluhan', 'C'), true);
+  assert.equal(can('relawan_dapur', 'keluhan', 'U'), false);
   assert.equal(can('kepala_sppg', 'keluhan', 'U'), true);
   assert.equal(can('ahli_gizi', 'keluhan', 'U'), true);
   assert.equal(can('kepala_sppg', 'keluhan', 'D'), false);
@@ -26,16 +28,16 @@ test('hak akses grup C sesuai Tabel 5', () => {
   assert.equal(can('ahli_gizi', 'rekap-harian', 'C'), false);
   assert.equal(can('akuntan', 'rekap-harian', 'R'), true);
   assert.equal(can('staf_gudang', 'rekap-harian', 'R'), false);
-  assert.equal(userPerms({ role: 'kepala_sppg', modules: ['keluhan'] }, 'rekap-harian').R, false);
+  assert.equal(userPerms({ ...PROFIL.kepala_sppg, modules: ['keluhan'] }, 'rekap-harian').R, false);
   assert.deepEqual(rekap.aksiRekap({ C: true, U: true }), { susun: true, ubah: true });
 });
 
-test('relawan perjalanan hanya unit distribusi', () => {
-  assert.equal(trip.unitPerjalananBoleh({ role: 'relawan', unit: 'distribusi' }), true);
-  assert.equal(trip.unitPerjalananBoleh({ role: 'relawan', unit: 'dapur' }), false);
-  assert.equal(trip.unitPerjalananBoleh({ role: 'relawan', unit: null }), false);
-  assert.equal(trip.unitPerjalananBoleh({ role: 'kepala_sppg' }), true);
-  assert.equal(trip.unitPerjalananBoleh(null), false);
+test('perjalanan: relawan distribusi dan kepala memicu lewat aksi.picu_perjalanan (relawan dapur tidak)', () => {
+  assert.equal(bolehAksi(PROFIL.relawan_distribusi, 'picu_perjalanan'), true);
+  assert.equal(bolehAksi(PROFIL.kepala_sppg, 'picu_perjalanan'), true);
+  assert.equal(bolehAksi(PROFIL.relawan_dapur, 'picu_perjalanan'), false);
+  assert.equal(bolehAksi(PROFIL.relawan_tanpa_unit, 'picu_perjalanan'), false);
+  assert.equal(bolehAksi(null, 'picu_perjalanan'), false);
 });
 
 // ---------- perjalanan ----------
@@ -49,13 +51,11 @@ test('transisi perjalanan: hanya yang valid', () => {
   assert.deepEqual(trip.transisiValid('berangkat'), ['dalam_perjalanan', 'dibatalkan'], 'salinan, bukan referensi');
 });
 
-test('perjalanan: siapa boleh ubah status', () => {
-  const rec = { status: 'berangkat', dipicu_oleh: { id: 5 } };
-  assert.equal(trip.bolehUbahStatus({ role: 'relawan', id: 5 }, rec, { C: true }), true);
-  assert.equal(trip.bolehUbahStatus({ role: 'relawan', id: 6 }, rec, { C: true }), false, 'milik relawan lain');
-  assert.equal(trip.bolehUbahStatus({ role: 'kepala_sppg', id: 1 }, rec, { C: true }), true);
-  assert.equal(trip.bolehUbahStatus({ role: 'admin', id: 1 }, rec, { C: false }), false, 'admin hanya baca');
-  assert.equal(trip.bolehUbahStatus({ role: 'kepala_sppg' }, { status: 'tiba' }, { C: true }), false, 'status final');
+test('perjalanan: tombol ubah status dari izin.ubah_status server (bukan peran/kepemilikan di klien)', () => {
+  assert.equal(trip.bolehUbahStatus({ status: 'berangkat', dipicu_oleh: { id: 5 }, izin: { ubah_status: true } }), true);
+  assert.equal(trip.bolehUbahStatus({ status: 'berangkat', dipicu_oleh: { id: 5 }, izin: { ubah_status: false } }), false, 'milik relawan lain / admin hanya baca');
+  assert.equal(trip.bolehUbahStatus({ status: 'tiba', izin: { ubah_status: true } }), false, 'status final');
+  assert.equal(trip.bolehUbahStatus({ status: 'berangkat' }), false, 'tanpa izin = tanpa tombol');
 });
 
 test('perjalanan: alasan batal wajib, payload status', () => {
@@ -125,16 +125,16 @@ test('keluhan: transisi status + tindak lanjut wajib', () => {
   assert.match(kel.validasiTindakLanjut('ditolak', null), /wajib/);
   assert.equal(kel.validasiTindakLanjut('diproses', ''), '');
   assert.equal(kel.validasiTindakLanjut('selesai', 'Batch ditarik'), '');
-  const f = kel.keluhanFields({ mode: 'update', user: { role: 'kepala_sppg' }, record: { status: 'diproses' } });
+  const f = kel.keluhanFields({ mode: 'update', user: PROFIL.kepala_sppg, record: { status: 'diproses' } });
   assert.deepEqual(names(f), ['status', 'tindak_lanjut']);
   assert.match(f[1].validate(null, { status: 'selesai' }), /wajib/);
 });
 
 test('keluhan: skema dan payload per peran', () => {
-  assert.deepEqual(names(kel.keluhanFields({ mode: 'create', user: { role: 'relawan' } })), ['sumber', 'kategori', 'titik_layanan_id', 'jadwal_produksi_id', 'deskripsi']);
-  assert.equal(names(kel.keluhanFields({ mode: 'create', user: { role: 'admin' } }))[0], 'sppg_id');
-  assert.ok(names(kel.keluhanFields({ mode: 'update', user: { role: 'admin' }, record: { status: 'baru' } })).includes('prioritas'));
-  const rel = { role: 'relawan' };
+  assert.deepEqual(names(kel.keluhanFields({ mode: 'create', user: PROFIL.relawan_dapur })), ['sumber', 'kategori', 'titik_layanan_id', 'jadwal_produksi_id', 'deskripsi']);
+  assert.equal(names(kel.keluhanFields({ mode: 'create', user: PROFIL.admin }))[0], 'sppg_id');
+  assert.ok(names(kel.keluhanFields({ mode: 'update', user: PROFIL.admin, record: { status: 'baru' } })).includes('prioritas'));
+  const rel = PROFIL.relawan_dapur;
   assert.deepEqual(
     kel.keluhanPayload({ sumber: 'guru', kategori: 'rasa', titik_layanan_id: '3', jadwal_produksi_id: '', deskripsi: ' Hambar ', sppg_id: '9', foto_path: 'x' }, { mode: 'create', user: rel }),
     { sumber: 'guru', kategori: 'rasa', titik_layanan_id: 3, jadwal_produksi_id: null, deskripsi: 'Hambar' });
@@ -142,15 +142,15 @@ test('keluhan: skema dan payload per peran', () => {
   assert.equal(k.batch_tidak_diketahui, true);
   assert.equal(kel.keluhanPayload({ sumber: 'guru', kategori: 'rasa', deskripsi: 'a', batch_tidak_diketahui: true }, { mode: 'create', user: rel }).batch_tidak_diketahui, undefined);
   assert.equal(kel.keluhanPayload({ sumber: 'guru', kategori: 'makanan_basi', deskripsi: 'a', jadwal_produksi_id: '4', batch_tidak_diketahui: true }, { mode: 'create', user: rel }).batch_tidak_diketahui, undefined);
-  assert.equal(kel.keluhanPayload({ kategori: 'rasa', sumber: 'guru', deskripsi: 'a', sppg_id: '2' }, { mode: 'create', user: { role: 'admin' } }).sppg_id, 2);
-  assert.deepEqual(kel.keluhanPayload({ status: 'selesai', tindak_lanjut: ' Ditarik ', deskripsi: 'tidak boleh' }, { mode: 'update', user: { role: 'kepala_sppg' } }), { status: 'selesai', tindak_lanjut: 'Ditarik' });
+  assert.equal(kel.keluhanPayload({ kategori: 'rasa', sumber: 'guru', deskripsi: 'a', sppg_id: '2' }, { mode: 'create', user: PROFIL.admin }).sppg_id, 2);
+  assert.deepEqual(kel.keluhanPayload({ status: 'selesai', tindak_lanjut: ' Ditarik ', deskripsi: 'tidak boleh' }, { mode: 'update', user: PROFIL.kepala_sppg }), { status: 'selesai', tindak_lanjut: 'Ditarik' });
 });
 
 test('keluhan: hak per baris', () => {
   const p = { C: false, R: true, U: true, D: false };
-  assert.equal(kel.rowPermsKeluhan({ role: 'kepala_sppg' }, { status: 'baru' }, p).U, true);
-  assert.equal(kel.rowPermsKeluhan({ role: 'kepala_sppg' }, { status: 'selesai' }, p).U, false);
-  assert.equal(kel.rowPermsKeluhan({ role: 'admin' }, { status: 'selesai' }, { ...p, D: true }).D, true);
+  assert.equal(kel.rowPermsKeluhan(PROFIL.kepala_sppg, { status: 'baru' }, p).U, true);
+  assert.equal(kel.rowPermsKeluhan(PROFIL.kepala_sppg, { status: 'selesai' }, p).U, false);
+  assert.equal(kel.rowPermsKeluhan(PROFIL.admin, { status: 'selesai' }, { ...p, D: true }).D, true);
 });
 
 // ---------- pemetaan 422 ----------
