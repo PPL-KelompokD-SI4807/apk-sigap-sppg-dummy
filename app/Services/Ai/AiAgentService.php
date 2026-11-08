@@ -3,9 +3,11 @@
 namespace App\Services\Ai;
 
 use App\Enums\HasilAi;
+use App\Models\AiDraft;
 use App\Models\AiInteraction;
 use App\Models\User;
 use App\Services\Ai\Drafts\DraftLimitException;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Llm\JalurSkema;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmException;
@@ -14,11 +16,13 @@ use App\Services\Ai\Llm\SupportsVision;
 use App\Services\Ai\Llm\ToolCall;
 use App\Services\Ai\Tools\AiTool;
 use App\Services\Ai\Tools\ArgumentValidator;
+use App\Services\Ai\Tools\PemisahArgumen;
 use App\Services\Ai\Tools\ToolContext;
 use App\Services\Ai\Tools\ToolException;
 use App\Services\Ai\Tools\ToolRegistry;
 use App\Services\Ai\Tools\ToolResult;
 use App\Services\Ai\Tools\ToolSelector;
+use App\Services\Ai\Tools\WriteDraftTool;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -34,7 +38,11 @@ use Throwable;
  *      global (TokenBudget); tiap tool call: nama dikenal? -> tool milik peran pengguna? -> ditawarkan?
  *      -> argumen JSON sah? -> argumen terlindungi dibuang -> skema argumen valid? -> eksekusi
  *      (baca: langsung ber-scope; tulis: hanya AiDraft);
- *   5. jawaban teks polos dipotong; jejak + jumlah token (angka) dicatat di ai_interactions (tanpa isi pesan).
+ *   5. masukan salah pada tool TULIS (galat skema argumen, kolom ditolak penyedia, rujukan tidak ditemukan, satuan
+ *      salah, galat Form Request) -> draf "perlu diperbaiki" (GalatDraf) dan loop BERHENTI tanpa panggilan LLM lagi;
+ *      balasan = satu pesan server (daftar kolom) + tombol Mini App ke formulir draf;
+ *   6. jawaban teks polos (penanda Markdown dibuang) dipotong; jejak + jumlah token (angka) dicatat di
+ *      ai_interactions (tanpa isi pesan).
  * LLM gagal/tidak tersedia/terlalu lama -> balasan ramah per kategori + fallback formulir manual; galat penyedia
  * dicatat aman ('ai.llm_galat'); tool call ditolak penyedia (tool_use_failed) diulang sekali dengan catatan perbaikan;
  * draf yang sudah dibuat sebelum galat tetap ditawarkan.
@@ -160,7 +168,8 @@ class AiAgentService
 
         $system = $this->parser->systemPrompt($user, array_keys($tools), $nonce, $selection->active ? $selection->otherModules : []);
         $messages = [$this->parser->userMessage($input, $text, $nonce, $imageText)];
-        $context = new ToolContext($interaction->id, $input->type);
+        // Teks pengguna hanya untuk penjagaan server (ResolverReferensi), tidak disimpan dan tidak dikirim ulang.
+        $context = new ToolContext($interaction->id, $input->type, trim($text.' '.($imageText ?? '')));
 
         $maxIterations = max(1, (int) config('ai.agent.max_iterations', 4));
         $maxCalls = max(1, (int) config('ai.agent.max_tool_calls_per_turn', 5));
@@ -180,6 +189,12 @@ class AiAgentService
             try {
                 $response = $this->chat($model, $system, $messages, $schemas, $deadline, $log, $interaction, $sudahUlang);
             } catch (LlmException $e) {
+                // tool_use_failed yang tetap gagal setelah SATU percobaan ulang (atau tanpa waktu untuk ulang): bagian
+                // yang sudah dipahami menjadi draf "perlu diperbaiki" (tanpa panggilan LLM lagi).
+                if ($e->toolGagal() && ($balasan = $this->drafDariPenolakan($user, $e, $context, $log, $tools, $interaction, $started, $drafts)) !== null) {
+                    return $balasan;
+                }
+
                 if ($drafts === []) {
                     throw $e;
                 }
@@ -210,6 +225,18 @@ class AiAgentService
 
                 if ($result->draft !== null) {
                     $drafts[] = $result->draft;
+                }
+
+                // Masukan salah: BERHENTI di sini (tanpa panggilan LLM lagi, tanpa pertanyaan balik). Balasan disusun
+                // server; draf dibuka di Mini App untuk diperbaiki. Sisa tool call pada langkah ini tidak dijalankan.
+                if ($result->perluDiperbaiki()) {
+                    $tertunda = count($response->toolCalls) - $n - 1;
+
+                    if ($tertunda > 0) {
+                        $log['aksi_tertunda'] = $tertunda;
+                    }
+
+                    return $this->balasPerbaikan($interaction, $started, $log, $result->draft, $drafts, $tertunda > 0);
                 }
 
                 $messages[] = [
@@ -251,11 +278,78 @@ class AiAgentService
     }
 
     /**
+     * Balasan jalur kesalahan: SATU pesan server (label modul + daftar kolom, tanpa nilai masukan) dan draf "perlu
+     * diperbaiki" di urutan pertama (tombol Mini App di AiChatHandler). $adaTertunda = ada aksi lain pada pesan yang sama
+     * yang tidak diproses karena loop berhenti: pesan menyebut bahwa sisanya perlu dikirim ulang.
+     *
+     * @param  array<string, mixed>  $log
+     * @param  list<AiDraft>  $drafts
+     */
+    private function balasPerbaikan(AiInteraction $interaction, float $started, array $log, AiDraft $draft, array $drafts, bool $adaTertunda = false): AiReply
+    {
+        $log['perlu_diperbaiki'] = 1;
+        $label = (string) config("rbac.modules.{$draft->module}.label", $draft->module);
+        $lain = array_values(array_filter($drafts, fn (AiDraft $d) => $d->getKey() !== $draft->getKey()));
+        $teks = GalatDraf::pesanBalasan($label, GalatDraf::dari($draft));
+
+        if ($adaTertunda) {
+            $teks .= ' '.GalatDraf::PESAN_TERTUNDA;
+        }
+
+        return $this->finish($interaction, $started, $log, HasilAi::Sukses, null, new AiReply(
+            $teks,
+            [$draft, ...$lain],
+            interactionId: $interaction->id,
+        ));
+    }
+
+    /**
+     * tool_use_failed final (percobaan ulang SATU kali sudah habis/tidak sempat): argumen yang ditolak penyedia
+     * (failed_generation, data tak tepercaya) dijalankan lewat pipeline tool BIASA (tool dikenal + milik peran +
+     * ditawarkan, argumen terlindungi dibuang, skema -> PemisahArgumen, Form Request) dengan kolom yang ditolak
+     * penyedia dikosongkan. Hasil draf -> balasan server + tombol Mini App. Hanya tool tulis; argumen tidak dicatat di
+     * log interaksi (failed_generation tidak pernah disimpan). Null = tidak berlaku (galat ramah seperti biasa).
+     *
+     * @param  array<string, mixed>  $log
+     * @param  array<string, AiTool>  $offered
+     * @param  list<AiDraft>  $drafts
+     */
+    private function drafDariPenolakan(User $user, LlmException $e, ToolContext $context, array &$log, array $offered, AiInteraction $interaction, float $started, array $drafts): ?AiReply
+    {
+        $tool = $e->tool === null ? null : ($offered[$e->tool] ?? null);
+
+        if (! $tool instanceof WriteDraftTool) {
+            return null;
+        }
+
+        $galat = PemisahArgumen::dariJalurPenyedia(JalurSkema::saring($e->jalur, JalurSkema::namaProperti($tool->parameters())));
+        $result = $this->runTool($user, new ToolCall('gagal_penyedia', $tool->name(), $e->argumenGagal ?? []), $context, $log, $offered, $galat, catatArgumen: false);
+
+        if ($result->draft === null) {
+            return null;
+        }
+
+        $log['draf_dari_penolakan'] = 1;
+        $drafts[] = $result->draft;
+
+        if ($result->perluDiperbaiki()) {
+            return $this->balasPerbaikan($interaction, $started, $log, $result->draft, $drafts);
+        }
+
+        return $this->finish($interaction, $started, $log, HasilAi::Sukses, null, new AiReply(
+            'Draf sudah disiapkan. Periksa dan simpan di Mini App. Data BELUM disimpan.',
+            $drafts,
+            interactionId: $interaction->id,
+        ));
+    }
+
+    /**
      * Satu panggilan chat melewati pelindung token. Penyedia menolak tool call buatan model (Groq HTTP 400
      * `tool_use_failed`, mis. argumen tidak cocok skema) -> diulang SEKALI per pesan dengan catatan perbaikan singkat di
      * prompt sistem. Aman diulang: penolakan terjadi sebelum ada tool yang dijalankan, jadi tidak ada draf ganda;
      * riwayat pesan tidak diubah (pesan pengguna tidak digandakan, failed_generation tidak dikirim balik).
-     * Setiap galat penyedia dicatat aman (catatGalatLlm).
+     * Setiap galat penyedia dicatat aman (catatGalatLlm). Masih gagal setelah ulang -> loop() membuat draf "perlu
+     * diperbaiki" dari bagian yang dipahami (drafDariPenolakan).
      *
      * @param  list<array<string, mixed>>  $messages
      * @param  list<array<string, mixed>>  $schemas
@@ -322,8 +416,10 @@ class AiAgentService
     /**
      * @param  array<string, mixed>  $log
      * @param  array<string, AiTool>  $offered  tool yang ditawarkan pada pesan ini (subset forUser())
+     * @param  array<string, list<string>>  $galatPenyedia  kolom tool ini yang ditolak penyedia (tool_use_failed final)
+     * @param  bool  $catatArgumen  false = argumen tidak masuk jejak log (argumen dari failed_generation)
      */
-    private function runTool(User $user, ToolCall $call, ToolContext $context, array &$log, array $offered): ToolResult
+    private function runTool(User $user, ToolCall $call, ToolContext $context, array &$log, array $offered, array $galatPenyedia = [], bool $catatArgumen = true): ToolResult
     {
         try {
             $tool = $this->registry->resolveFor($user, $call->name);
@@ -355,13 +451,24 @@ class AiAgentService
         }
 
         $errors = $this->validator->validate($tool->parameters(), $arguments);
+        $galat = $tool instanceof WriteDraftTool ? $galatPenyedia : [];
 
         if ($errors !== []) {
-            return $this->record($log, $call->name, ToolResult::invalid('Argumen tidak valid: '.implode(' ', array_slice($errors, 0, 8))), $arguments, $stripped);
+            // Tool tulis: kolom yang tidak lolos skema dibuang + dicatat sebagai galat kolom (draf "perlu diperbaiki"),
+            // bukan dikembalikan ke LLM untuk ditanyakan balik. Tool baca / galat tak terpetakan: ditolak seperti biasa.
+            $pisah = $tool instanceof WriteDraftTool ? PemisahArgumen::pisahkan($this->validator, $tool->parameters(), $arguments) : null;
+
+            if ($pisah === null) {
+                return $this->record($log, $call->name, ToolResult::invalid('Argumen tidak valid: '.implode(' ', array_slice($errors, 0, 8))), $catatArgumen ? $arguments : [], $stripped);
+            }
+
+            [$arguments, $galatSkema] = $pisah;
+            $galat = GalatDraf::gabung($galatSkema, $galat);
+            $log['galat_skema'] = (int) ($log['galat_skema'] ?? 0) + 1;
         }
 
         try {
-            $result = $tool->execute($user, $arguments, $context);
+            $result = $tool->execute($user, $arguments, $galat === [] ? $context : $context->denganGalatArgumen($galat));
         } catch (AuthorizationException) {
             $result = ToolResult::denied();
         } catch (DraftLimitException $e) {
@@ -371,7 +478,7 @@ class AiAgentService
             $result = ToolResult::failed();
         }
 
-        return $this->record($log, $call->name, $result, $arguments, $stripped);
+        return $this->record($log, $call->name, $result, $catatArgumen ? $arguments : [], $stripped);
     }
 
     /**
@@ -503,14 +610,31 @@ class AiAgentService
         return true;
     }
 
-    /** Teks polos aman: tanpa karakter kontrol, dipotong ke batas keluaran. */
+    /** Teks polos aman: tanpa karakter kontrol dan penanda Markdown mentah, dipotong ke batas keluaran. */
     private function cleanOutput(string $text): string
     {
         $text = (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text);
-        $text = trim($text);
+        $text = trim(self::tanpaMarkdown($text));
         $max = (int) config('ai.agent.max_output_chars', 3500);
 
         return mb_strlen($text) > $max ? rtrim(mb_substr($text, 0, $max - 1)).'…' : $text;
+    }
+
+    /**
+     * Penanda Markdown mentah dari jawaban LLM dibuang (balasan dikirim tanpa parse_mode, jadi penanda akan tampil
+     * apa adanya): **tebal**, __tebal__, `kode`, ```blok```, heading `#`, dan *miring* berpasangan. Isi teks tetap; tanda
+     * hubung daftar ("- ") dan tanda bintang tunggal (mis. "2 * 3") dipertahankan.
+     */
+    public static function tanpaMarkdown(string $text): string
+    {
+        $text = (string) preg_replace('/^[ \t]*```[^\n]*\n?/mu', '', $text);
+        $text = (string) preg_replace('/^[ \t]{0,3}#{1,6}[ \t]+/mu', '', $text);
+        $text = (string) preg_replace('/\*\*(?=\S)(.+?)(?<=\S)\*\*/su', '$1', $text);
+        $text = (string) preg_replace('/(?<![\p{L}\p{N}_])__(?=\S)(.+?)(?<=\S)__(?![\p{L}\p{N}_])/su', '$1', $text);
+        $text = (string) preg_replace('/`([^`\n]+)`/u', '$1', $text);
+        $text = (string) preg_replace('/(?<![\p{L}\p{N}*])\*(?=[^\s*])([^*\n]+?)(?<=[^\s*])\*(?![\p{L}\p{N}*])/u', '$1', $text);
+
+        return str_replace(['**', '```'], '', $text);
     }
 
     /**

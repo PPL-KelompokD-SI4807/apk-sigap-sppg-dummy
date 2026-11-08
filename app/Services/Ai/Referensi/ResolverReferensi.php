@@ -24,6 +24,11 @@ use Illuminate\Support\Facades\Gate;
  *
  * Urutan cocok: sama persis (tanpa beda huruf besar) -> awalan -> mengandung. Tingkat pertama yang menghasilkan data
  * menentukan: 1 = tepat, >1 = ambigu (maks MAKS_PILIHAN pilihan, tidak pernah menebak), 0 di semua tingkat = tidak ada.
+ *
+ * Penjagaan nama yang "dilengkapi" LLM (bug "bahan ay" -> Ayam): bila teks pesan pengguna diketahui dan nama yang
+ * dikirim LLM TIDAK tertulis di teks itu, kecocokan sama persis tunggal tidak langsung dipakai; bila nama itu juga
+ * awalan >1 data (mis. "ayam" -> Ayam, Ayam Fillet) hasilnya ambigu (pilihan), bukan tebakan. ID tanpa nama yang tidak
+ * tertulis di teks pengguna dianggap karangan LLM (tidak valid). Murah: satu query tambahan hanya pada kasus itu.
  */
 class ResolverReferensi
 {
@@ -46,15 +51,20 @@ class ResolverReferensi
      * = slot pilihan, tidak ada = tidak ditemukan. ID hanya dipakai bila nama tidak disebut, dan tetap diverifikasi
      * milik SPPG pengguna (denganId).
      */
-    public function resolusi(User $user, JenisReferensi $jenis, mixed $nama, mixed $id): HasilResolusi
+    public function resolusi(User $user, JenisReferensi $jenis, mixed $nama, mixed $id, ?string $teksPengguna = null): HasilResolusi
     {
         if (is_string($nama) && self::normalisasi($nama) !== '') {
-            return $this->denganNama($user, $jenis, $nama);
+            return $this->denganNama($user, $jenis, $nama, $teksPengguna);
         }
 
         $id = self::idBulat($id);
 
         if ($id !== null && $id > 0) {
+            // Pengguna tidak pernah diminta menyebut ID: ID tanpa nama yang tidak ada di teks pengguna = karangan LLM.
+            if ($teksPengguna !== null && trim($teksPengguna) !== '' && preg_match('/(?<!\d)'.$id.'(?!\d)/', $teksPengguna) !== 1) {
+                return new HasilResolusi(HasilResolusi::TIDAK_VALID);
+            }
+
             return $this->denganId($user, $jenis, $id);
         }
 
@@ -119,7 +129,10 @@ class ResolverReferensi
         return $hasil;
     }
 
-    public function denganNama(User $user, JenisReferensi $jenis, string $nama): HasilResolusi
+    /**
+     * @param  ?string  $teksPengguna  teks pesan pengguna (penjagaan nama yang dilengkapi LLM); null = tanpa penjagaan
+     */
+    public function denganNama(User $user, JenisReferensi $jenis, string $nama, ?string $teksPengguna = null): HasilResolusi
     {
         $dicari = self::normalisasi($nama);
 
@@ -141,11 +154,23 @@ class ResolverReferensi
             fn (Builder $q) => $q->whereRaw("LOWER({$kolom}) LIKE ? ESCAPE '!'", ['%'.$escape.'%']),
         ];
 
-        foreach ($tingkat as $filter) {
-            $baris = $filter($this->dasar($user, $jenis))
-                ->orderBy($jenis->kolomNama)->orderBy((new $jenis->model)->getKeyName())
-                ->limit(self::MAKS_PILIHAN + 1)
-                ->get();
+        $ambil = fn (callable $filter) => $filter($this->dasar($user, $jenis))
+            ->orderBy($jenis->kolomNama)->orderBy((new $jenis->model)->getKeyName())
+            ->limit(self::MAKS_PILIHAN + 1)
+            ->get();
+
+        foreach ($tingkat as $n => $filter) {
+            $baris = $ambil($filter);
+
+            // Nama sama persis tetapi tidak tertulis di pesan pengguna (dilengkapi LLM): bila juga awalan data lain,
+            // jangan menebak -> pilihan dari tingkat awalan.
+            if ($n === 0 && $baris->count() === 1 && ! self::tertulisDi($kecil, $teksPengguna)) {
+                $awalan = $ambil($tingkat[1]);
+
+                if ($awalan->count() > 1) {
+                    $baris = $awalan;
+                }
+            }
 
             if ($baris->count() === 1) {
                 return new HasilResolusi(HasilResolusi::TEPAT, $this->kandidat($jenis, $baris->first()), dicari: $dicari);
@@ -162,6 +187,24 @@ class ResolverReferensi
         }
 
         return new HasilResolusi(HasilResolusi::TIDAK_ADA, dicari: $dicari);
+    }
+
+    /** True bila nama (huruf kecil, ternormalisasi) tertulis di teks pengguna, atau teks tidak diketahui (tanpa penjagaan). */
+    private static function tertulisDi(string $kecil, ?string $teksPengguna): bool
+    {
+        if ($teksPengguna === null || trim($teksPengguna) === '') {
+            return true;
+        }
+
+        return str_contains(mb_strtolower(self::normalisasiPanjang($teksPengguna)), $kecil);
+    }
+
+    /** Normalisasi seperti normalisasi() tanpa batas panjang (untuk teks pesan pengguna). */
+    private static function normalisasiPanjang(string $teks): string
+    {
+        $teks = (string) preg_replace('/\p{Cf}+/u', '', $teks);
+
+        return trim((string) preg_replace('/[\p{C}\s]+/u', ' ', $teks));
     }
 
     /** Karakter format (bidi, zero-width) dibuang, kontrol/spasi beruntun menjadi satu spasi, dipotong MAKS_PANJANG. */

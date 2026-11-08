@@ -44,6 +44,10 @@ class LlmException extends RuntimeException
      * @param  string|null  $tool  nama tool yang ditolak, HANYA bila termasuk tool yang dikirim pada permintaan
      * @param  list<string>  $masalah  kode masalah validasi buatan sistem (tipe, wajib, enum, batas, ...)
      * @param  list<string>  $jalur  JSON pointer argumen yang ditolak (mis. /bahan/0/bahan_baku_id), tanpa nilai
+     * @param  array<string, mixed>|null  $argumenGagal  argumen tool dari failed_generation (keluaran model, data TAK
+     *                                                   tepercaya). TIDAK PERNAH di-log (tidak ada di konteksLog) atau
+     *                                                   dikirim balik; hanya dipakai AiAgentService untuk draf "perlu
+     *                                                   diperbaiki" lewat pipeline tool biasa setelah percobaan ulang gagal.
      */
     public function __construct(
         string $message = 'Layanan LLM tidak tersedia.',
@@ -55,6 +59,7 @@ class LlmException extends RuntimeException
         public readonly ?string $tool = null,
         public readonly array $masalah = [],
         public readonly array $jalur = [],
+        public readonly ?array $argumenGagal = null,
     ) {
         parent::__construct($message);
     }
@@ -63,7 +68,7 @@ class LlmException extends RuntimeException
      * Dari status HTTP + ringkasan galat penyedia yang SUDAH disaring (lihat OpenAiCompatibleLlmClient::infoGalat):
      * hanya kode/tipe/nama tool/path, tanpa pesan mentah, failed_generation, atau isi percakapan.
      *
-     * @param  array{kode?: string|null, tipe?: string|null, tool?: string|null, masalah?: list<string>, jalur?: list<string>}  $info
+     * @param  array{kode?: string|null, tipe?: string|null, tool?: string|null, masalah?: list<string>, jalur?: list<string>, argumen?: array<string, mixed>}  $info
      */
     public static function fromProvider(int $status, ?float $retryAfterSeconds, array $info): self
     {
@@ -72,7 +77,7 @@ class LlmException extends RuntimeException
 
         if ($status === 400 && $kode === self::KODE_TOOL_GAGAL) {
             return new self('Penyedia LLM menolak tool call model (HTTP 400).', self::TOOL_GAGAL, $status, self::KODE_TOOL_GAGAL,
-                $kode, $info['tipe'] ?? null, $info['tool'] ?? null, $info['masalah'] ?? [], $info['jalur'] ?? []);
+                $kode, $info['tipe'] ?? null, $info['tool'] ?? null, $info['masalah'] ?? [], $info['jalur'] ?? [], $info['argumen'] ?? null);
         }
 
         return new self($dasar->getMessage(), $dasar->category, $status, $dasar->detail,

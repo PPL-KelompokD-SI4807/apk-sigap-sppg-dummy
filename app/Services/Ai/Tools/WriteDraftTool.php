@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Ai\Drafts\DraftService;
 use App\Services\Ai\Drafts\DraftValidationResult;
 use App\Services\Ai\Drafts\DraftValidator;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Eksekusi\RingkasanDraf;
 use App\Services\Ai\Eksekusi\SpesifikasiEksekusi;
 use App\Services\Ai\Referensi\PilihanReferensiDraf;
@@ -21,6 +22,9 @@ use Illuminate\Support\Facades\Gate;
  *   argumen tervalidasi skema -> argumen terlindungi dibuang -> target (ubah/hapus) dicari lewat
  *   SppgScope + Policy -> payload divalidasi dry-run dengan Form Request modul (DraftValidator)
  *   -> AiDraft pending (berlaku config ai.drafts.ttl_minutes).
+ * Masukan salah (galat skema dari AiAgentService, galat rujukan, galat Form Request) TIDAK dikembalikan ke LLM untuk
+ * ditanyakan ulang: draf dibuat dari bagian yang valid, kolom bergalat dikosongkan dan dicatat (GalatDraf), lalu
+ * ToolResult::perbaiki menghentikan loop agen; bot mengarahkan pengguna ke formulir Mini App.
  * Data tersimpan hanya setelah KONFIRMASI MANUSIA: tombol Simpan di Mini App (endpoint modul + ai_draft_id), atau
  * tombol Lanjutkan di chat Bot bila tool punya eksekusi() (AiDraftExecutor memanggil endpoint REST yang sama sebagai
  * sub-request atas nama pengguna penekan tombol; Policy + Form Request + Service dijalankan ulang).
@@ -29,7 +33,8 @@ use Illuminate\Support\Facades\Gate;
  *   formRequest(): kelas Form Request store/update modul (null untuk hapus)
  *   fields(): ['properties' => [...], 'required' => [...]] skema kolom form
  *   routeParameter(): nama parameter rute model untuk Form Request update (mis. 'titikLayanan')
- *   rujukan(): opsional, nama data master -> ID di server (ResolverReferensi); ambigu = pilihan tertunda (tombol)
+ *   rujukan(): opsional, nama data master -> ID di server (ResolverReferensi); ambigu = pilihan tertunda (tombol),
+ *              tidak ditemukan / satuan salah = galat per kolom (draf "perlu diperbaiki", GalatDraf)
  *   toPayload(): opsional, memetakan argumen ke kolom form (mis. nama pemasok -> pemasok_id)
  *   eksekusi(): opsional, rute REST untuk menjalankan draf dari chat (null = hanya Mini App)
  *   ringkasan()/berbahaya()/olahHasil(): opsional, layar konfirmasi dan hasil
@@ -67,16 +72,18 @@ abstract class WriteDraftTool extends BaseAiTool
 
     /**
      * Hook opsional resolusi rujukan nama -> ID di SERVER (App\Services\Ai\Referensi\ResolverReferensi), dipanggil
-     * sebelum toPayload(). Kembalikan ToolResult untuk berhenti TANPA draf (mis. nama tidak ditemukan, satuan tidak
-     * kompatibel, hak baca data master tidak ada), atau [argumen, slot pilihan tertunda, info untuk model]. Slot
-     * pilihan (rujukan ambigu) disimpan di payload `_pilihan` (hanya ID kandidat) dan dipilih pengguna lewat tombol.
+     * sebelum toPayload(). Kembalikan ToolResult untuk berhenti TANPA draf (hanya untuk penolakan hak, mis. hak baca
+     * data master tidak ada), atau [argumen, slot pilihan tertunda, info untuk model, galat per kolom]. Slot pilihan
+     * (rujukan ambigu) disimpan di payload `_pilihan` (hanya ID kandidat) dan dipilih pengguna lewat tombol. Galat per
+     * kolom (nama tidak ditemukan, satuan tak cocok, angka tidak valid) membuat draf "perlu diperbaiki" (GalatDraf):
+     * baris/kolom bermasalah dikosongkan, pengguna memperbaikinya di Mini App, LLM tidak ditanya lagi.
      *
      * @param  array<string, mixed>  $arguments
-     * @return ToolResult|array{0: array<string, mixed>, 1: list<array<string, mixed>>, 2: list<array<string, mixed>>}
+     * @return ToolResult|array{0: array<string, mixed>, 1: list<array<string, mixed>>, 2: list<array<string, mixed>>, 3?: array<string, list<string>>}
      */
-    protected function rujukan(User $user, array $arguments): ToolResult|array
+    protected function rujukan(User $user, array $arguments, ToolContext $context): ToolResult|array
     {
-        return [$arguments, [], []];
+        return [$arguments, [], [], []];
     }
 
     /**
@@ -142,15 +149,6 @@ abstract class WriteDraftTool extends BaseAiTool
     protected function butuhSppg(): bool
     {
         return true;
-    }
-
-    /**
-     * True = argumen yang tidak lolos validasi Form Request TIDAK menjadi draf; model menerima galat dan harus
-     * bertanya ulang ke pengguna (dipakai tool yang tidak punya formulir Mini App untuk melengkapi isian).
-     */
-    protected function wajibValid(): bool
-    {
-        return false;
     }
 
     /** Cara menjalankan draf dari tombol konfirmasi Bot; null = hanya lewat Mini App ("Periksa & Simpan"). */
@@ -391,15 +389,18 @@ abstract class WriteDraftTool extends BaseAiTool
             }
         }
 
-        $rujukan = $this->rujukan($user, $arguments);
+        $rujukan = $this->rujukan($user, $arguments, $context);
 
         if ($rujukan instanceof ToolResult) {
             return $rujukan;
         }
 
         [$arguments, $pilihan, $infoPilihan] = $rujukan;
+        // Galat server: argumen tidak lolos skema / ditolak penyedia (kolomnya sudah dibuang di AiAgentService) + rujukan.
+        $galat = GalatDraf::gabung(GalatDraf::bersihkan($context->galatArgumen), GalatDraf::bersihkan($rujukan[3] ?? []));
 
         [$payload] = ArgumentValidator::stripProtectedFor($this, $this->toPayload($user, $arguments));
+        $payload = GalatDraf::kosongkan($payload, $galat);
 
         $payload = $this->sisipkanDariServer($payload, $target);
 
@@ -418,18 +419,16 @@ abstract class WriteDraftTool extends BaseAiTool
                 return ToolResult::denied();
             }
 
-            if ($this->wajibValid() && $result->errors !== []) {
-                $pesan = collect($result->errors)->flatten()->filter(fn ($p) => is_string($p))->take(4)->implode(' ');
-
-                return ToolResult::invalid('Draf belum dibuat. Tanyakan ke pengguna: '.$pesan);
-            }
-
             $errors = $result->errors;
             $scores = $result->confidence;
             // Hanya kunci yang diatur Form Request yang disimpan di draf (kunci isian server dibuang).
             $payload = $result->saring($payload);
-            $dipertahankan = array_merge(array_keys($payload), array_map(fn ($k) => explode('.', (string) $k)[0], array_keys($errors)));
+            $dipertahankan = array_merge(array_keys($payload), array_map(fn ($k) => explode('.', (string) $k)[0], array_keys($errors)), array_map(fn ($k) => explode('.', (string) $k)[0], array_keys($galat)));
             $scores = array_intersect_key($scores, array_flip($dipertahankan));
+
+            // Galat Form Request (selain baris placeholder pilihan tertunda, yang dipilih lewat tombol) = perlu diperbaiki.
+            $galat = GalatDraf::gabung($galat, GalatDraf::bersihkan(self::tanpaGalatSlot($errors, $pilihan)));
+            $payload = GalatDraf::kosongkan($payload, $galat);
         }
 
         [$payload, $scores] = $this->afterValidation($payload, $scores, $errors);
@@ -444,6 +443,10 @@ abstract class WriteDraftTool extends BaseAiTool
             $payload[PilihanReferensiDraf::KUNCI] = $pilihan;
         }
 
+        if ($galat !== []) {
+            $payload[GalatDraf::KUNCI] = $galat;
+        }
+
         $draft = app(DraftService::class)->create(
             user: $user,
             module: $this->module,
@@ -455,6 +458,11 @@ abstract class WriteDraftTool extends BaseAiTool
             tool: $this->name(),
             sidikTarget: $target === null ? null : $this->sidikTarget($target),
         );
+
+        // Masukan salah: berhenti di server (tanpa bertanya balik lewat LLM); pengguna memperbaiki di Mini App.
+        if ($galat !== []) {
+            return ToolResult::perbaiki($draft, $galat);
+        }
 
         return ToolResult::draft($draft, self::tanpaGalatSlot($errors, $pilihan), $pilihan === [] && ($this->eksekusi()?->dapatDijalankan() ?? false), $infoPilihan);
     }
