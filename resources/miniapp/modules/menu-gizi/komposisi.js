@@ -2,6 +2,7 @@
 import { h, clear } from '../../core/dom.js';
 import { fetchList } from '../../core/api.js';
 import { validasiKomposisi, MAX_BAHAN } from './schema.js';
+import { labelKandidat, ringkasGalatBaris } from '../../core/draf-galat.js';
 
 /** Dapat dipakai langsung sebagai field.build. rows awal: [{bahan_baku_id, gram_per_porsi, nama?, satuan?}] */
 export function buildKomposisi({ value }) {
@@ -11,20 +12,52 @@ export function buildKomposisi({ value }) {
   const err = h('p', { class: 'field-error', role: 'alert' });
   const addBtn = h('button', { class: 'btn btn-block', type: 'button', onclick: () => { rows.push({ bahan_baku_id: '', gram_per_porsi: '' }); render(); } }, '+ Tambah bahan');
   const el = h('div', {}, list, addBtn, h('p', { class: 'muted small' }, 'Takaran dalam gram per porsi. Maksimal 50 bahan, tanpa bahan ganda.'), err);
+  // Dari draf Agen AI: galat per baris {indeks:{sub:pesan}} dan kandidat nama ambigu {indeks:{kandidat[]}}.
+  let rowErrors = {};
+  let pilihan = {};
+
+  // Hapus baris `idx`: indeks galat/pilihan sesudahnya bergeser turun, milik baris yang dihapus dibuang.
+  function pindahIndeks(idx) {
+    const geser = (peta) => Object.fromEntries(Object.entries(peta).filter(([k]) => Number(k) !== idx).map(([k, v]) => [Number(k) > idx ? Number(k) - 1 : Number(k), v]));
+    rowErrors = geser(rowErrors);
+    pilihan = geser(pilihan);
+  }
 
   function render() {
     clear(list);
     rows.forEach((r, i) => {
+      const galat = ringkasGalatBaris(rowErrors[i]);
+      const pil = pilihan[i];
+      const pEl = h('p', { class: 'field-error', role: 'alert', hidden: !galat }, galat);
+      // Kandidat harus ada sebagai opsi agar pilihan pengguna bisa dipilih walau di luar 100 bahan yang dimuat.
+      const tambahan = (pil?.kandidat || []).filter((k) => options && !options.some((o) => String(o.id) === String(k.id)));
       const sel = h('select', { 'aria-label': `Bahan baris ${i + 1}` }, h('option', { value: '' }, options ? '- Pilih bahan -' : 'Memuat bahan...'));
       (options || []).forEach((o) => sel.append(h('option', { value: o.id }, `${o.nama} (${o.satuan})`)));
       // bahan lama yang tak ada di daftar (mis. nonaktif) tetap dipertahankan sebagai opsi
       if (options && r.bahan_baku_id && !options.some((o) => String(o.id) === String(r.bahan_baku_id))) sel.append(h('option', { value: r.bahan_baku_id }, `Bahan #${r.bahan_baku_id}`));
+      tambahan.forEach((k) => sel.append(h('option', { value: k.id }, labelKandidat(k))));
       sel.value = r.bahan_baku_id ?? '';
-      sel.addEventListener('change', () => { r.bahan_baku_id = sel.value; });
+      // Galat sub-kolom hilang saat kolomnya diubah (tanpa render ulang agar fokus input tidak hilang).
+      const bersihkan = (sub) => {
+        if (rowErrors[i]) delete rowErrors[i][sub];
+        const sisa = ringkasGalatBaris(rowErrors[i]);
+        pEl.textContent = sisa; pEl.hidden = !sisa;
+        baris.classList.toggle('invalid', !!sisa);
+      };
+      sel.addEventListener('change', () => { r.bahan_baku_id = sel.value; if (pilihan[i]) { delete pilihan[i]; bersihkan('bahan_baku_id'); render(); } else bersihkan('bahan_baku_id'); });
       const gram = h('input', { type: 'number', min: 0, step: 'any', inputmode: 'decimal', placeholder: 'gram', 'aria-label': `Takaran gram baris ${i + 1}`, value: r.gram_per_porsi });
-      gram.addEventListener('input', () => { r.gram_per_porsi = gram.value; });
-      list.append(h('div', { class: 'komposisi-row' }, sel, gram,
-        h('button', { class: 'btn btn-danger', type: 'button', 'aria-label': `Hapus baris ${i + 1}`, onclick: () => { rows.splice(i, 1); render(); } }, '×')));
+      gram.addEventListener('input', () => { r.gram_per_porsi = gram.value; bersihkan('gram_per_porsi'); });
+      const baris = h('div', { class: `komposisi-row${galat ? ' invalid' : ''}` }, sel, gram,
+        h('button', { class: 'btn btn-danger', type: 'button', 'aria-label': `Hapus baris ${i + 1}`, onclick: () => { rows.splice(i, 1); pindahIndeks(i); render(); } }, '×'));
+      list.append(baris);
+      if (pil && !r.bahan_baku_id) {
+        const tombol = pil.kandidat.map((k) => h('button', { class: 'btn', type: 'button', onclick: () => { r.bahan_baku_id = String(k.id); delete pilihan[i]; delete (rowErrors[i] || {}).bahan_baku_id; render(); } }, labelKandidat(k)));
+        list.append(h('div', { class: 'notice komposisi-pilihan' },
+          h('p', { class: 'small' }, `Pilih salah satu untuk "${pil.dicari}":`),
+          h('div', { class: 'stack-tight' }, tombol),
+          pil.lebih_banyak ? h('p', { class: 'muted small' }, 'Ada lebih banyak bahan yang cocok. Pilih dari daftar bahan di atas.') : null));
+      }
+      if (galat) list.append(pEl);
     });
     addBtn.disabled = rows.length >= MAX_BAHAN;
   }
@@ -37,6 +70,8 @@ export function buildKomposisi({ value }) {
     get: () => rows.filter((r) => r.bahan_baku_id || r.gram_per_porsi).map((r) => ({ ...r })),
     hasValue: () => rows.some((r) => r.bahan_baku_id || r.gram_per_porsi),
     setError: (m) => { err.textContent = m || ''; },
+    setRowErrors: (rowsErr) => { rowErrors = rowsErr || {}; render(); },
+    setPilihan: (p) => { pilihan = p || {}; render(); },
   };
 }
 
