@@ -308,9 +308,9 @@ class TelegramWebhookTest extends MasterApiTestCase
 
         $this->assertCount(1, $fake->calls);
         $sent = $this->messagesTo((int) $this->kepalaA->telegram_id)->sole();
-        // Keluaran model dikirim sebagai teks polos: tanpa parse_mode sehingga tidak dirender.
+        // Keluaran model dikirim sebagai teks polos: tanpa parse_mode sehingga tidak dirender; penanda Markdown dibuang.
         $this->assertArrayNotHasKey('parse_mode', $sent->data());
-        $this->assertSame('<b>Halo</b> *tebal* <a href="https://jahat.test">klik</a>', $sent['text']);
+        $this->assertSame('<b>Halo</b> tebal <a href="https://jahat.test">klik</a>', $sent['text']);
         $this->assertCount(1, $this->telegramCalls('sendChatAction'));
         $this->assertSame(['ringkas' => true, 'jenis' => 'ai'], TelegramUpdate::query()->sole()->payload);
     }

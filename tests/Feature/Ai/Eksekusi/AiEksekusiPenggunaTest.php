@@ -14,6 +14,7 @@ use App\Models\Invitation;
 use App\Models\User;
 use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Llm\LlmResponse;
 use App\Services\Ai\Llm\ToolCall;
 use App\Services\Ai\Tools\ToolRegistry;
@@ -35,15 +36,18 @@ class AiEksekusiPenggunaTest extends AiEksekusiTestCase
     /** Alur staging lengkap: tanya SPPG -> draf -> layar konfirmasi -> Lanjutkan -> undangan terbit, tautan dikirim langsung. */
     private function undanganStafGudang(): AiDraft
     {
-        $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'staf_gudang']))
-            ->push(LlmResponse::text('Untuk SPPG mana undangan ini?'));
+        $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'staf_gudang']));
         $this->chat($this->admin, 'buat tautan undangan untuk teman saya, peran staf gudang');
 
-        // SPPG belum disebut: tidak ada draf tebakan; model menerima galat dan bertanya ulang.
-        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
-        $hasilTool = collect($this->llm->calls[1]['messages'])->where('role', 'tool')->last()['content'];
-        $this->assertStringContainsString('SPPG wajib', $hasilTool);
-        $this->assertStringContainsString('Untuk SPPG mana', $this->teks($this->admin));
+        // SPPG belum disebut: tidak ada tebakan dan LLM tidak bertanya balik; draf "perlu diperbaiki" (SPPG kosong) +
+        // satu pesan server dengan tombol Mini App, tanpa tombol Lanjutkan.
+        $this->assertCount(1, $this->llm->calls);
+        $perbaiki = $this->drafTerakhir();
+        $this->assertArrayHasKey('sppg_id', GalatDraf::dari($perbaiki));
+        $this->assertArrayNotHasKey('sppg_id', $perbaiki->payload);
+        $this->assertStringContainsString('perlu diperbaiki', $this->teks($this->admin));
+        $this->assertStringNotContainsString('Untuk SPPG mana', $this->teks($this->admin));
+        $this->llm->calls = [];
 
         $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'staf_gudang', 'sppg_id' => $this->sppgA]))
             ->push(LlmResponse::text('Draf undangan siap. Silakan konfirmasi.'));
@@ -222,16 +226,19 @@ class AiEksekusiPenggunaTest extends AiEksekusiTestCase
         $this->assertSame(StatusAiDraft::Pending, $draft->fresh()->status);
     }
 
-    public function test_sppg_tidak_valid_atau_terhapus_ditolak_tanpa_draf(): void
+    public function test_sppg_tidak_valid_atau_terhapus_tidak_masuk_draf(): void
     {
         DB::table('sppgs')->where('id', $this->sppgB)->update(['deleted_at' => now()]);
 
         foreach ([999999, $this->sppgB] as $sppg) {
-            $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'kepala_sppg', 'sppg_id' => $sppg]))->push(LlmResponse::text('SPPG tidak ditemukan.'));
+            $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'kepala_sppg', 'sppg_id' => $sppg]));
             $this->chat($this->admin, 'undang kepala SPPG');
-        }
 
-        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
+            // SPPG tidak valid/terhapus tidak pernah tersimpan di draf: kolom dikosongkan, perlu diperbaiki di Mini App.
+            $draf = $this->drafTerakhir();
+            $this->assertArrayNotHasKey('sppg_id', $draf->payload);
+            $this->assertArrayHasKey('sppg_id', GalatDraf::dari($draf));
+        }
 
         // Peran admin/investor: sppg_id yang disebut model dibuang (selalu kosong, sesuai InvitationService).
         $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'investor', 'sppg_id' => $this->sppgA]))->push(LlmResponse::text('ok'));
@@ -242,9 +249,11 @@ class AiEksekusiPenggunaTest extends AiEksekusiTestCase
     /** Argumen terlindungi `role` sah HANYA untuk tool pengguna; tool lain tetap membuangnya; user_id tetap dibuang. */
     public function test_argumen_role_hanya_diizinkan_eksplisit_dan_divalidasi_enum(): void
     {
-        $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'superadmin', 'sppg_id' => $this->sppgA]))->push(LlmResponse::text('x'));
+        $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'superadmin', 'sppg_id' => $this->sppgA]));
         $this->chat($this->admin, 'undang superadmin');
-        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count(), 'Peran di luar enum ditolak skema');
+        // Peran di luar enum ditolak skema: tidak pernah masuk draf; kolom peran perlu diperbaiki di Mini App.
+        $this->assertArrayNotHasKey('role', $this->drafTerakhir()->payload, 'Peran di luar enum ditolak skema');
+        $this->assertArrayHasKey('role', GalatDraf::dari($this->drafTerakhir()));
 
         $this->llm->push(LlmResponse::toolCall('buat_undangan_pengguna', ['role' => 'relawan', 'unit' => 'dapur', 'sppg_id' => $this->sppgA, 'user_id' => $this->kepalaA->id]))->push(LlmResponse::text('x'));
         $this->chat($this->admin, 'undang relawan dapur');

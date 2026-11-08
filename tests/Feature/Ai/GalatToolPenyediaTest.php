@@ -12,6 +12,7 @@ use App\Models\Scopes\SppgScope;
 use App\Services\Ai\ActingUser;
 use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\IntentParser;
 use App\Services\Ai\Llm\JalurSkema;
 use App\Services\Ai\Llm\LlmClient;
@@ -259,8 +260,12 @@ class GalatToolPenyediaTest extends MasterApiTestCase
 
         $reply = $this->agent()->handle($this->ahliGiziA, AiInput::text(self::PESAN));
 
+        // Percobaan ulang lolos: draf biasa (bukan jalur kesalahan), perilaku PR #57 dipertahankan.
         $this->assertCount(1, $reply->drafts, $reply->text);
-        $this->assertSame([['bahan_baku_id' => $this->ayam->id, 'gram_per_porsi' => 10]], AiDraft::query()->withoutGlobalScopes()->sole()->payload['bahan']);
+        $draf = AiDraft::query()->withoutGlobalScopes()->sole();
+        $this->assertSame([['bahan_baku_id' => $this->ayam->id, 'gram_per_porsi' => 10]], $draf->payload['bahan']);
+        $this->assertFalse(GalatDraf::ada($draf));
+        $this->assertSame('Draf siap.', $reply->text);
 
         $requests = $this->llmRequests();
         $this->assertCount(3, $requests);
@@ -294,24 +299,64 @@ class GalatToolPenyediaTest extends MasterApiTestCase
         $this->assertLogTanpaDataSensitif();
     }
 
-    public function test_tool_use_failed_dua_kali_berhenti_dengan_balasan_ramah_tanpa_draf(): void
+    public function test_tool_use_failed_dua_kali_lalu_jalur_kesalahan_dengan_bagian_yang_dipahami(): void
     {
         Http::fake(['llm.test/*' => fn (Request $request) => self::groqToolCall($request, 'buat_menu', self::argumenMenu(timpa: ['siklus' => 1]))]);
 
         $reply = $this->agent()->handle($this->ahliGiziA, AiInput::text(self::PESAN));
 
-        $this->assertTrue($reply->fallback);
-        $this->assertStringContainsString('belum dapat menyusun', $reply->text);
-        $this->assertStringContainsString('formulir', $reply->text);
+        // Ulang SATU kali, lalu tanpa panggilan LLM lagi: draf "perlu diperbaiki" dari argumen yang ditolak penyedia.
         $this->assertCount(2, $this->llmRequests(), 'Hanya SATU percobaan ulang.');
-        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
+        $this->assertFalse($reply->fallback);
+        $draf = AiDraft::query()->withoutGlobalScopes()->sole();
+        $this->assertSame($reply->drafts[0]->uuid, $draf->uuid);
+        $this->assertSame('Nasi Goreng', $draf->payload['nama_menu'], 'Bagian yang dipahami tetap diisi');
+        $this->assertSame([['bahan_baku_id' => $this->ayam->id, 'gram_per_porsi' => 10]], $draf->payload['bahan']);
+        $this->assertArrayNotHasKey('siklus', $draf->payload, 'Kolom yang ditolak dikosongkan');
+        $this->assertSame(['siklus'], array_keys(GalatDraf::dari($draf)));
+        $this->assertStringContainsString('Siklus', $reply->text);
+        $this->assertStringNotContainsString(GalatDraf::PESAN_TERTUNDA, $reply->text);
 
         $log = AiInteraction::query()->sole();
-        $this->assertSame(HasilAi::Fallback, $log->hasil);
-        $this->assertSame('llm:tool_gagal http=400 (tool_use_failed)', $log->error);
+        $this->assertSame(HasilAi::Sukses, $log->hasil);
+        $this->assertSame(1, $log->argumen['draf_dari_penolakan']);
+        $this->assertArrayNotHasKey('argumen', $log->argumen['tools'][0], 'Argumen dari failed_generation tidak dicatat');
         $this->assertCount(2, $this->galatLlm());
         $this->assertFalse($this->galatLlm()[1]['context']['diulang']);
         $this->assertLogTanpaDataSensitif();
+        $this->assertStringNotContainsString(self::RAHASIA_GENERASI, json_encode($draf->payload));
+    }
+
+    public function test_tool_use_failed_dua_kali_tanpa_failed_generation_terbaca_tetap_ke_formulir_draf(): void
+    {
+        Http::fake(['llm.test/*' => Http::response(['error' => [
+            'message' => 'tool call validation failed: parameters for tool buat_menu did not match schema: errors: [`/siklus`: expected string, but got number]',
+            'type' => 'invalid_request_error', 'code' => 'tool_use_failed', 'failed_generation' => 'bukan json '.self::RAHASIA_GENERASI,
+        ]], 400)]);
+
+        $reply = $this->agent()->handle($this->ahliGiziA, AiInput::text(self::PESAN));
+
+        $this->assertCount(2, $this->llmRequests());
+        $draf = AiDraft::query()->withoutGlobalScopes()->sole();
+        $this->assertArrayHasKey('siklus', GalatDraf::dari($draf));
+        $this->assertArrayHasKey('nama_menu', GalatDraf::dari($draf), 'Kolom wajib yang belum dipahami ikut ditandai');
+        $this->assertSame($draf->uuid, $reply->drafts[0]->uuid);
+        $this->assertLogTanpaDataSensitif();
+    }
+
+    public function test_tool_use_failed_tool_baca_tetap_balasan_ramah_tanpa_draf(): void
+    {
+        Http::fake(['llm.test/*' => Http::response(['error' => [
+            'message' => 'tool call validation failed: parameters for tool cari_bahan_baku did not match schema: errors: [`/batas`: expected integer, but got string]',
+            'type' => 'invalid_request_error', 'code' => 'tool_use_failed', 'failed_generation' => '{"name":"cari_bahan_baku","arguments":{"batas":"x"}}',
+        ]], 400)]);
+
+        $reply = $this->agent()->handle($this->ahliGiziA, AiInput::text('cari bahan baku beras'));
+
+        $this->assertTrue($reply->fallback);
+        $this->assertStringContainsString('belum dapat menyusun', $reply->text);
+        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
+        $this->assertSame('llm:tool_gagal http=400 (tool_use_failed)', AiInteraction::query()->sole()->error);
     }
 
     public function test_tool_tak_ditawarkan_dilaporkan_tanpa_nama_tool_karangan(): void
@@ -414,7 +459,7 @@ class GalatToolPenyediaTest extends MasterApiTestCase
 
     // ------------------------------------------------------------------ ID placeholder tanpa nama
 
-    public function test_id_nol_atau_negatif_tanpa_nama_ditanyakan_bukan_tidak_ditemukan(): void
+    public function test_id_nol_atau_negatif_tanpa_nama_perlu_diperbaiki_bukan_tidak_ditemukan(): void
     {
         foreach ([0, -5, null] as $id) {
             $this->forgetActor();
@@ -424,15 +469,14 @@ class GalatToolPenyediaTest extends MasterApiTestCase
                 new ToolContext(null, JenisInputAi::Teks),
             ));
 
-            $pesan = (string) $hasil->message;
-            $this->assertSame(ToolResult::INVALID, $hasil->status, json_encode($id));
-            $this->assertStringContainsString('sebutkan nama bahannya', $pesan);
+            $this->assertSame(ToolResult::PERBAIKI, $hasil->status, json_encode($id));
+            $pesan = implode(' ', GalatDraf::dari($hasil->draft)['bahan.0.bahan_baku_id'] ?? []);
+            $this->assertStringContainsString('Sebutkan atau pilih bahan bakunya', $pesan);
             $this->assertStringNotContainsString('tidak ditemukan', $pesan);
             $this->assertStringNotContainsString('buat_bahan_baku', $pesan);
             $this->assertStringNotContainsString('#', $pesan);
+            $this->assertSame([['gram_per_porsi' => 10]], $hasil->draft->payload['bahan'], 'Takaran yang valid dipertahankan');
         }
-
-        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
     }
 
     // ------------------------------------------------------------------ skema tool sah untuk penyedia
