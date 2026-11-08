@@ -7,6 +7,11 @@ schemas:
       jalankan dari tombol konfirmasi chat Bot (Lanjutkan) bila tool-nya mendukung (lihat docs/api/ai-tools.md).
       Kolom pada `perlu_dicek` (keyakinan < 0,7 atau gagal validasi) diberi label "Perlu dicek".
       Draf Admin (modul pengguna) tidak terikat SPPG.
+      Masukan salah di bot (satuan tidak cocok/tak dikenal, rujukan tidak ditemukan, tanggal/angka tidak valid atau di
+      luar batas, kolom wajib kosong, galat Form Request, argumen tool tidak sesuai skema) TIDAK ditanyakan balik lewat
+      chat: draf dibuat dari bagian yang valid (kolom salah dikosongkan dari `payload`), `perlu_diperbaiki` = true,
+      `errors` memuat pesan per kolom, dan bot mengirim satu pesan + tombol "Buka di Mini App" (?draft=<uuid>). Draf
+      seperti ini tidak dapat dijalankan dari chat; simpan dari formulir Mini App setelah diperbaiki.
     properties:
       uuid: { type: string, format: uuid }
       module: { type: string, description: 'Slug modul config/rbac.php, mis. titik-layanan.', example: titik-layanan }
@@ -21,10 +26,16 @@ schemas:
         type: object
         additionalProperties: { type: number, minimum: 0, maximum: 1 }
       perlu_dicek: { type: array, items: { type: string } }
+      perlu_diperbaiki:
+        type: boolean
+        description: 'true bila `errors` tidak kosong (kolom perlu diperbaiki sebelum disimpan). Status tetap `pending`.'
       errors:
         type: object
         additionalProperties: { type: array, items: { type: string } }
-        description: 'Hasil validasi dry-run Form Request terkini (kosong = siap disimpan). Hanya di GET detail.'
+        description: |
+          Galat per kolom: galat yang dicatat server saat draf dibuat (didahulukan) + validasi dry-run Form Request terkini
+          (kosong = siap disimpan). Kunci bertitik untuk baris, mis. `bahan.0.bahan_baku_id`, `bahan.1.gram_per_porsi`.
+          Pesan tidak memuat data sensitif. Di daftar GET /ai-drafts hanya galat tersimpan server.
       pilihan_referensi:
         type: array
         description: |
@@ -71,6 +82,7 @@ schemas:
       payload: { nama: SDN 2 Sukamaju, jenis: sekolah, alamat: Jl. Fiktif No. 2, jarak_km: 3.5, jumlah_sasaran: 240, pic_nama: Bu Rina }
       confidence: { nama: 0.95, jenis: 0.9, alamat: 0.0, jarak_km: 0.85, jumlah_sasaran: 0.9, pic_nama: 0.6 }
       perlu_dicek: [alamat, pic_nama]
+      perlu_diperbaiki: false
       errors: {}
       pilihan_referensi: []
       status: pending
