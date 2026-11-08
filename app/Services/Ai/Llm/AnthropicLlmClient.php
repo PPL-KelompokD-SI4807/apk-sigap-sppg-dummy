@@ -78,7 +78,8 @@ class AnthropicLlmClient implements LlmClient
                 ->timeout((int) ($options['timeout'] ?? $this->timeout))
                 ->connectTimeout($this->connectTimeout)
                 ->retry(
-                    $this->retries + 1,
+                    // tanpa_ulang (pesan foto): gambar dikirim langsung ke model ini; ulang 429 = kuota habis.
+                    ($options['tanpa_ulang'] ?? false) === true ? 1 : $this->retries + 1,
                     $this->retrySleepMs,
                     fn (Throwable $e) => $e instanceof ConnectionException
                         || ($e instanceof RequestException && ($e->response->status() === 429 || $e->response->serverError())),

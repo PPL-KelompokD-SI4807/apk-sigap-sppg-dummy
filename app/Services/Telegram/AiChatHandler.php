@@ -10,12 +10,15 @@ use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
 use App\Services\Ai\AiReply;
 use App\Services\Ai\Drafts\GalatDraf;
+use App\Services\Ai\Foto\FotoChatDitolak;
+use App\Services\Ai\Foto\PraprosesFotoChat;
+use App\Services\Ai\Llm\LlmException;
 use App\Services\Ai\Speech\SpeechToTextException;
 use App\Services\Ai\Speech\SpeechToTextService;
 use App\Services\Telegram\Bot\BotAksiAiService;
 use App\Services\Telegram\Bot\BotGalat;
 use App\Services\Telegram\Bot\BotLayar;
-use finfo;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
@@ -23,11 +26,17 @@ use Throwable;
 /**
  * Pipeline chat -> Agen AI (dijalankan job ProcessAiMessage):
  *   teks  -> AiInput teks;
- *   foto  -> bila penyedia tidak mendukung gambar (LLM_VISION_MODEL kosong): balasan ramah + tombol
- *            formulir TANPA mengunduh; selain itu unduh ukuran terbesar <= batas, verifikasi MIME aktual
- *            (JPEG/PNG/WebP), kirim ke agen sebagai lampiran gambar (dibaca LLM/model vision); caption = teks;
- *   suara -> batas laju AI dicek SEBELUM STT (biaya STT), durasi/ukuran/kuota detik STT per jam dicek, lalu
- *            SpeechToTextService (Null = "belum didukung") -> transkrip sebagai teks TIDAK tepercaya (sama dengan teks).
+ *   foto  -> album (media_group_id): hanya foto PERTAMA yang diterima diproses (Cache::add atomik per grup, TTL pendek);
+ *            foto berikutnya diabaikan TANPA unduh/LLM/balasan; satu pemberitahuan per grup ditempel di balasan foto
+ *            pertama. Penyedia tanpa dukungan gambar (LLM_VISION_MODEL kosong): balasan ramah + tombol formulir TANPA
+ *            mengunduh. Batas laju AI dan pelindung token gambar (AI_IMAGE_TOKENS) dicek SEBELUM unduh. Unduh satu
+ *            ukuran (<= 5 MB), lalu PraprosesFotoChat: MIME dari isi (JPEG/PNG/WebP), encode ulang JPEG (EXIF/GPS
+ *            terbuang, sisi ~1280 px, turun bertahap bila > batas base64). Maks 1 gambar per pesan; caption = teks;
+ *   suara -> batas laju AI dicek SEBELUM STT (biaya STT); durasi (metadata Telegram, SEBELUM unduh)/ukuran/kuota detik
+ *            STT per jam dicek, lalu SpeechToTextService (Null = "belum didukung") -> transkrip = teks TIDAK tepercaya.
+ * Privasi: pada foto/suara PERTAMA yang benar-benar dikirim ke penyedia, satu kalimat pemberitahuan pihak ketiga
+ * ditempel di awal balasan (penanda Cache per pengguna; tidak diulang). Juga tercantum di /bantuan.
+ * Log hanya angka/kode (ukuran, MIME, durasi, status); tidak pernah isi gambar, base64, transkrip, atau token.
  * Balasan: teks POLOS (tanpa parse_mode). Per draf: bila tool-nya dapat dijalankan dari chat, LAYAR KONFIRMASI terpisah
  * (BotAksiAiService: ringkasan server + Lanjutkan/Batal/Ubah; suara: "Yang saya dengar"); selain itu tombol web_app
  * "Periksa & Simpan" (Mini App). Teks/suara "ya/lanjut" tidak pernah menjalankan draf: hanya tombol callback sah.
@@ -39,30 +48,71 @@ class AiChatHandler
 
     public const LABEL_PERBAIKI = 'Buka di Mini App';
 
+    /** Pemberitahuan privasi pihak ketiga (sekali per pengguna). */
+    public const PESAN_PRIVASI = 'Foto dan pesan suara diproses penyedia AI pihak ketiga; jangan kirim data pribadi.';
+
+    /** Pemberitahuan album (sekali per media_group_id). */
+    public const PESAN_ALBUM = 'Anda mengirim beberapa foto sekaligus. Hanya foto pertama yang diproses; foto lainnya belum diproses. Kirim satu foto per pesan.';
+
+    /** @var list<string> kalimat pemberitahuan yang ditempel di awal pesan balasan berikutnya (album, privasi) */
+    private array $awalan = [];
+
     public function __construct(
         private readonly TelegramBotService $bot,
         private readonly AiAgentService $agent,
         private readonly SpeechToTextService $stt,
         private readonly BotAksiAiService $konfirmasi,
+        private readonly PraprosesFotoChat $foto,
     ) {}
 
     public function handle(TelegramUpdate $update, User $user): void
     {
         $message = (array) ($update->payload['message'] ?? []);
         $chatId = $message['chat']['id'] ?? null;
+        $jenis = 'ai';
+        $this->awalan = [];
 
         try {
             if (! is_int($chatId) || ! $user->canAuthenticate()) {
                 return;
             }
 
+            $foto = isset($message['photo']) && is_array($message['photo']);
+            $suara = isset($message['voice']) && is_array($message['voice']);
+
+            // Album: foto kedua dst. dalam media group yang sama tidak diunduh, tidak dikirim ke LLM, tidak dibalas.
+            $album = $foto ? $this->kunciAlbum($message, $user) : null;
+
+            if ($album === false) {
+                $jenis = 'album_dilewati';
+                Log::info('ai.foto_album_dilewati', ['user_id' => $user->getKey()]);
+
+                return;
+            }
+
             $this->typing($chatId);
 
             // Batas laju AI berlaku juga untuk biaya unduh foto/STT: dicek sebelum memproses media (tanpa menghitung).
-            if ((isset($message['voice']) || isset($message['photo'])) && $this->agent->batasLajuTercapai($user)) {
+            if (($suara || $foto) && $this->agent->batasLajuTercapai($user)) {
                 $this->deliver($chatId, new AiReply('Batas penggunaan Agen AI tercapai. Coba lagi nanti atau isi formulir di Mini App.', fallback: true));
 
                 return;
+            }
+
+            if ($album === true) {
+                $this->awalan[] = self::PESAN_ALBUM;
+            }
+
+            // Pelindung token global: foto ~AI_IMAGE_TOKENS; sisa kuota menit/hari tidak cukup -> balas SEBELUM unduh.
+            if ($foto && $this->agent->acceptsImages()) {
+                try {
+                    $this->agent->cekAnggaranGambar();
+                } catch (LlmException $e) {
+                    Log::info('ai.foto_ditolak', ['user_id' => $user->getKey(), 'alasan' => $e->category, 'detail' => $e->detail]);
+                    $this->deliver($chatId, new AiReply($e->friendlyMessage(), fallback: true));
+
+                    return;
+                }
             }
 
             $input = $this->buildInput($message, (int) $user->getKey());
@@ -81,7 +131,8 @@ class AiChatHandler
 
             $this->deliver($chatId, $this->agent->handle($user, $input), $user, $input->type === JenisInputAi::Suara ? $input->text : null);
         } finally {
-            TelegramUpdateHandler::finish($update, 'ai');
+            $this->awalan = [];
+            TelegramUpdateHandler::finish($update, $jenis);
         }
     }
 
@@ -94,7 +145,7 @@ class AiChatHandler
         $caption = is_string($message['caption'] ?? null) ? $message['caption'] : '';
 
         if (isset($message['photo']) && is_array($message['photo'])) {
-            return $this->photoInput($message['photo'], $caption);
+            return $this->photoInput($message['photo'], $caption, $userId);
         }
 
         if (isset($message['voice']) && is_array($message['voice'])) {
@@ -104,8 +155,41 @@ class AiChatHandler
         return AiInput::text(is_string($message['text'] ?? null) ? $message['text'] : '');
     }
 
+    /**
+     * True = foto pertama media group (penanda baru dibuat), false = foto berikutnya (lewati), null = bukan album.
+     * Penanda per pengguna + id grup (di-hash), TTL pendek (ai.input.album_ttl_seconds).
+     *
+     * @param  array<string, mixed>  $message
+     */
+    private function kunciAlbum(array $message, User $user): ?bool
+    {
+        $grup = $message['media_group_id'] ?? null;
+
+        if (! is_string($grup) && ! is_int($grup)) {
+            return null;
+        }
+
+        $ttl = max(10, (int) config('ai.input.album_ttl_seconds', 120));
+
+        return Cache::add('ai:album:'.$user->getKey().':'.hash('sha256', (string) $grup), 1, $ttl);
+    }
+
+    /** Tempel pemberitahuan privasi pihak ketiga SEKALI per pengguna (penanda Cache), tepat sebelum media dikirim. */
+    private function beriTahuPrivasi(?int $userId): void
+    {
+        if ($userId === null) {
+            return;
+        }
+
+        $hari = max(1, (int) config('ai.input.privasi_ttl_days', 365));
+
+        if (Cache::add('ai:privasi:'.$userId, 1, now()->addDays($hari))) {
+            $this->awalan[] = self::PESAN_PRIVASI;
+        }
+    }
+
     /** @param list<array<string, mixed>> $sizes */
-    private function photoInput(array $sizes, string $caption): AiInput|AiReply|string
+    private function photoInput(array $sizes, string $caption, ?int $userId = null): AiInput|AiReply|string
     {
         // D6: model vision belum dikonfigurasi -> balas ramah SEBELUM mengunduh foto.
         if (! $this->agent->acceptsImages()) {
@@ -113,30 +197,68 @@ class AiChatHandler
         }
 
         $max = (int) config('ai.input.photo_max_bytes', 5 * 1024 * 1024);
-        $candidates = array_filter($sizes, fn ($s) => is_array($s) && is_string($s['file_id'] ?? null)
-            && (! isset($s['file_size']) || (int) $s['file_size'] <= $max));
+        $candidates = array_values(array_filter($sizes, fn ($s) => is_array($s) && is_string($s['file_id'] ?? null)
+            && (! isset($s['file_size']) || (int) $s['file_size'] <= $max)));
 
         if ($candidates === []) {
-            return 'Foto terlalu besar (maksimal 5 MB).';
+            Log::info('ai.foto_ditolak', ['user_id' => $userId, 'alasan' => FotoChatDitolak::TERLALU_BESAR, 'tahap' => 'metadata']);
+
+            return new AiReply(FotoChatDitolak::terlaluBesar()->getMessage(), fallback: true);
         }
 
-        usort($candidates, fn ($a, $b) => ((int) ($b['file_size'] ?? 0)) <=> ((int) ($a['file_size'] ?? 0)));
+        $pilihan = $this->pilihUkuran($candidates);
+        $this->beriTahuPrivasi($userId);
 
         try {
-            $binary = $this->bot->downloadFile($candidates[0]['file_id'], $max);
+            $binary = $this->bot->downloadFile($pilihan['file_id'], $max);
         } catch (TelegramApiException $e) {
             Log::warning('telegram.unduh_foto_gagal', ['kode' => $e->errorCode]);
 
-            return 'Foto tidak dapat diunduh. Coba kirim ulang.';
+            return $e->errorCode === 413
+                ? new AiReply(FotoChatDitolak::terlaluBesar()->getMessage(), fallback: true)
+                : 'Foto tidak dapat diunduh. Coba kirim ulang.';
         }
 
-        $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($binary) ?: '';
+        $ukuran = strlen($binary);
 
-        if (! in_array($mime, (array) config('ai.input.photo_mimes', ['image/jpeg', 'image/png', 'image/webp']), true)) {
-            return 'Format foto tidak didukung (hanya JPEG, PNG, atau WebP).';
+        try {
+            $siap = $this->foto->proses($binary);
+        } catch (FotoChatDitolak $e) {
+            Log::info('ai.foto_ditolak', ['user_id' => $userId, 'alasan' => $e->alasan, 'ukuran' => $ukuran]);
+
+            return new AiReply($e->getMessage(), fallback: true);
+        } finally {
+            // Foto asli tidak disimpan: hanya hasil encode ulang yang diteruskan (di memori job).
+            unset($binary);
         }
 
-        return AiInput::photo([['media_type' => $mime, 'data' => base64_encode($binary)]], $caption);
+        Log::info('ai.foto_chat', ['user_id' => $userId] + $siap->konteksLog());
+
+        return AiInput::photo([$siap->gambar()], $caption);
+    }
+
+    /**
+     * Ukuran terkecil yang sisi terpanjangnya sudah >= photo_max_side_px (hemat unduhan; server tetap memperkecil ke
+     * ~1280 px), selain itu yang terbesar (file_size, lalu dimensi).
+     *
+     * @param  non-empty-list<array<string, mixed>>  $candidates
+     * @return array<string, mixed>
+     */
+    private function pilihUkuran(array $candidates): array
+    {
+        $sisi = fn (array $s): int => max((int) ($s['width'] ?? 0), (int) ($s['height'] ?? 0));
+        $target = (int) config('ai.input.photo_max_side_px', 1280);
+        $cukup = array_values(array_filter($candidates, fn (array $s) => $sisi($s) >= $target));
+
+        if ($cukup !== []) {
+            usort($cukup, fn ($a, $b) => $sisi($a) <=> $sisi($b));
+
+            return $cukup[0];
+        }
+
+        usort($candidates, fn ($a, $b) => [(int) ($b['file_size'] ?? 0), $sisi($b)] <=> [(int) ($a['file_size'] ?? 0), $sisi($a)]);
+
+        return $candidates[0];
     }
 
     /** @param array<string, mixed> $voice */
@@ -146,10 +268,13 @@ class AiChatHandler
             return 'Pesan suara belum didukung. Silakan ketik pesan atau kirim foto.';
         }
 
+        // Durasi dari metadata Telegram: pesan > batas ditolak SEBELUM diunduh/ditranskripsi.
         $durasi = max(0, (int) ($voice['duration'] ?? 0));
 
         if ($durasi > (int) config('ai.input.voice_max_seconds', 120)) {
-            return 'Pesan suara terlalu panjang (maksimal 2 menit).';
+            Log::info('ai.suara_ditolak', ['user_id' => $userId, 'alasan' => 'terlalu_panjang', 'durasi' => $durasi]);
+
+            return 'Pesan suara terlalu panjang (maksimal 2 menit). Kirim pesan yang lebih pendek atau ketik permintaan Anda.';
         }
 
         if ((int) ($voice['file_size'] ?? 0) > (int) config('ai.input.voice_max_bytes', 10 * 1024 * 1024)) {
@@ -172,16 +297,22 @@ class AiChatHandler
             RateLimiter::increment($kunci, 3600, max(1, $durasi));
         }
 
+        $this->beriTahuPrivasi($userId);
+
         try {
             $audio = $this->bot->downloadFile($voice['file_id'], (int) config('ai.input.voice_max_bytes', 10 * 1024 * 1024));
             $mime = is_string($voice['mime_type'] ?? null) && preg_match('#^audio/[a-z0-9.+-]{1,30}$#', $voice['mime_type']) === 1 ? $voice['mime_type'] : 'audio/ogg';
+            $transkrip = $this->stt->transcribe($audio, $mime);
+            Log::info('ai.suara_chat', ['user_id' => $userId, 'durasi' => $durasi, 'ukuran' => strlen($audio), 'mime' => $mime, 'status' => 'ok']);
 
-            return AiInput::voice($this->stt->transcribe($audio, $mime), $durasi);
+            return AiInput::voice($transkrip, $durasi);
         } catch (TelegramApiException $e) {
             Log::warning('telegram.unduh_suara_gagal', ['kode' => $e->errorCode]);
 
             return 'Pesan suara tidak dapat diunduh. Coba kirim ulang.';
         } catch (SpeechToTextException $e) {
+            Log::info('ai.suara_chat', ['user_id' => $userId, 'durasi' => $durasi, 'status' => 'gagal']);
+
             return $e->getMessage();
         }
     }
@@ -256,9 +387,17 @@ class AiChatHandler
         }
     }
 
-    /** Teks polos tanpa parse_mode: isi dari model/pengguna tidak pernah dirender sebagai markup. */
+    /**
+     * Teks polos tanpa parse_mode: isi dari model/pengguna tidak pernah dirender sebagai markup. Pemberitahuan tertunda
+     * (album, privasi) ditempel di awal pesan utama berikutnya lalu dikosongkan (satu pesan, tidak diulang).
+     */
     private function send(int $chatId, string $text, ?array $markup = null): void
     {
+        if ($this->awalan !== []) {
+            $text = implode("\n", $this->awalan)."\n\n".$text;
+            $this->awalan = [];
+        }
+
         try {
             $this->bot->sendText($chatId, $text, $markup);
         } catch (TelegramApiException $e) {

@@ -5,6 +5,8 @@ namespace App\Console\Commands;
 use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Models\User;
+use App\Services\Ai\Foto\FotoChatDitolak;
+use App\Services\Ai\Foto\PraprosesFotoChat;
 use App\Services\Ai\IntentParser;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmException;
@@ -145,15 +147,30 @@ class UjiLlm extends Command
             return self::FAILURE;
         }
 
+        // Pra-pemrosesan yang SAMA dengan bot (MIME dari isi, encode ulang JPEG tanpa EXIF, ~1280 px, batas base64).
+        try {
+            $foto = app(PraprosesFotoChat::class)->proses($data);
+        } catch (FotoChatDitolak $e) {
+            $this->error('Ditolak: '.$e->getMessage());
+            $this->line('Alasan: '.$e->alasan);
+
+            return self::FAILURE;
+        }
+
+        $log = $foto->konteksLog();
         $this->line('Model vision: '.$llm->visionModelName());
+        $this->line(sprintf('Gambar: %s %d B -> JPEG %dx%d q%d %d B (kiriman %d B); estimasi token gambar %d.',
+            $log['mime_asli'], $log['ukuran_asli'], $log['lebar'], $log['tinggi'], $log['kualitas'], $log['ukuran_hasil'], $log['panjang_kiriman'], TokenBudget::imageTokens()));
 
         try {
-            $response = $llm->readImages([['media_type' => $mime, 'data' => base64_encode($data)]], app(IntentParser::class)->visionInstruction());
+            $response = $llm->readImages([$foto->gambar()], app(IntentParser::class)->visionInstruction(), ['tanpa_ulang' => true]);
         } catch (LlmException $e) {
-            return $this->gagal($e);
+            // 404/model dihentikan -> kategori vision_tidak_tersedia (sama dengan balasan bot).
+            return $this->gagal(LlmException::untukVision($e));
         }
 
         $this->info('Hasil baca: '.$this->clip($response->text === '' ? '(kosong)' : $response->text));
+        $this->line('Token: masuk '.$response->inputTokens.', keluar '.$response->outputTokens);
 
         return self::SUCCESS;
     }

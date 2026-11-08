@@ -33,6 +33,18 @@ class LlmException extends RuntimeException
 
     public const GAMBAR_GAGAL = 'gambar_gagal';
 
+    /** Model vision (LLM_VISION_MODEL) tidak ada/dihentikan penyedia (404, model_not_found, model_decommissioned). */
+    public const VISION_TIDAK_TERSEDIA = 'vision_tidak_tersedia';
+
+    /** Model vision melaporkan tulisan buram/tidak terbaca (penanda [TIDAK_TERBACA]). */
+    public const GAMBAR_BURAM = 'gambar_buram';
+
+    /** Foto bukan nota/surat jalan dan tanpa keterangan (penanda [BUKAN_DOKUMEN]). */
+    public const BUKAN_DOKUMEN = 'bukan_dokumen';
+
+    /** error.code penyedia yang berarti model tidak ada / tidak aktif lagi (pola Groq/OpenAI). */
+    public const KODE_MODEL_TIDAK_ADA = ['model_not_found', 'model_decommissioned', 'model_not_available', 'model_not_active'];
+
     /** Penyedia menolak tool call buatan model (Groq HTTP 400 `tool_use_failed`); agen boleh mengulang SEKALI. */
     public const TOOL_GAGAL = 'tool_gagal';
 
@@ -87,6 +99,37 @@ class LlmException extends RuntimeException
     public function toolGagal(): bool
     {
         return $this->category === self::TOOL_GAGAL;
+    }
+
+    /** True bila penyedia menyatakan model yang diminta tidak ada / sudah dihentikan (HTTP 404 atau kode model_*). */
+    public function modelTidakAda(): bool
+    {
+        return $this->status === 404 || in_array($this->kodePenyedia, self::KODE_MODEL_TIDAK_ADA, true);
+    }
+
+    /**
+     * Galat dari jalur baca gambar (model vision) dipetakan ke kategori yang ramah untuk foto: model tidak ada ->
+     * VISION_TIDAK_TERSEDIA; sibuk/kuota/konfigurasi/terlalu besar tetap; selain itu "foto tidak dapat dibaca".
+     */
+    public static function untukVision(self $e): self
+    {
+        if ($e->modelTidakAda()) {
+            return new self('Model vision tidak tersedia di penyedia.', self::VISION_TIDAK_TERSEDIA, $e->status, 'model_tidak_ada', $e->kodePenyedia, $e->tipePenyedia);
+        }
+
+        return in_array($e->category, [self::SIBUK, self::KUOTA, self::KONFIGURASI, self::TERLALU_BESAR, self::GAMBAR_TIDAK_DIDUKUNG, self::VISION_TIDAK_TERSEDIA, self::GAMBAR_BURAM, self::BUKAN_DOKUMEN], true)
+            ? $e
+            : self::visionFailed($e);
+    }
+
+    public static function fotoBuram(): self
+    {
+        return new self('Tulisan pada foto tidak terbaca.', self::GAMBAR_BURAM, null, 'tidak_terbaca');
+    }
+
+    public static function bukanDokumen(): self
+    {
+        return new self('Foto bukan dokumen dan tanpa keterangan.', self::BUKAN_DOKUMEN, null, 'bukan_dokumen');
     }
 
     /**
@@ -175,9 +218,13 @@ class LlmException extends RuntimeException
             self::KONFIGURASI => 'Agen AI belum siap digunakan (konfigurasi). Hubungi Admin SPPG; sementara itu silakan isi lewat formulir di Mini App.',
             self::KUOTA => 'Kuota Agen AI sedang habis. Silakan isi lewat formulir di Mini App atau coba lagi nanti.',
             self::TERLALU_BESAR => 'Pesan atau gambar terlalu besar untuk Agen AI. Persingkat pesan atau isi lewat formulir di Mini App.',
-            self::SIBUK => 'Agen AI sedang sibuk. Coba lagi sebentar lagi atau isi lewat formulir di Mini App.',
+            // 429 penyedia / pelindung token per menit: tidak diulang otomatis (hemat kuota TPM).
+            self::SIBUK => 'Sedang ramai, coba lagi sekitar 1 menit. Bila mendesak, isi lewat formulir di Mini App.',
             self::GAMBAR_TIDAK_DIDUKUNG => 'Membaca foto belum didukung. Silakan ketik isinya atau isi lewat formulir di Mini App.',
+            self::VISION_TIDAK_TERSEDIA => 'Membaca foto sedang tidak tersedia. Silakan ketik isi nota/surat jalan, atau isi lewat formulir di Mini App.',
             self::GAMBAR_GAGAL => 'Foto tidak dapat dibaca Agen AI. Silakan ketik isinya atau isi lewat formulir di Mini App.',
+            self::GAMBAR_BURAM => 'Foto buram atau tulisannya tidak terbaca. Foto ulang lebih dekat dengan cahaya cukup, ketik isinya, atau isi lewat formulir di Mini App.',
+            self::BUKAN_DOKUMEN => 'Foto ini tidak terlihat seperti nota atau surat jalan. Kirim foto nota/surat jalan, tambahkan keterangan apa yang ingin dicatat, atau isi lewat formulir di Mini App.',
             self::TOOL_GAGAL => 'Agen AI belum dapat menyusun draf dari pesan ini. Coba tulis ulang lebih singkat (satu data per pesan) atau isi lewat formulir di Mini App.',
             default => 'Agen AI sedang tidak tersedia. Silakan isi lewat formulir di Mini App.',
         };

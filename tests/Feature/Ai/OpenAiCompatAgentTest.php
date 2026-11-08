@@ -212,7 +212,7 @@ class OpenAiCompatAgentTest extends MasterApiTestCase
 
         $reply = $this->agent()->handle($this->kepalaA, AiInput::text('halo'));
 
-        $this->assertStringContainsString('sibuk', $reply->text);
+        $this->assertStringContainsString('Sedang ramai, coba lagi sekitar 1 menit', $reply->text);
         $this->assertSame('llm:sibuk http=429', AiInteraction::query()->sole()->error);
         Http::assertSentCount(1);
     }
@@ -226,7 +226,7 @@ class OpenAiCompatAgentTest extends MasterApiTestCase
         $second = $this->agent()->handle($this->ahliGiziA, AiInput::text('halo juga'));
 
         $this->assertSame('ok', $first->text);
-        $this->assertStringContainsString('sibuk', $second->text);
+        $this->assertStringContainsString('Sedang ramai', $second->text);
         $this->assertCount(1, $this->llmRequests(), 'Permintaan kedua tidak dikirim ke penyedia.');
         $this->assertSame('llm:sibuk (token_per_menit)', AiInteraction::query()->latest('id')->first()->error);
 

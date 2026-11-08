@@ -20,7 +20,9 @@ return [
     | Chat Completions kompatibel OpenAI (Tahap 5a). base_url WAJIB diisi lewat env (tanpa default
     | penyedia), wajib https, tanpa userinfo/query; redirect tidak diikuti (mitigasi SSRF). Contoh:
     | Groq https://api.groq.com/openai/v1, DeepSeek https://api.deepseek.com.
-    | vision_model kosong = foto tidak didukung (bot membalas ramah sebelum mengunduh foto).
+    | vision_model kosong = foto tidak didukung (bot membalas ramah sebelum mengunduh foto). Nama model vision
+    | TIDAK di-hardcode (LLM_VISION_MODEL; model Preview dapat dihentikan penyedia): 404 / model_not_found /
+    | model_decommissioned -> balasan ramah + tombol Mini App (LlmException::VISION_TIDAK_TERSEDIA).
     */
     'openai_compat' => [
         'base_url' => env('LLM_BASE_URL'),
@@ -29,12 +31,16 @@ return [
         'vision_model' => env('LLM_VISION_MODEL'),
         'max_tokens' => (int) env('LLM_MAX_TOKENS', 1024),
         'vision_max_tokens' => 800,
-        // Batas base64 gambar per permintaan (Groq: 4 MB untuk gambar base64).
-        'vision_max_base64_bytes' => 4 * 1024 * 1024,
+        // Batas base64 gambar per permintaan. BELUM TERVERIFIKASI untuk model vision terpilih (dokumentasi
+        // Groq menyebut 4 MB untuk base64 dan 20 MB untuk URL; model Preview dapat berbeda). Foto chat
+        // dikompres ulang (PraprosesFotoChat) sampai di bawah batas ini; bila tidak bisa -> "file terlalu besar".
+        'vision_max_base64_bytes' => (int) env('LLM_VISION_MAX_BASE64_BYTES', 4 * 1024 * 1024),
         // NFR-11: per panggilan; total per pesan dibatasi agent.time_budget_seconds.
         'timeout' => (int) env('LLM_TIMEOUT', 20),
         'connect_timeout' => 5,
-        // Percobaan ulang maks 1 (dipaksa <= 1) untuk koneksi / 429 / 5xx.
+        // Percobaan ulang maks 1 (dipaksa <= 1) untuk koneksi / 429 / 5xx pada pesan TEKS/SUARA.
+        // Jalur foto (model vision + model teks untuk pesan foto) TIDAK pernah diulang (opsi tanpa_ulang):
+        // gambar ~2100 token, mengulang 429 hanya menghabiskan kuota TPM.
         'retries' => 1,
         'retry_sleep_ms' => 500,
         // Retry-After lebih lama dari ini -> langsung fallback (tidak menunggu).
@@ -86,6 +92,9 @@ return [
     'token_budget' => [
         'per_minute' => (int) env('AI_TOKEN_PER_MINUTE', 0),
         'per_day' => (int) env('AI_TOKEN_PER_DAY', 0),
+        // Estimasi biaya token SATU gambar untuk model vision (TokenBudget::imageTokens). qwen/qwen3.8-27b di
+        // Groq: ~2048 token/gambar (+ margin). Dipakai pelindung token sebelum foto diunduh dan sebelum vision.
+        'image_tokens' => (int) env('AI_IMAGE_TOKENS', 2100),
     ],
 
     /*
@@ -137,6 +146,18 @@ return [
         // Foto chat (vision): batas unduh (byte) dan MIME aktual yang diterima (NFR-06).
         'photo_max_bytes' => 5 * 1024 * 1024,
         'photo_mimes' => ['image/jpeg', 'image/png', 'image/webp'],
+        // Pra-pemrosesan foto chat (PraprosesFotoChat, GD): sisi terpanjang, kualitas JPEG awal, lalu
+        // turun bertahap bila base64 masih > vision_max_base64_bytes. EXIF/GPS terbuang (encode ulang).
+        'photo_max_side_px' => 1280,
+        'photo_jpeg_quality' => 82,
+        // Langkah penurunan bila hasil masih terlalu besar: [sisi px, kualitas].
+        'photo_fallback_steps' => [[1280, 70], [1024, 65], [800, 60]],
+        // Batas piksel sebelum di-decode (anti decompression bomb; foto Telegram maks ~2560 px).
+        'photo_max_pixels' => 16_000_000,
+        // Album (media_group_id): hanya foto pertama yang diproses; penanda grup di Cache (detik).
+        'album_ttl_seconds' => 120,
+        // Pemberitahuan privasi pihak ketiga (sekali per pengguna; penanda di Cache, hari).
+        'privasi_ttl_days' => 365,
         // Pesan suara: batas durasi (detik) dan ukuran (byte; Bot API getFile maks 20 MB).
         'voice_max_seconds' => 120,
         'voice_max_bytes' => 10 * 1024 * 1024,

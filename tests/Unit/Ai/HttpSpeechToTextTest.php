@@ -53,7 +53,7 @@ class HttpSpeechToTextTest extends TestCase
         return [
             '401' => [401, 'belum dikonfigurasi'],
             '413' => [413, 'terlalu besar'],
-            '429' => [429, 'sedang sibuk'],
+            '429' => [429, 'Sedang ramai, coba lagi sekitar 1 menit'],
             '500' => [500, 'tidak dapat ditranskripsi'],
         ];
     }

@@ -93,7 +93,8 @@ class GdPemrosesGambar implements PemrosesGambar
         };
     }
 
-    private function terapkanOrientasi(GdImage $gambar, string $isi): GdImage
+    /** Terapkan orientasi EXIF JPEG (dipakai juga PraprosesFotoChat); tanpa ext-exif = gambar apa adanya. */
+    public function terapkanOrientasi(GdImage $gambar, string $isi): GdImage
     {
         if (! function_exists('exif_read_data')) {
             return $gambar;
