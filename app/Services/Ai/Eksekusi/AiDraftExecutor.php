@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\Ai\ActingUser;
 use App\Services\Ai\Catalog\DraftToolResolver;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Referensi\PilihanReferensiDraf;
 use App\Services\Ai\Tools\WriteDraftTool;
 use App\Services\Auth\SesiService;
@@ -74,8 +75,10 @@ class AiDraftExecutor
             return HasilEksekusi::DITOLAK;
         }
 
-        // Rujukan nama yang masih ambigu (payload `_pilihan`) harus dipilih pengguna lebih dulu: tidak pernah dijalankan.
-        if (! ($tool->eksekusi()?->dapatDijalankan() ?? false) || $this->perluDicek($draft) !== [] || PilihanReferensiDraf::tertunda($draft) !== []) {
+        // Rujukan nama yang masih ambigu (payload `_pilihan`) harus dipilih pengguna lebih dulu, dan draf "perlu
+        // diperbaiki" (payload `_galat`: kolom dikosongkan karena masukan salah) hanya diselesaikan di Mini App.
+        if (! ($tool->eksekusi()?->dapatDijalankan() ?? false) || $this->perluDicek($draft) !== [] || PilihanReferensiDraf::tertunda($draft) !== []
+            || GalatDraf::ada($draft)) {
             return HasilEksekusi::HANYA_MINIAPP;
         }
 

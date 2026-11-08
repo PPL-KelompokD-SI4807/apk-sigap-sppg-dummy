@@ -377,10 +377,12 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
      * (pola ketat), dan khusus `tool_use_failed`: nama tool (hanya bila termasuk tool yang DIKIRIM), JSON pointer
      * argumen yang ditolak (setiap segmen harus nama properti skema tool itu atau indeks), dan kode masalah dari
      * kosakata tetap. `error.message` mentah dan `failed_generation` (memuat keluaran model = isi pesan/argumen
-     * pengguna) TIDAK pernah disimpan, di-log, atau dikirim balik.
+     * pengguna) TIDAK pernah disimpan, di-log, atau dikirim balik. Satu-satunya turunan failed_generation: `argumen` =
+     * objek argumen tool yang ditolak (hanya bila nama tool = tool yang dikenali di atas), untuk jalur draf "perlu
+     * diperbaiki" setelah percobaan ulang gagal; argumen itu tetap melewati pipeline tool biasa (skema, Form Request).
      *
      * @param  list<array<string, mixed>>  $tools  tool format Chat Completions pada permintaan yang gagal
-     * @return array{kode?: string, tipe?: string, tool?: string, masalah?: list<string>, jalur?: list<string>}
+     * @return array{kode?: string, tipe?: string, tool?: string, masalah?: list<string>, jalur?: list<string>, argumen?: array<string, mixed>}
      */
     public static function infoGalat(Response $response, array $tools = []): array
     {
@@ -457,9 +459,42 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
             if ($jalur !== []) {
                 $info['jalur'] = $jalur;
             }
+
+            $argumen = self::argumenGagal($error['failed_generation'] ?? null, $tool);
+
+            if ($argumen !== null) {
+                $info['argumen'] = $argumen;
+            }
         }
 
         return $info;
+    }
+
+    /**
+     * Objek argumen dari failed_generation (`{"name": ..., "arguments": {...}|"<json>"}`, boleh dibungkus larik/`tool_calls`)
+     * HANYA untuk tool $tool. Bentuk lain / nama lain = null.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function argumenGagal(mixed $mentah, string $tool): ?array
+    {
+        if (! is_string($mentah) || $mentah === '' || strlen($mentah) > 16000) {
+            return null;
+        }
+
+        $json = json_decode($mentah, true, 8);
+        $calon = is_array($json) && array_is_list($json) ? ($json[0] ?? null) : $json;
+        $calon = is_array($calon['tool_calls'][0] ?? null) ? $calon['tool_calls'][0] : $calon;
+        $calon = is_array($calon['function'] ?? null) ? $calon['function'] : $calon;
+
+        if (! is_array($calon) || ($calon['name'] ?? null) !== $tool) {
+            return null;
+        }
+
+        $argumen = $calon['arguments'] ?? $calon['parameters'] ?? null;
+        $argumen = is_string($argumen) ? json_decode($argumen, true, 8) : $argumen;
+
+        return is_array($argumen) && ($argumen === [] || ! array_is_list($argumen)) ? $argumen : null;
     }
 
     private static function kodeAman(mixed $nilai): ?string

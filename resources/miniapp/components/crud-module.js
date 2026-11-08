@@ -2,6 +2,7 @@ import { h, clear, formatValue } from '../core/dom.js';
 import { api, submitWithQueue, request, newKey } from '../core/api.js';
 import { getUser } from '../core/auth.js';
 import { userPerms, permsDariIzin, PESAN_BUKAN_HAK } from '../core/permissions.js';
+import { perluDiperbaiki } from '../core/draf-galat.js';
 import { errorMessage, ringkasGalatAksi } from '../core/errors.js';
 import { navigate, route, resolve, alihkanKeBeranda } from '../core/router.js';
 import { toast, showConfirm, setMainButton } from '../core/ui.js';
@@ -115,6 +116,7 @@ export function defineCrudModule(def) {
     clear(ctx.el);
     if (draft) ctx.el.append(h('div', { class: 'notice' }, 'Diisi otomatis oleh Agen AI. Periksa kolom bertanda "Perlu dicek", lalu simpan.'));
     const konflik = h('div', { 'aria-live': 'assertive' });
+    const draftNotice = h('div', { class: 'alert-danger', role: 'alert', hidden: true });
     const versi = isianDraf.versi ?? record?.versi ?? null;
     // 409 versi/status: data di layar basi. Draf AI basi tidak boleh dikirim ulang, jadi arahkan ke data terbaru tanpa draf.
     function tampilkanKonflik(e) {
@@ -131,10 +133,21 @@ export function defineCrudModule(def) {
       submitText: mode === 'create' ? 'Simpan' : 'Simpan perubahan',
       onSubmit: async (v) => {
         konflik.replaceChildren();
+        draftNotice.hidden = true; // validasi klien lolos: galat draf lama tidak berlaku lagi
         try { await save({ mode, id: record?.id, values: v, draftId: draft ? draft.uuid || draftUuid : null, versi }); } catch (e) { tampilkanKonflik(e); throw e; }
       },
     });
-    ctx.el.append(konflik, fv.el);
+    // Draf "perlu diperbaiki" (salah input di bot): galat per kolom/baris + daftar untuk galat tanpa kolom. Semua lewat textContent.
+    if (draft && perluDiperbaiki(draft)) {
+      const lainnya = fv.terapkanDraf({ errors: draft.errors || {}, pilihan: draft.pilihan_referensi || [] });
+      draftNotice.replaceChildren(h('strong', {}, 'Draf dari Agen AI perlu diperbaiki'),
+        h('p', { class: 'small' }, 'Perbaiki kolom bertanda merah di bawah, lalu tekan Simpan. Tidak ada yang disimpan otomatis.'),
+        lainnya.length ? h('ul', { class: 'small' }, lainnya.map((m) => h('li', {}, m))) : null);
+      draftNotice.hidden = false;
+    } else if (draft) {
+      fv.terapkanDraf({ errors: {}, pilihan: draft.pilihan_referensi || [] });
+    }
+    ctx.el.append(konflik, draftNotice, fv.el);
     // formTop({mode, record, form, collect}) -> Node (disisipkan di atas formulir), mis. sisa kapasitas / ringkasan gizi.
     const top = formTop ? formTop({ mode, record, form: fv.el, collect: fv.collect, values }) : null;
     if (top) ctx.el.insertBefore(top, fv.el);

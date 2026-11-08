@@ -6,7 +6,10 @@ use App\Models\AiDraft;
 
 /**
  * Hasil eksekusi tool. Konten untuk model selalu JSON (diperlakukan model sebagai data).
- * status: ok | draft | invalid | ditolak | gagal.
+ * status: ok | draft | perbaiki | invalid | ditolak | gagal.
+ *
+ * `perbaiki` = draf dibuat dari bagian masukan yang valid, tetapi ada kolom yang perlu diperbaiki pengguna (GalatDraf).
+ * Loop agen BERHENTI pada hasil ini (tanpa panggilan LLM lagi) dan bot membalas satu pesan server + tombol Mini App.
  */
 final class ToolResult
 {
@@ -19,6 +22,8 @@ final class ToolResult
     public const DITOLAK = 'ditolak';
 
     public const GAGAL = 'gagal';
+
+    public const PERBAIKI = 'perbaiki';
 
     /**
      * @param  array<string, mixed>  $data
@@ -62,6 +67,21 @@ final class ToolResult
         return new self(self::DRAFT, $data, null, $draft);
     }
 
+    /**
+     * Draf "perlu diperbaiki": galat per kolom sudah tersimpan di draf (payload `_galat`). Tidak dikirim ke LLM.
+     *
+     * @param  array<string, list<string>>  $galat
+     */
+    public static function perbaiki(AiDraft $draft, array $galat): self
+    {
+        return new self(self::PERBAIKI, ['draf_dibuat' => true, 'modul' => $draft->module, 'perlu_diperbaiki' => array_keys($galat)], null, $draft);
+    }
+
+    public function perluDiperbaiki(): bool
+    {
+        return $this->status === self::PERBAIKI && $this->draft !== null;
+    }
+
     public static function invalid(string $message): self
     {
         return new self(self::INVALID, [], $message);
@@ -79,7 +99,7 @@ final class ToolResult
 
     public function isError(): bool
     {
-        return ! in_array($this->status, [self::OK, self::DRAFT], true);
+        return ! in_array($this->status, [self::OK, self::DRAFT, self::PERBAIKI], true);
     }
 
     /** JSON untuk model, dipotong ke $maxChars agar konteks tidak membengkak. */

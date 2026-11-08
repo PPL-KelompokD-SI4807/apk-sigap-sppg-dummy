@@ -13,7 +13,9 @@ Telegram -> POST /api/v1/telegram/webhook -> ProcessTelegramUpdate -> ProcessAiM
          LlmClient::chat(messages, tools milik peran)
          tiap tool call: nama dikenal? -> milik peran? -> buang argumen terlindungi
                          -> ArgumentValidator (skema ketat) -> execute()
-  -> balasan teks POLOS, lalu per draf:
+         masukan salah pada tool tulis -> draf "perlu diperbaiki" (GalatDraf) -> loop BERHENTI (tanpa LLM lagi)
+  -> balasan teks POLOS (penanda Markdown dibuang), lalu per draf:
+       draf perlu diperbaiki -> HANYA tombol web_app "Buka di Mini App" (?draft=<uuid>), pesan disusun server
        tool punya eksekusi() -> LAYAR KONFIRMASI (BotAksiAiService): ringkasan server + Lanjutkan/Batal/Ubah
        selain itu           -> tombol web_app "Periksa & Simpan" (?draft=<uuid>)
 Mini App: GET /ai-drafts/{uuid} -> form prefill -> POST/PUT endpoint modul + ai_draft_id
@@ -86,13 +88,27 @@ class BuatPemasokTool extends WriteDraftTool
 ```
 
 - `parameters()` dibuat otomatis dari `fields()` + `target_id` (untuk U/D) + `keyakinan` (objek 0-1 per kolom dari model).
-- Payload divalidasi **dry-run** dengan Form Request modul (`DraftValidator`: authorize + prepareForValidation + rules + after, persis seperti HTTP). Kolom gagal validasi -> keyakinan 0 -> "Perlu dicek". Draf tetap dibuat agar pengguna dapat melengkapi di form.
+- Payload divalidasi **dry-run** dengan Form Request modul (`DraftValidator`: authorize + prepareForValidation + rules + after, persis seperti HTTP). Kolom gagal validasi -> keyakinan 0 -> draf "perlu diperbaiki" (lihat "Masukan salah -> Mini App"). Draf tetap dibuat agar pengguna dapat melengkapi di form.
 - Untuk ubah: set `$action = 'U'` dan `routeParameter()` = nama parameter rute Form Request update (mis. `'titikLayanan'`); target dicari lewat `findTarget()` (ber-scope) lalu dicek Policy `update`. Hapus (`D`) boleh `formRequest()` = null.
 - Draf disimpan `ai_drafts` (pemilik + SPPG dari pengguna login, berlaku `AI_DRAFT_TTL_MINUTES`, default 30 menit sesuai FR-11, maks `AI_DRAFT_MAX_PENDING` draf pending per pengguna).
 - Controller modul Anda **sudah** menerima `ai_draft_id` (trait `HasAiDraftId` + `AiDraftConfirmer::confirm()` di dalam transaksi store/update). Pastikan `module` draf = slug yang dipakai controller saat `confirm()`.
 - Pengguna tanpa SPPG (Admin) tidak ditawari tool tulis modul ber-tenant (`butuhSppg()` = true, bawaan); Admin memakai Mini App langsung. Pengecualian: tool modul pengguna (`butuhSppg()` = false, draf Admin tanpa SPPG). Pemilihan SPPG tujuan untuk aksi tulis modul Admin = titik ekstensi tahap 2.
 - Agar draf dapat dijalankan dari chat, isi `eksekusi()` (lihat bagian berikut); tanpa itu draf tetap memakai tombol Mini App.
 - Data master dirujuk dengan NAMA, bukan ID: pakai hook `rujukan()` + `ResolverReferensi` (bagian "Resolusi nama -> ID"). Pengguna tidak pernah diminta ID.
+
+## Masukan salah -> Mini App (tanpa bertanya balik)
+
+Aturan pengguna: bila masukan di bot salah, bot TIDAK bertanya balik lewat chat/LLM (semua peran, semua tool tulis).
+
+| Kategori | Sumber | Kunci galat (contoh) |
+|---|---|---|
+| Argumen tidak sesuai skema (mis. `lemak_g: "5 ml"`, enum salah, tanggal bukan YYYY-MM-DD) | `AiAgentService::runTool` -> `PemisahArgumen::pisahkan` | `lemak_g`, `jenis`, `bahan` (baris larik yang salah dibuang). Argumen DI LUAR skema (mis. `status`, `total`) tetap menolak seluruh panggilan tanpa draf |
+| `tool_use_failed` yang MASIH gagal setelah SATU percobaan ulang (PR #57 dipertahankan; ulang yang lolos = draf biasa) | `AiAgentService::drafDariPenolakan`: argumen dari `failed_generation` (hanya untuk tool yang dikenali, tidak pernah di-log) dijalankan lewat pipeline tool biasa; kolom pada jalur yang ditolak dikosongkan (`PemisahArgumen::dariJalurPenyedia`). Tool baca / tak terbaca sebagai tool tulis = balasan ramah seperti dulu | `siklus` (+ kolom wajib yang belum dipahami) |
+| Rujukan tidak ditemukan / ID karangan / nama kosong | `MenuWriteTool::rujukan` | `bahan.2.bahan_baku_id` |
+| Satuan tidak cocok/tak dikenal, takaran di luar batas | `MenuWriteTool::rujukan` (`TakaranPerPorsi`) | `bahan.0.gram_per_porsi` |
+| Kolom wajib kosong, angka/tanggal di luar batas, galat Form Request lain | `WriteDraftTool::execute` (dry-run) | `jenis`, `sppg_id`, `energi_kkal` |
+
+Alur: kolom salah dikosongkan dari payload (nilai skalar; larik baris dipertahankan), galat disimpan di payload internal `_galat` (`GalatDraf`, kunci berpola ketat, maks 30 kolom x 3 pesan x 160 karakter, tanpa nilai masukan mentah), `ToolResult::perbaiki` -> loop agen berhenti pada langkah itu (sisa tool call tidak dijalankan, LLM tidak dipanggil lagi; bila ada sisa aksi, pesan menambahkan `GalatDraf::PESAN_TERTUNDA` "Permintaan lain dalam pesan yang sama BELUM diproses; kirim ulang ...") -> `AiReply` berisi SATU pesan server (`GalatDraf::pesanBalasan`: label modul + daftar kolom, mis. "Lemak (g), Bahan baris 3") dan draf itu di urutan pertama -> `AiChatHandler` hanya memberi tombol web_app "Buka di Mini App" (`?draft=<uuid>`; null bila URL non-HTTPS). Draf ber-`_galat` tidak pernah mendapat layar konfirmasi/pilihan dan tidak dapat dijalankan dari chat (`AiDraftExecutor::hambatan` = `hanya_miniapp`). Mini App: `GET /ai-drafts/{uuid}` -> `status` tetap `pending`, `perlu_diperbaiki` = true, `errors` = `_galat` + dry-run terbaru (kunci bertitik). Ambigu (>1 kandidat) BUKAN kesalahan: tetap tombol `ai_pilih`. Hak peran tidak berubah: tool tulis hanya ditawarkan/dijalankan untuk peran berhak (ToolRegistry/Rbac), jadi peran tanpa hak atau Admin tanpa SPPG tidak pernah mendapat draf maupun tombol. Prompt sistem aturan 5: kirim kolom yang jelas saja, jangan bertanya balik. Aturan 9 + deskripsi skema `bahan[].nama`: kirim nama persis seperti ditulis pengguna, jangan dilengkapi atau diperbaiki (tambahan prompt sistem +122 karakter, kira-kira +31 token per permintaan; skema +0 token).
 
 ## Resolusi nama -> ID (server)
 
@@ -102,11 +118,11 @@ class BuatPemasokTool extends WriteDraftTool
 |---|---|
 | Hak | Rbac R (bukan `*`) + Policy `viewAny` jenis itu + `users.sppg_id` (sumber SPPG sama dengan `PilihanReferensiDraf::milik`, `AiDraftExecutor`, `StoreMenuRequest`). Admin/Investor/tanpa SPPG = ditolak. Tanpa hak baca -> tool `ditolak`, tidak ada draf |
 | Isolasi | `where sppg = SPPG aktif` + SppgScope; soft delete tidak ikut. Bila NAMA disebut, resolusi SELALU memakai nama (ID dari LLM diabaikan; nama ambigu tetap menjadi pilihan walau LLM mengirim ID salah satu kandidat). ID hanya dipakai bila nama tidak disebut, dicek dengan batasan yang sama; ID SPPG lain = "tidak ditemukan" (tanpa membocorkan keberadaan). Float bulat (`5.0`) diperlakukan sebagai int |
-| Urutan cocok | sama persis (tanpa beda huruf besar, spasi dirapikan, karakter format dibuang) -> awalan -> mengandung. Tingkat pertama yang berisi data menentukan |
-| Hasil | 1 = dipakai. >1 = TIDAK menebak: kandidat yang pasti tak terpakai disaring (satuan tak kompatibel dengan takaran, atau bahan sudah dirujuk tepat di baris lain); sisa >= 1 = draf dengan baris placeholder (tanpa ID, gagal Form Request) + `_pilihan` (ID kandidat saja, maks 5, `lebih_banyak`); sisa 0 = tidak ada draf, ditanyakan (pesan satuan, atau "sudah ada di komposisi"). Hasil tool ke LLM: `perlu_dipilih` berisi nama + satuan saja (tanpa ID) dan galat baris placeholder (`bahan.N.bahan_baku_id`) tidak ikut `perlu_dicek` (galat lengkap tetap di `errors` API Mini App). 0 = TIDAK ada draf; model menyampaikan "tidak ditemukan" dan menawarkan draf bahan terpisah (`buat_bahan_baku`) hanya bila peran berhak dan pengguna setuju; bahan tidak pernah dibuat otomatis |
+| Urutan cocok | sama persis (tanpa beda huruf besar, spasi dirapikan, karakter format dibuang) -> awalan -> mengandung. Tingkat pertama yang berisi data menentukan. Penjagaan nama yang dilengkapi LLM (bug "bahan ay" -> Ayam): bila nama yang dikirim LLM tidak tertulis di teks pesan pengguna (`ToolContext::$teksPengguna`) dan juga awalan >1 data, hasilnya ambigu (pilihan), bukan sama persis. ID tanpa nama yang tidak tertulis di teks pengguna = tidak valid |
+| Hasil | 1 = dipakai. >1 = TIDAK menebak: kandidat yang pasti tak terpakai disaring (satuan tak kompatibel dengan takaran, atau bahan sudah dirujuk tepat di baris lain); sisa >= 1 = draf dengan baris placeholder (tanpa ID, gagal Form Request) + `_pilihan` (ID kandidat saja, maks 5, `lebih_banyak`); sisa 0 = galat kolom (pesan satuan, atau "sudah ada di komposisi") -> draf perlu diperbaiki. Hasil tool ke LLM: `perlu_dipilih` berisi nama + satuan saja (tanpa ID) dan galat baris placeholder (`bahan.N.bahan_baku_id`) tidak ikut `perlu_dicek` (galat lengkap tetap di `errors` API Mini App). 0 = baris tanpa ID + galat `bahan.N.bahan_baku_id` -> draf perlu diperbaiki (pilih bahan yang ada di Mini App); tidak menawarkan membuat bahan, bahan tidak pernah dibuat otomatis |
 | Keamanan | Nama = parameter terikat; `! % _` di-escape (`ESCAPE '!'`) sehingga `%`, `_`, `\` harfiah; maks 100 karakter. Nama dari DB diratakan satu baris + dipotong 60 (`KandidatReferensi`) dan hanya masuk hasil tool (dibungkus `<hasil_tool_{nonce}>`) / layar escape HTML, tidak pernah ke prompt sistem |
 
-Skema item `bahan` (buat/ubah menu): `{nama?: string|null, bahan_baku_id?: integer|null, jumlah, satuan}` (null/0 pada ID diterima agar tool call model yang hanya tahu nama tidak ditolak penyedia; nama selalu menang atas ID). Takaran -> `gram_per_porsi` (`TakaranPerPorsi`, aritmetika desimal string): hanya pasangan pasti mg/g/kg dan ml/l; bahan bersatuan stok volume menerima ml/l (disimpan sebagai ml, konvensi `config/produksi.php`), bahan lain menerima berat (gram). Massa <-> volume, satuan tak dikenal (butir, sdm), > 2 desimal, <= 0, > 100000 -> tidak ada draf, model menanyakan ulang. Prompt sistem aturan 9: jangan meminta ID; kirim nama.
+Skema item `bahan` (buat/ubah menu): `{nama?: string|null, bahan_baku_id?: integer|null, jumlah, satuan}` (null/0 pada ID diterima agar tool call model yang hanya tahu nama tidak ditolak penyedia; nama selalu menang atas ID). Takaran -> `gram_per_porsi` (`TakaranPerPorsi`, aritmetika desimal string): hanya pasangan pasti mg/g/kg dan ml/l; bahan bersatuan stok volume menerima ml/l (disimpan sebagai ml, konvensi `config/produksi.php`), bahan lain menerima berat (gram). Massa <-> volume, satuan tak dikenal (butir, sdm), > 2 desimal, <= 0, > 100000 -> baris tanpa `gram_per_porsi` + galat `bahan.N.gram_per_porsi` (draf perlu diperbaiki, tanpa pertanyaan balik). Prompt sistem aturan 9: jangan meminta ID; kirim nama persis seperti diketik pengguna (jangan dilengkapi).
 
 **Pilihan di Bot** (`BotAksiAiService::layarPilihan`): satu tombol `ai_pilih` per kandidat ("Ayam Fillet (kg) #12"), + Batal + Ubah di Mini App; satu grup sekali pakai per layar; `subjek_id` = draf, `subjek_versi` = `PilihanReferensiDraf::kode()` = indeks slot x 8 + posisi kandidat (token terikat slot; ID kandidat diambil ulang dari `_pilihan` draf). Saat ditekan (`PilihanReferensiDraf::pilih`, transaksi + `lockForUpdate`): pengguna dimuat ulang, draf milik penekan + SPPG sama + pending + belum kedaluwarsa, tool masih tersedia untuk peran, kode untuk slot PERTAMA (slot lain/layar basi = tidak berlaku) dan kandidat masih milik SPPG (cek ulang `denganId`), satuan kompatibel. Hanya payload draf yang berubah; layar berikutnya = slot berikut, lalu pratinjau server ("Bahan: Ayam Fillet (kg) - 10 gram per porsi") + Periksa & Simpan + Batal (menu = Mini App saja). Draf dengan `_pilihan` tertunda tidak pernah dijalankan dari chat (`AiDraftExecutor::hambatan`).
 
@@ -175,7 +191,7 @@ Pemeriksaan pada SETIAP klik (`AiDraftExecutor`): pengguna dimuat ulang (aktif) 
 
 | Tool | Endpoint | Konfirmasi |
 |---|---|---|
-| `buat_undangan_pengguna` (role, unit relawan, sppg_id dari `cari_sppg`) | POST /pengguna/undangan | satu langkah; peran Admin = dua langkah. SPPG belum disebut / tidak valid / terhapus -> tidak ada draf, model bertanya ulang. admin/investor: sppg_id dibuang |
+| `buat_undangan_pengguna` (role, unit relawan, sppg_id dari `cari_sppg`) | POST /pengguna/undangan | satu langkah; peran Admin = dua langkah. SPPG belum disebut / tidak valid / terhapus -> draf perlu diperbaiki (sppg_id dikosongkan) + tombol Mini App, tanpa Lanjutkan. admin/investor: sppg_id dibuang |
 | `cari_undangan_pengguna` | (baca; tanpa token/tautan) | - |
 | `cabut_undangan` | DELETE /pengguna/undangan/{id} | dua langkah |
 | `ubah_peran_pengguna` | PATCH /pengguna/{id} + ai_draft_id | dua langkah |
@@ -188,7 +204,7 @@ Satu target per draf (tidak ada aksi massal). Ubah peran ke Admin dan undangan p
 
 ### Suara dan teks bebas
 
-Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDAK tepercaya (dibungkus nonce). Layar konfirmasi menampilkan "Yang saya dengar: ..." (escape, dipotong 300, tidak disimpan). Prompt melarang draf tebakan untuk transkrip/angka/target yang ambigu; isian berkeyakinan < `ai.drafts.low_confidence` tidak dapat dijalankan dari chat (hanya Ubah). Batas laju AI dicek SEBELUM unduh/STT; kuota detik audio per pengguna per jam `AI_STT_DETIK_PER_JAM` (600); durasi > 120 dtk / ukuran > 10 MB ditolak ramah; `ai_interactions.argumen.stt_detik` mencatat biaya STT. Balasan "ya/oke/lanjut" (teks atau suara) tidak pernah menjalankan apa pun.
+Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDAK tepercaya (dibungkus nonce). Layar konfirmasi menampilkan "Yang saya dengar: ..." (escape, dipotong 300, tidak disimpan). Prompt melarang menebak isian yang tidak jelas (kolom yang salah/tidak jelas menjadi draf perlu diperbaiki, tanpa bertanya balik); isian berkeyakinan < `ai.drafts.low_confidence` tidak dapat dijalankan dari chat (hanya Ubah). Batas laju AI dicek SEBELUM unduh/STT; kuota detik audio per pengguna per jam `AI_STT_DETIK_PER_JAM` (600); durasi > 120 dtk / ukuran > 10 MB ditolak ramah; `ai_interactions.argumen.stt_detik` mencatat biaya STT. Balasan "ya/oke/lanjut" (teks atau suara) tidak pernah menjalankan apa pun.
 
 ## Pertahanan prompt injection (wajib, sudah di kerangka)
 
@@ -208,7 +224,8 @@ Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDA
 | Eskalasi via chat | Tool pengguna hanya Admin (Rbac); role divalidasi enum + Form Request; undangan Admin dua langkah | `test_peran_selain_admin_*`, `test_argumen_role_*` |
 | Bocor token undangan | Lihat "Token undangan" di atas | `test_admin_buat_undangan_*_tanpa_bocor` |
 | Banjir draf | Maks draf pending per pengguna | `test_jumlah_draf_*` |
-| Nama rujukan berisi perintah/SQL/wildcard, ID karangan/SPPG lain | Resolusi nama -> ID di server (binding + escape LIKE, scope SPPG, hak baca); ambigu = tombol pilihan, tidak menebak; tidak ada = tanpa draf | `ResolusiReferensiTest`, `AiPilihanReferensiBotTest` |
+| Nama rujukan berisi perintah/SQL/wildcard, ID karangan/SPPG lain | Resolusi nama -> ID di server (binding + escape LIKE, scope SPPG, hak baca); ambigu = tombol pilihan, tidak menebak; tidak ada = baris tanpa ID + galat kolom (draf perlu diperbaiki) | `ResolusiReferensiTest`, `AiPilihanReferensiBotTest` |
+| Masukan salah memancing LLM bertanya balik (boros token, konteks melenceng) | Jalur kesalahan server: draf perlu diperbaiki, loop berhenti, satu pesan server + tombol Mini App; pesan tanpa nilai masukan mentah | `AiSalahInputKeMiniAppTest`, `GalatDrafTest` |
 | Draf orang lain | GET/DELETE hanya pemilik + SPPG sama (lainnya 404) | `AiDraftApiTest` |
 | Loop tool tak berujung | Maks iterasi + maks tool call per langkah + anggaran waktu | `test_loop_*`, `test_jumlah_tool_call_*` |
 | Keluaran model berisi HTML/Markdown | Dikirim tanpa `parse_mode` (teks polos), dipotong `max_output_chars` | `TelegramWebhookTest::test_pesan_teks_*` |

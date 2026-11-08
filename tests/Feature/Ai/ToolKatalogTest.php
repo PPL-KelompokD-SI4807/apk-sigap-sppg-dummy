@@ -383,7 +383,9 @@ class ToolKatalogTest extends MasterApiTestCase
 
         $hasil = $this->jalankan($aktor, $tool, []);
 
-        $this->assertSame(ToolResult::DRAFT, $hasil->status, $nama);
+        // Argumen kosong: kolom wajib Form Request kosong -> draf "perlu diperbaiki" (tetap draf, tanpa data modul).
+        $this->assertContains($hasil->status, [ToolResult::DRAFT, ToolResult::PERBAIKI], $nama);
+        $this->assertNotNull($hasil->draft, $nama);
         $this->assertSame($sebelum, $modelClass::query()->withoutGlobalScopes()->count(), 'NFR-11: tool tulis tidak boleh menyimpan data modul');
         $this->assertSame($draftSebelum + 1, AiDraft::query()->withoutGlobalScopes()->count());
 
@@ -465,9 +467,9 @@ class ToolKatalogTest extends MasterApiTestCase
 
         $sendiri = $this->jalankan($aktor, $tool, ['target_id' => $milikA->getKey()]);
         // Policy per record (mis. relawan hanya data buatannya hari ini) boleh menolak; selain itu = draf.
-        $this->assertContains($sendiri->status, [ToolResult::DRAFT, ToolResult::DITOLAK], $nama);
+        $this->assertContains($sendiri->status, [ToolResult::DRAFT, ToolResult::PERBAIKI, ToolResult::DITOLAK], $nama);
 
-        if ($sendiri->status === ToolResult::DRAFT) {
+        if ($sendiri->draft !== null) {
             $draft = AiDraft::query()->withoutGlobalScopes()->latest('id')->firstOrFail();
             $this->assertSame($milikA->getKey(), $draft->target_id);
             $this->assertSame($aktor->sppg_id, $draft->sppg_id);

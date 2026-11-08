@@ -15,6 +15,7 @@ import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { route, navigate } from '../../core/router.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
+import { perluDiperbaiki } from '../../core/draf-galat.js';
 import {
   penggunaFields, mapPayload, unitLabel, statusLabel, statusCls,
   STATUS_UNDANGAN, undanganCls, undanganLabel, undanganTarget, undanganFields, buildInvitePayload,
@@ -185,6 +186,10 @@ function registerUndangan() {
       },
     });
     if (draf) ctx.el.append(h('div', { class: 'notice' }, 'Diisi otomatis oleh Agen AI. Periksa kolom bertanda "Perlu dicek", lalu buat tautan.'));
+    if (draf && perluDiperbaiki(draf)) {
+      const lainnya = fv.terapkanDraf({ errors: draf.errors || {} });
+      ctx.el.append(h('div', { class: 'alert-danger', role: 'alert' }, 'Draf dari Agen AI perlu diperbaiki. Perbaiki kolom bertanda merah, lalu buat tautan.', lainnya.length ? h('ul', { class: 'small' }, lainnya.map((m) => h('li', {}, m))) : null));
+    }
     ctx.el.append(fv.el);
     return fv.destroy;
   }, { title: 'Buat Undangan', guard: bolehUndang });

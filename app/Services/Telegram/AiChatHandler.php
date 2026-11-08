@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
 use App\Services\Ai\AiReply;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Speech\SpeechToTextException;
 use App\Services\Ai\Speech\SpeechToTextService;
 use App\Services\Telegram\Bot\BotAksiAiService;
@@ -30,10 +31,13 @@ use Throwable;
  * Balasan: teks POLOS (tanpa parse_mode). Per draf: bila tool-nya dapat dijalankan dari chat, LAYAR KONFIRMASI terpisah
  * (BotAksiAiService: ringkasan server + Lanjutkan/Batal/Ubah; suara: "Yang saya dengar"); selain itu tombol web_app
  * "Periksa & Simpan" (Mini App). Teks/suara "ya/lanjut" tidak pernah menjalankan draf: hanya tombol callback sah.
+ * Draf "perlu diperbaiki" (GalatDraf, masukan salah): satu pesan server + tombol web_app "Buka di Mini App" saja.
  */
 class AiChatHandler
 {
     public const MAX_DRAFT_BUTTONS = 3;
+
+    public const LABEL_PERBAIKI = 'Buka di Mini App';
 
     public function __construct(
         private readonly TelegramBotService $bot,
@@ -192,6 +196,15 @@ class AiChatHandler
         $lama = 0;
 
         foreach (array_slice($reply->drafts, 0, self::MAX_DRAFT_BUTTONS) as $draft) {
+            // Draf "perlu diperbaiki" (masukan salah): hanya tombol web_app ke formulir draf, tanpa layar konfirmasi,
+            // tanpa Lanjutkan dan tanpa tombol pilihan. Pesan teksnya sudah disusun server (AiAgentService).
+            if (GalatDraf::ada($draft)) {
+                $lama++;
+                $buttons[] = TelegramBotService::webAppButton(self::LABEL_PERBAIKI, $this->bot->miniAppUrl(['draft' => $draft->uuid]));
+
+                continue;
+            }
+
             $layar = $this->layarKonfirmasi($chatId, $draft, $user, $transkrip);
 
             if ($layar !== null) {

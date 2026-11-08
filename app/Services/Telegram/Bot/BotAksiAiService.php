@@ -7,6 +7,7 @@ use App\Models\AiDraft;
 use App\Models\BotAksi;
 use App\Models\User;
 use App\Services\Ai\ActingUser;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Eksekusi\AiDraftExecutor;
 use App\Services\Ai\Eksekusi\HasilEksekusi;
 use App\Services\Ai\Eksekusi\RingkasanDraf;
@@ -74,6 +75,11 @@ class BotAksiAiService
      */
     public function layarKonfirmasi(User $user, int $chatId, AiDraft $draft, ?string $transkrip = null, ?string $catatan = null): ?BotLayar
     {
+        // Draf "perlu diperbaiki" tidak pernah mendapat layar konfirmasi/pilihan di chat: hanya tombol Mini App.
+        if (GalatDraf::ada($draft)) {
+            return null;
+        }
+
         if (PilihanReferensiDraf::tertunda($draft) !== []) {
             return $this->layarPilihan($user, $chatId, $draft, $catatan);
         }
@@ -225,7 +231,7 @@ class BotAksiAiService
      */
     public function layarPilihan(User $user, int $chatId, AiDraft $draft, ?string $catatan = null): ?BotLayar
     {
-        if ((int) $draft->user_id !== (int) $user->getKey() || $user->telegram_id === null || ! $draft->bisaDikonfirmasi()
+        if ((int) $draft->user_id !== (int) $user->getKey() || $user->telegram_id === null || ! $draft->bisaDikonfirmasi() || GalatDraf::ada($draft)
             || ! ($this->pilihan->tool($draft)?->isAvailableFor($user) ?? false)) {
             return null;
         }

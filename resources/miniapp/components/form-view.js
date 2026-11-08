@@ -1,6 +1,7 @@
 import { h } from '../core/dom.js';
 import { fetchList } from '../core/api.js';
 import { createPhotoUpload } from './photo-upload.js';
+import { petakanGalatDraf, pilihanPerBaris, ringkasGalatBaris } from '../core/draf-galat.js';
 import { setMainButton, setMainButtonLoading, hideMainButton } from '../core/ui.js';
 
 export const LOW_CONFIDENCE = 0.7;
@@ -31,7 +32,7 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     if (type === 'custom') {
       // Kolom kustom: f.build({value, values, onChange}) -> {el, get, set?, hasValue, setError?, focusEl?}
       const c = f.build({ value: initial === '' ? (values[f.name] ?? null) : initial, values, onChange: clearFlag });
-      ctl = { get: c.get, set: c.set || (() => {}), hasValue: c.hasValue, setError: c.setError || null, focusEl: c.focusEl || null };
+      ctl = { get: c.get, set: c.set || (() => {}), hasValue: c.hasValue, setError: c.setError || null, focusEl: c.focusEl || null, setRowErrors: c.setRowErrors || null, setPilihan: c.setPilihan || null };
       wrap.append(label, c.el);
     } else if (type === 'photo') {
       // Nilai awal foto: url string atau objek BerkasRingkas {lampiran_id,url} (dimuat lewat token). f.label dipakai sebagai nama foto.
@@ -90,7 +91,32 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     return true;
   }
 
-  function clearErrors() { Object.keys(controls).forEach((n) => showError(n, '')); }
+  function clearErrors() {
+    Object.keys(controls).forEach((n) => { showError(n, ''); controls[n].setRowErrors?.({}); });
+    draftErr.clear();
+  }
+
+  // Galat dari draf Agen AI: kolom datar -> di bawah kolom; "kolom.N.sub" -> baris kolom kustom; sisanya dikembalikan.
+  // Galat kolom hilang saat kolom diubah (lihat listener input) atau saat validasi klien berikutnya.
+  function terapkanDraf({ errors = {}, pilihan = [] } = {}) {
+    const peta = petakanGalatDraf(errors, Object.keys(controls));
+    for (const [n, msg] of Object.entries(peta.kolom)) { showError(n, msg); draftErr.add(n); }
+    for (const [n, rows] of Object.entries(peta.baris)) controls[n].setRowErrors?.(rows);
+    for (const [n, c] of Object.entries(controls)) if (c.setPilihan) c.setPilihan(pilihanPerBaris(pilihan, n));
+    // Baris yang kolom kustomnya tak bisa menampilkan galat baris: jatuhkan ke daftar notice.
+    const lainnya = [...peta.lainnya];
+    for (const [n, rows] of Object.entries(peta.baris)) {
+      if (!controls[n].setRowErrors) lainnya.push(...Object.values(rows).map(ringkasGalatBaris));
+    }
+    return lainnya;
+  }
+  const draftErr = new Set();
+  const kolomDiubah = (ev) => {
+    const nama = ev.target?.closest?.('.field')?.dataset?.name;
+    if (nama && draftErr.has(nama)) { showError(nama, ''); draftErr.delete(nama); }
+  };
+  form.addEventListener('input', kolomDiubah);
+  form.addEventListener('change', kolomDiubah);
 
   function validate() {
     clearErrors();
@@ -180,7 +206,7 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
   form.addEventListener('submit', (ev) => { ev.preventDefault(); submit(); });
   setMainButton({ text: submitText, onClick: submit });
 
-  return { el: form, destroy: hideMainButton, setErrors, validate, collect };
+  return { el: form, destroy: hideMainButton, setErrors, terapkanDraf, validate, collect };
 }
 
 async function loadRelation(f, select, getInitial) {

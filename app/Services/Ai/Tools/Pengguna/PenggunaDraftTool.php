@@ -14,8 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  * Dasar tool tulis modul 1 (Data Pengguna) untuk Agen AI. Ketersediaan HANYA dari Rbac + Policy yang sama dengan REST
  * (config/rbac.php: pengguna CRUD hanya Admin), bukan daftar peran tersendiri; draf Admin tidak terikat SPPG.
  *
- * - Draf wajib lolos Form Request saat dibuat (wajibValid): isian yang kurang (mis. SPPG tujuan) membuat model
- *   bertanya ulang alih-alih menebak.
+ * - Isian yang kurang/tidak lolos Form Request (mis. SPPG tujuan) tidak ditanyakan balik lewat LLM: draf menjadi
+ *   "perlu diperbaiki" (GalatDraf) dan dilengkapi di formulir Mini App; draf seperti itu tidak dijalankan dari chat.
  * - Target (akun) dicari dari basis data atas nama pengguna (SppgScope + Policy); nama target di ringkasan dari DB.
  * - Sidik target = peran/unit/SPPG/status/terhapus, sehingga perubahan akun setelah draf dibuat -> "data berubah".
  */
@@ -28,11 +28,6 @@ abstract class PenggunaDraftTool extends WriteDraftTool
     protected function butuhSppg(): bool
     {
         return false;
-    }
-
-    protected function wajibValid(): bool
-    {
-        return true;
     }
 
     protected function labelSumberDaya(): string
@@ -111,7 +106,7 @@ abstract class PenggunaDraftTool extends WriteDraftTool
         return [
             'role' => ['type' => 'string', 'enum' => Role::values(), 'description' => 'Peran akun.'],
             'unit' => ['type' => 'string', 'enum' => RelawanUnit::values(), 'description' => 'Wajib bila role relawan.'],
-            'sppg_id' => ['type' => 'integer', 'minimum' => 1, 'description' => 'ID SPPG dari cari_sppg; wajib selain admin/investor. Belum disebut pengguna: tanyakan.'],
+            'sppg_id' => ['type' => 'integer', 'minimum' => 1, 'description' => 'ID SPPG dari cari_sppg; wajib selain admin/investor. Belum disebut pengguna: jangan diisi.'],
         ];
     }
 
