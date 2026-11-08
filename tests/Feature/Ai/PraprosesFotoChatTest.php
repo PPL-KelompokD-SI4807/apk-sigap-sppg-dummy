@@ -55,11 +55,14 @@ class PraprosesFotoChatTest extends TestCase
         }
     }
 
-    public function test_jpeg_besar_diperkecil_ke_1280_dan_tetap_jpeg(): void
+    public function test_jpeg_besar_diperkecil_ke_sisi_maksimum_dan_tetap_jpeg(): void
     {
-        $hasil = $this->proses(self::encode(self::gambar(2000, 1500), 'jpeg'));
+        $this->assertSame(1280, config('ai.input.photo_max_side_px'), 'Bawaan sisi terpanjang ~1280 px.');
+        // Dimensi kecil di tes agar hemat memori suite; logika sama dengan 1280 px.
+        config(['ai.input.photo_max_side_px' => 400]);
+        $hasil = $this->proses(self::encode(self::gambar(800, 600), 'jpeg'));
 
-        $this->assertSame([1280, 960], [$hasil->lebar, $hasil->tinggi]);
+        $this->assertSame([400, 300], [$hasil->lebar, $hasil->tinggi]);
         $this->assertSame('image/jpeg', $hasil->gambar()['media_type']);
         $this->assertSame(82, $hasil->kualitas);
         $this->assertSame('image/jpeg', getimagesizefromstring(base64_decode($hasil->base64))['mime']);

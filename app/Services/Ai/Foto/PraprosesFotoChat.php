@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai\Foto;
 
+use App\Services\Storage\BerkasDitolak;
 use App\Services\Storage\GdPemrosesGambar;
 use finfo;
 use GdImage;
@@ -57,6 +58,12 @@ class PraprosesFotoChat
 
         if (! GdPemrosesGambar::mendukung($mime) || ! GdPemrosesGambar::mendukung('image/jpeg')) {
             throw FotoChatDitolak::tanpaGd();
+        }
+
+        try {
+            $this->gd->pastikanMemori((int) $info[0], (int) $info[1]);
+        } catch (BerkasDitolak) {
+            throw FotoChatDitolak::terlaluBesar();
         }
 
         $gambar = @imagecreatefromstring($biner);

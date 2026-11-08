@@ -62,7 +62,8 @@ class GdPemrosesGambar implements PemrosesGambar
         return new GambarSiap($hasil, $mime, (string) config("unggahan.mime.{$mime}"), (int) $info[0], (int) $info[1], true);
     }
 
-    private function pastikanMemori(int $lebar, int $tinggi): void
+    /** Naikkan memory_limit bila perlu untuk decode $lebar x $tinggi; tidak bisa -> BerkasDitolak (dipakai juga PraprosesFotoChat). */
+    public function pastikanMemori(int $lebar, int $tinggi): void
     {
         // Truecolor GD ~4 byte/piksel + salinan hasil perkecil + overhead.
         $butuh = ($lebar * $tinggi * 5) + (64 * 1024 * 1024);

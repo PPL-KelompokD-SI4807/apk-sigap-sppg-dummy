@@ -174,7 +174,8 @@ class UjiLlmCommandTest extends TestCase
         $fake = (new FakeVisionLlmClient)->pushVision(LlmResponse::text('NOTA TOKO FIKTIF Beras 10 kg'));
         $this->app->instance(LlmClient::class, $fake);
         Http::fake();
-        $g = imagecreatetruecolor(1600, 1200);
+        config(['ai.input.photo_max_side_px' => 320]);
+        $g = imagecreatetruecolor(640, 480);
         ob_start();
         imagejpeg($g, null, 90);
         $jpeg = (string) ob_get_clean();
@@ -183,7 +184,7 @@ class UjiLlmCommandTest extends TestCase
 
         $this->assertSame(0, $code, $output);
         $this->assertStringContainsString('Model vision: vision-palsu', $output);
-        $this->assertStringContainsString('JPEG 1280x960 q82', $output);
+        $this->assertStringContainsString('JPEG 320x240 q82', $output);
         $this->assertStringContainsString('Hasil baca: NOTA TOKO FIKTIF Beras 10 kg', $output);
         $this->assertStringNotContainsString('/9j/', $output, 'Base64 tidak dicetak.');
         $this->assertTrue($fake->visionCalls[0]['options']['tanpa_ulang']);
