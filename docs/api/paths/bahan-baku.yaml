@@ -238,6 +238,10 @@
   get:
     tags: [Bahan Baku]
     summary: Stok per batch (FEFO: kedaluwarsa terdekat habis lebih dulu)
+    description: |
+      Gerbang: hak R modul bahan-baku (relawan 403). Kolom `mutasi_stok_id`, `jumlah_awal`, `pemasok_id` hanya
+      disertakan untuk pemegang `BahanBakuPolicy::lihatMutasi` (`aksi.lihat_mutasi_stok`: admin, kepala_sppg,
+      staf_gudang, akuntan); untuk ahli_gizi dan investor kunci itu dihilangkan, sisa/tanggal masuk/kedaluwarsa tetap ada.
     responses:
       '200':
         description: OK

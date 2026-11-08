@@ -1160,6 +1160,10 @@ paths:
     get:
       tags: [Bahan Baku]
       summary: Stok per batch (FEFO: kedaluwarsa terdekat habis lebih dulu)
+      description: |
+        Gerbang: hak R modul bahan-baku (relawan 403). Kolom `mutasi_stok_id`, `jumlah_awal`, `pemasok_id` hanya
+        disertakan untuk pemegang `BahanBakuPolicy::lihatMutasi` (`aksi.lihat_mutasi_stok`: admin, kepala_sppg,
+        staf_gudang, akuntan); untuk ahli_gizi dan investor kunci itu dihilangkan, sisa/tanggal masuk/kedaluwarsa tetap ada.
       responses:
         '200':
           description: OK
@@ -5324,13 +5328,19 @@ components:
         ai_draft_id: { type: [string, 'null'], format: uuid }
     BatchStok:
       type: object
+      description: |
+        Selalu ada: `tanggal_masuk`, `tanggal_kedaluwarsa`, `sisa`, `sisa_hari`. Kolom bersyarat `mutasi_stok_id`,
+        `jumlah_awal`, `pemasok_id` (menautkan batch ke riwayat mutasi) hanya ada bila pengguna lolos gerbang
+        `BahanBakuPolicy::lihatMutasi` (flag `aksi.lihat_mutasi_stok`: admin, kepala_sppg, staf_gudang, akuntan).
+        Untuk ahli_gizi dan investor kunci-kunci itu tidak ada sama sekali (bukan null).
+      required: [tanggal_masuk, tanggal_kedaluwarsa, sisa, sisa_hari]
       properties:
-        mutasi_stok_id: { type: integer }
+        mutasi_stok_id: { type: integer, description: 'Bersyarat: hanya jika aksi.lihat_mutasi_stok.' }
         tanggal_masuk: { type: string, format: date }
         tanggal_kedaluwarsa: { type: [string, 'null'], format: date }
-        jumlah_awal: { type: number }
+        jumlah_awal: { type: number, description: 'Bersyarat: hanya jika aksi.lihat_mutasi_stok.' }
         sisa: { type: number }
-        pemasok_id: { type: [integer, 'null'] }
+        pemasok_id: { type: [integer, 'null'], description: 'Bersyarat: hanya jika aksi.lihat_mutasi_stok.' }
         sisa_hari: { type: [integer, 'null'], description: 'Hari menuju kedaluwarsa (negatif = lewat)' }
     BuktiDistribusiInput:
       type: object

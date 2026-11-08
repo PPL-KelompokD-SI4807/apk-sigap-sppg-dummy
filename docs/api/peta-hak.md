@@ -40,7 +40,7 @@ Kunci `aksi` (semua boolean) dan endpoint yang dilindunginya:
 | `catat_mutasi_stok` | `POST /bahan-baku/{id}/mutasi` | `BahanBakuPolicy::update` |
 | `catat_harga_pemasok` | `POST /pemasok/{id}/harga` | `PemasokPolicy::catatHarga` |
 | `lihat_ringkasan_jadwal_produksi` | `GET /jadwal/produksi-ringkas` | `JadwalProduksiPolicy::viewRingkas` |
-| `lihat_mutasi_stok` | `GET /bahan-baku/{id}/mutasi` | `BahanBakuPolicy::lihatMutasi` (peran di `config('rbac.aksi_peran.lihat-mutasi-stok')`: admin, kepala_sppg, staf_gudang, akuntan; plus R `bahan-baku` + SPPG sama). ahli_gizi, investor, relawan = false (403) walau ahli_gizi/investor tetap boleh R daftar/detail bahan baku |
+| `lihat_mutasi_stok` | `GET /bahan-baku/{id}/mutasi`; juga memangkas kolom `mutasi_stok_id`, `jumlah_awal`, `pemasok_id` pada `GET /bahan-baku/{id}/batch` (tanpa hak kunci itu tidak ada; `sisa`, `tanggal_masuk`, `tanggal_kedaluwarsa`, `sisa_hari` tetap) | `BahanBakuPolicy::lihatMutasi` (peran di `config('rbac.aksi_peran.lihat-mutasi-stok')`: admin, kepala_sppg, staf_gudang, akuntan; plus R `bahan-baku` + SPPG sama). ahli_gizi, investor, relawan = false (403) walau ahli_gizi/investor tetap boleh R daftar/detail bahan baku |
 
 Aksi yang bergantung pada record dievaluasi pada record "probe" di SPPG pengguna (hasil sama dengan Policy untuk record
 SPPG sendiri; aturan per-record yang lebih halus tetap lewat `izin` di bawah). Hak "putuskan" tetap di `keputusan`
