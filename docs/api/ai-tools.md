@@ -230,7 +230,8 @@ Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDA
 | Loop tool tak berujung | Maks iterasi + maks tool call per langkah + anggaran waktu | `test_loop_*`, `test_jumlah_tool_call_*` |
 | Keluaran model berisi HTML/Markdown | Dikirim tanpa `parse_mode` (teks polos), dipotong `max_output_chars` | `TelegramWebhookTest::test_pesan_teks_*` |
 | Biaya/penyalahgunaan | Rate limit 20/menit + 30/jam per pengguna (NFR-12) + pelindung token global per model (`AI_TOKEN_PER_*`) | `test_rate_limit_*`, `OpenAiCompatAgentTest::test_pelindung_token_*` |
-| Teks di foto berisi perintah (provider `openai_compat`) | Vision dua tahap: model vision tanpa tool; hasil baca dibersihkan + dibungkus `<data_pengguna_{nonce}>`; tool tetap per peran | `OpenAiCompatAgentTest::test_foto_dua_tahap_*` |
+| Teks di foto / transkrip suara berisi perintah | Vision dua tahap: model vision tanpa tool; hasil baca dan transkrip diberi label DATA TIDAK TEPERCAYA, dibersihkan + dibungkus `<data_pengguna_{nonce}>`; tool tetap per peran, `sppg_id` dibuang, tulis = AiDraft | `OpenAiCompatAgentTest::test_foto_dua_tahap_*`, `FotoChatTest::test_injeksi_*` |
+| Berkas foto berbahaya (PHP bertopeng, polyglot, EXIF/GPS) | `PraprosesFotoChat`: MIME dari isi, header sah, batas piksel, encode ulang JPEG via GD; foto asli tidak disimpan | `FotoChatTest`, `PraprosesFotoChatTest` |
 | Argumen tool-call JSON rusak / field `reasoning` | Tool tidak dijalankan (`invalid`); penalaran tidak diteruskan/di-log | `OpenAiCompatibleLlmClientTest::test_argumen_*` |
 | SSRF/kebocoran kunci via adapter | `LLM_BASE_URL` hanya dari config, https, tanpa redirect; galat tanpa body/kunci | `OpenAiCompatibleLlmClientTest::test_base_url_*`, `test_redirect_*`, `UjiLlmCommandTest` |
 
@@ -242,7 +243,9 @@ Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDA
 |---|---|---|
 | `LLM_PROVIDER` | kosong | `anthropic` \| `openai_compat` (Groq/DeepSeek/dll.), kosong = AI nonaktif (fallback formulir manual). `fake` hanya untuk tes, ditolak di production |
 | `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` | - , (anthropic: `claude-sonnet-4-5`, `https://api.anthropic.com`; openai_compat: TANPA default) | Kunci hanya di env server. Dipakai bersama; hanya blok provider aktif yang dibaca |
-| `LLM_VISION_MODEL` | kosong | hanya `openai_compat`; kosong = foto tidak didukung (balasan ramah sebelum unduh) |
+| `LLM_VISION_MODEL` | kosong | hanya `openai_compat`; kosong = foto tidak didukung (balasan ramah + tombol Mini App sebelum unduh); 404/`model_decommissioned` = `vision_tidak_tersedia` |
+| `LLM_VISION_MAX_BASE64_BYTES` | 4194304 | batas base64 gambar (BELUM TERVERIFIKASI untuk model Preview); foto dikompres bertahap di bawahnya |
+| `AI_IMAGE_TOKENS` | 2100 | estimasi token satu gambar untuk pelindung token (dicek sebelum unduh) |
 | `LLM_MAX_TOKENS` / `LLM_TIMEOUT` | 1024 / 20 | token keluaran per panggilan / detik per panggilan (NFR-11) |
 | `AI_MAX_ITERATIONS` | 4 | iterasi tool-calling |
 | `AI_RATE_PER_MINUTE` / `AI_RATE_PER_HOUR` | 20 / 30 | per pengguna |
@@ -280,8 +283,8 @@ AI_TOKEN_PER_DAY=190000
 | Galat | 401/403/404 konfigurasi, 402 kuota, 413 terlalu besar, 429 sibuk (Retry-After > 60 dtk = kuota), 5xx/timeout/redirect tidak tersedia. Balasan ramah + tombol formulir; `ai_interactions.error` hanya `llm:<kategori> http=<status> (<kode>)` |
 | Tool call ditolak penyedia | Groq memvalidasi argumen tool call model terhadap skema yang dikirim; tidak cocok -> HTTP 400 `error.code=tool_use_failed` (kategori `tool_gagal`). `AiAgentService` mengulang SEKALI per pesan (sisa anggaran >= 5 dtk) dengan catatan perbaikan di prompt sistem (nama tool + path kolom, tanpa nilai); riwayat pesan tidak diubah, belum ada tool yang dijalankan sehingga tidak ada draf ganda. Gagal lagi -> "Agen AI belum dapat menyusun draf... formulir". Galat penyedia setelah draf dibuat -> draf tetap ditawarkan |
 | Log galat | `Log::warning('ai.llm_galat')` (kanal default) per galat penyedia: `interaksi_id`, `user_id`, `model`, `tahap` (chat/vision), `iterasi`, `estimasi_token`, `tool_ditawarkan`, `diulang`, `kategori`, `status`, `detail`, `kode_penyedia`/`tipe_penyedia` (pola `[a-z0-9_.-]`), `tool` (hanya tool yang dikirim), `masalah` (kosakata tetap: tipe, wajib, tak_dikenal, enum, batas, format, tool_tak_ditawarkan, lain), `jalur` (JSON pointer, `Llm\JalurSkema`: segmen pertama wajib nama properti skema tool, segmen lain nama properti atau indeks `\d{1,2}`; aturan sama untuk catatan perbaikan ke model), `kelas`. TIDAK pernah: `error.message` mentah, `failed_generation`, isi pesan, argumen, initData, token, kunci. Body galat > 32 KB tidak dibaca |
-| Retry | maks 1 (koneksi/429/5xx); `Retry-After` hanya ditunggu bila <= 3 dtk dan masih dalam anggaran 25 dtk per pesan |
-| Foto | dua tahap: model vision TANPA tool (data URI base64, maks 4 MB base64, 1 gambar) -> teks hasil baca dibungkus `<data_pengguna_{nonce}>` -> model teks dengan tool peran. Gagal -> "Foto tidak dapat dibaca... formulir" |
+| Retry | maks 1 (koneksi/429/5xx) untuk pesan teks/suara; `Retry-After` hanya ditunggu bila <= 3 dtk dan masih dalam anggaran 25 dtk per pesan. Pesan FOTO (vision + model teks): opsi `tanpa_ulang`, tidak pernah diulang (429 -> "Sedang ramai, coba lagi sekitar 1 menit") |
+| Foto | R-05 (ADR `2026-11-08-input-foto-chat`): album = hanya foto pertama; pra-pemrosesan JPEG <= 1280 px tanpa EXIF; dua tahap: model vision TANPA tool (data URI base64, 1 gambar) -> teks hasil baca dibungkus `<data_pengguna_{nonce}>` -> model teks dengan tool peran. Penanda vision `[TIDAK_TERBACA]` -> "Foto buram...", `[BUKAN_DOKUMEN]` tanpa caption -> "bukan nota...". Gagal lain -> "Foto tidak dapat dibaca... formulir". Privasi pihak ketiga diberitahukan sekali |
 | Token | `usage` dicatat sebagai angka di `ai_interactions.argumen.token` (`masuk`, `keluar`, `estimasi`) dan penghitung global (Cache). Pemilihan tool dinamis = subset `forUser()`; tool yang tidak ditawarkan ditolak (`invalid`) walau masih hak peran |
 
 Uji koneksi (tidak mencetak kunci/URL/body): `php artisan sigap:llm-uji` (balasan "siap"), `--stt=<berkas audio fiktif>`, `--vision=<berkas gambar fiktif>`, `--ukur [--teks="..."]` (offline: estimasi token per peran).

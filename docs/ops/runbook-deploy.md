@@ -262,7 +262,8 @@ Edit sisanya dengan `nano .env`:
 | `CERTBOT_EMAIL` | email Anda (pemberitahuan Let's Encrypt) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` | dari @BotFather (username tanpa `@`) |
 | `LLM_API_KEY`, `STT_API_KEY` | kunci API Groq (dua variabel terpisah, isi keduanya) |
-| `LLM_VISION_MODEL` | biarkan kosong sampai `sigap:llm-uji --vision` lolos |
+| `LLM_VISION_MODEL` | biarkan kosong sampai `sigap:llm-uji --vision` lolos (kandidat `qwen/qwen3.8-27b`, Preview; langkah uji: `docs/ops/uji-staging.md` bagian 6b) |
+| `AI_IMAGE_TOKENS`, `LLM_VISION_MAX_BASE64_BYTES` | biarkan nilai contoh (2100 dan 4194304) kecuali penyedia/model berubah |
 | `SIGAP_AMBANG_PERSETUJUAN_PENGELUARAN` | keputusan bisnis, lihat bagian "Keputusan bisnis" |
 | `DEPLOY_IMAGE_MODE` | biarkan `local` (belum ada alur push image ke registry) |
 
