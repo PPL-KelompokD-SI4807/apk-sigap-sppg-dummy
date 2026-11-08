@@ -321,6 +321,79 @@ class OpenAiCompatibleLlmClientTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_tool_use_failed_diringkas_tanpa_pesan_mentah_failed_generation_atau_kunci_karangan(): void
+    {
+        $tools = [[
+            'name' => 'buat_menu',
+            'description' => 'Draf menu.',
+            'input_schema' => ['type' => 'object', 'properties' => [
+                'siklus' => ['type' => 'string'],
+                'nama_menu' => ['type' => 'string'],
+                'bahan' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => ['bahan_baku_id' => ['type' => 'integer']]]],
+            ]],
+        ]];
+        Http::fake(['llm.test/*' => Http::response(['error' => [
+            'message' => 'tool call validation failed: parameters for tool buat_menu did not match schema: errors: [`/siklus`: expected string, but got number, `/bahan/0/bahan_baku_id`: expected integer, but got null, `/rahasia_pengguna`: additionalProperties not allowed, missing properties: \'nama_menu\', \'ktp_rahasia\']',
+            'type' => 'invalid_request_error',
+            'code' => 'tool_use_failed',
+            'failed_generation' => '{"name":"buat_menu","arguments":{"nama_menu":"rahasia pengguna '.self::KEY.'"}}',
+        ]], 400)]);
+
+        try {
+            $this->client()->chat([['role' => 'user', 'content' => 'rahasia pengguna']], $tools);
+            $this->fail('Seharusnya melempar LlmException.');
+        } catch (LlmException $e) {
+            $this->assertTrue($e->toolGagal());
+            $this->assertSame(LlmException::TOOL_GAGAL, $e->category);
+            $this->assertSame('tool_use_failed', $e->kodePenyedia);
+            $this->assertSame('invalid_request_error', $e->tipePenyedia);
+            $this->assertSame('buat_menu', $e->tool);
+            $this->assertSame(['/siklus', '/bahan/0/bahan_baku_id', '/nama_menu'], $e->jalur, 'Path di luar properti skema dibuang.');
+            $this->assertEqualsCanonicalizing(['tipe', 'wajib', 'tak_dikenal'], $e->masalah);
+            $this->assertSame('llm:tool_gagal http=400 (tool_use_failed)', $e->logLabel());
+            $this->assertTanpaRahasia($e->getMessage().$e->logLabel().json_encode($e->konteksLog()).(string) $e);
+            $this->assertStringNotContainsString('ktp', json_encode($e->konteksLog()));
+        }
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_tool_use_failed_untuk_tool_tak_dikirim_tidak_mencatat_nama_tool(): void
+    {
+        Http::fake(['llm.test/*' => Http::response(['error' => [
+            'message' => "tool call validation failed: attempted to call tool 'rahasia_pengguna' which was not in request.tools",
+            'type' => 'invalid_request_error', 'code' => 'tool_use_failed',
+        ]], 400)]);
+
+        try {
+            $this->client()->chat([['role' => 'user', 'content' => 'x']], [['name' => 'cari_menu', 'description' => 'd', 'input_schema' => []]]);
+            $this->fail('Seharusnya melempar LlmException.');
+        } catch (LlmException $e) {
+            $this->assertNull($e->tool);
+            $this->assertSame(['tool_tak_ditawarkan'], $e->masalah);
+            $this->assertSame([], $e->jalur);
+            $this->assertTanpaRahasia(json_encode($e->konteksLog()));
+        }
+    }
+
+    public function test_kode_galat_penyedia_tidak_sah_atau_body_besar_diabaikan(): void
+    {
+        Http::fakeSequence('llm.test/*')
+            ->push(['error' => ['code' => 'rahasia pengguna; drop', 'type' => ['x']]], 400)
+            ->push(str_repeat('a', 40000), 400);
+
+        foreach ([1, 2] as $_) {
+            try {
+                $this->client()->chat([['role' => 'user', 'content' => 'x']], []);
+                $this->fail('Seharusnya melempar LlmException.');
+            } catch (LlmException $e) {
+                $this->assertSame(LlmException::TIDAK_TERSEDIA, $e->category);
+                $this->assertNull($e->kodePenyedia);
+                $this->assertNull($e->tipePenyedia);
+            }
+        }
+    }
+
     public function test_timeout_jadi_galat_ramah_tanpa_kunci(): void
     {
         Http::fake(fn () => throw new ConnectionException('cURL error 28 timeout https://llm.test?key='.self::KEY));

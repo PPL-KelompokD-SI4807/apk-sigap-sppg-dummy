@@ -31,7 +31,8 @@ use Throwable;
  *   {base_url}/chat/completions; redirect tidak diikuti. Config tidak valid -> LlmException::notConfigured()
  *   tanpa mengirim permintaan.
  * - Kunci hanya di header Authorization: Bearer. LlmException tidak memuat kunci, header, isi pesan,
- *   maupun body respons penyedia (hanya kategori + status HTTP).
+ *   maupun body respons penyedia (hanya kategori + status HTTP + ringkasan tersaring infoGalat(): kode/tipe galat,
+ *   nama tool yang dikirim, JSON pointer properti skema; tanpa error.message mentah dan failed_generation).
  * - Retry maks 1 untuk koneksi/429/5xx; Retry-After dihormati hanya bila <= retry_after_max_seconds dan
  *   masih dalam anggaran waktu per pesan (opsi `deadline` dari AiAgentService, default time_budget_seconds).
  * - Hanya parameter umum yang dikirim (model, messages, max_tokens, tools); tanpa parameter khusus vendor.
@@ -47,6 +48,9 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
 
     /** Batas jumlah tool call yang diterima dari satu respons (sisanya dibuang). */
     private const MAX_TOOL_CALLS = 20;
+
+    /** Batas body galat penyedia (byte) yang masih diringkas; lebih besar = tidak dibaca. */
+    private const MAX_ERROR_BODY = 32768;
 
     /** Sisa anggaran waktu minimum (detik) agar percobaan ulang setelah galat koneksi masih layak. */
     private const MIN_RETRY_WINDOW = 5.0;
@@ -363,9 +367,104 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
                 }
             }
 
-            // Body galat penyedia sengaja tidak dibaca (bisa memuat potongan prompt).
-            throw LlmException::fromStatus($status, $retryAfter);
+            // Body galat penyedia hanya diringkas (kode/tipe/path; bisa memuat potongan prompt -> tidak disimpan mentah).
+            throw LlmException::fromProvider($status, $retryAfter, self::infoGalat($response, is_array($body['tools'] ?? null) ? $body['tools'] : []));
         }
+    }
+
+    /**
+     * Ringkasan galat penyedia yang AMAN untuk log dan catatan perbaikan ke model: hanya `error.code` dan `error.type`
+     * (pola ketat), dan khusus `tool_use_failed`: nama tool (hanya bila termasuk tool yang DIKIRIM), JSON pointer
+     * argumen yang ditolak (setiap segmen harus nama properti skema tool itu atau indeks), dan kode masalah dari
+     * kosakata tetap. `error.message` mentah dan `failed_generation` (memuat keluaran model = isi pesan/argumen
+     * pengguna) TIDAK pernah disimpan, di-log, atau dikirim balik.
+     *
+     * @param  list<array<string, mixed>>  $tools  tool format Chat Completions pada permintaan yang gagal
+     * @return array{kode?: string, tipe?: string, tool?: string, masalah?: list<string>, jalur?: list<string>}
+     */
+    public static function infoGalat(Response $response, array $tools = []): array
+    {
+        $raw = $response->body();
+
+        if ($raw === '' || strlen($raw) > self::MAX_ERROR_BODY) {
+            return [];
+        }
+
+        $json = json_decode($raw, true, 16);
+        $error = is_array($json) ? ($json['error'] ?? null) : null;
+
+        if (! is_array($error)) {
+            return [];
+        }
+
+        $info = array_filter([
+            'kode' => self::kodeAman($error['code'] ?? null),
+            'tipe' => self::kodeAman($error['type'] ?? null),
+        ]);
+
+        if (($info['kode'] ?? null) !== LlmException::KODE_TOOL_GAGAL || ! is_string($error['message'] ?? null)) {
+            return $info;
+        }
+
+        $pesan = substr($error['message'], 0, 4000);
+        $skema = [];
+
+        foreach ($tools as $t) {
+            $fn = is_array($t['function'] ?? null) ? $t['function'] : [];
+
+            if (is_string($fn['name'] ?? null)) {
+                $skema[$fn['name']] = is_array($fn['parameters'] ?? null) ? $fn['parameters'] : [];
+            }
+        }
+
+        $tool = preg_match('/\bfor tool [`\'"]?([A-Za-z0-9_.-]{1,64})/', $pesan, $m) === 1 && isset($skema[$m[1]]) ? $m[1] : null;
+
+        $masalah = [];
+
+        foreach ([
+            'tool_tak_ditawarkan' => '/not in request\.tools|unknown tool|tool .* does not exist/i',
+            'tipe' => '/expected [a-z]+.{0,20}but got|invalid type/i',
+            'wajib' => '/missing propert|is required/i',
+            'tak_dikenal' => '/additional ?propert|not allowed/i',
+            'enum' => '/must be one of|\benum\b/i',
+            'batas' => '/minimum|maximum|min(?:Length|Items)|max(?:Length|Items)|less than|greater than|too (?:long|short|many|few)/i',
+            'format' => '/failed to (?:call|parse)|invalid json|malformed/i',
+        ] as $kode => $pola) {
+            if (preg_match($pola, $pesan) === 1) {
+                $masalah[] = $kode;
+            }
+        }
+
+        $info['masalah'] = $masalah === [] ? ['lain'] : $masalah;
+
+        if ($tool !== null) {
+            $info['tool'] = $tool;
+            preg_match_all('#(?<![A-Za-z0-9_])(/[A-Za-z0-9_]{1,64}(?:/[A-Za-z0-9_]{1,64}){0,5})#', $pesan, $semua);
+            $jalur = $semua[1];
+
+            // "missing properties: 'a', 'b'" -> /a, /b.
+            if (preg_match('/missing propert[a-z]*:?\s*((?:[`\'"][A-Za-z0-9_]{1,64}[`\'"][,\s]*){1,10})/i', $pesan, $mm) === 1) {
+                preg_match_all('/[A-Za-z0-9_]{1,64}/', $mm[1], $wajib);
+
+                foreach ($wajib[0] as $w) {
+                    $jalur[] = '/'.$w;
+                }
+            }
+
+            // Segmen pertama = nama properti skema tool; indeks hanya \d{1,2} (deret angka panjang/NIK dibuang).
+            $jalur = JalurSkema::saring($jalur, JalurSkema::namaProperti($skema[$tool]));
+
+            if ($jalur !== []) {
+                $info['jalur'] = $jalur;
+            }
+        }
+
+        return $info;
+    }
+
+    private static function kodeAman(mixed $nilai): ?string
+    {
+        return is_string($nilai) && preg_match('/^[A-Za-z0-9_.-]{1,64}$/', $nilai) === 1 ? strtolower($nilai) : null;
     }
 
     private function parse(Response $response, string $model): LlmResponse
