@@ -10,7 +10,7 @@ import { getUser } from '../../core/auth.js';
 import { userPerms, bolehAksi, aksiOpsional } from '../../core/permissions.js';
 import { route, navigate } from '../../core/router.js';
 import { toast } from '../../core/ui.js';
-import { bahanFields, mapPayload, kategoriLabel, penandaBahan, fmtQty, sisaHariText, sisaHariCls, jenisMutasiLabel, mutasiFields, cekMutasi, mutasiPayload, bolehRiwayatMutasi } from './schema.js';
+import { bahanFields, mapPayload, kategoriLabel, penandaBahan, fmtQty, sisaHariText, sisaHariCls, jenisMutasiLabel, mutasiFields, cekMutasi, mutasiPayload, bolehRiwayatMutasi, batchDariText } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const SLUG = 'bahan-baku';
@@ -43,7 +43,7 @@ async function batchPanel(rec) {
     rows.forEach((b, i) => tbl.append(h('div', { class: 'tbl-row' },
       h('span', {}, `${i === 0 ? 'Dipakai dulu: ' : ''}masuk ${formatValue(b.tanggal_masuk, 'date')}`, h('div', { class: 'muted small' }, b.tanggal_kedaluwarsa ? `Exp ${formatValue(b.tanggal_kedaluwarsa, 'date')}` : 'Tanpa tanggal kedaluwarsa')),
       h('span', { class: `badge ${sisaHariCls(b.sisa_hari)}`.trim() }, sisaHariText(b.sisa_hari)),
-      h('span', { class: 'num' }, h('strong', {}, fmtQty(b.sisa, rec.satuan)), h('div', { class: 'muted small' }, `dari ${fmtQty(b.jumlah_awal)}`)))));
+      h('span', { class: 'num' }, h('strong', {}, fmtQty(b.sisa, rec.satuan)), batchDariText(b) ? h('div', { class: 'muted small' }, batchDariText(b)) : null))));
     box.append(tbl);
     if (Number(res?.stok_tanpa_batch) > 0) box.append(h('p', { class: 'muted small' }, `Stok tanpa batch (stok awal/penyesuaian): ${fmtQty(res.stok_tanpa_batch, rec.satuan)}`));
   } catch (e) {

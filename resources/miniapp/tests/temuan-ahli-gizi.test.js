@@ -71,3 +71,13 @@ test('riwayat mutasi: snapshot server per peran (Admin/Kepala/Staf Gudang/Akunta
   const boleh = { admin: true, kepala_sppg: true, staf_gudang: true, akuntan: true, ahli_gizi: false, investor: false };
   for (const [nama, harap] of Object.entries(boleh)) assert.equal(bolehRiwayatMutasi(PROFIL[nama], aksiOpsional), harap, nama);
 });
+
+// ---- batch: teks "dari …" hanya bila jumlah_awal ada ----
+import { batchDariText } from '../modules/bahan-baku/schema.js';
+
+test('batch: "dari" tampil bila jumlah_awal ada, hilang bila dibuang server', () => {
+  assert.equal(batchDariText({ jumlah_awal: 10 }), 'dari 10');
+  assert.equal(batchDariText({ jumlah_awal: 0 }), 'dari 0');
+  assert.equal(batchDariText({ sisa: 5 }), null);
+  assert.equal(batchDariText({ jumlah_awal: null }), null);
+});

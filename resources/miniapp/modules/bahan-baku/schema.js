@@ -48,6 +48,9 @@ export function penandaBahan(rec) {
 
 export const fmtQty = (v, satuan = '') => (v == null || v === '' ? '-' : `${Number(v).toLocaleString('id-ID', { maximumFractionDigits: 3 })}${satuan ? ` ${satuan}` : ''}`);
 
+/** Teks "dari …" batch; null bila jumlah_awal tidak dikirim server (Ahli Gizi/Investor). */
+export const batchDariText = (b) => (b?.jumlah_awal == null ? null : `dari ${fmtQty(b.jumlah_awal)}`);
+
 /** Teks status kedaluwarsa dari sisa_hari (batch): negatif = lewat. */
 export function sisaHariText(d) {
   if (d == null) return 'Tanpa tanggal kedaluwarsa';
