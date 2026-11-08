@@ -91,7 +91,7 @@ function penggunaTiruanDev(role) {
   return {
     id: 0, name: 'Pengguna Dev', role, unit: null, sppg_id: 1, sppg_name: 'SPPG Contoh (dev)', multi_sppg: false, baca_saja: false,
     modules: SLUG_DEV, permissions: Object.fromEntries(SLUG_DEV.map((m) => [m, 'CRUD'])), keputusan: [], agregat: [], unit_scope: {},
-    aksi: { ...Object.fromEntries(KUNCI_AKSI.map((k) => [k, true])), dashboard: { tersedia: true, profil: role } },
+    aksi: { ...Object.fromEntries(KUNCI_AKSI.map((k) => [k, true])), lihat_mutasi_stok: true, dashboard: { tersedia: true, profil: role } },
   };
 }
 

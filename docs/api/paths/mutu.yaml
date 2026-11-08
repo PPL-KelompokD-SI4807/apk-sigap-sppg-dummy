@@ -5,6 +5,8 @@
     description: |
       Hak R (admin, kepala_sppg, ahli_gizi, relawan). Filter: `q` (catatan organoleptik/tindakan korektif),
       `hasil`, `jadwal_produksi_id`, `pemeriksa_id`, `from`/`to` (tanggal pemeriksaan), `sppg_id` (Admin).
+      Setiap baris memuat `memengaruhi_distribusi` (bool) yang nilainya identik dengan detail; dihitung dengan
+      jumlah query tetap untuk seluruh halaman. Aturan hapus pemeriksaan terbaru tidak berubah.
     parameters:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'

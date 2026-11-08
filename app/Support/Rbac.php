@@ -112,6 +112,19 @@ final class Rbac
     }
 
     /**
+     * Hak aksi khusus per peran (config('rbac.aksi_peran')). Pengguna nonaktif/terhapus tidak pernah boleh;
+     * aksi yang tidak dikenal ditolak (fail closed).
+     */
+    public static function canAction(?User $user, string $aksi): bool
+    {
+        if ($user === null || ! $user->canAuthenticate() || ! $user->role instanceof Role) {
+            return false;
+        }
+
+        return in_array($user->role->value, (array) config("rbac.aksi_peran.{$aksi}", []), true);
+    }
+
+    /**
      * Modul tempat pengguna berhak memutuskan, mis. investor -> ['persetujuan-menu'].
      *
      * @return list<string>

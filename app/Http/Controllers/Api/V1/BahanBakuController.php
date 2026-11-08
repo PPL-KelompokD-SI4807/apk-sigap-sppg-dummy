@@ -145,7 +145,7 @@ class BahanBakuController extends ApiController
 
     public function mutasi(Request $request, BahanBaku $bahanBaku): AnonymousResourceCollection
     {
-        $this->authorize('view', $bahanBaku);
+        $this->authorize('lihatMutasi', $bahanBaku);
 
         $query = MutasiStok::query()->where('bahan_baku_id', $bahanBaku->id)->with(['pemasok:id,nama', 'pencatat:id,name']);
 
@@ -185,16 +185,29 @@ class BahanBakuController extends ApiController
         ])->response()->setStatusCode(201);
     }
 
-    public function batch(BahanBaku $bahanBaku): JsonResponse
+    /**
+     * Stok per batch. Kolom yang menautkan batch ke riwayat mutasi (mutasi_stok_id, pemasok_id, jumlah_awal) hanya
+     * untuk pemegang gerbang lihatMutasi (sama dengan GET /mutasi); tanpa hak kolom dibuang (kunci tidak ada).
+     */
+    public function batch(Request $request, BahanBaku $bahanBaku): JsonResponse
     {
         $this->authorize('view', $bahanBaku);
 
+        $rinci = $request->user()->can('lihatMutasi', $bahanBaku);
+        $kolomMutasi = ['mutasi_stok_id', 'pemasok_id', 'jumlah_awal'];
+
         return response()->json([
-            'data' => $this->stok->batch($bahanBaku)->map(fn (array $b) => [
-                ...$b,
-                'jumlah_awal' => (float) $b['jumlah_awal'],
-                'sisa' => (float) $b['sisa'],
-            ])->all(),
+            'data' => $this->stok->batch($bahanBaku)->map(function (array $b) use ($rinci, $kolomMutasi) {
+                $b['sisa'] = (float) $b['sisa'];
+
+                if (! $rinci) {
+                    return array_diff_key($b, array_flip($kolomMutasi));
+                }
+
+                $b['jumlah_awal'] = (float) $b['jumlah_awal'];
+
+                return $b;
+            })->all(),
             'stok_tanpa_batch' => (float) $this->stok->stokTanpaBatch($bahanBaku),
         ]);
     }

@@ -48,6 +48,9 @@ export function penandaBahan(rec) {
 
 export const fmtQty = (v, satuan = '') => (v == null || v === '' ? '-' : `${Number(v).toLocaleString('id-ID', { maximumFractionDigits: 3 })}${satuan ? ` ${satuan}` : ''}`);
 
+/** Teks "dari …" batch; null bila jumlah_awal tidak dikirim server (Ahli Gizi/Investor). */
+export const batchDariText = (b) => (b?.jumlah_awal == null ? null : `dari ${fmtQty(b.jumlah_awal)}`);
+
 /** Teks status kedaluwarsa dari sisa_hari (batch): negatif = lewat. */
 export function sisaHariText(d) {
   if (d == null) return 'Tanpa tanggal kedaluwarsa';
@@ -105,3 +108,11 @@ export function mutasiPayload(v) {
   if (base.jenis !== 'keluar') delete base.jadwal_produksi_id;
   return base;
 }
+
+/**
+ * Gating riwayat mutasi stok: kunci final `aksi.lihat_mutasi_stok` dari /auth/me (boleh: Admin, Kepala SPPG, Staf Gudang, Akuntan).
+ * FAIL CLOSED: panel Riwayat dirender hanya bila flag === true; tidak ada/bukan boolean true = tidak dirender.
+ * Aturan peran TIDAK dihitung di klien.
+ */
+export const KUNCI_RIWAYAT_MUTASI = 'lihat_mutasi_stok';
+export const bolehRiwayatMutasi = (user, aksiOpsionalFn) => aksiOpsionalFn(user, KUNCI_RIWAYAT_MUTASI) === true;

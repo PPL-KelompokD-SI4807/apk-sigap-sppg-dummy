@@ -120,6 +120,16 @@ return [
     ],
 
     /*
+    | Hak AKSI KHUSUS per peran, terpisah dari huruf C/R/U/D. Dipakai Policy untuk aksi baca yang lebih sempit daripada
+    | R modulnya. 'lihat-mutasi-stok': riwayat mutasi stok (GET /bahan-baku/{id}/mutasi) memuat harga satuan, pemasok,
+    | dan pencatat sehingga TIDAK untuk ahli_gizi/investor walau keduanya R pada daftar/detail bahan baku. Tetap
+    | mensyaratkan R modul 'bahan-baku' + SPPG yang sama (BahanBakuPolicy::lihatMutasi). Lihat Rbac::canAction().
+    */
+    'aksi_peran' => [
+        'lihat-mutasi-stok' => ['admin', 'kepala_sppg', 'staf_gudang', 'akuntan'],
+    ],
+
+    /*
     | Pembatasan per unit relawan. Bila modul tercantum, relawan dengan unit yang tidak
     | tercantum di 'units' TIDAK punya akses apa pun ke modul tersebut.
     | 'jenis' memetakan unit -> sub-jenis data yang boleh dikelola (dibaca lewat

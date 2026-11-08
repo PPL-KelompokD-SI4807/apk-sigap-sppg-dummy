@@ -139,23 +139,78 @@ class PemeriksaanMutuService
      */
     public function memengaruhiDistribusi(PemeriksaanMutu $pemeriksaan): bool
     {
-        $aktif = JadwalDistribusi::withoutGlobalScope(SppgScope::class)
-            ->where('jadwal_produksi_id', $pemeriksaan->jadwal_produksi_id)
-            ->where('status', '!=', StatusJadwalDistribusi::Dibatalkan->value);
+        return $this->memengaruhiDistribusiBanyak([$pemeriksaan])[$pemeriksaan->id] ?? false;
+    }
 
-        if (! (clone $aktif)->exists()) {
-            return false;
+    /**
+     * SATU sumber aturan `memengaruhiDistribusi` untuk banyak pemeriksaan sekaligus (dipakai daftar GET /mutu),
+     * dengan jumlah query tetap (maks 2) berapa pun jumlah barisnya. Aturan yang sama dengan
+     * memengaruhiDistribusi(): tanpa distribusi aktif (bukan dibatalkan) -> false; ada distribusi berangkat/diterima
+     * -> true; selain itu true hanya bila pemeriksaan ini yang terbaru pada jadwal produksinya.
+     *
+     * @param  iterable<PemeriksaanMutu>  $pemeriksaans
+     * @return array<int, bool> id pemeriksaan => memengaruhi distribusi
+     */
+    public function memengaruhiDistribusiBanyak(iterable $pemeriksaans): array
+    {
+        $pemeriksaans = is_array($pemeriksaans) ? $pemeriksaans : iterator_to_array($pemeriksaans, false);
+        $hasil = [];
+        $jadwalIds = [];
+
+        foreach ($pemeriksaans as $p) {
+            $hasil[$p->id] = false;
+            $jadwalIds[(int) $p->jadwal_produksi_id] = true;
         }
 
-        if ((clone $aktif)->whereIn('status', [StatusJadwalDistribusi::Berangkat->value, StatusJadwalDistribusi::Diterima->value])->exists()) {
-            return true;
+        if ($hasil === []) {
+            return [];
         }
 
-        $terbaru = PemeriksaanMutu::withoutGlobalScope(SppgScope::class)
-            ->where('jadwal_produksi_id', $pemeriksaan->jadwal_produksi_id)
-            ->orderByDesc('waktu_pemeriksaan')->orderByDesc('id')->first();
+        $lanjut = [StatusJadwalDistribusi::Berangkat->value, StatusJadwalDistribusi::Diterima->value];
 
-        return $terbaru?->id === $pemeriksaan->id;
+        // Query 1: per jadwal produksi, jumlah distribusi aktif dan yang sudah berangkat/diterima.
+        $distribusi = JadwalDistribusi::withoutGlobalScope(SppgScope::class)
+            ->whereIn('jadwal_produksi_id', array_keys($jadwalIds))
+            ->where('status', '!=', StatusJadwalDistribusi::Dibatalkan->value)
+            ->selectRaw('jadwal_produksi_id, COUNT(*) as aktif, SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) as lanjut', $lanjut)
+            ->groupBy('jadwal_produksi_id')
+            ->get()
+            ->keyBy('jadwal_produksi_id');
+
+        // Hanya jadwal dengan distribusi aktif yang belum berangkat/diterima yang butuh penentuan "terbaru".
+        $perluTerbaru = [];
+
+        foreach ($distribusi as $jadwalId => $d) {
+            if ((int) $d->lanjut === 0) {
+                $perluTerbaru[] = (int) $jadwalId;
+            }
+        }
+
+        // Query 2 (hanya bila perlu): pemeriksaan terbaru per jadwal (urutan waktu lalu id, menurun).
+        $terbaru = [];
+
+        if ($perluTerbaru !== []) {
+            $baris = PemeriksaanMutu::withoutGlobalScope(SppgScope::class)
+                ->whereIn('jadwal_produksi_id', $perluTerbaru)
+                ->orderByDesc('waktu_pemeriksaan')->orderByDesc('id')
+                ->get(['id', 'jadwal_produksi_id']);
+
+            foreach ($baris as $b) {
+                $terbaru[(int) $b->jadwal_produksi_id] ??= (int) $b->id;
+            }
+        }
+
+        foreach ($pemeriksaans as $p) {
+            $d = $distribusi->get((int) $p->jadwal_produksi_id);
+
+            $hasil[$p->id] = match (true) {
+                $d === null => false,
+                (int) $d->lanjut > 0 => true,
+                default => ($terbaru[(int) $p->jadwal_produksi_id] ?? null) === (int) $p->id,
+            };
+        }
+
+        return $hasil;
     }
 
     /**
