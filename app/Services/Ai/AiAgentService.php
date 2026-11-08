@@ -364,6 +364,13 @@ class AiAgentService
         $estimate = TokenBudget::estimateRequest($system, $messages, $schemas);
         $this->budget->check($model, $estimate);
 
+        // Klien tanpa vision terpisah (Anthropic): gambar ikut panggilan ini -> media terkirim ke penyedia.
+        foreach ($messages as $m) {
+            if (($m['images'] ?? []) !== []) {
+                $log['media_terkirim'] = true;
+            }
+        }
+
         try {
             $response = $this->llm->chat($messages, $schemas, ['system' => $system, 'deadline' => $deadline] + ($tanpaUlang ? ['tanpa_ulang' => true] : []));
         } catch (LlmException $e) {
@@ -544,7 +551,10 @@ class AiAgentService
 
         $model = (string) $vision->visionModelName();
         $estimate = $this->estimasiGambar(count($input->images));
+        $this->cekBatasGambar($model, $estimate);
         $this->budget->check($model, $estimate);
+        // Mulai di sini gambar dikirim ke penyedia (juga bila panggilan gagal/timeout): privasi boleh dicatat.
+        $log['media_terkirim'] = true;
 
         try {
             // Tanpa retry (opsi tanpa_ulang dipaksa klien): 429 langsung menjadi "Sedang ramai".
@@ -597,7 +607,34 @@ class AiAgentService
         $model = $this->llm instanceof SupportsVision ? (string) $this->llm->visionModelName() : $this->llm->modelName();
 
         if ($model !== '') {
-            $this->budget->check($model, $this->estimasiGambar());
+            $estimate = $this->estimasiGambar();
+            $this->cekBatasGambar($model, $estimate);
+            $this->budget->check($model, $estimate);
+        }
+    }
+
+    /**
+     * Salah konfigurasi: AI_TOKEN_PER_MINUTE / AI_TOKEN_PER_DAY (> 0) lebih kecil dari biaya SATU gambar, sehingga foto
+     * tidak akan pernah lolos. Bukan "sedang ramai": peringatan konfigurasi dicatat (angka saja) dan pengguna diarahkan
+     * ke Mini App (kategori vision_tidak_tersedia).
+     *
+     * @throws LlmException
+     */
+    private function cekBatasGambar(string $model, int $estimate): void
+    {
+        foreach (['per_minute' => 'AI_TOKEN_PER_MINUTE', 'per_day' => 'AI_TOKEN_PER_DAY'] as $kunci => $env) {
+            $batas = max(0, (int) config("ai.token_budget.{$kunci}", 0));
+
+            if ($batas > 0 && $estimate > $batas) {
+                Log::warning('ai.konfigurasi_token_gambar', [
+                    'variabel' => $env,
+                    'batas_token' => $batas,
+                    'estimasi_gambar' => $estimate,
+                    'model' => mb_substr($model, 0, 100),
+                ]);
+
+                throw LlmException::anggaranGambarTidakCukup();
+            }
         }
     }
 
@@ -679,6 +716,10 @@ class AiAgentService
     private function finish(AiInteraction $interaction, float $started, array $log, HasilAi $hasil, ?string $error, AiReply $reply): AiReply
     {
         $names = array_values(array_unique(array_column($log['tools'], 'nama')));
+
+        if (($log['media_terkirim'] ?? false) === true && ! $reply->mediaTerkirim) {
+            $reply = new AiReply($reply->text, $reply->drafts, $reply->fallback, $reply->interactionId, true);
+        }
 
         $interaction->forceFill([
             'tool_name' => $names === [] ? null : mb_substr(implode(',', $names), 0, 100),

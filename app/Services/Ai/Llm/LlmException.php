@@ -122,6 +122,12 @@ class LlmException extends RuntimeException
             : self::visionFailed($e);
     }
 
+    /** Konfigurasi: batas token per menit/hari lebih kecil dari biaya SATU gambar (tidak akan pernah cukup). */
+    public static function anggaranGambarTidakCukup(): self
+    {
+        return new self('Batas token Agen AI lebih kecil dari biaya satu gambar (konfigurasi).', self::VISION_TIDAK_TERSEDIA, null, 'batas_token_gambar');
+    }
+
     public static function fotoBuram(): self
     {
         return new self('Tulisan pada foto tidak terbaca.', self::GAMBAR_BURAM, null, 'tidak_terbaca');

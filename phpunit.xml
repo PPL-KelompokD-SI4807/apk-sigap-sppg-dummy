@@ -18,6 +18,9 @@
         </include>
     </source>
     <php>
+        <!-- Suite penuh butuh > 128 MB (dulu tertutupi kenaikan memory_limit permanen di GdPemrosesGambar, kini
+             dikembalikan setelah tiap decode). Batas eksplisit agar hasil sama di lokal dan CI. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_URL" value="http://localhost"/>
         <!-- Kunci khusus tes (acak, bukan rahasia; JANGAN dipakai di lingkungan lain). -->
@@ -61,6 +64,8 @@
         <env name="AI_RATE_PER_HOUR" value="30" force="true"/>
         <env name="AI_TOKEN_PER_MINUTE" value="0" force="true"/>
         <env name="AI_TOKEN_PER_DAY" value="0" force="true"/>
+        <env name="AI_IMAGE_TOKENS" value="2100" force="true"/>
+        <env name="LLM_VISION_MAX_BASE64_BYTES" value="4194304" force="true"/>
         <env name="AI_TOOL_SELECTION" value="auto" force="true"/>
         <env name="AI_TOOL_TOKEN_THRESHOLD" value="2500" force="true"/>
         <env name="AI_TOOL_MAX" value="10" force="true"/>

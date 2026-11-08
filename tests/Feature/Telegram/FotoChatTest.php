@@ -7,17 +7,22 @@ use App\Models\AiDraft;
 use App\Models\AiInteraction;
 use App\Models\BahanBaku;
 use App\Models\User;
+use App\Services\Ai\AiAgentService;
+use App\Services\Ai\AiInput;
 use App\Services\Ai\IntentParser;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmResponse;
 use App\Services\Ai\Llm\ToolCall;
 use App\Services\Ai\Speech\HttpSpeechToText;
+use App\Services\Ai\TokenBudget;
 use App\Services\Telegram\AiChatHandler;
 use App\Services\Telegram\Bot\Layar\LayarBantuan;
 use Illuminate\Http\Client\Request;
 use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Sleep;
 use Tests\Fakes\FakeVisionLlmClient;
 use Tests\Feature\Master\MasterApiTestCase;
@@ -358,7 +363,7 @@ class FotoChatTest extends MasterApiTestCase
         $this->assertSame('ditolak', AiInteraction::query()->withoutGlobalScopes()->sole()->argumen['tools'][0]['status']);
     }
 
-    public function test_batas_laju_ai_dan_pelindung_token_gambar_menolak_sebelum_unduh(): void
+    public function test_batas_laju_ai_menolak_foto_sebelum_unduh(): void
     {
         config(['ai.rate_limit.per_minute' => 1]);
         $this->llm->push(LlmResponse::text('Baik.'));
@@ -366,15 +371,110 @@ class FotoChatTest extends MasterApiTestCase
         $this->foto($this->stafGudangA, ['caption' => 'nota 2']);
 
         $this->assertCount(1, $this->telegramCalls('getFile'), 'Foto kedua tidak diunduh.');
-        $this->assertStringContainsString('Batas penggunaan Agen AI tercapai', $this->teksTerakhir($this->stafGudangA));
-
-        // Pelindung token global: sisa kuota per menit < biaya satu gambar (AI_IMAGE_TOKENS) -> "Sedang ramai".
-        config(['ai.rate_limit.per_minute' => 1000, 'ai.token_budget.per_minute' => 1000, 'ai.token_budget.image_tokens' => 2100]);
-        $this->foto($this->kepalaA, ['caption' => 'nota 3']);
-
-        $this->assertCount(1, $this->telegramCalls('getFile'));
-        $this->assertStringContainsString('Sedang ramai, coba lagi sekitar 1 menit', $this->teksTerakhir($this->kepalaA));
         $this->assertCount(1, $this->llm->visionCalls);
+        $this->assertStringContainsString('Batas penggunaan Agen AI tercapai', $this->teksTerakhir($this->stafGudangA));
+    }
+
+    public function test_pelindung_token_pemakaian_ditambah_estimasi_melebihi_sisa_kuota_menolak_sebelum_unduh(): void
+    {
+        // Batas 5000/menit > biaya satu gambar (2100 + instruksi ~ 2300): konfigurasi sah. Pemakaian nyata dihitung.
+        config(['ai.token_budget.per_minute' => 5000, 'ai.token_budget.image_tokens' => 2100]);
+        $this->llm->push(LlmResponse::text('Satu.'))->push(LlmResponse::text('Dua.'));
+        $budget = app(TokenBudget::class);
+
+        $this->foto($this->stafGudangA, ['caption' => 'nota 1']);
+        $this->foto($this->stafGudangA, ['caption' => 'nota 2']);
+        $terpakai = $budget->used('m', 'vision-palsu');
+        $this->assertGreaterThan(2 * 2100, $terpakai, 'Dua gambar tercatat di penghitung model vision.');
+        $this->assertLessThanOrEqual(5000, $terpakai);
+
+        // Foto ketiga: terpakai + estimasi satu gambar > 5000 -> "Sedang ramai" SEBELUM unduh/penyedia.
+        $this->foto($this->stafGudangA, ['caption' => 'nota 3']);
+
+        $this->assertCount(2, $this->telegramCalls('getFile'));
+        $this->assertCount(2, $this->llm->visionCalls);
+        $this->assertStringContainsString('Sedang ramai, coba lagi sekitar 1 menit', $this->teksTerakhir($this->stafGudangA));
+        $this->assertSame($terpakai, $budget->used('m', 'vision-palsu'), 'Penolakan tidak menambah penghitung.');
+    }
+
+    public function test_batas_token_lebih_kecil_dari_biaya_satu_gambar_adalah_salah_konfigurasi(): void
+    {
+        config(['ai.token_budget.per_minute' => 1000, 'ai.token_budget.image_tokens' => 2100]);
+
+        $this->foto($this->kepalaA, ['caption' => 'nota']);
+
+        $teks = $this->teksTerakhir($this->kepalaA);
+        $this->assertStringContainsString('Membaca foto sedang tidak tersedia', $teks);
+        $this->assertStringNotContainsString('Sedang ramai', $teks);
+        $this->assertTrue($this->adaTombolMiniApp($this->kepalaA));
+        $this->assertCount(0, $this->telegramCalls('getFile'));
+        $this->assertSame([], $this->llm->visionCalls);
+        $peringatan = collect($this->logs)->first(fn ($l) => str_starts_with($l, 'ai.konfigurasi_token_gambar'));
+        $this->assertNotNull($peringatan);
+        $this->assertStringContainsString('"variabel":"AI_TOKEN_PER_MINUTE"', $peringatan);
+        $this->assertStringContainsString('"batas_token":1000', $peringatan);
+        $this->assertStringNotContainsString('nota', $peringatan);
+    }
+
+    public function test_privasi_tidak_dipasang_bila_foto_ditolak_lalu_muncul_pada_foto_sah_pertama(): void
+    {
+        $id = $this->stafGudangA->getKey();
+
+        // 1) Berkas bertopeng ditolak pra-pemrosesan.
+        $this->fakeTelegram(['api.telegram.org/file/*' => Http::response('<?php echo 1; ?>', 200)]);
+        $this->foto($this->stafGudangA);
+        $this->assertStringNotContainsString(AiChatHandler::PESAN_PRIVASI, $this->teksTerakhir($this->stafGudangA));
+
+        // 2) Gagal unduh.
+        $this->fakeTelegram(['api.telegram.org/*/getFile' => Http::response(['ok' => false, 'error_code' => 400, 'description' => 'Bad Request'], 400)]);
+        $this->foto($this->stafGudangA);
+        $this->assertStringContainsString('Foto tidak dapat diunduh', $this->teksTerakhir($this->stafGudangA));
+        $this->assertStringNotContainsString(AiChatHandler::PESAN_PRIVASI, $this->teksTerakhir($this->stafGudangA));
+
+        // 3) Batas laju AI.
+        $this->fakeTelegram();
+        config(['ai.rate_limit.per_minute' => 1]);
+        RateLimiter::hit("ai:m:{$id}", 60);
+        $this->foto($this->stafGudangA);
+        $this->assertStringContainsString('Batas penggunaan', $this->teksTerakhir($this->stafGudangA));
+        $this->assertStringNotContainsString(AiChatHandler::PESAN_PRIVASI, $this->teksTerakhir($this->stafGudangA));
+        RateLimiter::clear("ai:m:{$id}");
+        config(['ai.rate_limit.per_minute' => 1000]);
+
+        // 4) Pelindung token (sisa kuota tidak cukup).
+        config(['ai.token_budget.per_minute' => 3000]);
+        app(TokenBudget::class)->record('vision-palsu', 2000);
+        $this->foto($this->stafGudangA);
+        $this->assertStringContainsString('Sedang ramai', $this->teksTerakhir($this->stafGudangA));
+        $this->assertStringNotContainsString(AiChatHandler::PESAN_PRIVASI, $this->teksTerakhir($this->stafGudangA));
+        config(['ai.token_budget.per_minute' => 0]);
+
+        $this->assertSame([], $this->llm->visionCalls, 'Belum ada foto yang dikirim ke penyedia.');
+        $this->assertFalse(Cache::has('ai:privasi:'.$id), 'Penanda privasi belum terpasang.');
+
+        // 5) Foto sah pertama: kalimat privasi muncul; 6) foto berikutnya: tidak diulang.
+        $this->llm->push(LlmResponse::text('Lima.'))->push(LlmResponse::text('Enam.'));
+        $this->foto($this->stafGudangA, ['caption' => 'nota 5']);
+        $this->assertSame(AiChatHandler::PESAN_PRIVASI."\n\nLima.", $this->teksTerakhir($this->stafGudangA));
+        $this->foto($this->stafGudangA, ['caption' => 'nota 6']);
+        $this->assertSame('Enam.', $this->teksTerakhir($this->stafGudangA));
+    }
+
+    public function test_agen_menandai_media_terkirim_hanya_bila_penyedia_dipanggil(): void
+    {
+        $agen = app(AiAgentService::class);
+        $foto = AiInput::photo([['media_type' => 'image/jpeg', 'data' => base64_encode(self::jpegFiktif())]], 'nota');
+
+        // Ditolak batas laju di dalam agen: gambar tidak dikirim.
+        config(['ai.rate_limit.per_minute' => 1]);
+        RateLimiter::hit('ai:m:'.$this->stafGudangA->getKey(), 60);
+        $this->assertFalse($agen->handle($this->stafGudangA, $foto)->mediaTerkirim);
+        $this->assertSame([], $this->llm->visionCalls);
+
+        // Vision dipanggil (walau hasilnya "buram"): gambar terkirim.
+        RateLimiter::clear('ai:m:'.$this->stafGudangA->getKey());
+        $this->llm->pushVision(LlmResponse::text(IntentParser::PENANDA_TIDAK_TERBACA));
+        $this->assertTrue($agen->handle($this->stafGudangA, $foto)->mediaTerkirim);
     }
 
     public function test_suara_lebih_dari_120_detik_ditolak_sebelum_unduh(): void

@@ -4,6 +4,8 @@ namespace Tests\Feature\Ai;
 
 use App\Services\Ai\Foto\FotoChatDitolak;
 use App\Services\Ai\Foto\PraprosesFotoChat;
+use App\Services\Storage\BerkasDitolak;
+use App\Services\Storage\GdPemrosesGambar;
 use GdImage;
 use Tests\TestCase;
 
@@ -110,6 +112,47 @@ class PraprosesFotoChatTest extends TestCase
 
         config(['ai.input.photo_max_bytes' => 5 * 1024 * 1024, 'ai.input.photo_max_pixels' => 1000]);
         $this->assertDitolak(self::encode(self::gambar(64, 64), 'jpeg'), FotoChatDitolak::TERLALU_BESAR);
+    }
+
+    /** PNG kecil (beberapa ratus byte) dengan IHDR 60000x60000: ditolak dari header, SEBELUM decode GD. */
+    public function test_bom_piksel_png_ihdr_raksasa_ditolak_sebelum_decode(): void
+    {
+        $chunk = fn (string $jenis, string $data): string => pack('N', strlen($data)).$jenis.$data.pack('N', crc32($jenis.$data));
+        $png = "\x89PNG\r\n\x1A\n"
+            .$chunk('IHDR', pack('NNCCCCC', 60000, 60000, 8, 2, 0, 0, 0))
+            .$chunk('IDAT', (string) gzcompress(str_repeat("\x00", 64)))
+            .$chunk('IEND', '');
+        $this->assertLessThan(1024, strlen($png));
+        $this->assertSame([60000, 60000], array_slice(getimagesizefromstring($png), 0, 2));
+        $memoriSebelum = memory_get_peak_usage(true);
+
+        $this->assertDitolak($png, FotoChatDitolak::TERLALU_BESAR);
+        $this->assertLessThan($memoriSebelum + 8 * 1024 * 1024, memory_get_peak_usage(true), 'Tidak ada alokasi kanvas raksasa.');
+    }
+
+    public function test_memory_limit_dikembalikan_setelah_diproses_dan_kebutuhan_tak_wajar_ditolak(): void
+    {
+        $asli = (string) ini_get('memory_limit');
+
+        try {
+            // Batas sedikit di atas pemakaian saat ini: pengaman memori harus menaikkan SEMENTARA lalu mengembalikan.
+            $sempit = (string) (memory_get_usage(true) + 32 * 1024 * 1024);
+            ini_set('memory_limit', $sempit);
+            $this->proses(self::encode(self::gambar(200, 150), 'jpeg'));
+            $this->assertSame($sempit, ini_get('memory_limit'));
+
+            // Kebutuhan di atas GdPemrosesGambar::MAKS_MEMORI (dimensi besar, piksel diizinkan config): ditolak.
+            config(['ai.input.photo_max_pixels' => PHP_INT_MAX]);
+
+            try {
+                app(GdPemrosesGambar::class)->pastikanMemori(20000, 20000);
+                $this->fail('Seharusnya ditolak.');
+            } catch (BerkasDitolak) {
+                $this->assertSame($sempit, ini_get('memory_limit'));
+            }
+        } finally {
+            ini_set('memory_limit', $asli);
+        }
     }
 
     public function test_melebihi_batas_base64_diturunkan_bertahap_lalu_ditolak(): void

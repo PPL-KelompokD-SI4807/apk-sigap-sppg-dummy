@@ -34,8 +34,9 @@ use Throwable;
  *            terbuang, sisi ~1280 px, turun bertahap bila > batas base64). Maks 1 gambar per pesan; caption = teks;
  *   suara -> batas laju AI dicek SEBELUM STT (biaya STT); durasi (metadata Telegram, SEBELUM unduh)/ukuran/kuota detik
  *            STT per jam dicek, lalu SpeechToTextService (Null = "belum didukung") -> transkrip = teks TIDAK tepercaya.
- * Privasi: pada foto/suara PERTAMA yang benar-benar dikirim ke penyedia, satu kalimat pemberitahuan pihak ketiga
- * ditempel di awal balasan (penanda Cache per pengguna; tidak diulang). Juga tercantum di /bantuan.
+ * Privasi: pada foto/suara PERTAMA yang benar-benar dikirim ke penyedia (foto: AiReply::mediaTerkirim; suara: tepat
+ * sebelum STT), satu kalimat pemberitahuan pihak ketiga ditempel di awal balasan (penanda Cache per pengguna; tidak
+ * diulang; foto ditolak/gagal unduh/kena batas laju atau pelindung token TIDAK memasang penanda). Juga di /bantuan.
  * Log hanya angka/kode (ukuran, MIME, durasi, status); tidak pernah isi gambar, base64, transkrip, atau token.
  * Balasan: teks POLOS (tanpa parse_mode). Per draf: bila tool-nya dapat dijalankan dari chat, LAYAR KONFIRMASI terpisah
  * (BotAksiAiService: ringkasan server + Lanjutkan/Batal/Ubah; suara: "Yang saya dengar"); selain itu tombol web_app
@@ -57,6 +58,9 @@ class AiChatHandler
     /** @var list<string> kalimat pemberitahuan yang ditempel di awal pesan balasan berikutnya (album, privasi) */
     private array $awalan = [];
 
+    /** Foto lolos pra-pemrosesan dan diserahkan ke agen; privasi dicatat hanya bila agen benar-benar mengirimnya. */
+    private bool $fotoSiapDikirim = false;
+
     public function __construct(
         private readonly TelegramBotService $bot,
         private readonly AiAgentService $agent,
@@ -71,6 +75,7 @@ class AiChatHandler
         $chatId = $message['chat']['id'] ?? null;
         $jenis = 'ai';
         $this->awalan = [];
+        $this->fotoSiapDikirim = false;
 
         try {
             if (! is_int($chatId) || ! $user->canAuthenticate()) {
@@ -129,9 +134,18 @@ class AiChatHandler
                 return;
             }
 
-            $this->deliver($chatId, $this->agent->handle($user, $input), $user, $input->type === JenisInputAi::Suara ? $input->text : null);
+            $reply = $this->agent->handle($user, $input);
+
+            // Privasi foto: penanda dipasang HANYA bila gambar benar-benar dikirim ke penyedia (bukan ditolak batas
+            // laju / pelindung token / galat sebelum panggilan penyedia).
+            if ($this->fotoSiapDikirim && $reply->mediaTerkirim) {
+                $this->beriTahuPrivasi((int) $user->getKey());
+            }
+
+            $this->deliver($chatId, $reply, $user, $input->type === JenisInputAi::Suara ? $input->text : null);
         } finally {
             $this->awalan = [];
+            $this->fotoSiapDikirim = false;
             TelegramUpdateHandler::finish($update, $jenis);
         }
     }
@@ -174,7 +188,10 @@ class AiChatHandler
         return Cache::add('ai:album:'.$user->getKey().':'.hash('sha256', (string) $grup), 1, $ttl);
     }
 
-    /** Tempel pemberitahuan privasi pihak ketiga SEKALI per pengguna (penanda Cache), tepat sebelum media dikirim. */
+    /**
+     * Tempel pemberitahuan privasi pihak ketiga SEKALI per pengguna (penanda Cache). Dipanggil hanya setelah media
+     * benar-benar dikirim/akan dikirim ke penyedia (foto: setelah agen mengirim gambar; suara: tepat sebelum STT).
+     */
     private function beriTahuPrivasi(?int $userId): void
     {
         if ($userId === null) {
@@ -207,7 +224,6 @@ class AiChatHandler
         }
 
         $pilihan = $this->pilihUkuran($candidates);
-        $this->beriTahuPrivasi($userId);
 
         try {
             $binary = $this->bot->downloadFile($pilihan['file_id'], $max);
@@ -233,6 +249,7 @@ class AiChatHandler
         }
 
         Log::info('ai.foto_chat', ['user_id' => $userId] + $siap->konteksLog());
+        $this->fotoSiapDikirim = $userId !== null;
 
         return AiInput::photo([$siap->gambar()], $caption);
     }
@@ -297,11 +314,11 @@ class AiChatHandler
             RateLimiter::increment($kunci, 3600, max(1, $durasi));
         }
 
-        $this->beriTahuPrivasi($userId);
-
         try {
             $audio = $this->bot->downloadFile($voice['file_id'], (int) config('ai.input.voice_max_bytes', 10 * 1024 * 1024));
             $mime = is_string($voice['mime_type'] ?? null) && preg_match('#^audio/[a-z0-9.+-]{1,30}$#', $voice['mime_type']) === 1 ? $voice['mime_type'] : 'audio/ogg';
+            // Audio dikirim ke penyedia STT mulai baris berikut: privasi dicatat di sini (bukan sebelum unduh).
+            $this->beriTahuPrivasi($userId);
             $transkrip = $this->stt->transcribe($audio, $mime);
             Log::info('ai.suara_chat', ['user_id' => $userId, 'durasi' => $durasi, 'ukuran' => strlen($audio), 'mime' => $mime, 'status' => 'ok']);
 

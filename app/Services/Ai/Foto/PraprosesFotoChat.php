@@ -19,7 +19,7 @@ use GdImage;
  *     diratakan ke latar putih; sisi terpanjang dibatasi photo_max_side_px (~1280 px);
  *  5. bila base64 hasil masih > vision_max_base64_bytes (BELUM TERVERIFIKASI untuk model Preview), kualitas lalu
  *     dimensi diturunkan bertahap (photo_fallback_steps); tetap besar -> FotoChatDitolak "file terlalu besar".
- * Foto asli maupun hasil TIDAK disimpan ke disk (hanya memori job); lampiran permanen tetap lewat SecureUploadService.
+ * Foto asli maupun hasil TIDAK disimpan ke disk (hanya memori job; aliran php://memory, bukan php://temp); lampiran permanen tetap lewat SecureUploadService.
  * Ekstensi: GD (sudah ada di Dockerfile: --with-jpeg --with-webp); tanpa dependensi tambahan.
  */
 class PraprosesFotoChat
@@ -61,11 +61,22 @@ class PraprosesFotoChat
         }
 
         try {
-            $this->gd->pastikanMemori((int) $info[0], (int) $info[1]);
+            $semula = $this->gd->pastikanMemori((int) $info[0], (int) $info[1]);
         } catch (BerkasDitolak) {
             throw FotoChatDitolak::terlaluBesar();
         }
 
+        try {
+            return $this->decodeDanKompres($biner, $mime, $ukuran);
+        } finally {
+            // memory_limit dikembalikan: worker antrean tidak membawa batas tinggi ke job berikutnya.
+            $this->gd->pulihkanMemori($semula);
+        }
+    }
+
+    /** @throws FotoChatDitolak */
+    private function decodeDanKompres(string $biner, string $mime, int $ukuran): FotoSiap
+    {
         $gambar = @imagecreatefromstring($biner);
 
         if (! $gambar instanceof GdImage) {
@@ -101,8 +112,10 @@ class PraprosesFotoChat
         }
 
         foreach ($langkah as [$sisi, $kualitas]) {
+            // Kualitas setelah clamp 30-95 yang dipakai DAN dicatat di FotoSiap.
+            $kualitas = max(30, min(95, $kualitas));
             $kecil = $this->kanvas($gambar, max(64, $sisi));
-            $jpeg = $this->jpeg($kecil, max(30, min(95, $kualitas)));
+            $jpeg = $this->jpeg($kecil, $kualitas);
             $lebar = imagesx($kecil);
             $tinggi = imagesy($kecil);
             imagedestroy($kecil);
@@ -141,7 +154,7 @@ class PraprosesFotoChat
 
     private function jpeg(GdImage $gambar, int $kualitas): string
     {
-        $aliran = fopen('php://temp', 'w+b');
+        $aliran = fopen('php://memory', 'w+b');
 
         if ($aliran === false) {
             return '';
