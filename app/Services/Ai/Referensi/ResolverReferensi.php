@@ -58,7 +58,9 @@ class ResolverReferensi
             return $this->denganId($user, $jenis, $id);
         }
 
-        return new HasilResolusi($id === null ? HasilResolusi::TIDAK_VALID : HasilResolusi::TIDAK_ADA, dicari: $id === null ? '' : '#'.$id);
+        // Tanpa nama dan ID kosong/null/<= 0 (placeholder model) = rujukan tidak valid: ditanyakan ("sebutkan nama
+        // bahannya"), BUKAN "tidak ditemukan" (yang menawari membuat data master baru).
+        return new HasilResolusi(HasilResolusi::TIDAK_VALID);
     }
 
     /**

@@ -53,11 +53,14 @@ class MenuWriteTool extends CatalogWriteTool implements MemakaiPilihanReferensi
                 'type' => 'array',
                 'maxItems' => 50,
                 'description' => $this->action === 'U' ? 'Komposisi LENGKAP per porsi (mengganti komposisi lama).' : 'Komposisi per porsi.',
+                // Toleran terhadap bentuk keluaran model yang sah maknanya (Groq memvalidasi tool call terhadap skema ini
+                // dan menolak seluruh permintaan dengan HTTP 400 tool_use_failed bila tidak cocok): `nama` cukup, ID opsional
+                // dan boleh null/0 (diabaikan bila nama diisi; ResolverReferensi tetap memverifikasi ID milik SPPG).
                 'items' => [
                     'type' => 'object',
                     'properties' => [
-                        'nama' => ['type' => 'string', 'maxLength' => ResolverReferensi::MAKS_PANJANG, 'description' => 'Nama bahan seperti disebut pengguna.'],
-                        'bahan_baku_id' => ['type' => 'integer', 'minimum' => 1],
+                        'nama' => ['type' => ['string', 'null'], 'maxLength' => ResolverReferensi::MAKS_PANJANG, 'description' => 'Nama bahan seperti disebut pengguna.'],
+                        'bahan_baku_id' => ['type' => ['integer', 'null'], 'description' => 'Opsional; tidak perlu bila nama diisi.'],
                         'jumlah' => ['type' => 'number', 'minimum' => 0, 'maximum' => 100000],
                         'satuan' => ['type' => 'string', 'maxLength' => 20, 'description' => 'g, kg, ml, atau l.'],
                     ],

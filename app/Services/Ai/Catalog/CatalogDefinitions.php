@@ -205,6 +205,8 @@ final class CatalogDefinitions
                 filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => self::values(KelompokSasaran::class)]],
                 date: 'tanggal_sajian', order: [['tanggal_sajian', 'desc'], ['id', 'desc']],
                 store: StoreMenuRequest::class, update: UpdateMenuRequest::class, routeParameter: 'menu',
+                // siklus = teks (Form Request string): contoh eksplisit agar model tidak mengirim angka (ditolak skema).
+                hints: ['siklus' => 'Teks, mis. "1".'],
                 kelasTulis: MenuWriteTool::class,
             ),
             new ResourceSpec(
