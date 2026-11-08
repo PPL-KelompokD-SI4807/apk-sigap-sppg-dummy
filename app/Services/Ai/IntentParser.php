@@ -5,6 +5,7 @@ namespace App\Services\Ai;
 use App\Enums\JenisInputAi;
 use App\Models\Sppg;
 use App\Models\User;
+use App\Services\Ai\Llm\JalurSkema;
 use Illuminate\Support\Carbon;
 
 /**
@@ -72,7 +73,31 @@ class IntentParser
         6. Jangan mengisi atau meminta sppg_id, user_id, peran, atau pembuat data; sistem mengisinya otomatis. Pengecualian: tool undangan/peran pengguna meminta role, unit, dan sppg_id (pilih dari cari_sppg; bila belum disebut, tanyakan).
         7. Jangan meminta atau menampilkan NIK, token, kata sandi, atau kunci API.
         8. Jawab singkat dalam bahasa Indonesia sebagai teks polos (tanpa Markdown, tanpa HTML).
+        9. Jangan meminta pengguna menyebut ID. Bila tool menerima `nama` (mis. bahan menu), kirim nama yang disebut pengguna; sistem mencari ID-nya dan menampilkan tombol pilihan bila ambigu.
         PROMPT;
+    }
+
+    /**
+     * Catatan perbaikan (konteks tepercaya, ditambahkan ke prompt sistem) untuk SATU percobaan ulang setelah penyedia
+     * menolak tool call model (tool_use_failed). Nama tool dan path sudah disaring klien (hanya tool yang dikirim dan
+     * nama properti skemanya); di sini disaring ULANG dengan aturan yang sama (JalurSkema: segmen pertama nama properti,
+     * indeks \d{1,2}) sehingga deret angka panjang (NIK/telepon) tidak pernah masuk prompt. Tidak memuat
+     * failed_generation, pesan mentah penyedia, atau nilai argumen.
+     *
+     * @param  list<string>  $jalur
+     * @param  array<string, true>|null  $namaProperti  nama properti skema tool (null = hanya cek struktur)
+     */
+    public function catatanToolGagal(?string $tool, array $jalur = [], ?array $namaProperti = null): string
+    {
+        $tool = $tool !== null && preg_match('/^[A-Za-z0-9_.-]{1,64}$/', $tool) === 1 ? $tool : null;
+        $jalur = JalurSkema::saring($jalur, $namaProperti);
+
+        return 'Catatan sistem: panggilan tool sebelumnya ditolak penyedia karena argumennya tidak sesuai skema'
+            .($tool !== null ? ' (tool '.$tool.')' : '')
+            .($jalur !== [] ? '; kolom bermasalah: '.implode(', ', $jalur) : '')
+            .'. Ulangi dengan SATU panggilan tool yang mematuhi skema: tipe data persis (teks dalam tanda kutip, angka tanpa satuan), '
+            .'jangan kirim kolom di luar skema atau kolom opsional yang tidak diketahui, dan hanya pakai tool yang tersedia. '
+            .'Bila data belum lengkap, tanyakan ke pengguna tanpa memanggil tool.';
     }
 
     /**

@@ -45,6 +45,7 @@ final class ResourceSpec
      * @param  string|null  $rute  awalan nama rute REST (mis. 'api.v1.pemasok' -> .store/.update/.destroy) agar draf
      *                             dapat dijalankan dari tombol konfirmasi Bot (sub-request internal); null = hanya Mini App
      * @param  bool  $berkas  aksi tulis sumber daya ini memerlukan foto/nota/berkas: dari chat hanya "Ubah" (Mini App)
+     * @param  class-string<CatalogWriteTool>|null  $kelasTulis  subkelas tool buat_/ubah_ (mis. resolusi nama rujukan di server)
      */
     public function __construct(
         public readonly string $key,
@@ -73,6 +74,7 @@ final class ResourceSpec
         public readonly bool $berversi = false,
         public readonly ?string $rute = null,
         public readonly bool $berkas = false,
+        public readonly ?string $kelasTulis = null,
     ) {}
 
     public function toolName(string $letter): string

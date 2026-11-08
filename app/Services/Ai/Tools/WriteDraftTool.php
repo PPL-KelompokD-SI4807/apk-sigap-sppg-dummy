@@ -10,6 +10,7 @@ use App\Services\Ai\Drafts\DraftValidationResult;
 use App\Services\Ai\Drafts\DraftValidator;
 use App\Services\Ai\Eksekusi\RingkasanDraf;
 use App\Services\Ai\Eksekusi\SpesifikasiEksekusi;
+use App\Services\Ai\Referensi\PilihanReferensiDraf;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Gate;
  *   formRequest(): kelas Form Request store/update modul (null untuk hapus)
  *   fields(): ['properties' => [...], 'required' => [...]] skema kolom form
  *   routeParameter(): nama parameter rute model untuk Form Request update (mis. 'titikLayanan')
+ *   rujukan(): opsional, nama data master -> ID di server (ResolverReferensi); ambigu = pilihan tertunda (tombol)
  *   toPayload(): opsional, memetakan argumen ke kolom form (mis. nama pemasok -> pemasok_id)
  *   eksekusi(): opsional, rute REST untuk menjalankan draf dari chat (null = hanya Mini App)
  *   ringkasan()/berbahaya()/olahHasil(): opsional, layar konfirmasi dan hasil
@@ -61,6 +63,20 @@ abstract class WriteDraftTool extends BaseAiTool
     protected function toPayload(User $user, array $arguments): array
     {
         return $arguments;
+    }
+
+    /**
+     * Hook opsional resolusi rujukan nama -> ID di SERVER (App\Services\Ai\Referensi\ResolverReferensi), dipanggil
+     * sebelum toPayload(). Kembalikan ToolResult untuk berhenti TANPA draf (mis. nama tidak ditemukan, satuan tidak
+     * kompatibel, hak baca data master tidak ada), atau [argumen, slot pilihan tertunda, info untuk model]. Slot
+     * pilihan (rujukan ambigu) disimpan di payload `_pilihan` (hanya ID kandidat) dan dipilih pengguna lewat tombol.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return ToolResult|array{0: array<string, mixed>, 1: list<array<string, mixed>>, 2: list<array<string, mixed>>}
+     */
+    protected function rujukan(User $user, array $arguments): ToolResult|array
+    {
+        return [$arguments, [], []];
     }
 
     /**
@@ -375,6 +391,14 @@ abstract class WriteDraftTool extends BaseAiTool
             }
         }
 
+        $rujukan = $this->rujukan($user, $arguments);
+
+        if ($rujukan instanceof ToolResult) {
+            return $rujukan;
+        }
+
+        [$arguments, $pilihan, $infoPilihan] = $rujukan;
+
         [$payload] = ArgumentValidator::stripProtectedFor($this, $this->toPayload($user, $arguments));
 
         $payload = $this->sisipkanDariServer($payload, $target);
@@ -414,6 +438,12 @@ abstract class WriteDraftTool extends BaseAiTool
             $payload['_resource'] = $resource;
         }
 
+        // Rujukan ambigu: disimpan server (ID kandidat saja), dipilih pengguna lewat tombol; draf tidak dapat dijalankan
+        // dari chat selama masih ada pilihan tertunda (AiDraftExecutor::hambatan).
+        if ($pilihan !== []) {
+            $payload[PilihanReferensiDraf::KUNCI] = $pilihan;
+        }
+
         $draft = app(DraftService::class)->create(
             user: $user,
             module: $this->module,
@@ -426,7 +456,37 @@ abstract class WriteDraftTool extends BaseAiTool
             sidikTarget: $target === null ? null : $this->sidikTarget($target),
         );
 
-        return ToolResult::draft($draft, $errors, $this->eksekusi()?->dapatDijalankan() ?? false);
+        return ToolResult::draft($draft, self::tanpaGalatSlot($errors, $pilihan), $pilihan === [] && ($this->eksekusi()?->dapatDijalankan() ?? false), $infoPilihan);
+    }
+
+    /**
+     * Galat untuk hasil tool ke LLM: galat baris placeholder slot pilihan tertunda (mis. `bahan.1.bahan_baku_id` wajib
+     * diisi) dibuang karena pengguna memilihnya lewat tombol; LLM tidak perlu (dan tidak boleh) mengisinya sendiri.
+     * Galat lengkap tetap ada di draf/API (AiDraftResource `errors`, kontrak Mini App).
+     *
+     * @param  array<string, list<string>>  $errors
+     * @param  list<array<string, mixed>>  $pilihan
+     * @return array<string, list<string>>
+     */
+    private static function tanpaGalatSlot(array $errors, array $pilihan): array
+    {
+        $awalan = [];
+
+        foreach ($pilihan as $slot) {
+            if (is_string($slot['kolom'] ?? null) && is_int($slot['indeks'] ?? null)) {
+                $awalan[] = $slot['kolom'].'.'.$slot['indeks'];
+            }
+        }
+
+        return array_filter($errors, function ($kunci) use ($awalan): bool {
+            foreach ($awalan as $a) {
+                if ((string) $kunci === $a || str_starts_with((string) $kunci, $a.'.')) {
+                    return false;
+                }
+            }
+
+            return true;
+        }, ARRAY_FILTER_USE_KEY);
     }
 
     /** Akses Gate untuk subkelas (Policy kelas/record). */

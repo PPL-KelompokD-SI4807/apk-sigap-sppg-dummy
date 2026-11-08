@@ -6,6 +6,7 @@ use App\Enums\HasilAi;
 use App\Models\AiInteraction;
 use App\Models\User;
 use App\Services\Ai\Drafts\DraftLimitException;
+use App\Services\Ai\Llm\JalurSkema;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmException;
 use App\Services\Ai\Llm\LlmResponse;
@@ -34,10 +35,15 @@ use Throwable;
  *      -> argumen JSON sah? -> argumen terlindungi dibuang -> skema argumen valid? -> eksekusi
  *      (baca: langsung ber-scope; tulis: hanya AiDraft);
  *   5. jawaban teks polos dipotong; jejak + jumlah token (angka) dicatat di ai_interactions (tanpa isi pesan).
- * LLM gagal/tidak tersedia/terlalu lama -> balasan ramah per kategori + fallback formulir manual.
+ * LLM gagal/tidak tersedia/terlalu lama -> balasan ramah per kategori + fallback formulir manual; galat penyedia
+ * dicatat aman ('ai.llm_galat'); tool call ditolak penyedia (tool_use_failed) diulang sekali dengan catatan perbaikan;
+ * draf yang sudah dibuat sebelum galat tetap ditawarkan.
  */
 class AiAgentService
 {
+    /** Sisa anggaran waktu minimum (detik) untuk mengulang setelah tool_use_failed. */
+    private const MIN_SISA_ULANG = 5.0;
+
     public function __construct(
         private readonly LlmClient $llm,
         private readonly ToolRegistry $registry,
@@ -139,7 +145,7 @@ class AiAgentService
 
         // D6: klien dengan model vision terpisah -> tahap 1 baca gambar tanpa tool; hasilnya data.
         $imageText = $input->images !== [] && $this->llm instanceof SupportsVision
-            ? $this->readImages($this->llm, $input, $deadline, $log)
+            ? $this->readImages($this->llm, $input, $deadline, $log, $interaction)
             : null;
 
         // D7: subset tool milik peran yang relevan (selalu subset forUser()).
@@ -162,16 +168,29 @@ class AiAgentService
         $final = null;
         $model = $this->llm->modelName();
 
+        $sudahUlang = false;
+
         for ($i = 0; $i < $maxIterations; $i++) {
             if (microtime(true) - $started > $budget) {
                 break;
             }
 
             $log['iterasi'] = $i + 1;
-            $estimate = TokenBudget::estimateRequest($system, $messages, $schemas);
-            $this->budget->check($model, $estimate);
-            $response = $this->llm->chat($messages, $schemas, ['system' => $system, 'deadline' => $deadline]);
-            $this->recordUsage($model, $response, $estimate, $log);
+
+            try {
+                $response = $this->chat($model, $system, $messages, $schemas, $deadline, $log, $interaction, $sudahUlang);
+            } catch (LlmException $e) {
+                if ($drafts === []) {
+                    throw $e;
+                }
+
+                // Draf dari langkah sebelumnya sudah tersimpan sebagai AiDraft: tetap ditawarkan (tidak dibuat ulang).
+                return $this->finish($interaction, $started, $log, HasilAi::Fallback, $e->logLabel(), new AiReply(
+                    'Sebagian permintaan sudah disiapkan sebagai draf. Periksa dan simpan di Mini App.',
+                    $drafts,
+                    interactionId: $interaction->id,
+                ));
+            }
 
             if (! $response->hasToolCalls()) {
                 $final = $response->text;
@@ -229,6 +248,75 @@ class AiAgentService
             $drafts,
             interactionId: $interaction->id,
         ));
+    }
+
+    /**
+     * Satu panggilan chat melewati pelindung token. Penyedia menolak tool call buatan model (Groq HTTP 400
+     * `tool_use_failed`, mis. argumen tidak cocok skema) -> diulang SEKALI per pesan dengan catatan perbaikan singkat di
+     * prompt sistem. Aman diulang: penolakan terjadi sebelum ada tool yang dijalankan, jadi tidak ada draf ganda;
+     * riwayat pesan tidak diubah (pesan pengguna tidak digandakan, failed_generation tidak dikirim balik).
+     * Setiap galat penyedia dicatat aman (catatGalatLlm).
+     *
+     * @param  list<array<string, mixed>>  $messages
+     * @param  list<array<string, mixed>>  $schemas
+     * @param  array<string, mixed>  $log
+     *
+     * @throws LlmException
+     */
+    private function chat(string $model, string $system, array $messages, array $schemas, float $deadline, array &$log, AiInteraction $interaction, bool &$sudahUlang): LlmResponse
+    {
+        $estimate = TokenBudget::estimateRequest($system, $messages, $schemas);
+        $this->budget->check($model, $estimate);
+
+        try {
+            $response = $this->llm->chat($messages, $schemas, ['system' => $system, 'deadline' => $deadline]);
+        } catch (LlmException $e) {
+            $ulang = $e->toolGagal() && ! $sudahUlang && $deadline - microtime(true) >= self::MIN_SISA_ULANG;
+            $this->catatGalatLlm($e, $interaction, $model, 'chat', $log, $estimate, count($schemas), $ulang);
+
+            if ($e->toolGagal()) {
+                // Prompt sudah diproses penyedia: estimasi dihitung ke pelindung token global.
+                $this->budget->record($model, $estimate);
+            }
+
+            if (! $ulang) {
+                throw $e;
+            }
+
+            $sudahUlang = true;
+            $log['ulang_tool_gagal'] = 1;
+
+            $skemaTool = $e->tool === null ? null : collect($schemas)->firstWhere('name', $e->tool);
+            $nama = is_array($skemaTool['input_schema'] ?? null) ? JalurSkema::namaProperti($skemaTool['input_schema']) : [];
+            $catatan = $this->parser->catatanToolGagal($e->tool, $e->jalur, $nama);
+
+            return $this->chat($model, $system."\n\n".$catatan, $messages, $schemas, $deadline, $log, $interaction, $sudahUlang);
+        }
+
+        $this->recordUsage($model, $response, $estimate, $log);
+
+        return $response;
+    }
+
+    /**
+     * Log galat LLM yang AMAN (kanal default, nama 'ai.llm_galat'): status HTTP, kode/tipe galat penyedia, nama tool
+     * yang ditolak (hanya tool yang dikirim), path argumen tanpa nilai, estimasi token, kelas exception. TIDAK memuat
+     * isi pesan pengguna, argumen tool, failed_generation, initData, token, atau kunci.
+     *
+     * @param  array<string, mixed>  $log
+     */
+    private function catatGalatLlm(LlmException $e, AiInteraction $interaction, string $model, string $tahap, array $log, int $estimate, int $toolDitawarkan, bool $diulang): void
+    {
+        Log::warning('ai.llm_galat', [
+            'interaksi_id' => $interaction->id,
+            'user_id' => $interaction->user_id,
+            'model' => mb_substr($model, 0, 100),
+            'tahap' => $tahap,
+            'iterasi' => (int) ($log['iterasi'] ?? 0),
+            'estimasi_token' => $estimate,
+            'tool_ditawarkan' => $toolDitawarkan,
+            'diulang' => $diulang,
+        ] + $e->konteksLog());
     }
 
     /**
@@ -339,7 +427,7 @@ class AiAgentService
      *
      * @throws LlmException
      */
-    private function readImages(SupportsVision $vision, AiInput $input, float $deadline, array &$log): string
+    private function readImages(SupportsVision $vision, AiInput $input, float $deadline, array &$log, AiInteraction $interaction): string
     {
         if (! $vision->supportsVision()) {
             throw LlmException::visionUnsupported();
@@ -352,6 +440,7 @@ class AiAgentService
         try {
             $response = $vision->readImages($input->images, $this->parser->visionInstruction(), ['deadline' => $deadline]);
         } catch (LlmException $e) {
+            $this->catatGalatLlm($e, $interaction, $model, 'vision', $log, $estimate, 0, false);
             // Sibuk/kuota/konfigurasi/terlalu besar tetap informatif; galat lain = foto tidak terbaca.
             throw in_array($e->category, [LlmException::SIBUK, LlmException::KUOTA, LlmException::KONFIGURASI, LlmException::TERLALU_BESAR], true)
                 ? $e

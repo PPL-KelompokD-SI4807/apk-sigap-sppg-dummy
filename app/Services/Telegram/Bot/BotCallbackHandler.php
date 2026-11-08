@@ -507,6 +507,7 @@ class BotCallbackHandler
             $this->jawab($id, match ($hasil) {
                 'batal' => 'Dibatalkan.',
                 'sukses' => 'Berhasil.',
+                'dipilih' => 'Dipilih.',
                 'ditolak' => self::TIDAK_BERHAK,
                 default => null,
             });
