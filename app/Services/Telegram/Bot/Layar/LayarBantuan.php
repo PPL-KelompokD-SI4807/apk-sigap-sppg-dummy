@@ -13,7 +13,8 @@ final class LayarBantuan extends LayarBacaDasar
         ."- Ketik /menu untuk beranda: ringkasan hari ini dan tombol sesuai peran Anda.\n"
         ."- Tombol \"Buka Mini App\" membuka Mini App untuk mengelola data.\n"
         ."- Perintah cepat: /jadwal /stok /keluhan /rekap /keuangan /anggaran /distribusi /mutu (hanya yang sesuai peran).\n"
-        ."- Ketik permintaan biasa, mis. \"cari titik layanan SD\", atau kirim foto nota/pesan suara untuk dibantu Agen AI.\n"
+        ."- Ketik permintaan biasa, mis. \"cari titik layanan SD\", atau kirim foto nota/pesan suara untuk dibantu Agen AI (satu foto per pesan, suara maks 2 menit).\n"
+        ."- Foto dan pesan suara diproses penyedia AI pihak ketiga; jangan kirim data pribadi.\n"
         .'- Setiap draf wajib diperiksa dan disimpan di Mini App. /batal membatalkan proses alasan penolakan.';
 
     public function id(): string

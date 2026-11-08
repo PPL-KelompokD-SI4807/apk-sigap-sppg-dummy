@@ -153,8 +153,10 @@ class AiAgentService
 
         // D6: klien dengan model vision terpisah -> tahap 1 baca gambar tanpa tool; hasilnya data.
         $imageText = $input->images !== [] && $this->llm instanceof SupportsVision
-            ? $this->readImages($this->llm, $input, $deadline, $log, $interaction)
+            ? $this->readImages($this->llm, $input, $text, $deadline, $log, $interaction)
             : null;
+        // Pesan foto: tanpa retry HTTP (429/5xx) agar kuota TPM tidak habis; satu-satunya ulang = tool_use_failed.
+        $tanpaUlang = $input->images !== [];
 
         // D7: subset tool milik peran yang relevan (selalu subset forUser()).
         $selection = $this->selector->select($this->registry->forUser($user), trim($text.' '.($imageText ?? '')), $input->type);
@@ -187,7 +189,7 @@ class AiAgentService
             $log['iterasi'] = $i + 1;
 
             try {
-                $response = $this->chat($model, $system, $messages, $schemas, $deadline, $log, $interaction, $sudahUlang);
+                $response = $this->chat($model, $system, $messages, $schemas, $deadline, $log, $interaction, $sudahUlang, $tanpaUlang);
             } catch (LlmException $e) {
                 // tool_use_failed yang tetap gagal setelah SATU percobaan ulang (atau tanpa waktu untuk ulang): bagian
                 // yang sudah dipahami menjadi draf "perlu diperbaiki" (tanpa panggilan LLM lagi).
@@ -357,13 +359,20 @@ class AiAgentService
      *
      * @throws LlmException
      */
-    private function chat(string $model, string $system, array $messages, array $schemas, float $deadline, array &$log, AiInteraction $interaction, bool &$sudahUlang): LlmResponse
+    private function chat(string $model, string $system, array $messages, array $schemas, float $deadline, array &$log, AiInteraction $interaction, bool &$sudahUlang, bool $tanpaUlang = false): LlmResponse
     {
         $estimate = TokenBudget::estimateRequest($system, $messages, $schemas);
         $this->budget->check($model, $estimate);
 
+        // Klien tanpa vision terpisah (Anthropic): gambar ikut panggilan ini -> media terkirim ke penyedia.
+        foreach ($messages as $m) {
+            if (($m['images'] ?? []) !== []) {
+                $log['media_terkirim'] = true;
+            }
+        }
+
         try {
-            $response = $this->llm->chat($messages, $schemas, ['system' => $system, 'deadline' => $deadline]);
+            $response = $this->llm->chat($messages, $schemas, ['system' => $system, 'deadline' => $deadline] + ($tanpaUlang ? ['tanpa_ulang' => true] : []));
         } catch (LlmException $e) {
             $ulang = $e->toolGagal() && ! $sudahUlang && $deadline - microtime(true) >= self::MIN_SISA_ULANG;
             $this->catatGalatLlm($e, $interaction, $model, 'chat', $log, $estimate, count($schemas), $ulang);
@@ -384,7 +393,7 @@ class AiAgentService
             $nama = is_array($skemaTool['input_schema'] ?? null) ? JalurSkema::namaProperti($skemaTool['input_schema']) : [];
             $catatan = $this->parser->catatanToolGagal($e->tool, $e->jalur, $nama);
 
-            return $this->chat($model, $system."\n\n".$catatan, $messages, $schemas, $deadline, $log, $interaction, $sudahUlang);
+            return $this->chat($model, $system."\n\n".$catatan, $messages, $schemas, $deadline, $log, $interaction, $sudahUlang, $tanpaUlang);
         }
 
         $this->recordUsage($model, $response, $estimate, $log);
@@ -534,35 +543,99 @@ class AiAgentService
      *
      * @throws LlmException
      */
-    private function readImages(SupportsVision $vision, AiInput $input, float $deadline, array &$log, AiInteraction $interaction): string
+    private function readImages(SupportsVision $vision, AiInput $input, string $caption, float $deadline, array &$log, AiInteraction $interaction): string
     {
         if (! $vision->supportsVision()) {
             throw LlmException::visionUnsupported();
         }
 
         $model = (string) $vision->visionModelName();
-        $estimate = TokenBudget::estimate($this->parser->visionInstruction()) + count($input->images) * TokenBudget::IMAGE_TOKENS;
+        $estimate = $this->estimasiGambar(count($input->images));
+        $this->cekBatasGambar($model, $estimate);
         $this->budget->check($model, $estimate);
+        // Mulai di sini gambar dikirim ke penyedia (juga bila panggilan gagal/timeout): privasi boleh dicatat.
+        $log['media_terkirim'] = true;
 
         try {
-            $response = $vision->readImages($input->images, $this->parser->visionInstruction(), ['deadline' => $deadline]);
+            // Tanpa retry (opsi tanpa_ulang dipaksa klien): 429 langsung menjadi "Sedang ramai".
+            $response = $vision->readImages($input->images, $this->parser->visionInstruction(), ['deadline' => $deadline, 'tanpa_ulang' => true]);
         } catch (LlmException $e) {
             $this->catatGalatLlm($e, $interaction, $model, 'vision', $log, $estimate, 0, false);
-            // Sibuk/kuota/konfigurasi/terlalu besar tetap informatif; galat lain = foto tidak terbaca.
-            throw in_array($e->category, [LlmException::SIBUK, LlmException::KUOTA, LlmException::KONFIGURASI, LlmException::TERLALU_BESAR], true)
-                ? $e
-                : LlmException::visionFailed($e);
+            // Model tidak ada/dihentikan -> arahan Mini App; sibuk/kuota/konfigurasi/terlalu besar tetap; lain = tak terbaca.
+            throw LlmException::untukVision($e);
         }
 
         $this->recordUsage($model, $response, $estimate, $log, 'token_vision');
         $text = $this->parser->sanitize($response->text, (int) config('ai.agent.max_input_chars', 2000));
         $log['panjang_hasil_baca'] = mb_strlen($text);
 
-        if ($text === '') {
-            throw LlmException::visionFailed();
+        if ($text === '' || stripos($text, IntentParser::PENANDA_TIDAK_TERBACA) === 0) {
+            $log['vision'] = 'tidak_terbaca';
+
+            throw $text === '' ? LlmException::visionFailed() : LlmException::fotoBuram();
+        }
+
+        if (stripos($text, IntentParser::PENANDA_BUKAN_DOKUMEN) === 0) {
+            $log['vision'] = 'bukan_dokumen';
+
+            // Tanpa keterangan, foto non-dokumen tidak punya maksud yang jelas: balas ramah tanpa memanggil model teks.
+            if (trim($caption) === '') {
+                throw LlmException::bukanDokumen();
+            }
+
+            $text = 'Bukan dokumen: '.trim(substr($text, strlen(IntentParser::PENANDA_BUKAN_DOKUMEN)));
         }
 
         return $text;
+    }
+
+    /** Estimasi token satu permintaan vision: instruksi + gambar (TokenBudget::imageTokens per gambar). */
+    private function estimasiGambar(int $jumlah = 1): int
+    {
+        return TokenBudget::estimate($this->parser->visionInstruction()) + max(1, $jumlah) * TokenBudget::imageTokens();
+    }
+
+    /**
+     * Pelindung token global untuk foto, dicek AiChatHandler SEBELUM foto diunduh (tanpa menghitung): bila sisa kuota
+     * menit/hari model vision (atau model teks untuk klien tanpa vision terpisah) tidak cukup untuk satu gambar,
+     * LlmException sibuk/kuota dilempar tanpa unduhan maupun panggilan penyedia.
+     *
+     * @throws LlmException
+     */
+    public function cekAnggaranGambar(): void
+    {
+        $model = $this->llm instanceof SupportsVision ? (string) $this->llm->visionModelName() : $this->llm->modelName();
+
+        if ($model !== '') {
+            $estimate = $this->estimasiGambar();
+            $this->cekBatasGambar($model, $estimate);
+            $this->budget->check($model, $estimate);
+        }
+    }
+
+    /**
+     * Salah konfigurasi: AI_TOKEN_PER_MINUTE / AI_TOKEN_PER_DAY (> 0) lebih kecil dari biaya SATU gambar, sehingga foto
+     * tidak akan pernah lolos. Bukan "sedang ramai": peringatan konfigurasi dicatat (angka saja) dan pengguna diarahkan
+     * ke Mini App (kategori vision_tidak_tersedia).
+     *
+     * @throws LlmException
+     */
+    private function cekBatasGambar(string $model, int $estimate): void
+    {
+        foreach (['per_minute' => 'AI_TOKEN_PER_MINUTE', 'per_day' => 'AI_TOKEN_PER_DAY'] as $kunci => $env) {
+            $batas = max(0, (int) config("ai.token_budget.{$kunci}", 0));
+
+            if ($batas > 0 && $estimate > $batas) {
+                Log::warning('ai.konfigurasi_token_gambar', [
+                    'variabel' => $env,
+                    'batas_token' => $batas,
+                    'estimasi_gambar' => $estimate,
+                    'model' => mb_substr($model, 0, 100),
+                ]);
+
+                throw LlmException::anggaranGambarTidakCukup();
+            }
+        }
     }
 
     /**
@@ -643,6 +716,10 @@ class AiAgentService
     private function finish(AiInteraction $interaction, float $started, array $log, HasilAi $hasil, ?string $error, AiReply $reply): AiReply
     {
         $names = array_values(array_unique(array_column($log['tools'], 'nama')));
+
+        if (($log['media_terkirim'] ?? false) === true && ! $reply->mediaTerkirim) {
+            $reply = new AiReply($reply->text, $reply->drafts, $reply->fallback, $reply->interactionId, true);
+        }
 
         $interaction->forceFill([
             'tool_name' => $names === [] ? null : mb_substr(implode(',', $names), 0, 100),

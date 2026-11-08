@@ -11,6 +11,9 @@ use GdImage;
  */
 class GdPemrosesGambar implements PemrosesGambar
 {
+    /** Batas atas memory_limit sementara untuk decode satu gambar (byte). */
+    public const MAKS_MEMORI = 512 * 1024 * 1024;
+
     public static function tersedia(): bool
     {
         return extension_loaded('gd') && function_exists('imagecreatefromstring');
@@ -33,8 +36,17 @@ class GdPemrosesGambar implements PemrosesGambar
 
     public function proses(string $isi, string $mime, int $lebar, int $tinggi): GambarSiap
     {
-        $this->pastikanMemori($lebar, $tinggi);
+        $semula = $this->pastikanMemori($lebar, $tinggi);
 
+        try {
+            return $this->prosesGd($isi, $mime);
+        } finally {
+            $this->pulihkanMemori($semula);
+        }
+    }
+
+    private function prosesGd(string $isi, string $mime): GambarSiap
+    {
         $gambar = @imagecreatefromstring($isi);
 
         if (! $gambar instanceof GdImage) {
@@ -62,16 +74,43 @@ class GdPemrosesGambar implements PemrosesGambar
         return new GambarSiap($hasil, $mime, (string) config("unggahan.mime.{$mime}"), (int) $info[0], (int) $info[1], true);
     }
 
-    private function pastikanMemori(int $lebar, int $tinggi): void
+    /**
+     * Naikkan memory_limit SEMENTARA bila perlu untuk decode $lebar x $tinggi (dipakai juga PraprosesFotoChat).
+     * Kebutuhan melebihi MAKS_MEMORI -> BerkasDitolak (batas wajar yang benar-benar dapat gagal; tidak bergantung pada
+     * ini_set yang hampir tidak pernah gagal). Mengembalikan memory_limit semula bila dinaikkan; pemanggil WAJIB
+     * memanggil pulihkanMemori() di finally agar worker antrean tidak membawa batas tinggi ke job berikutnya.
+     * Pengaman utama tetap batas piksel sebelum decode.
+     *
+     * @throws BerkasDitolak
+     */
+    public function pastikanMemori(int $lebar, int $tinggi): ?string
     {
         // Truecolor GD ~4 byte/piksel + salinan hasil perkecil + overhead.
         $butuh = ($lebar * $tinggi * 5) + (64 * 1024 * 1024);
-        $batas = $this->keByte((string) ini_get('memory_limit'));
+        $semula = (string) ini_get('memory_limit');
+        $batas = $this->keByte($semula);
+        $target = memory_get_usage(true) + $butuh;
 
-        if ($batas > 0 && memory_get_usage(true) + $butuh > $batas) {
-            if (@ini_set('memory_limit', (string) (memory_get_usage(true) + $butuh)) === false) {
-                throw new BerkasDitolak('Resolusi gambar terlalu besar untuk diproses.');
-            }
+        if ($target > self::MAKS_MEMORI) {
+            throw new BerkasDitolak('Resolusi gambar terlalu besar untuk diproses.');
+        }
+
+        if ($batas <= 0 || $target <= $batas) {
+            return null;
+        }
+
+        if (@ini_set('memory_limit', (string) $target) === false) {
+            throw new BerkasDitolak('Resolusi gambar terlalu besar untuk diproses.');
+        }
+
+        return $semula;
+    }
+
+    /** Kembalikan memory_limit yang dinaikkan pastikanMemori() (null = tidak diubah). */
+    public function pulihkanMemori(?string $semula): void
+    {
+        if ($semula !== null) {
+            @ini_set('memory_limit', $semula);
         }
     }
 
@@ -93,13 +132,14 @@ class GdPemrosesGambar implements PemrosesGambar
         };
     }
 
-    private function terapkanOrientasi(GdImage $gambar, string $isi): GdImage
+    /** Terapkan orientasi EXIF JPEG (dipakai juga PraprosesFotoChat); tanpa ext-exif = gambar apa adanya. */
+    public function terapkanOrientasi(GdImage $gambar, string $isi): GdImage
     {
         if (! function_exists('exif_read_data')) {
             return $gambar;
         }
 
-        $aliran = fopen('php://temp', 'w+b');
+        $aliran = fopen('php://memory', 'w+b');
 
         if ($aliran === false) {
             return $gambar;
@@ -181,7 +221,7 @@ class GdPemrosesGambar implements PemrosesGambar
 
     private function encode(GdImage $gambar, string $mime): string
     {
-        $aliran = fopen('php://temp', 'w+b');
+        $aliran = fopen('php://memory', 'w+b');
 
         if ($aliran === false) {
             throw new BerkasDitolak('Gambar gagal diproses ulang.');

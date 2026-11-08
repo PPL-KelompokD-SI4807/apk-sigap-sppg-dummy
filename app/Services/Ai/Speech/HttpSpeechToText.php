@@ -17,6 +17,9 @@ use Throwable;
  */
 class HttpSpeechToText implements SpeechToTextService
 {
+    /** Transkrip kosong (suara tidak jelas/hening). */
+    public const TIDAK_JELAS = 'Suara kurang jelas sehingga tidak dapat ditranskripsi. Rekam ulang di tempat yang lebih tenang atau ketik pesan.';
+
     public function __construct(
         private readonly ?string $url,
         private readonly ?string $apiKey,
@@ -67,7 +70,8 @@ class HttpSpeechToText implements SpeechToTextService
             throw new SpeechToTextException(match (true) {
                 in_array($response->status(), [401, 403, 404], true) => 'Layanan transkripsi suara belum dikonfigurasi dengan benar. Silakan ketik pesan.',
                 $response->status() === 413 => 'Pesan suara terlalu besar untuk ditranskripsi. Kirim pesan yang lebih pendek atau ketik pesan.',
-                $response->status() === 429 => 'Layanan transkripsi suara sedang sibuk. Coba lagi sebentar lagi atau ketik pesan.',
+                // 429: tidak diulang otomatis (hemat kuota penyedia).
+                $response->status() === 429 => 'Sedang ramai, coba lagi sekitar 1 menit atau ketik pesan.',
                 default => 'Pesan suara tidak dapat ditranskripsi. Silakan ketik pesan.',
             });
         }
@@ -75,7 +79,7 @@ class HttpSpeechToText implements SpeechToTextService
         $text = $response->json('text');
 
         if (! is_string($text) || trim($text) === '') {
-            throw new SpeechToTextException('Pesan suara tidak dapat ditranskripsi. Silakan ketik pesan.');
+            throw new SpeechToTextException(self::TIDAK_JELAS);
         }
 
         return trim($text);

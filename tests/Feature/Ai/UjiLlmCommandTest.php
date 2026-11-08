@@ -3,10 +3,12 @@
 namespace Tests\Feature\Ai;
 
 use App\Services\Ai\Llm\LlmClient;
+use App\Services\Ai\Llm\LlmResponse;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
+use Tests\Fakes\FakeVisionLlmClient;
 use Tests\TestCase;
 
 /** php artisan sigap:llm-uji: hanya balasan atau galat ramah; tidak pernah kunci/URL/body mentah. */
@@ -165,6 +167,56 @@ class UjiLlmCommandTest extends TestCase
         $this->assertSame(1, $code);
         $this->assertStringContainsString('Format gambar tidak didukung', $output);
         Http::assertNothingSent();
+    }
+
+    public function test_vision_dengan_klien_palsu_memakai_praproses_yang_sama_dengan_bot(): void
+    {
+        $fake = (new FakeVisionLlmClient)->pushVision(LlmResponse::text('NOTA TOKO FIKTIF Beras 10 kg'));
+        $this->app->instance(LlmClient::class, $fake);
+        Http::fake();
+        config(['ai.input.photo_max_side_px' => 320]);
+        $g = imagecreatetruecolor(640, 480);
+        ob_start();
+        imagejpeg($g, null, 90);
+        $jpeg = (string) ob_get_clean();
+
+        [$code, $output] = $this->jalankan(['--vision' => $this->berkas($jpeg)]);
+
+        $this->assertSame(0, $code, $output);
+        $this->assertStringContainsString('Model vision: vision-palsu', $output);
+        $this->assertStringContainsString('JPEG 320x240 q82', $output);
+        $this->assertStringContainsString('Hasil baca: NOTA TOKO FIKTIF Beras 10 kg', $output);
+        $this->assertStringNotContainsString('/9j/', $output, 'Base64 tidak dicetak.');
+        $this->assertTrue($fake->visionCalls[0]['options']['tanpa_ulang']);
+        $this->assertSame('image/jpeg', $fake->visionCalls[0]['images'][0]['media_type']);
+        Http::assertNothingSent();
+    }
+
+    public function test_vision_model_404_dilaporkan_tidak_tersedia_tanpa_isi_galat(): void
+    {
+        config(['ai.openai_compat.vision_model' => 'qwen/qwen3.8-27b']);
+        $this->app->forgetInstance(LlmClient::class);
+        Http::fake(['llm.test/*' => Http::response(['error' => ['message' => 'rahasia: model does not exist', 'code' => 'model_not_found']], 404)]);
+
+        [$code, $output] = $this->jalankan(['--vision' => $this->berkas(base64_decode(self::PNG))]);
+
+        $this->assertSame(1, $code);
+        $this->assertStringContainsString('Membaca foto sedang tidak tersedia', $output);
+        $this->assertStringContainsString('llm:vision_tidak_tersedia http=404', $output);
+        $this->assertAman($output);
+        Http::assertSentCount(1);
+    }
+
+    public function test_vision_menolak_jpeg_bertopeng_tanpa_mengirim(): void
+    {
+        $fake = new FakeVisionLlmClient;
+        $this->app->instance(LlmClient::class, $fake);
+
+        [$code, $output] = $this->jalankan(['--vision' => $this->berkas("\xFF\xD8\xFF\xE0<?php echo 1; ?>")]);
+
+        $this->assertSame(1, $code);
+        $this->assertStringContainsString('Ditolak: Foto rusak', $output);
+        $this->assertSame([], $fake->visionCalls);
     }
 
     public function test_stt_groq_mencetak_transkrip(): void

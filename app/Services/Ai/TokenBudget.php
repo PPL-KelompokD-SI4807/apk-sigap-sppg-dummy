@@ -18,8 +18,17 @@ use Illuminate\Support\Facades\Cache;
  */
 class TokenBudget
 {
-    /** Estimasi kasar biaya token satu gambar untuk model vision. */
-    public const IMAGE_TOKENS = 1500;
+    /**
+     * Estimasi bawaan biaya token satu gambar untuk model vision (qwen/qwen3.8-27b di Groq ~2048 token/gambar,
+     * dibulatkan dengan margin). Nilai aktif dari config ai.token_budget.image_tokens (AI_IMAGE_TOKENS).
+     */
+    public const IMAGE_TOKENS = 2100;
+
+    /** Biaya token satu gambar (config/env; minimal 1). */
+    public static function imageTokens(): int
+    {
+        return max(1, (int) config('ai.token_budget.image_tokens', self::IMAGE_TOKENS));
+    }
 
     public static function estimate(mixed ...$parts): int
     {
@@ -50,7 +59,7 @@ class TokenBudget
             return $m;
         }, $messages);
 
-        return self::estimate($system, $plain, $schemas) + $images * self::IMAGE_TOKENS;
+        return self::estimate($system, $plain, $schemas) + $images * self::imageTokens();
     }
 
     /** @throws LlmException */

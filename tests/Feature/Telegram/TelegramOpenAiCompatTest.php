@@ -3,6 +3,7 @@
 namespace Tests\Feature\Telegram;
 
 use App\Services\Ai\Llm\LlmClient;
+use App\Services\Telegram\AiChatHandler;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\Master\MasterApiTestCase;
@@ -71,6 +72,7 @@ class TelegramOpenAiCompatTest extends MasterApiTestCase
             && $r->isMultipart());
         Http::assertSent(fn (Request $r) => str_contains($r->url(), 'llm.test')
             && str_contains((string) $r->data()['messages'][1]['content'], 'log produksi selesai 240 porsi'));
-        $this->assertSame('Baik.', $this->messagesTo((int) $this->kepalaA->telegram_id)->sole()['text']);
+        // Suara pertama pengguna: pemberitahuan privasi pihak ketiga ditempel SEKALI di awal balasan yang sama.
+        $this->assertSame(AiChatHandler::PESAN_PRIVASI."\n\nBaik.", $this->messagesTo((int) $this->kepalaA->telegram_id)->sole()['text']);
     }
 }

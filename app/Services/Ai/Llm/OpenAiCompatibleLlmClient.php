@@ -35,6 +35,7 @@ use Throwable;
  *   nama tool yang dikirim, JSON pointer properti skema; tanpa error.message mentah dan failed_generation).
  * - Retry maks 1 untuk koneksi/429/5xx; Retry-After dihormati hanya bila <= retry_after_max_seconds dan
  *   masih dalam anggaran waktu per pesan (opsi `deadline` dari AiAgentService, default time_budget_seconds).
+ *   Opsi `tanpa_ulang` = true (selalu pada readImages; pada chat() untuk pesan foto) mematikan retry sama sekali.
  * - Hanya parameter umum yang dikirim (model, messages, max_tokens, tools); tanpa parameter khusus vendor.
  */
 class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
@@ -150,7 +151,9 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
         }
 
         $allowed = (array) config('ai.input.photo_mimes', ['image/jpeg', 'image/png', 'image/webp']);
-        // Satu gambar per pesan (AiChatHandler hanya mengirim satu); membatasi biaya token gambar.
+        // Satu gambar per pesan (AiChatHandler hanya mengirim satu); membatasi biaya token gambar (~2100/gambar).
+        // Batas penyedia "maks 3 gambar per permintaan" dan batas base64 BELUM TERVERIFIKASI untuk model Preview;
+        // dengan satu gambar kita tetap di bawah batas mana pun yang terdokumentasi.
         $images = array_slice(array_values($images), 0, 1);
         $parts = [['type' => 'text', 'text' => 'Baca gambar terlampir sesuai instruksi sistem.']];
 
@@ -182,7 +185,8 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
             'max_tokens' => max(1, (int) ($options['max_tokens'] ?? $this->visionMaxTokens)),
         ];
 
-        $response = $this->parse($this->send($body, $options), (string) $this->visionModel);
+        // Jalur gambar TIDAK pernah diulang (429/5xx/koneksi): satu gambar ~2100 token; ulang = kuota TPM habis.
+        $response = $this->parse($this->send($body, ['tanpa_ulang' => true] + $options), (string) $this->visionModel);
 
         // Model vision dipanggil tanpa tool: tool call apa pun dari model vision diabaikan.
         return new LlmResponse($response->text, [], $response->stopReason, $response->model, $response->inputTokens, $response->outputTokens);
@@ -317,7 +321,8 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
             ? (float) $options['deadline']
             : microtime(true) + $this->timeBudgetSeconds;
         $perCall = max(1, min($this->timeout, (int) ($options['timeout'] ?? $this->timeout)));
-        $attempts = 1 + max(0, min(1, $this->retries));
+        // tanpa_ulang (jalur foto): satu percobaan saja, termasuk untuk 429 dengan Retry-After pendek.
+        $attempts = ($options['tanpa_ulang'] ?? false) === true ? 1 : 1 + max(0, min(1, $this->retries));
         $url = rtrim((string) $this->baseUrl, '/').self::PATH;
 
         for ($attempt = 1; ; $attempt++) {

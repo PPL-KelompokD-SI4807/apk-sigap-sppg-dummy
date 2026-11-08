@@ -575,6 +575,57 @@ class OpenAiCompatibleLlmClientTest extends TestCase
         });
     }
 
+    public function test_vision_dan_chat_tanpa_ulang_tidak_mengulang_429_walau_retry_after_pendek(): void
+    {
+        // Urutan: 429 (vision), 429 (chat tanpa_ulang), sukses (hanya terkirim bila ada ulang yang salah).
+        Http::fakeSequence('llm.test/*')
+            ->push(['error' => ['code' => 'rate_limit_exceeded']], 429, ['Retry-After' => '1'])
+            ->push(['error' => ['code' => 'rate_limit_exceeded']], 429, ['Retry-After' => '1'])
+            ->push(self::completion(['content' => 'tidak boleh terkirim']));
+        $client = $this->client(['visionModel' => 'qwen/qwen3.8-27b', 'retries' => 1]);
+
+        try {
+            $client->readImages([['media_type' => 'image/jpeg', 'data' => 'QUFB']], 'baca', ['deadline' => microtime(true) + 25]);
+            $this->fail('Seharusnya melempar LlmException.');
+        } catch (LlmException $e) {
+            $this->assertSame(LlmException::SIBUK, $e->category);
+            $this->assertStringContainsString('Sedang ramai, coba lagi sekitar 1 menit', $e->friendlyMessage());
+        }
+
+        Http::assertSentCount(1);
+
+        try {
+            $client->chat([['role' => 'user', 'content' => 'x']], [], ['deadline' => microtime(true) + 25, 'tanpa_ulang' => true]);
+            $this->fail('Seharusnya melempar LlmException.');
+        } catch (LlmException $e) {
+            $this->assertSame(429, $e->status);
+        }
+
+        Http::assertSentCount(2);
+        Sleep::assertNeverSlept();
+    }
+
+    public function test_model_tidak_ada_dipetakan_ke_vision_tidak_tersedia(): void
+    {
+        foreach ([[404, 'model_not_found'], [400, 'model_decommissioned']] as [$status, $kode]) {
+            Http::fake(['llm.test/*' => Http::response(['error' => ['message' => 'rahasia', 'code' => $kode]], $status)]);
+
+            try {
+                $this->client(['visionModel' => 'qwen/qwen3.8-27b'])->readImages([['media_type' => 'image/jpeg', 'data' => 'QUFB']], 'baca');
+                $this->fail('Seharusnya melempar LlmException.');
+            } catch (LlmException $e) {
+                $this->assertTrue($e->modelTidakAda());
+                $vision = LlmException::untukVision($e);
+                $this->assertSame(LlmException::VISION_TIDAK_TERSEDIA, $vision->category);
+                $this->assertStringContainsString('Mini App', $vision->friendlyMessage());
+                $this->assertTanpaRahasia($vision->getMessage().$vision->friendlyMessage().$vision->logLabel());
+            }
+        }
+
+        $this->assertSame(LlmException::GAMBAR_GAGAL, LlmException::untukVision(LlmException::fromStatus(500))->category);
+        $this->assertSame(LlmException::SIBUK, LlmException::untukVision(LlmException::fromStatus(429))->category);
+    }
+
     public function test_vision_menolak_gambar_terlalu_besar_atau_mime_tidak_sah(): void
     {
         Http::fake();
