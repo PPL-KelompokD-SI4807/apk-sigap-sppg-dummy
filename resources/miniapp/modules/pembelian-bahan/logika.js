@@ -115,36 +115,5 @@ export function ringkasHargaReferensi(ref) {
   return { ada: true, teks: 'Sama dengan harga referensi', tone: 'badge-info' };
 }
 
-const bersih = (v) => String(v ?? '').replace(/[^a-z0-9_-]/gi, '');
-
-/**
- * Tujuan layar Mini App dari draf AI (GET /ai-drafts/{uuid}). Hanya path internal yang dikenal; modul tidak
- * dikenal memakai pola standar /{module}/baru atau /{module}/{id}/ubah.
- *  - Modul `keuangan` dipakai bersama pencairan dan pengeluaran: dibedakan lewat payload (sumber_dana/periode = pencairan).
- *  - Penanda sub-modul `payload._resource` (server: DraftToolResolver) memilih layar: undangan -> /pengguna/undangan,
- *    distribusi -> /jadwal/distribusi, pengemudi -> /pengemudi, standar_gizi -> /menu-gizi/standar-gizi.
- *  - Draf HAPUS tidak pernah dipetakan ke form /baru: ke detail record (tempat tombol Hapus) atau, bila tanpa target, daftar.
- *    Draf cabut undangan menuju daftar undangan.
- *  - Draf UBAH tanpa target_id valid menuju daftar (bukan form baru).
- */
-export function tujuanDraf(d) {
-  const modul = bersih(d?.module);
-  const marker = bersih(d?.payload?._resource);
-  const idMentah = d?.target_id ?? d?.payload?.id ?? null;
-  const id = idMentah != null && Number.isInteger(Number(idMentah)) && Number(idMentah) > 0 ? Number(idMentah) : null;
-  const aksi = d?.action;
-
-  let base = `/${modul}`;
-  if (modul === 'keuangan') {
-    const p = d?.payload ?? {};
-    base = ('sumber_dana' in p || 'periode' in p || 'tanggal_cair' in p) ? '/keuangan/pencairan' : '/keuangan/pengeluaran';
-  } else if (modul === 'pengguna' && marker === 'undangan') base = '/pengguna/undangan';
-  else if (modul === 'jadwal' && marker === 'distribusi') base = '/jadwal/distribusi';
-  else if (modul === 'armada' && marker === 'pengemudi') base = '/pengemudi';
-  else if (modul === 'menu-gizi' && marker === 'standar_gizi') base = '/menu-gizi/standar-gizi';
-
-  if (aksi === 'delete') return base === '/pengguna/undangan' || id == null ? base : `${base}/${id}`;
-  if (aksi === 'update') return id == null ? base : `${base}/${id}/ubah`;
-  if (aksi == null || aksi === 'create') return `${base}/baru`;
-  return base; // aksi tak dikenal: jangan pernah membuka form tambah
-}
+// Dipindah ke core/draf-tujuan.js (dipakai juga crud-module); diekspor ulang agar impor lama tetap berlaku.
+export { tujuanDraf } from '../../core/draf-tujuan.js';

@@ -2,7 +2,8 @@ import { h, clear, formatValue } from '../core/dom.js';
 import { api, submitWithQueue, request, newKey } from '../core/api.js';
 import { getUser } from '../core/auth.js';
 import { userPerms, permsDariIzin, PESAN_BUKAN_HAK } from '../core/permissions.js';
-import { perluDiperbaiki } from '../core/draf-galat.js';
+import { tujuanDraf, jalurBersih } from '../core/draf-tujuan.js';
+import { muatDraf, pemberitahuanDraf } from './draf-form.js';
 import { errorMessage, ringkasGalatAksi } from '../core/errors.js';
 import { navigate, route, resolve, alihkanKeBeranda } from '../core/router.js';
 import { toast, showConfirm, setMainButton } from '../core/ui.js';
@@ -94,29 +95,30 @@ export function defineCrudModule(def) {
   }
 
   async function loadDraft(uuid) {
-    try {
-      const d = await api.get(`/ai-drafts/${encodeURIComponent(uuid)}`, null, { silent: true });
-      const draft = unwrap(d);
-      if (draft.module && draft.module !== slug && draft.module !== permissionSlug) toast('Draf ini untuk modul lain.', 'error');
-      return draft;
-    } catch (e) {
-      toast(e.status === 404 ? 'Draf AI tidak ditemukan atau sudah kedaluwarsa.' : 'Draf AI gagal dimuat.', 'error');
-      return null;
-    }
+    const draft = await muatDraf(uuid);
+    if (draft?.module && draft.module !== slug && draft.module !== permissionSlug) toast('Draf ini untuk modul lain.', 'error');
+    return draft;
   }
 
   async function renderForm(ctx, { mode, record }) {
     const draftUuid = ctx.query.get('draft');
     const draft = draftUuid ? await loadDraft(draftUuid) : null;
     if (ctx.isStale()) return;
+    // Draf milik layar lain (mis. mutasi stok, atau lintas sumber daya): alihkan ke layar yang benar, jangan kirim
+    // ai_draft_id dari form yang salah (server menolak dengan 422 karena resource/aksi tidak cocok).
+    if (draft) {
+      const tujuan = tujuanDraf(draft);
+      if (jalurBersih(tujuan) !== jalurBersih(ctx.path)) return navigate(`${tujuan}?draft=${encodeURIComponent(draft.uuid || draftUuid)}`, { replace: true });
+    }
     // Kunci berawalan "_" pada payload draf (mis. `_resource`, `_peringatan`) adalah penanda server, bukan isian form.
     const bersih = Object.fromEntries(Object.entries(draft?.payload || {}).filter(([k]) => !k.startsWith('_')));
     const isianDraf = typeof prefillDraf === 'function' ? prefillDraf(bersih) : bersih; // prefillDraf: petakan payload draf -> nilai form
     const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}), ...isianDraf };
     clear(ctx.el);
-    if (draft) ctx.el.append(h('div', { class: 'notice' }, 'Diisi otomatis oleh Agen AI. Periksa kolom bertanda "Perlu dicek", lalu simpan.'));
+    const pd = pemberitahuanDraf(draft);
+    if (pd.info) ctx.el.append(pd.info);
     const konflik = h('div', { 'aria-live': 'assertive' });
-    const draftNotice = h('div', { class: 'alert-danger', role: 'alert', hidden: true });
+    const draftNotice = pd.alert;
     const versi = isianDraf.versi ?? record?.versi ?? null;
     // 409 versi/status: data di layar basi. Draf AI basi tidak boleh dikirim ulang, jadi arahkan ke data terbaru tanpa draf.
     function tampilkanKonflik(e) {
@@ -138,15 +140,7 @@ export function defineCrudModule(def) {
       },
     });
     // Draf "perlu diperbaiki" (salah input di bot): galat per kolom/baris + daftar untuk galat tanpa kolom. Semua lewat textContent.
-    if (draft && perluDiperbaiki(draft)) {
-      const lainnya = fv.terapkanDraf({ errors: draft.errors || {}, pilihan: draft.pilihan_referensi || [] });
-      draftNotice.replaceChildren(h('strong', {}, 'Draf dari Agen AI perlu diperbaiki'),
-        h('p', { class: 'small' }, 'Perbaiki kolom bertanda merah di bawah, lalu tekan Simpan. Tidak ada yang disimpan otomatis.'),
-        lainnya.length ? h('ul', { class: 'small' }, lainnya.map((m) => h('li', {}, m))) : null);
-      draftNotice.hidden = false;
-    } else if (draft) {
-      fv.terapkanDraf({ errors: {}, pilihan: draft.pilihan_referensi || [] });
-    }
+    pd.pasang(fv);
     ctx.el.append(konflik, draftNotice, fv.el);
     // formTop({mode, record, form, collect}) -> Node (disisipkan di atas formulir), mis. sisa kapasitas / ringkasan gizi.
     const top = formTop ? formTop({ mode, record, form: fv.el, collect: fv.collect, values }) : null;
