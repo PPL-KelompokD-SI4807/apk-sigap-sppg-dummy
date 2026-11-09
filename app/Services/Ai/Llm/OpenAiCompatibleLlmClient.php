@@ -409,6 +409,24 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
             'tipe' => self::kodeAman($error['type'] ?? null),
         ]);
 
+        // 429/413 batas laju: hanya JENIS batas (kosakata tetap) yang diambil dari pesan; pesan mentah tidak disimpan.
+        if (in_array($response->status(), [413, 429], true) && is_string($error['message'] ?? null)) {
+            $pesan = substr($error['message'], 0, 1000);
+            $batas = self::jenisBatas($pesan);
+
+            if ($batas !== null) {
+                $info['batas'] = $batas;
+            }
+
+            // "Please try again in 1h2m3.5s" / "2m3s" / "1.5s" / "500ms" (pola Groq/OpenAI): hanya angka (detik), dipakai
+            // bila header Retry-After kosong.
+            $detik = self::detikCobaLagi($pesan);
+
+            if ($detik !== null) {
+                $info['coba_lagi'] = $detik;
+            }
+        }
+
         if (($info['kode'] ?? null) !== LlmException::KODE_TOOL_GAGAL || ! is_string($error['message'] ?? null)) {
             return $info;
         }
@@ -500,6 +518,43 @@ class OpenAiCompatibleLlmClient implements LlmClient, SupportsVision
         $argumen = is_string($argumen) ? json_decode($argumen, true, 8) : $argumen;
 
         return is_array($argumen) && ($argumen === [] || ! array_is_list($argumen)) ? $argumen : null;
+    }
+
+    /**
+     * Durasi "try again in <durasi>" -> detik. Durasi = deret angka+satuan h/m/s/ms (mis. 1h2m, 2m3s, 1.5s, 500ms).
+     * Bentuk lain (tanpa satuan, satuan tak dikenal) = null (tidak dianggap andal).
+     */
+    public static function detikCobaLagi(string $pesan): ?float
+    {
+        if (preg_match('/try again in ((?:\d{1,6}(?:\.\d{1,6})?(?:ms|h|m|s))+)(?![a-z])/i', $pesan, $m) !== 1) {
+            return null;
+        }
+
+        preg_match_all('/(\d{1,6}(?:\.\d{1,6})?)(ms|h|m|s)/i', $m[1], $bagian, PREG_SET_ORDER);
+        $detik = 0.0;
+
+        foreach ($bagian as [, $angka, $satuan]) {
+            $detik += (float) $angka * match (strtolower($satuan)) {
+                'h' => 3600,
+                'm' => 60,
+                'ms' => 0.001,
+                default => 1,
+            };
+        }
+
+        return $detik;
+    }
+
+    /** Jenis batas laju dari pesan galat penyedia (pola Groq/OpenAI: "tokens per minute (TPM)", dst.). */
+    private static function jenisBatas(string $pesan): ?string
+    {
+        return match (true) {
+            preg_match('/tokens per day|\(TPD\)/i', $pesan) === 1 => LlmException::BATAS_TPD,
+            preg_match('/requests per day|\(RPD\)/i', $pesan) === 1 => LlmException::BATAS_RPD,
+            preg_match('/tokens per minute|\(TPM\)/i', $pesan) === 1 => LlmException::BATAS_TPM,
+            preg_match('/requests per minute|\(RPM\)/i', $pesan) === 1 => LlmException::BATAS_RPM,
+            default => null,
+        };
     }
 
     private static function kodeAman(mixed $nilai): ?string

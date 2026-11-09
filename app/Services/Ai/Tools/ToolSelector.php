@@ -117,6 +117,95 @@ class ToolSelector
     }
 
     /**
+     * Subset tool untuk pesan FOTO (hemat token, R-05): aktif kecuali mode = off. Hasil SELALU subset $allowed:
+     *   - tool tulis yang termasuk config ai.foto.tool_tulis (dokumen: nota/surat jalan) ATAU cocok dengan keterangan
+     *     foto (ketikan pengguna), diurutkan seperti rank();
+     *   - tool cari_* yang dirujuk deskripsi tool tulis itu atau kolom WAJIB-nya (mencari ID rujukan);
+     *   - tool baca lain hanya bila keterangan foto memintanya.
+     * Dipotong ai.foto.max_tools dan ai.foto.max_tool_tokens. Tool lain (mis. hapus_* yang diminta teks di gambar)
+     * tidak ditawarkan sehingga ditolak AiAgentService walau dipanggil model.
+     *
+     * @param  array<string, AiTool>  $allowed  hasil ToolRegistry::forUser()
+     * @param  string  $caption  keterangan foto (ketikan pengguna)
+     * @param  string  $text  keterangan + hasil baca foto
+     */
+    public function selectFoto(array $allowed, string $caption, string $text): ToolSelection
+    {
+        $full = self::schemas($allowed, false);
+        $fullTokens = TokenBudget::estimate($full);
+
+        if ((string) config('ai.tool_selection.mode', 'auto') === 'off') {
+            return new ToolSelection($allowed, $full, false, $fullTokens, $fullTokens);
+        }
+
+        $tulisFoto = array_flip(array_map('strval', (array) config('ai.foto.tool_tulis', [])));
+        $diminta = trim($caption) === '' ? [] : array_flip($this->rank($allowed, $caption));
+        $kandidat = [];
+
+        foreach ($this->rank($allowed, $text, JenisInputAi::Foto) as $name) {
+            $tool = $allowed[$name];
+
+            if (! $tool->isWrite()) {
+                if (isset($diminta[$name])) {
+                    $kandidat[] = $name;
+                }
+
+                continue;
+            }
+
+            if (isset($tulisFoto[$name]) || isset($diminta[$name])) {
+                $kandidat[] = $name;
+                array_push($kandidat, ...self::rujukanWajib($tool, $allowed));
+            }
+        }
+
+        $maxTools = max(1, (int) config('ai.foto.max_tools', 5));
+        $maxTokens = max(1, (int) config('ai.foto.max_tool_tokens', 1500));
+        $selected = [];
+        $schemas = [];
+        $tokens = 0;
+
+        foreach (array_unique($kandidat) as $name) {
+            if (count($selected) >= $maxTools) {
+                break;
+            }
+
+            $schema = self::schema($allowed[$name], true);
+            $cost = TokenBudget::estimate($schema);
+
+            if ($tokens + $cost > $maxTokens) {
+                continue;
+            }
+
+            $selected[$name] = $allowed[$name];
+            $schemas[] = $schema;
+            $tokens += $cost;
+        }
+
+        return new ToolSelection($selected, $schemas, true, $fullTokens, $tokens);
+    }
+
+    /**
+     * Tool cari_* (milik peran) yang dirujuk deskripsi tool atau deskripsi kolom WAJIB-nya; kolom opsional diabaikan.
+     *
+     * @param  array<string, AiTool>  $allowed
+     * @return list<string>
+     */
+    private static function rujukanWajib(AiTool $tool, array $allowed): array
+    {
+        $params = $tool->parameters();
+        $teks = $tool->description();
+
+        foreach ((array) ($params['required'] ?? []) as $kolom) {
+            $teks .= ' '.(string) ($params['properties'][$kolom]['description'] ?? '');
+        }
+
+        preg_match_all('/\bcari_[a-z][a-z0-9_]*/', $teks, $m);
+
+        return array_values(array_filter(array_unique($m[0]), fn (string $n) => isset($allowed[$n])));
+    }
+
+    /**
      * Nama tool terurut prioritas (hanya dari $allowed).
      *
      * @param  array<string, AiTool>  $allowed
