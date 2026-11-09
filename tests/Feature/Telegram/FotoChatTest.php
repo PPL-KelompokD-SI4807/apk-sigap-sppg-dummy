@@ -309,10 +309,12 @@ class FotoChatTest extends MasterApiTestCase
         // Tidak ada aksi tulis langsung: kedua bahan tetap ada.
         $this->assertNotNull(BahanBaku::query()->withoutGlobalScopes()->find($milikA->id));
         $this->assertNotNull(BahanBaku::query()->withoutGlobalScopes()->find($milikB->id));
-        // Hanya draf (pending) untuk data SPPG sendiri; target SPPG lain ditolak tanpa draf.
-        $draf = AiDraft::query()->withoutGlobalScopes()->get();
-        $this->assertSame([$milikA->id], $draf->pluck('target_id')->map(fn ($v) => (int) $v)->all());
-        $this->assertSame(StatusAiDraft::Pending, $draf->sole()->status);
+        // R-05 hemat token: pesan foto hanya menawarkan tool dokumen (+ cari_* rujukannya); hapus_* yang diminta teks di
+        // gambar tidak ditawarkan sehingga ditolak walau dipanggil model -> tidak ada draf sama sekali.
+        $this->assertNotContains('hapus_bahan_baku', $this->llm->offeredTools(0));
+        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
+        $statusTool = array_column(AiInteraction::query()->withoutGlobalScopes()->sole()->argumen['tools'], 'status', 'nama');
+        $this->assertSame('invalid', $statusTool['hapus_bahan_baku']);
         // Hasil tool baca yang dikembalikan ke model tidak memuat data SPPG lain (sppg_id dibuang, scope SPPG).
         $hasilTool = collect($this->llm->calls[1]['messages'])->where('role', 'tool')->pluck('content')->implode("\n");
         $this->assertStringNotContainsString('Gula Rahasia SPPG B', $hasilTool);
