@@ -13,12 +13,16 @@ use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Foto\FotoChatDitolak;
 use App\Services\Ai\Foto\PraprosesFotoChat;
 use App\Services\Ai\Llm\LlmException;
+use App\Services\Ai\PercobaanAi;
 use App\Services\Ai\Speech\SpeechToTextException;
 use App\Services\Ai\Speech\SpeechToTextService;
+use App\Services\Ai\TundaAi;
 use App\Services\Telegram\Bot\BotAksiAiService;
 use App\Services\Telegram\Bot\BotGalat;
 use App\Services\Telegram\Bot\BotLayar;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
@@ -69,39 +73,63 @@ class AiChatHandler
         private readonly PraprosesFotoChat $foto,
     ) {}
 
-    public function handle(TelegramUpdate $update, User $user): void
+    /**
+     * @param  int  $percobaan  percobaan ke-n job ProcessAiMessage (> 1 = proses ulang setelah 429 token per menit)
+     * @param  bool  $bolehTunda  429 token per menit boleh ditunda (job di-release) alih-alih dibalas "sedang ramai"
+     * @return int|null jeda (detik) bila pesan DITUNDA: job harus di-release; update belum diringkas (payload utuh)
+     */
+    public function handle(TelegramUpdate $update, User $user, int $percobaan = 1, bool $bolehTunda = false): ?int
     {
         $message = (array) ($update->payload['message'] ?? []);
         $chatId = $message['chat']['id'] ?? null;
         $jenis = 'ai';
+        $tunda = null;
+        $kunciFoto = null;
         $this->awalan = [];
         $this->fotoSiapDikirim = false;
 
         try {
             if (! is_int($chatId) || ! $user->canAuthenticate()) {
-                return;
+                return null;
             }
 
             $foto = isset($message['photo']) && is_array($message['photo']);
             $suara = isset($message['voice']) && is_array($message['voice']);
+            // Proses ulang: keadaan percobaan sebelumnya (interaksi + hasil baca foto), sekali pakai (dihapus saat dibaca).
+            $keadaan = $percobaan > 1 ? $this->ambilKeadaan((int) $update->id) : null;
+            $teksVision = $foto ? ($keadaan['teks_vision'] ?? null) : null;
 
             // Album: foto kedua dst. dalam media group yang sama tidak diunduh, tidak dikirim ke LLM, tidak dibalas.
-            $album = $foto ? $this->kunciAlbum($message, $user) : null;
+            // Proses ulang foto pertama album tidak dicek lagi (penanda grup sudah dipasang percobaan pertama).
+            $album = $foto && $percobaan === 1 ? $this->kunciAlbum($message, $user) : null;
 
             if ($album === false) {
                 $jenis = 'album_dilewati';
                 Log::info('ai.foto_album_dilewati', ['user_id' => $user->getKey()]);
 
-                return;
+                return null;
+            }
+
+            // Foto yang SAMA (file_unique_id) dikirim ulang saat foto itu masih diproses/menunggu proses ulang: diabaikan
+            // tanpa unduh/LLM/balasan (hasil dikirim oleh pemrosesan pertama).
+            $kunciFoto = $foto ? self::kunciFotoSama($message, $user) : null;
+
+            if ($kunciFoto !== null && ! $this->pegangFoto($kunciFoto, (int) $update->id, 300)) {
+                $kunciFoto = null;
+                $jenis = 'foto_duplikat';
+                Log::info('ai.foto_duplikat_dilewati', ['user_id' => $user->getKey()]);
+
+                return null;
             }
 
             $this->typing($chatId);
 
             // Batas laju AI berlaku juga untuk biaya unduh foto/STT: dicek sebelum memproses media (tanpa menghitung).
+            // Berlaku juga untuk proses ulang (retry tidak menembus batas laju).
             if (($suara || $foto) && $this->agent->batasLajuTercapai($user)) {
                 $this->deliver($chatId, new AiReply('Batas penggunaan Agen AI tercapai. Coba lagi nanti atau isi formulir di Mini App.', fallback: true));
 
-                return;
+                return null;
             }
 
             if ($album === true) {
@@ -109,32 +137,46 @@ class AiChatHandler
             }
 
             // Pelindung token global: foto ~AI_IMAGE_TOKENS; sisa kuota menit/hari tidak cukup -> balas SEBELUM unduh.
-            if ($foto && $this->agent->acceptsImages()) {
+            // Hasil baca foto dipakai ulang -> tidak ada unduhan maupun panggilan vision lagi.
+            if ($foto && $teksVision === null && $this->agent->acceptsImages()) {
                 try {
                     $this->agent->cekAnggaranGambar();
                 } catch (LlmException $e) {
                     Log::info('ai.foto_ditolak', ['user_id' => $user->getKey(), 'alasan' => $e->category, 'detail' => $e->detail]);
                     $this->deliver($chatId, new AiReply($e->friendlyMessage(), fallback: true));
 
-                    return;
+                    return null;
                 }
             }
 
-            $input = $this->buildInput($message, (int) $user->getKey());
+            if ($teksVision !== null) {
+                $input = AiInput::photo([], is_string($message['caption'] ?? null) ? $message['caption'] : '');
+                $this->fotoSiapDikirim = true;
+            } else {
+                $input = $this->buildInput($message, (int) $user->getKey());
+            }
 
             if (is_string($input)) {
                 $this->send($chatId, $input);
 
-                return;
+                return null;
             }
 
             if ($input instanceof AiReply) {
                 $this->deliver($chatId, $input);
 
-                return;
+                return null;
             }
 
-            $reply = $this->agent->handle($user, $input);
+            // Hanya FOTO yang ditunda (jalur teks/suara tidak berubah: teks memakai retry klien yang sudah ada, suara akan
+            // mentranskripsi ulang). Foto memakai opsi tanpa_ulang di klien, jadi retry job tidak bertumpuk dengan retry
+            // klien. Foto hanya ditunda bila hasil baca dapat disimpan tanpa menulis berkas (store bukan driver 'file').
+            $reply = $this->agent->handle($user, $input, new PercobaanAi(
+                ke: max(1, $percobaan),
+                bolehTunda: $bolehTunda && $input->type === JenisInputAi::Foto && self::simpananAman(),
+                interaksiId: isset($keadaan['interaksi_id']) ? (int) $keadaan['interaksi_id'] : null,
+                teksVision: $teksVision,
+            ));
 
             // Privasi foto: penanda dipasang HANYA bila gambar benar-benar dikirim ke penyedia (bukan ditolak batas
             // laju / pelindung token / galat sebelum panggilan penyedia).
@@ -142,12 +184,159 @@ class AiChatHandler
                 $this->beriTahuPrivasi((int) $user->getKey());
             }
 
+            if ($reply->tunda !== null) {
+                $tunda = $this->tunda($update, $chatId, $reply->tunda);
+
+                if ($kunciFoto !== null) {
+                    $this->pegangFoto($kunciFoto, (int) $update->id, $tunda + 600);
+                }
+
+                return $tunda;
+            }
+
             $this->deliver($chatId, $reply, $user, $input->type === JenisInputAi::Suara ? $input->text : null);
+
+            return null;
         } finally {
             $this->awalan = [];
             $this->fotoSiapDikirim = false;
-            TelegramUpdateHandler::finish($update, $jenis);
+
+            // Ditunda: update TIDAK diringkas (payload dibutuhkan proses ulang); diringkas pada percobaan terakhir.
+            // Selesai (sukses maupun gagal akhir): keadaan proses ulang & penanda foto dihapus.
+            if ($tunda === null) {
+                TelegramUpdateHandler::finish($update, $jenis);
+                self::bersihkan((int) $update->id);
+            }
         }
+    }
+
+    /**
+     * Penanda foto sedang diproses per pengguna + file_unique_id (di-hash; tanpa isi). Null = tanpa file_unique_id.
+     *
+     * @param  array<string, mixed>  $message
+     */
+    private static function kunciFotoSama(array $message, User $user): ?string
+    {
+        $ukuran = array_values(array_filter((array) $message['photo'], 'is_array'));
+        $unik = $ukuran === [] ? null : (end($ukuran)['file_unique_id'] ?? null);
+
+        return is_string($unik) && $unik !== '' ? 'ai:foto:proses:'.$user->getKey().':'.hash('sha256', $unik) : null;
+    }
+
+    /**
+     * True bila penanda foto dipegang update ini (baru dipasang, atau sudah milik update ini); TTL diperbarui. Kunci
+     * penanda dicatat per update (ai:foto:kunci:{id}) agar bersihkan() dapat melepasnya dari jalur mana pun (job).
+     */
+    private function pegangFoto(string $kunci, int $updateId, int $ttl): bool
+    {
+        if (! Cache::add($kunci, $updateId, $ttl)) {
+            if ((int) Cache::get($kunci) !== $updateId) {
+                return false;
+            }
+
+            Cache::put($kunci, $updateId, $ttl);
+        }
+
+        Cache::put(self::kunciPenandaFoto($updateId), $kunci, $ttl);
+
+        return true;
+    }
+
+    private static function kunciPenandaFoto(int $updateId): string
+    {
+        return 'ai:foto:kunci:'.$updateId;
+    }
+
+    /** True bila ada keadaan tunda (release 429) untuk update ini; dipakai job sebelum memproses percobaan ke-2 dst. */
+    public static function adaKeadaan(int $updateId): bool
+    {
+        return self::simpanan()->has(self::kunciKeadaan($updateId));
+    }
+
+    /**
+     * Hapus keadaan proses ulang (hasil baca foto terenkripsi), penanda pemberitahuan, dan penanda foto yang dipegang
+     * update ini. Dipanggil di SEMUA jalur keluar (handler selesai, job ditolak/tanpa sesi/dilewati, failed()).
+     */
+    public static function bersihkan(int $updateId): void
+    {
+        self::simpanan()->forget(self::kunciKeadaan($updateId));
+        Cache::forget('ai:tunda:info:'.$updateId);
+        $kunci = Cache::pull(self::kunciPenandaFoto($updateId));
+
+        if (is_string($kunci) && (int) Cache::get($kunci) === $updateId) {
+            Cache::forget($kunci);
+        }
+    }
+
+    /** Store cache untuk keadaan proses ulang (config ai.retry_429.cache_store; null = store bawaan). */
+    private static function simpanan(): Repository
+    {
+        $store = config('ai.retry_429.cache_store');
+
+        return Cache::store(is_string($store) && $store !== '' ? $store : null);
+    }
+
+    /** Hasil baca foto hanya boleh disimpan di store yang TIDAK menulis berkas (driver 'file' ditolak). */
+    private static function simpananAman(): bool
+    {
+        $store = config('ai.retry_429.cache_store');
+        $nama = is_string($store) && $store !== '' ? $store : (string) config('cache.default');
+
+        return (string) config("cache.stores.{$nama}.driver") !== 'file';
+    }
+
+    /** Pemberitahuan sekali saat pesan ditunda (429 token per menit) agar pengguna tidak mengirim ulang. */
+    public const PESAN_TUNDA_FOTO = 'Foto diterima, sedang diproses. Layanan AI sedang penuh; hasilnya dikirim otomatis sekitar 1 menit lagi. Tidak perlu mengirim ulang.';
+
+    /**
+     * Simpan keadaan untuk proses ulang (terenkripsi, TTL = jeda + 10 menit; hasil baca foto = DATA pengguna, tidak
+     * pernah di-log) lalu kirim TEPAT SATU pemberitahuan per update (penanda Cache::add). Mengembalikan jeda release.
+     */
+    private function tunda(TelegramUpdate $update, int $chatId, TundaAi $tunda): int
+    {
+        $ttl = $tunda->detik + 600;
+        self::simpanan()->put(self::kunciKeadaan((int) $update->id), Crypt::encryptString((string) json_encode([
+            'interaksi_id' => $tunda->interaksiId,
+            'teks_vision' => $tunda->teksVision,
+        ], JSON_UNESCAPED_UNICODE)), $ttl);
+
+        Log::info('ai.pesan_ditunda', ['interaksi_id' => $tunda->interaksiId, 'jeda' => $tunda->detik, 'vision_disimpan' => $tunda->teksVision !== null]);
+
+        if (Cache::add('ai:tunda:info:'.$update->id, 1, $ttl)) {
+            $this->send($chatId, self::PESAN_TUNDA_FOTO);
+        }
+
+        return $tunda->detik;
+    }
+
+    /** @return array{interaksi_id?: int|null, teks_vision?: string|null}|null */
+    private function ambilKeadaan(int $updateId): ?array
+    {
+        $isi = self::simpanan()->pull(self::kunciKeadaan($updateId));
+
+        if (! is_string($isi)) {
+            return null;
+        }
+
+        try {
+            $data = json_decode(Crypt::decryptString($isi), true);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! is_array($data)) {
+            return null;
+        }
+
+        return [
+            'interaksi_id' => is_int($data['interaksi_id'] ?? null) ? $data['interaksi_id'] : null,
+            'teks_vision' => is_string($data['teks_vision'] ?? null) && $data['teks_vision'] !== '' ? $data['teks_vision'] : null,
+        ];
+    }
+
+    private static function kunciKeadaan(int $updateId): string
+    {
+        return 'ai:tunda:'.$updateId;
     }
 
     /**

@@ -72,28 +72,68 @@ class LlmException extends RuntimeException
         public readonly array $masalah = [],
         public readonly array $jalur = [],
         public readonly ?array $argumenGagal = null,
+        public readonly ?string $batas = null,
+        public readonly ?float $retryAfter = null,
     ) {
         parent::__construct($message);
     }
+
+    /** Jenis batas laju penyedia dari pesan galat 429/413 (kosakata tetap; pesan mentah tidak disimpan). */
+    public const BATAS_TPM = 'tpm';
+
+    public const BATAS_TPD = 'tpd';
+
+    public const BATAS_RPM = 'rpm';
+
+    public const BATAS_RPD = 'rpd';
+
+    /** error.code penyedia untuk konteks/permintaan yang melebihi batas model. */
+    public const KODE_TERLALU_BESAR = ['context_length_exceeded', 'request_too_large'];
+
+    /**
+     * 429 penyedia yang JELAS karena token per menit (pesan "tokens per minute"/"(TPM)" -> batas tpm): aman diulang
+     * dengan jeda (release job). error.type "tokens" saja TIDAK cukup (Groq memakainya juga untuk TPD). 429 requests
+     * (RPM) / harian (TPD/RPD) / tanpa keterangan jenis = bukan (langsung pesan ramah).
+     */
+    public function tokenPerMenit(): bool
+    {
+        return $this->status === 429 && $this->category === self::SIBUK && $this->batas === self::BATAS_TPM;
+    }
+
+    /** Pesan "sedang ramai" setelah percobaan ulang otomatis habis. */
+    public const PESAN_RAMAI_SETELAH_ULANG = 'Sedang ramai: pesan Anda sudah dicoba diproses ulang otomatis, tetapi layanan AI masih penuh. Coba lagi beberapa menit lagi, atau isi lewat formulir di Mini App.';
 
     /**
      * Dari status HTTP + ringkasan galat penyedia yang SUDAH disaring (lihat OpenAiCompatibleLlmClient::infoGalat):
      * hanya kode/tipe/nama tool/path, tanpa pesan mentah, failed_generation, atau isi percakapan.
      *
-     * @param  array{kode?: string|null, tipe?: string|null, tool?: string|null, masalah?: list<string>, jalur?: list<string>, argumen?: array<string, mixed>}  $info
+     * @param  array{kode?: string|null, tipe?: string|null, tool?: string|null, masalah?: list<string>, jalur?: list<string>, argumen?: array<string, mixed>, batas?: string, coba_lagi?: float}  $info
      */
     public static function fromProvider(int $status, ?float $retryAfterSeconds, array $info): self
     {
-        $dasar = self::fromStatus($status, $retryAfterSeconds);
         $kode = $info['kode'] ?? null;
+        $batas = $info['batas'] ?? null;
+        // Header Retry-After diutamakan; bila tidak ada, "try again in Xs" dari pesan penyedia (angka saja).
+        $retryAfterSeconds ??= isset($info['coba_lagi']) ? (float) $info['coba_lagi'] : null;
+        // 429 yang jelas per MENIT tetap "sibuk" walau Retry-After > 60 (batas panjang ditangani retry_after_maks).
+        $dasar = self::fromStatus($status, $status === 429 && $batas === self::BATAS_TPM ? null : $retryAfterSeconds);
 
         if ($status === 400 && $kode === self::KODE_TOOL_GAGAL) {
             return new self('Penyedia LLM menolak tool call model (HTTP 400).', self::TOOL_GAGAL, $status, self::KODE_TOOL_GAGAL,
                 $kode, $info['tipe'] ?? null, $info['tool'] ?? null, $info['masalah'] ?? [], $info['jalur'] ?? [], $info['argumen'] ?? null);
         }
 
-        return new self($dasar->getMessage(), $dasar->category, $status, $dasar->detail,
-            $kode, $info['tipe'] ?? null, $info['tool'] ?? null, $info['masalah'] ?? [], $info['jalur'] ?? []);
+        $kategori = match (true) {
+            // Konteks/permintaan melebihi batas model = terlalu besar (bukan "tidak tersedia").
+            $status === 400 && in_array($kode, self::KODE_TERLALU_BESAR, true) => self::TERLALU_BESAR,
+            // 429 batas HARIAN (token/permintaan per hari) = kuota habis, bukan lonjakan sesaat.
+            $status === 429 && in_array($batas, [self::BATAS_TPD, self::BATAS_RPD], true) => self::KUOTA,
+            default => $dasar->category,
+        };
+
+        return new self($dasar->getMessage(), $kategori, $status, $dasar->detail,
+            $kode, $info['tipe'] ?? null, $info['tool'] ?? null, $info['masalah'] ?? [], $info['jalur'] ?? [],
+            batas: $batas, retryAfter: $retryAfterSeconds);
     }
 
     public function toolGagal(): bool
@@ -154,6 +194,8 @@ class LlmException extends RuntimeException
             'tool' => $this->tool,
             'masalah' => $this->masalah,
             'jalur' => $this->jalur,
+            'batas' => $this->batas,
+            'retry_after' => $this->retryAfter,
             'kelas' => class_basename($this),
         ], fn ($v) => $v !== null && $v !== []);
     }
@@ -223,7 +265,7 @@ class LlmException extends RuntimeException
         return match ($this->category) {
             self::KONFIGURASI => 'Agen AI belum siap digunakan (konfigurasi). Hubungi Admin SPPG; sementara itu silakan isi lewat formulir di Mini App.',
             self::KUOTA => 'Kuota Agen AI sedang habis. Silakan isi lewat formulir di Mini App atau coba lagi nanti.',
-            self::TERLALU_BESAR => 'Pesan atau gambar terlalu besar untuk Agen AI. Persingkat pesan atau isi lewat formulir di Mini App.',
+            self::TERLALU_BESAR => 'Permintaan terlalu besar untuk diproses Agen AI sekaligus. Kirim satu nota/data per pesan atau persingkat pesan, atau isi lewat formulir di Mini App.',
             // 429 penyedia / pelindung token per menit: tidak diulang otomatis (hemat kuota TPM).
             self::SIBUK => 'Sedang ramai, coba lagi sekitar 1 menit. Bila mendesak, isi lewat formulir di Mini App.',
             self::GAMBAR_TIDAK_DIDUKUNG => 'Membaca foto belum didukung. Silakan ketik isinya atau isi lewat formulir di Mini App.',
