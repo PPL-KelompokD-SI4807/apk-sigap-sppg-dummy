@@ -2,7 +2,8 @@ import { h } from '../core/dom.js';
 import { fetchList } from '../core/api.js';
 import { createPhotoUpload } from './photo-upload.js';
 import { petakanGalatDraf, pilihanPerBaris, ringkasGalatBaris } from '../core/draf-galat.js';
-import { setMainButton, setMainButtonLoading, hideMainButton } from '../core/ui.js';
+import { setMainButton, setMainButtonLoading, setMainButtonDisabled, hideMainButton } from '../core/ui.js';
+import { buatPenjagaSubmit } from '../core/submit-guard.js';
 
 export const LOW_CONFIDENCE = 0.7;
 
@@ -17,7 +18,6 @@ export const LOW_CONFIDENCE = 0.7;
 export function createFormView({ fields, values = {}, confidence = {}, submitText = 'Simpan', onSubmit }) {
   const controls = {}; // name -> {field, wrap, errEl, get(), set(v), hasValue()}
   const form = h('form', { class: 'form', novalidate: true });
-  let submitting = false;
 
   for (const f of fields) {
     const type = f.type === 'relation' ? 'relasi' : f.type || 'text';
@@ -168,22 +168,7 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     return out;
   }
 
-  async function submit() {
-    if (submitting || !validate()) return;
-    submitting = true;
-    setMainButtonLoading(true);
-    try {
-      await onSubmit(collect());
-    } catch (e) {
-      if (e?.status === 422 && e.errors) {
-        const rest = setErrors(e.errors);
-        if (rest.length) formErr.textContent = rest.join(' ');
-      }
-    } finally {
-      submitting = false;
-      setMainButtonLoading(false, submitText);
-    }
-  }
+  const submit = () => penjaga.jalankan();
 
   // showIf(nilaiSekarang) -> boolean: tampilkan/sembunyikan kolom sesuai isian lain (mis. unit hanya untuk relawan).
   function applyVisibility() {
@@ -202,7 +187,27 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
   applyVisibility();
 
   const formErr = h('p', { class: 'field-error', role: 'alert' });
+  // 422 pada ai_draft_id: alert terlihat di atas formulir (di luar layar bawah/MainButton), tombol simpan dikunci.
+  const draftAlert = h('div', { class: 'alert-danger', role: 'alert', hidden: true });
+  form.prepend(draftAlert);
   form.append(formErr);
+  const penjaga = buatPenjagaSubmit({
+    validate,
+    kirim: async () => { formErr.textContent = ''; await onSubmit(collect()); },
+    setLoading: (on) => setMainButtonLoading(on, submitText),
+    setDisabled: setMainButtonDisabled,
+    onGalatDraf: (pesan) => {
+      draftAlert.textContent = pesan;
+      draftAlert.hidden = false;
+      draftAlert.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    },
+    onGalat: (e) => {
+      if (e?.status === 422 && e.errors) {
+        const rest = setErrors(e.errors);
+        if (rest.length) { formErr.textContent = rest.join(' '); formErr.scrollIntoView?.({ block: 'center', behavior: 'smooth' }); }
+      }
+    },
+  });
   form.addEventListener('submit', (ev) => { ev.preventDefault(); submit(); });
   setMainButton({ text: submitText, onClick: submit });
 

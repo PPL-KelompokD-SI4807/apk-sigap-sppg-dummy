@@ -3,6 +3,9 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { createListView } from '../../components/list-view.js';
 import { createFormView } from '../../components/form-view.js';
 import { navTabs } from '../../components/nav-tabs.js';
+import { muatDraf, pemberitahuanDraf } from '../../components/draf-form.js';
+import { draftCocok } from '../../core/draf-tujuan.js';
+import { PESAN_DRAF_TIDAK_COCOK } from '../../core/errors.js';
 import { rowCard } from '../../components/row-card.js';
 import { h, clear, formatValue } from '../../core/dom.js';
 import { api, submitWithQueue } from '../../core/api.js';
@@ -10,7 +13,7 @@ import { getUser } from '../../core/auth.js';
 import { userPerms, bolehAksi, aksiOpsional } from '../../core/permissions.js';
 import { route, navigate } from '../../core/router.js';
 import { toast } from '../../core/ui.js';
-import { bahanFields, mapPayload, kategoriLabel, penandaBahan, fmtQty, sisaHariText, sisaHariCls, jenisMutasiLabel, mutasiFields, cekMutasi, mutasiPayload, bolehRiwayatMutasi, batchDariText } from './schema.js';
+import { bahanFields, mapPayload, kategoriLabel, penandaBahan, fmtQty, sisaHariText, sisaHariCls, jenisMutasiLabel, mutasiFields, cekMutasi, mutasiPayload, bolehRiwayatMutasi, batchDariText, isianMutasiDariDraf } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const SLUG = 'bahan-baku';
@@ -111,25 +114,44 @@ function listScreen(endpoint, tab, emptyText) {
   };
 }
 
+/**
+ * Catat mutasi stok. Dapat diisi dari draf Agen AI `catat_mutasi_stok` (?draft=<uuid>; payload._resource='mutasi_stok',
+ * aksi update, target = bahan baku ini). Konfirmasi draf HANYA lewat POST /bahan-baku/{id}/mutasi + ai_draft_id.
+ * Draf yang tidak cocok dengan layar ini diabaikan (tanpa prefill, tanpa ai_draft_id) dan pengguna diberi tahu.
+ */
 async function mutasiScreen(ctx) {
   const rec = unwrap(await api.get(`/bahan-baku/${encodeURIComponent(ctx.params.id)}`));
   if (ctx.isStale()) return;
+  const uuid = ctx.query.get('draft');
+  let draft = uuid ? await muatDraf(uuid) : null;
+  if (ctx.isStale()) return;
+  if (draft && !draftCocok(draft, { module: SLUG, marker: 'mutasi_stok', aksi: 'update', targetId: rec.id })) {
+    toast(PESAN_DRAF_TIDAK_COCOK, 'error');
+    draft = null;
+  }
   ctx.setTitle(`Mutasi: ${rec.nama}`);
   clear(ctx.el);
+  const pd = pemberitahuanDraf(draft);
+  if (pd.info) ctx.el.append(pd.info);
   ctx.el.append(h('div', { class: 'panel' }, h('strong', {}, rec.nama), h('div', { class: 'muted' }, `Stok saat ini ${fmtQty(rec.stok, rec.satuan)} · minimum ${fmtQty(rec.stok_minimum)}`)));
   let fv;
   fv = createFormView({
     fields: mutasiFields({ pemasokId: rec.pemasok_id }).map((f) => (f.name === 'jumlah' ? { ...f, label: `Jumlah (${rec.satuan})`, validate: (v, all) => cekMutasi(all, rec.stok).jumlah || '' } : f.name === 'catatan' ? { ...f, validate: (v, all) => cekMutasi(all, rec.stok).catatan || '' } : f)),
-    values: {},
+    values: draft ? isianMutasiDariDraf(draft.payload) : {},
+    confidence: draft?.confidence || {},
     submitText: 'Catat mutasi',
     onSubmit: async (v) => {
-      const res = await submitWithQueue('POST', `/bahan-baku/${rec.id}/mutasi`, mutasiPayload(v), { label: `Mutasi ${rec.nama}` });
+      pd.alert.hidden = true; // validasi klien lolos: galat draf lama tidak berlaku lagi
+      const body = mutasiPayload(v);
+      if (draft) body.ai_draft_id = draft.uuid || uuid;
+      const res = await submitWithQueue('POST', `/bahan-baku/${rec.id}/mutasi`, body, { label: `Mutasi ${rec.nama}` });
       if (res.queued) toast('Tersimpan sebagai draf offline, dikirim saat online.', 'info');
       else toast(`Mutasi tercatat. Stok sekarang ${fmtQty(res.data?.bahan_baku?.stok, rec.satuan)}.`, 'success');
       navigate(`/bahan-baku/${rec.id}`, { replace: true });
     },
   });
-  ctx.el.append(fv.el);
+  pd.pasang(fv);
+  ctx.el.append(pd.alert, fv.el);
   return fv.destroy;
 }
 

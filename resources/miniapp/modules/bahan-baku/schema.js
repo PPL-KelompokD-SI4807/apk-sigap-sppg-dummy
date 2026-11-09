@@ -72,6 +72,19 @@ export const mutasiFields = ({ pemasokId } = {}) => [
   { name: 'catatan', label: 'Catatan / alasan', type: 'textarea', maxlength: 500 },
 ];
 
+/** Kolom form mutasi yang boleh diisi dari payload draf `catat_mutasi_stok` (selain itu, mis. `id`/`_resource`, dibuang). */
+export const KUNCI_MUTASI_DRAF = ['jenis', 'jumlah', 'tanggal_mutasi', 'pemasok_id', 'harga_satuan', 'tanggal_kedaluwarsa', 'jadwal_produksi_id', 'catatan'];
+
+/** Nilai awal form mutasi dari payload draf AI: hanya kolom dikenal yang tidak null/kosong. */
+export function isianMutasiDariDraf(payload) {
+  const out = {};
+  for (const k of KUNCI_MUTASI_DRAF) {
+    const v = payload?.[k];
+    if (v !== undefined && v !== null && v !== '') out[k] = v;
+  }
+  return out;
+}
+
 /**
  * Validasi bantu sisi klien (server otoritas): kembalikan {field: pesan}.
  * stok = saldo saat ini (angka) untuk menolak keluar > stok.

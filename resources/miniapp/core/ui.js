@@ -82,6 +82,18 @@ export function setMainButtonLoading(loading, text) {
   else btn.textContent = text || btn.dataset.text || btn.textContent;
 }
 
+/** Aktif/nonaktifkan tombol simpan (mis. dikunci setelah draf AI ditolak server). */
+export function setMainButtonDisabled(disabled) {
+  if (isNative()) {
+    const mb = getTg().MainButton;
+    mb.setParams?.({ is_active: !disabled });
+    disabled ? mb.disable?.() : mb.enable?.();
+    return;
+  }
+  const { btn } = bar();
+  if (btn) btn.disabled = !!disabled;
+}
+
 export function hideMainButton() {
   if (isNative()) {
     const mb = getTg().MainButton;

@@ -206,6 +206,24 @@ Satu target per draf (tidak ada aksi massal). Ubah peran ke Admin dan undangan p
 
 Pesan suara boleh memicu semua aksi yang boleh lewat teks; transkrip = data TIDAK tepercaya (dibungkus nonce). Layar konfirmasi menampilkan "Yang saya dengar: ..." (escape, dipotong 300, tidak disimpan). Prompt melarang menebak isian yang tidak jelas (kolom yang salah/tidak jelas menjadi draf perlu diperbaiki, tanpa bertanya balik); isian berkeyakinan < `ai.drafts.low_confidence` tidak dapat dijalankan dari chat (hanya Ubah). Batas laju AI dicek SEBELUM unduh/STT; kuota detik audio per pengguna per jam `AI_STT_DETIK_PER_JAM` (600); durasi > 120 dtk / ukuran > 10 MB ditolak ramah; `ai_interactions.argumen.stt_detik` mencatat biaya STT. Balasan "ya/oke/lanjut" (teks atau suara) tidak pernah menjalankan apa pun.
 
+## Peta draf -> layar Mini App -> endpoint
+
+Alur: `GET /ai-drafts/{uuid}`, lalu layar `?draft=<uuid>`. Simpan hanya lewat endpoint modul dengan `ai_draft_id`; `AiDraftConfirmer` mensyaratkan modul, aksi, target, dan `_resource` yang sama. Bila tidak cocok -> 422 pada `ai_draft_id`; Mini App menampilkan "Draf ini tidak cocok dengan layar ini. Buka ulang dari bot."
+
+| Tool | `_resource` | Aksi | Layar Mini App | Endpoint simpan (+ `ai_draft_id`) | resource Confirmer |
+|---|---|---|---|---|---|
+| `catat_mutasi_stok` | `mutasi_stok` | U | `/bahan-baku/:id/mutasi` | `POST /bahan-baku/{id}/mutasi` | `mutasi_stok` |
+| `buat/ubah_jadwal_distribusi` | `distribusi` | C/U | `/jadwal/distribusi/baru`, `/:id/ubah` | `POST/PUT /jadwal/distribusi` | `distribusi` |
+| `buat/ubah_pengemudi` | `pengemudi` | C/U | `/pengemudi/baru`, `/:id/ubah` | `POST/PUT /pengemudi` | `pengemudi` |
+| `buat/ubah_pengeluaran` | `pengeluaran` | C/U | `/keuangan/pengeluaran/baru`, `/:id/ubah` | `POST/PUT /keuangan/pengeluaran` | `pengeluaran` |
+| `buat/ubah_pencairan_dana` | (tanpa marker) | C/U | `/keuangan/pencairan/baru`, `/:id/ubah` | `POST/PUT /keuangan/pencairan` | null |
+| `buat/ubah_standar_gizi` | `standar_gizi` | C/U | `/menu-gizi/standar-gizi/baru`, `/:id/ubah` | `POST/PUT /menu-gizi/standar-gizi` | belum dipanggil (celah backend, lihat catatan) |
+| `buat_undangan_pengguna` | `undangan` | C | `/pengguna/undangan/baru` | `POST /pengguna/undangan` tanpa `ai_draft_id`; Mini App membuang draf lewat `DELETE /ai-drafts/{uuid}` | - |
+| `cabut_undangan` | `undangan` | D | `/pengguna/undangan` (daftar) | - | - |
+| Tool lain tanpa marker | - | C/U | `/{module}/baru`, `/{module}/{id}/ubah` | `POST/PUT /{module}` | null |
+
+Catatan: semua draf hapus (D) membuka halaman detail `/{base}/{id}` (atau daftar bila tanpa target); penghapusan lewat tombol Hapus dan saat ini draf hapus tidak dikonfirmasi (DELETE tanpa `ai_draft_id`). Celah backend yang diketahui (belum diperbaiki): `StandarGiziController` store/update tidak memanggil `AiDraftConfirmer` dan `StoreStandarGiziRequest` belum punya aturan `ai_draft_id`, sehingga data tersimpan tetapi draf tetap pending sampai kedaluwarsa.
+
 ## Pertahanan prompt injection (wajib, sudah di kerangka)
 
 | Ancaman | Mitigasi | Tes |
