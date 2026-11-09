@@ -3,6 +3,7 @@
 namespace App\Services\Ai;
 
 use App\Enums\HasilAi;
+use App\Enums\JenisInputAi;
 use App\Models\AiDraft;
 use App\Models\AiInteraction;
 use App\Models\User;
@@ -46,11 +47,36 @@ use Throwable;
  * LLM gagal/tidak tersedia/terlalu lama -> balasan ramah per kategori + fallback formulir manual; galat penyedia
  * dicatat aman ('ai.llm_galat'); tool call ditolak penyedia (tool_use_failed) diulang sekali dengan catatan perbaikan;
  * draf yang sudah dibuat sebelum galat tetap ditawarkan.
+ * Hemat token (R-05): foto -> subset tool dokumen (ToolSelector::selectFoto), iterasi ai.foto.max_iterations, hasil
+ * tool dipotong lebih pendek, loop BERHENTI begitu draf terbentuk; tiap panggilan dicek terhadap anggaran token per pesan
+ * (ai.agent.token_per_pesan) SEBELUM memanggil penyedia. 429 token per menit tanpa draf + PercobaanAi::bolehTunda ->
+ * AiReply::tunda (job di-release; interaksi & hasil baca foto dipakai ulang pada proses ulang).
  */
 class AiAgentService
 {
     /** Sisa anggaran waktu minimum (detik) untuk mengulang setelah tool_use_failed. */
     private const MIN_SISA_ULANG = 5.0;
+
+    /** Balasan server setelah draf dari foto terbentuk (loop berhenti tanpa iterasi ringkasan LLM). */
+    public const PESAN_DRAF_FOTO = 'Draf dari foto sudah disiapkan. Periksa lalu simpan; data BELUM disimpan.';
+
+    /** Hasil baca foto pesan yang sedang diproses (untuk dipakai ulang bila pesan ditunda). Tidak di-log. */
+    private ?string $teksVision = null;
+
+    /**
+     * Jeda release job untuk 429 token per menit: Retry-After penyedia (+1 dtk), atau jeda_bawaan (60) bila tidak ada.
+     * Null = TIDAK diulang: Retry-After > ai.retry_429.retry_after_maks (90) -> pesan ramah langsung.
+     */
+    public static function jedaUlang(LlmException $e): ?int
+    {
+        $maks = max(1, (int) config('ai.retry_429.retry_after_maks', 90));
+
+        if ($e->retryAfter === null || $e->retryAfter <= 0) {
+            return max(1, (int) config('ai.retry_429.jeda_bawaan', 60));
+        }
+
+        return $e->retryAfter > $maks ? null : (int) ceil($e->retryAfter) + 1;
+    }
 
     public function __construct(
         private readonly LlmClient $llm,
@@ -71,15 +97,25 @@ class AiAgentService
         return ! $this->llm instanceof SupportsVision || $this->llm->supportsVision();
     }
 
-    public function handle(User $user, AiInput $input): AiReply
+    public function handle(User $user, AiInput $input, ?PercobaanAi $percobaan = null): AiReply
     {
         $started = microtime(true);
+        $percobaan ??= new PercobaanAi;
+        $this->teksVision = null;
 
         if (! $user->canAuthenticate()) {
             return new AiReply('Akun Anda nonaktif. Hubungi Admin SPPG.', fallback: true);
         }
 
-        $interaction = AiInteraction::query()->create([
+        // Proses ulang (retry 429): interaksi percobaan sebelumnya dipakai ulang (tidak digandakan). Batas laju pengguna
+        // dan pelindung token berlaku seperti permintaan baru (setiap percobaan memanggil penyedia; tidak ditembus).
+        $interaction = $percobaan->interaksiId === null ? null : AiInteraction::query()->withoutGlobalScopes()
+            ->whereKey($percobaan->interaksiId)->where('user_id', $user->getKey())->first();
+        $lanjutan = $interaction !== null;
+        // Keadaan percobaan sebelumnya (angka saja) untuk dibawa ke log percobaan ini.
+        $sebelumnya = $lanjutan ? (array) ($interaction->argumen ?? []) : [];
+
+        $interaction ??= AiInteraction::query()->create([
             'sppg_id' => $user->isInvestor() ? $user->sppgAktifId() : $user->sppg_id,
             'user_id' => $user->getKey(),
             'jenis_input' => $input->type,
@@ -88,6 +124,21 @@ class AiAgentService
         ]);
 
         $log = ['iterasi' => 0, 'tools' => [], 'panjang_masukan' => 0, 'gambar' => count($input->images)];
+
+        if ($percobaan->ulang()) {
+            $log['percobaan'] = $percobaan->ke;
+        }
+
+        // Hasil baca foto dipakai ulang: pemakaian token vision percobaan pertama tetap tercatat (angka saja).
+        if ($lanjutan && $percobaan->teksVision !== null) {
+            $log['gambar'] = max(1, (int) ($sebelumnya['gambar'] ?? 1));
+            $log['media_terkirim'] = true;
+            $log['vision'] = 'dipakai_ulang';
+
+            if (isset($sebelumnya['token_vision'])) {
+                $log['token_vision'] = $sebelumnya['token_vision'];
+            }
+        }
 
         if ($input->detikAudio > 0) {
             $log['stt_detik'] = $input->detikAudio;
@@ -114,20 +165,34 @@ class AiAgentService
             $text = $this->parser->sanitize($input->text, (int) config('ai.agent.max_input_chars', 2000));
             $log['panjang_masukan'] = mb_strlen($text);
 
-            if ($text === '' && $input->images === []) {
+            if ($text === '' && $input->images === [] && $percobaan->teksVision === null) {
                 return $this->finish($interaction, $started, $log, HasilAi::Ditolak, 'masukan_kosong', new AiReply(
                     'Silakan ketik permintaan Anda, kirim foto nota, atau pesan suara.',
                     interactionId: $interaction->id,
                 ));
             }
 
-            return ActingUser::run($user, function () use ($user, $input, $text, $interaction, $started, &$log) {
-                return $this->loop($user, $input, $text, $interaction, $started, $log);
+            return ActingUser::run($user, function () use ($user, $input, $text, $interaction, $started, &$log, $percobaan) {
+                return $this->loop($user, $input, $text, $interaction, $started, $log, $percobaan);
             });
         } catch (LlmException $e) {
+            // 429 token per menit dan belum ada draf (loop() sudah menawarkan draf bila ada): tunda, proses ulang nanti
+            // (job di-release). Tidak ada balasan pada percobaan ini selain pemberitahuan "sedang diproses".
+            $detik = $percobaan->bolehTunda && $e->tokenPerMenit() ? self::jedaUlang($e) : null;
+
+            if ($detik !== null) {
+                $log['tertunda_detik'] = $detik;
+
+                return $this->finish($interaction, $started, $log, HasilAi::Fallback, $e->logLabel().' tertunda', new AiReply(
+                    '',
+                    interactionId: $interaction->id,
+                    tunda: new TundaAi($detik, (int) $interaction->id, $this->teksVision ?? $percobaan->teksVision),
+                ));
+            }
+
             // Hanya kategori + status HTTP + kode detail yang dicatat (tanpa isi respons/kunci, D5).
             return $this->finish($interaction, $started, $log, HasilAi::Fallback, $e->logLabel(), new AiReply(
-                $e->friendlyMessage(),
+                $e->tokenPerMenit() && $percobaan->ulang() ? LlmException::PESAN_RAMAI_SETELAH_ULANG : $e->friendlyMessage(),
                 fallback: true,
                 interactionId: $interaction->id,
             ));
@@ -145,21 +210,28 @@ class AiAgentService
     /**
      * @param  array<string, mixed>  $log
      */
-    private function loop(User $user, AiInput $input, string $text, AiInteraction $interaction, float $started, array &$log): AiReply
+    private function loop(User $user, AiInput $input, string $text, AiInteraction $interaction, float $started, array &$log, PercobaanAi $percobaan): AiReply
     {
         $budget = (float) config('ai.agent.time_budget_seconds', 25);
         $deadline = $started + $budget;
         $nonce = $this->parser->nonce();
 
-        // D6: klien dengan model vision terpisah -> tahap 1 baca gambar tanpa tool; hasilnya data.
-        $imageText = $input->images !== [] && $this->llm instanceof SupportsVision
+        // D6: klien dengan model vision terpisah -> tahap 1 baca gambar tanpa tool; hasilnya data. Proses ulang (retry
+        // 429) memakai hasil baca percobaan sebelumnya: model vision tidak dipanggil dua kali.
+        $imageText = $percobaan->teksVision ?? ($input->images !== [] && $this->llm instanceof SupportsVision
             ? $this->readImages($this->llm, $input, $text, $deadline, $log, $interaction)
-            : null;
+            : null);
+        $this->teksVision = $imageText;
+        $foto = $input->type === JenisInputAi::Foto && ($input->images !== [] || $imageText !== null);
         // Pesan foto: tanpa retry HTTP (429/5xx) agar kuota TPM tidak habis; satu-satunya ulang = tool_use_failed.
-        $tanpaUlang = $input->images !== [];
+        $tanpaUlang = $foto;
 
-        // D7: subset tool milik peran yang relevan (selalu subset forUser()).
-        $selection = $this->selector->select($this->registry->forUser($user), trim($text.' '.($imageText ?? '')), $input->type);
+        // D7: subset tool milik peran yang relevan (selalu subset forUser()). Foto: subset dokumen (selectFoto).
+        $allowed = $this->registry->forUser($user);
+        $gabungan = trim($text.' '.($imageText ?? ''));
+        $selection = $foto
+            ? $this->selector->selectFoto($allowed, $text, $gabungan)
+            : $this->selector->select($allowed, $gabungan, $input->type);
         $tools = $selection->tools;
         $schemas = $selection->schemas;
         $log['tool_ditawarkan'] = count($tools);
@@ -168,13 +240,14 @@ class AiAgentService
             $log['tool_dipilih'] = true;
         }
 
-        $system = $this->parser->systemPrompt($user, array_keys($tools), $nonce, $selection->active ? $selection->otherModules : []);
+        $system = $this->parser->systemPrompt($user, array_keys($tools), $nonce, $selection->active ? $selection->otherModules : [], $foto);
         $messages = [$this->parser->userMessage($input, $text, $nonce, $imageText)];
         // Teks pengguna hanya untuk penjagaan server (ResolverReferensi), tidak disimpan dan tidak dikirim ulang.
-        $context = new ToolContext($interaction->id, $input->type, trim($text.' '.($imageText ?? '')));
+        $context = new ToolContext($interaction->id, $input->type, $gabungan);
 
-        $maxIterations = max(1, (int) config('ai.agent.max_iterations', 4));
+        $maxIterations = max(1, (int) ($foto ? config('ai.foto.max_iterations', 3) : config('ai.agent.max_iterations', 4)));
         $maxCalls = max(1, (int) config('ai.agent.max_tool_calls_per_turn', 5));
+        $maxHasil = (int) ($foto ? config('ai.foto.max_tool_result_chars', 1500) : config('ai.agent.max_tool_result_chars', 6000));
         $drafts = [];
         $final = null;
         $model = $this->llm->modelName();
@@ -245,9 +318,21 @@ class AiAgentService
                     'role' => 'tool',
                     'tool_call_id' => $call->id,
                     'name' => $call->name,
-                    'content' => $this->parser->wrapToolResult($result->toModelContent((int) config('ai.agent.max_tool_result_chars', 6000)), $nonce),
+                    'content' => $this->parser->wrapToolResult($result->toModelContent($maxHasil), $nonce),
                     'is_error' => $result->isError(),
                 ];
+            }
+
+            // Foto: draf sudah terbentuk -> BERHENTI tanpa iterasi ringkasan LLM (iterasi itu yang memicu 429 TPM di
+            // staging). Balasan disusun server; layar konfirmasi/tombol Mini App per draf dari AiChatHandler.
+            if ($foto && $drafts !== []) {
+                $log['berhenti_setelah_draf'] = 1;
+
+                return $this->finish($interaction, $started, $log, HasilAi::Sukses, null, new AiReply(
+                    self::PESAN_DRAF_FOTO,
+                    $drafts,
+                    interactionId: $interaction->id,
+                ));
             }
         }
 
@@ -362,6 +447,7 @@ class AiAgentService
     private function chat(string $model, string $system, array $messages, array $schemas, float $deadline, array &$log, AiInteraction $interaction, bool &$sudahUlang, bool $tanpaUlang = false): LlmResponse
     {
         $estimate = TokenBudget::estimateRequest($system, $messages, $schemas);
+        $this->cekAnggaranPesan($interaction, $model, $estimate, $log);
         $this->budget->check($model, $estimate);
 
         // Klien tanpa vision terpisah (Anthropic): gambar ikut panggilan ini -> media terkirim ke penyedia.
@@ -378,8 +464,9 @@ class AiAgentService
             $this->catatGalatLlm($e, $interaction, $model, 'chat', $log, $estimate, count($schemas), $ulang);
 
             if ($e->toolGagal()) {
-                // Prompt sudah diproses penyedia: estimasi dihitung ke pelindung token global.
+                // Prompt sudah diproses penyedia: estimasi dihitung ke pelindung token global dan anggaran pesan.
                 $this->budget->record($model, $estimate);
+                $log['token_pesan'] = (int) ($log['token_pesan'] ?? 0) + $estimate;
             }
 
             if (! $ulang) {
@@ -397,8 +484,39 @@ class AiAgentService
         }
 
         $this->recordUsage($model, $response, $estimate, $log);
+        $used = $response->inputTokens + $response->outputTokens;
+        $log['token_pesan'] = (int) ($log['token_pesan'] ?? 0) + ($used > 0 ? $used : $estimate);
 
         return $response;
+    }
+
+    /**
+     * Anggaran token TOTAL satu pesan ke model teks (ai.agent.token_per_pesan; 0 = nonaktif): pemakaian panggilan
+     * sebelumnya (usage nyata, atau estimasi) + estimasi panggilan ini. Melampaui -> LlmException terlalu_besar
+     * (anggaran_pesan) TANPA memanggil penyedia; loop() menawarkan draf yang sudah ada, selain itu balasan "permintaan
+     * terlalu besar". Log hanya angka.
+     *
+     * @param  array<string, mixed>  $log
+     *
+     * @throws LlmException
+     */
+    private function cekAnggaranPesan(AiInteraction $interaction, string $model, int $estimate, array &$log): void
+    {
+        $batas = max(0, (int) config('ai.agent.token_per_pesan', 0));
+        $terpakai = (int) ($log['token_pesan'] ?? 0);
+
+        if ($batas === 0 || $terpakai + $estimate <= $batas) {
+            return;
+        }
+
+        $log['anggaran_pesan'] = ['terpakai' => $terpakai, 'estimasi' => $estimate, 'batas' => $batas];
+        Log::info('ai.anggaran_pesan', [
+            'interaksi_id' => $interaction->id,
+            'model' => mb_substr($model, 0, 100),
+            'iterasi' => (int) ($log['iterasi'] ?? 0),
+        ] + $log['anggaran_pesan']);
+
+        throw LlmException::tooLarge('anggaran_pesan');
     }
 
     /**
@@ -718,7 +836,7 @@ class AiAgentService
         $names = array_values(array_unique(array_column($log['tools'], 'nama')));
 
         if (($log['media_terkirim'] ?? false) === true && ! $reply->mediaTerkirim) {
-            $reply = new AiReply($reply->text, $reply->drafts, $reply->fallback, $reply->interactionId, true);
+            $reply = new AiReply($reply->text, $reply->drafts, $reply->fallback, $reply->interactionId, true, $reply->tunda);
         }
 
         $interaction->forceFill([

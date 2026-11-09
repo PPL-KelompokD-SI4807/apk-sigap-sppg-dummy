@@ -9,6 +9,7 @@ use App\Models\AiDraft;
  * sebagai HTML/Markdown). `drafts` = draf yang perlu dikonfirmasi lewat tombol Mini App.
  * `fallback` = AI gagal/tidak tersedia -> bot menawarkan formulir manual.
  * `mediaTerkirim` = gambar pesan ini benar-benar dikirim ke penyedia (vision/model) -> pemberitahuan privasi boleh dicatat.
+ * `tunda` = bukan balasan akhir: pesan diproses ulang nanti (429 token per menit, lihat TundaAi); `text` tidak dikirim.
  */
 final class AiReply
 {
@@ -21,5 +22,6 @@ final class AiReply
         public readonly bool $fallback = false,
         public readonly ?int $interactionId = null,
         public readonly bool $mediaTerkirim = false,
+        public readonly ?TundaAi $tunda = null,
     ) {}
 }

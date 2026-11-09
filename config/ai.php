@@ -76,6 +76,38 @@ return [
         'max_argument_chars' => 4000,
         // Anggaran waktu total satu pesan (detik); lewat ini -> fallback.
         'time_budget_seconds' => 25,
+        // Anggaran token TOTAL satu pesan ke model teks (estimasi semua iterasi; usage nyata bila ada). Dicek SEBELUM
+        // tiap panggilan: melampaui -> draf yang sudah ada ditawarkan, atau balasan "permintaan terlalu besar" tanpa
+        // memanggil penyedia. Bawaan 7000 untuk openai_compat (di bawah Groq gratis 8000 TPM), 0 = nonaktif.
+        'token_per_pesan' => (int) env('AI_TOKEN_PER_PESAN', env('LLM_PROVIDER') === 'openai_compat' ? 7000 : 0),
+    ],
+
+    /*
+    | Pesan foto (R-05 hemat token). Tool yang ditawarkan = subset forUser(): tool tulis dokumen di bawah (atau tool
+    | tulis yang cocok dengan KETERANGAN foto) + tool cari_* yang dirujuk tool tulis itu; tool baca lain hanya bila
+    | keterangan memintanya. Setelah draf terbentuk, loop BERHENTI (balasan disusun server, tanpa iterasi ringkasan).
+    */
+    'foto' => [
+        'max_iterations' => (int) env('AI_MAX_ITERATIONS_FOTO', 3),
+        'max_tools' => 5,
+        'max_tool_tokens' => 1500,
+        'max_tool_result_chars' => 1500,
+        'tool_tulis' => ['buat_pembelian_bahan', 'buat_pengeluaran', 'catat_mutasi_stok', 'buat_bukti_distribusi'],
+    ],
+
+    /*
+    | 429 penyedia bertipe token per MENIT (Groq: error.type "tokens" / "(TPM)"): job ProcessAiMessage di-release
+    | (bukan diulang di dalam eksekusi yang sama). Jeda = Retry-After (header, atau "try again in Xs" pada pesan
+    | penyedia) + 1 dtk, atau jeda_bawaan bila tidak ada. Retry-After > retry_after_maks -> TIDAK diulang (pesan ramah).
+    | 429 harian (TPD/RPD), requests (RPM), dan galat lain tidak diulang. maks dipaksa 0..2.
+    | Hasil baca foto antarpercobaan disimpan terenkripsi di Cache store di bawah (null = store bawaan); store
+    | berdriver 'file' ditolak (tidak menulis berkas) -> foto tidak ditunda.
+    */
+    'retry_429' => [
+        'maks' => (int) env('AI_RETRY_429_MAKS', 2),
+        'jeda_bawaan' => 60,
+        'retry_after_maks' => (int) env('AI_RETRY_429_RETRY_AFTER_MAKS', 90),
+        'cache_store' => env('AI_RETRY_429_CACHE_STORE'),
     ],
 
     // NFR-12: 30 permintaan AI/jam per pengguna + pelindung lonjakan per menit.

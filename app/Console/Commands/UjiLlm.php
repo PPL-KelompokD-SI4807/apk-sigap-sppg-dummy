@@ -28,7 +28,7 @@ use Throwable;
  *   php artisan sigap:llm-uji                      kirim "balas dengan kata: siap" (tanpa tool)
  *   php artisan sigap:llm-uji --stt=uji.ogg        transkripsi berkas audio uji (fiktif)
  *   php artisan sigap:llm-uji --vision=nota.jpg    baca berkas gambar uji (fiktif) lewat model vision
- *   php artisan sigap:llm-uji --ukur [--teks=..]   hitung estimasi token per peran (offline)
+ *   php artisan sigap:llm-uji --ukur [--teks=..] [--foto]   hitung estimasi token per peran (offline)
  */
 class UjiLlm extends Command
 {
@@ -36,7 +36,8 @@ class UjiLlm extends Command
         {--stt= : Berkas audio uji (fiktif) untuk STT}
         {--vision= : Berkas gambar uji (fiktif) untuk model vision}
         {--ukur : Hitung estimasi token prompt + definisi tool per peran tanpa jaringan}
-        {--teks= : Teks contoh untuk simulasi pemilihan tool (bersama --ukur)}';
+        {--teks= : Teks contoh untuk simulasi pemilihan tool (bersama --ukur)}
+        {--foto : Bersama --ukur --teks: teks = hasil baca foto (subset tool foto)}';
 
     protected $description = 'Uji koneksi LLM/STT/vision Agen AI atau ukur token per peran, tanpa mencetak kunci.';
 
@@ -182,6 +183,8 @@ class UjiLlm extends Command
         $selector = app(ToolSelector::class);
         $parser = app(IntentParser::class);
         $teks = is_string($this->option('teks')) ? (string) $this->option('teks') : '';
+        // --foto: --teks diperlakukan sebagai hasil baca foto tanpa keterangan (subset tool dokumen, R-05).
+        $foto = (bool) $this->option('foto');
         $rows = [];
 
         foreach ($this->penggunaContoh() as $label => $user) {
@@ -199,9 +202,11 @@ class UjiLlm extends Command
                 ];
 
                 if ($teks !== '') {
-                    $forced = $this->withSelection(fn () => $selector->select($allowed, $teks));
+                    $forced = $this->withSelection(fn () => $foto
+                        ? $selector->selectFoto($allowed, '', $teks)
+                        : $selector->select($allowed, $teks));
                     $row[] = count($forced->tools);
-                    $row[] = $forced->selectedTokens + TokenBudget::estimate($parser->systemPromptText($label, 'SPPG Contoh', array_keys($forced->tools), str_repeat('0', 12), $forced->otherModules));
+                    $row[] = $forced->selectedTokens + TokenBudget::estimate($parser->systemPromptText($label, 'SPPG Contoh', array_keys($forced->tools), str_repeat('0', 12), $forced->otherModules, $foto));
                 }
 
                 $rows[] = $row;
