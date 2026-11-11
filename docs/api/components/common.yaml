@@ -153,6 +153,16 @@ parameters:
     name: to
     in: query
     schema: { type: string, format: date }
+  AiDraftIdQuery:
+    name: ai_draft_id
+    in: query
+    required: false
+    description: |
+      Opsional. UUID draf hapus Agen AI (aksi delete, target = id record) yang ditandai confirmed bersama penghapusan.
+      Query string (bukan body) karena body DELETE tidak andal lewat proxy/fetch. Tanpa parameter = perilaku lama.
+      Bukan uuid atau draf tidak cocok (pengguna/modul/aksi/sumber daya/target berbeda, sudah dipakai, kedaluwarsa)
+      -> 422 pada `ai_draft_id` dan data tidak dihapus.
+    schema: { type: string, format: uuid }
 responses:
   Unauthorized:
     description: |

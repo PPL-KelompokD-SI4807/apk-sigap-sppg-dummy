@@ -166,6 +166,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Menu dan Gizi]
     summary: Hapus lunak standar gizi
     responses:
@@ -173,6 +175,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
 /menu-gizi/{id}:
   parameters:
     - { name: id, in: path, required: true, schema: { type: integer } }
@@ -234,6 +237,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Menu dan Gizi]
     summary: Hapus lunak menu
     description: Ditolak (422) bila masih dipakai jadwal produksi berstatus direncanakan/dimasak.

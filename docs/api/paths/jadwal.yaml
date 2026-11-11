@@ -234,6 +234,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Jadwal]
     summary: Hapus lunak jadwal distribusi
     description: 'Hanya status menunggu/siap/dibatalkan dan belum memiliki bukti distribusi; selain itu 422.'
@@ -312,6 +314,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Jadwal]
     summary: Hapus lunak jadwal produksi
     description: 'Hanya status direncanakan/dibatalkan tanpa log produksi dan tanpa jadwal distribusi aktif; selain itu 422.'

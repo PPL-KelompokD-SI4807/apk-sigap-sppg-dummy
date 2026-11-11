@@ -82,10 +82,10 @@ class PencairanDanaController extends ApiController
         return new PencairanDanaResource($hasil->fresh(self::RELASI));
     }
 
-    public function destroy(PencairanDana $pencairanDana): Response
+    public function destroy(Request $request, PencairanDana $pencairanDana): Response
     {
         $this->authorize('delete', $pencairanDana);
-        $this->budget->hapusPencairan($pencairanDana);
+        $this->hapusDenganDraf($request, 'keuangan', (int) $pencairanDana->getKey(), fn () => $this->budget->hapusPencairan($pencairanDana));
 
         return response()->noContent();
     }

@@ -67,6 +67,11 @@ export function draftCocok(draft, { module, marker = null, aksi, targetId = null
   return true;
 }
 
+/** Path DELETE; bila hapus berasal dari draf AI, sertakan `?ai_draft_id=<uuid>` (tanpa draf = perilaku lama). */
+export function pathHapus(path, uuid = null) {
+  return uuid ? `${path}?${new URLSearchParams({ ai_draft_id: uuid })}` : path;
+}
+
 /** Nilai form dari payload draf: tanpa kunci penanda server (berawalan "_") dan tanpa `id` target. */
 export function isianDariPayload(payload, { buang = ['id'] } = {}) {
   return Object.fromEntries(Object.entries(payload || {}).filter(([k]) => !k.startsWith('_') && !buang.includes(k)));

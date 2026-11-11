@@ -109,6 +109,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Armada]
     summary: Hapus lunak armada
     description: 'Hapus lunak. Armada berstatus `bertugas` tidak dapat dihapus (422).'
@@ -229,6 +231,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Armada]
     summary: Hapus lunak pengemudi
     description: 'Hapus lunak.'

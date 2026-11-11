@@ -16,3 +16,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - CI GitHub Actions (`backend`: Pint + tes, `frontend`: build Vite).
 - Template pull request dan issue (PBI, bug), daftar label, skrip `create-labels.sh` dan `create-issues.sh`.
 - README dan CHANGELOG awal.
+
+### Fixed
+- Draf AI standar gizi kini ditandai terpakai saat store/update (#64).
+- Draf AI hapus kini ditandai terpakai lewat `DELETE ?ai_draft_id` (#65); tanpa parameter perilaku lama tetap berlaku.

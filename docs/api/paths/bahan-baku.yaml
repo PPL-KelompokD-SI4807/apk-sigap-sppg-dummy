@@ -157,6 +157,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Bahan Baku]
     summary: Hapus lunak bahan baku
     description: Ditolak (422) bila bahan masih dipakai komposisi menu aktif.
