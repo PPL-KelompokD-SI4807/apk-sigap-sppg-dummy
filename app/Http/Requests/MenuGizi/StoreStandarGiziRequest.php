@@ -3,6 +3,7 @@
 namespace App\Http\Requests\MenuGizi;
 
 use App\Enums\KelompokSasaran;
+use App\Http\Requests\Concerns\HasAiDraftId;
 use App\Models\StandarGizi;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -10,6 +11,8 @@ use Illuminate\Validation\Validator;
 
 class StoreStandarGiziRequest extends FormRequest
 {
+    use HasAiDraftId;
+
     public const ZAT = ['energi', 'protein', 'lemak', 'karbohidrat', 'serat'];
 
     /** Policy dicek sebelum validasi agar peran tanpa hak mendapat 403 (bukan 422). */
@@ -33,7 +36,7 @@ class StoreStandarGiziRequest extends FormRequest
             $rules["{$zat}_max"] = [$wajib, 'numeric', 'min:0', 'max:99999'];
         }
 
-        return $rules;
+        return $rules + $this->aiDraftRules();
     }
 
     public function after(): array
