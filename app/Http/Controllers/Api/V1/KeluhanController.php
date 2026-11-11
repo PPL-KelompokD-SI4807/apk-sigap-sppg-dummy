@@ -105,10 +105,10 @@ class KeluhanController extends ApiController
         return new KeluhanResource($diperbarui->load(self::RELASI));
     }
 
-    public function destroy(FeedbackKeluhan $keluhan): Response
+    public function destroy(Request $request, FeedbackKeluhan $keluhan): Response
     {
         $this->authorize('delete', $keluhan);
-        $keluhan->delete();
+        $this->hapusDenganDraf($request, 'keluhan', (int) $keluhan->getKey(), fn () => $keluhan->delete());
 
         return response()->noContent();
     }

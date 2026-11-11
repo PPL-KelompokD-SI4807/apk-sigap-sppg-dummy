@@ -79,12 +79,12 @@ class PemasokController extends ApiController
         return new PemasokResource($pemasok->refresh()->loadCount('bahanBakus'));
     }
 
-    public function destroy(Pemasok $pemasok): Response
+    public function destroy(Request $request, Pemasok $pemasok): Response
     {
         $this->authorize('delete', $pemasok);
 
         // Hapus lunak saja (SoftDeletes); forceDelete ditolak policy dan tidak ada endpointnya.
-        $pemasok->delete();
+        $this->hapusDenganDraf($request, 'pemasok', (int) $pemasok->getKey(), fn () => $pemasok->delete());
 
         return response()->noContent();
     }

@@ -79,11 +79,11 @@ class TitikLayananController extends ApiController
         return new TitikLayananResource($titikLayanan->refresh());
     }
 
-    public function destroy(TitikLayanan $titikLayanan): Response
+    public function destroy(Request $request, TitikLayanan $titikLayanan): Response
     {
         $this->authorize('delete', $titikLayanan);
 
-        $titikLayanan->delete();
+        $this->hapusDenganDraf($request, 'titik-layanan', (int) $titikLayanan->getKey(), fn () => $titikLayanan->delete());
 
         return response()->noContent();
     }

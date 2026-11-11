@@ -101,10 +101,10 @@ class PemeriksaanMutuController extends ApiController
         return new PemeriksaanMutuResource($this->muat($diubah));
     }
 
-    public function destroy(PemeriksaanMutu $pemeriksaanMutu): Response
+    public function destroy(Request $request, PemeriksaanMutu $pemeriksaanMutu): Response
     {
         $this->authorize('delete', $pemeriksaanMutu);
-        $this->service->hapus($pemeriksaanMutu);
+        $this->hapusDenganDraf($request, 'mutu', (int) $pemeriksaanMutu->getKey(), fn () => $this->service->hapus($pemeriksaanMutu));
 
         return response()->noContent();
     }

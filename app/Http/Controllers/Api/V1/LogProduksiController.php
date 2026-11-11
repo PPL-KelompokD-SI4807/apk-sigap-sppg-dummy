@@ -98,10 +98,10 @@ class LogProduksiController extends ApiController
         return new LogProduksiResource($log->load(self::RELASI));
     }
 
-    public function destroy(LogProduksi $logProduksi): Response
+    public function destroy(Request $request, LogProduksi $logProduksi): Response
     {
         $this->authorize('delete', $logProduksi);
-        $logProduksi->delete();
+        $this->hapusDenganDraf($request, 'log-produksi', (int) $logProduksi->getKey(), fn () => $logProduksi->delete());
 
         return response()->noContent();
     }

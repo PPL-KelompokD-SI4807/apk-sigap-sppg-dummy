@@ -121,11 +121,11 @@ class PenerimaManfaatController extends ApiController
         return new PenerimaManfaatResource($penerimaManfaat->refresh()->load('titikLayanan'));
     }
 
-    public function destroy(PenerimaManfaat $penerimaManfaat): Response
+    public function destroy(Request $request, PenerimaManfaat $penerimaManfaat): Response
     {
         $this->authorize('delete', $penerimaManfaat);
 
-        $penerimaManfaat->delete();
+        $this->hapusDenganDraf($request, 'penerima-manfaat', (int) $penerimaManfaat->getKey(), fn () => $penerimaManfaat->delete());
 
         return response()->noContent();
     }

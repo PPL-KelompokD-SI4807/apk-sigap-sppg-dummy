@@ -103,10 +103,10 @@ class BuktiDistribusiController extends ApiController
         return new BuktiDistribusiResource($hasil->fresh(self::RELASI));
     }
 
-    public function destroy(BuktiDistribusi $buktiDistribusi): Response
+    public function destroy(Request $request, BuktiDistribusi $buktiDistribusi): Response
     {
         $this->authorize('delete', $buktiDistribusi);
-        $this->service->hapus($buktiDistribusi);
+        $this->hapusDenganDraf($request, 'bukti-distribusi', (int) $buktiDistribusi->getKey(), fn () => $this->service->hapus($buktiDistribusi));
 
         return response()->noContent();
     }
