@@ -5,6 +5,12 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 
 ## [Unreleased]
 
+### Changed
+- CLAUDE.md: `phpunit.xml` masuk wilayah file `backend-dev`.
+
+### Chore
+- `.gitignore`: abaikan folder sementara `.tmp-nginx/`.
+
 ### Added
 - Infrastruktur: `Dockerfile` multi-stage, `docker-compose.yml` (nginx, app, queue, scheduler, mysql 8.4), konfigurasi nginx.
 - CI GitHub Actions (`backend`: Pint + tes, `frontend`: build Vite).
