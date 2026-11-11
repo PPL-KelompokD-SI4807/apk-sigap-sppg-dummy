@@ -77,7 +77,7 @@ class PenggunaController extends ApiController
     {
         $this->authorize('delete', $user);
 
-        $this->accounts->delete($request->user(), $user);
+        $this->hapusDenganDraf($request, 'pengguna', (int) $user->getKey(), fn () => $this->accounts->delete($request->user(), $user));
 
         return response()->noContent();
     }

@@ -110,6 +110,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Pemasok]
     summary: Hapus lunak pemasok
     description: 'Hanya Admin. Selalu hapus lunak (tidak ada penghapusan permanen), sehingga riwayat bahan baku/pengeluaran yang memakai pemasok tetap utuh.'

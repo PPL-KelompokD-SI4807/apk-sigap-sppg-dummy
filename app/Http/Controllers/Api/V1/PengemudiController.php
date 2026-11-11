@@ -72,11 +72,11 @@ class PengemudiController extends ApiController
         return new PengemudiResource($pengemudi->refresh());
     }
 
-    public function destroy(Pengemudi $pengemudi): Response
+    public function destroy(Request $request, Pengemudi $pengemudi): Response
     {
         $this->authorize('delete', $pengemudi);
 
-        $pengemudi->delete();
+        $this->hapusDenganDraf($request, 'armada', (int) $pengemudi->getKey(), fn () => $pengemudi->delete(), 'pengemudi');
 
         return response()->noContent();
     }

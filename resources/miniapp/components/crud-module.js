@@ -2,7 +2,7 @@ import { h, clear, formatValue } from '../core/dom.js';
 import { api, submitWithQueue, request, newKey } from '../core/api.js';
 import { getUser } from '../core/auth.js';
 import { userPerms, permsDariIzin, PESAN_BUKAN_HAK } from '../core/permissions.js';
-import { tujuanDraf, jalurBersih } from '../core/draf-tujuan.js';
+import { tujuanDraf, jalurBersih, draftCocok, pathHapus } from '../core/draf-tujuan.js';
 import { muatDraf, pemberitahuanDraf } from './draf-form.js';
 import { errorMessage, ringkasGalatAksi } from '../core/errors.js';
 import { navigate, route, resolve, alihkanKeBeranda } from '../core/router.js';
@@ -194,12 +194,19 @@ export function defineCrudModule(def) {
         if (extra) ctx.el.append(...[extra].flat().filter(Boolean));
       }
       if (p.D) {
+        // Hapus dari draf AI (?draft=uuid): kirim ai_draft_id pada DELETE bila draf memang aksi hapus untuk record ini.
+        const uuidHapus = ctx.query.get('draft');
+        const drafHapus = uuidHapus ? await muatDraf(uuidHapus) : null;
+        if (ctx.isStale()) return;
+        const dariDraf = draftCocok(drafHapus, { module: drafHapus?.module, marker: drafHapus?.payload?._resource ?? null, aksi: 'delete', targetId: rec.id })
+          && jalurBersih(tujuanDraf(drafHapus)) === jalurBersih(ctx.path);
+        if (dariDraf) ctx.el.append(h('div', { class: 'notice' }, 'Penghapusan ini diminta lewat Agen AI. Tekan Hapus untuk mengonfirmasi.'));
         ctx.el.append(h('button', {
           class: 'btn btn-danger btn-block', type: 'button',
           onclick: async () => {
             if (!(await showConfirm({ title: 'Hapus data', message: `Hapus "${recTitle(rec)}"? Tindakan ini tidak dapat dibatalkan.`, okText: 'Hapus', destructive: true }))) return;
             try {
-              await api.del(`${endpoint}/${rec.id}`, { silent: true });
+              await api.del(pathHapus(`${endpoint}/${rec.id}`, dariDraf ? drafHapus.uuid || uuidHapus : null), { silent: true });
             } catch (e) {
               if (e?.status === 401) throw e;
               return toast(errorMessage(e, 'Gagal menghapus data.'), 'error');

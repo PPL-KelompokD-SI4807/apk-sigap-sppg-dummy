@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Services\Ai\AiDraftConfirmer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Basis seluruh controller REST /api/v1.
@@ -92,5 +94,21 @@ abstract class ApiController extends Controller
         }
 
         return $query;
+    }
+
+    /**
+     * Jalankan penghapusan $hapus (guard bisnis + soft delete) lalu tandai draf hapus AI (query `ai_draft_id`,
+     * opsional) terpakai dalam SATU transaksi. Draf tidak sah = 422 `ai_draft_id` dan penghapusan batal.
+     * Panggil setelah $this->authorize('delete', ...).
+     */
+    protected function hapusDenganDraf(Request $request, string $module, int $targetId, callable $hapus, ?string $resource = null): void
+    {
+        $confirmer = app(AiDraftConfirmer::class);
+        $confirmer->uuidDariQuery($request);
+
+        DB::transaction(function () use ($confirmer, $request, $module, $targetId, $hapus, $resource): void {
+            $hapus();
+            $confirmer->confirmDelete($request, $module, $targetId, $resource);
+        });
     }
 }

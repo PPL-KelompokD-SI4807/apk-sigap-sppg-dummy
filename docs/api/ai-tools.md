@@ -222,7 +222,7 @@ Alur: `GET /ai-drafts/{uuid}`, lalu layar `?draft=<uuid>`. Simpan hanya lewat en
 | `cabut_undangan` | `undangan` | D | `/pengguna/undangan` (daftar) | - | - |
 | Tool lain tanpa marker | - | C/U | `/{module}/baru`, `/{module}/{id}/ubah` | `POST/PUT /{module}` | null |
 
-Catatan: semua draf hapus (D) membuka halaman detail `/{base}/{id}` (atau daftar bila tanpa target); penghapusan lewat tombol Hapus dan saat ini draf hapus tidak dikonfirmasi (DELETE tanpa `ai_draft_id`). Celah backend yang diketahui (belum diperbaiki): `StandarGiziController` store/update tidak memanggil `AiDraftConfirmer` dan `StoreStandarGiziRequest` belum punya aturan `ai_draft_id`, sehingga data tersimpan tetapi draf tetap pending sampai kedaluwarsa.
+Catatan: semua draf hapus (D) membuka halaman detail `/{base}/{id}` (atau daftar bila tanpa target); penghapusan lewat tombol Hapus. Penghapusan dari Mini App mengirim `DELETE /{base}/{id}?ai_draft_id=<uuid>` (query string, bukan body; opsional dan kompatibel mundur): `AiDraftConfirmer::confirmDelete()` memeriksa pengguna, modul, aksi `delete`, `_resource`, dan `target_id` = id record lalu menandai draf confirmed DI DALAM transaksi hapus (urutan: otorisasi 403, guard bisnis 422, lalu konfirmasi). Draf tidak cocok/bukan uuid -> 422 `ai_draft_id` dan data tidak dihapus. Berlaku untuk semua sumber daya ber-tool `hapus_*` (helper `ApiController::hapusDenganDraf`). Standar gizi (`_resource` `standar_gizi`, modul `menu-gizi`) kini menerima `ai_draft_id` pada store/update.
 
 ## Pertahanan prompt injection (wajib, sudah di kerangka)
 

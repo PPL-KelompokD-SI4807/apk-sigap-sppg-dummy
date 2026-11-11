@@ -120,6 +120,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Log Produksi]
     summary: Hapus lunak log produksi
     description: Hak D (kepala_sppg). Tercatat di audit_logs sebagai deleted pada pemulihan/penghapusan.
@@ -128,3 +130,4 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

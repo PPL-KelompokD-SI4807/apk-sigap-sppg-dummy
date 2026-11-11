@@ -122,10 +122,10 @@ class PengeluaranController extends ApiController
         return new PengeluaranResource($hasil->fresh(self::RELASI_DETAIL));
     }
 
-    public function destroy(Pengeluaran $pengeluaran): Response
+    public function destroy(Request $request, Pengeluaran $pengeluaran): Response
     {
         $this->authorize('delete', $pengeluaran);
-        $this->budget->hapusPengeluaran($pengeluaran);
+        $this->hapusDenganDraf($request, 'keuangan', (int) $pengeluaran->getKey(), fn () => $this->budget->hapusPengeluaran($pengeluaran), 'pengeluaran');
 
         return response()->noContent();
     }

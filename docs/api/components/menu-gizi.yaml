@@ -119,6 +119,7 @@ schemas:
       karbohidrat_max: { type: number }
       serat_min: { type: number, minimum: 0 }
       serat_max: { type: number }
+      ai_draft_id: { type: [string, 'null'], format: uuid, description: 'Draf Agen AI (modul menu-gizi, _resource standar_gizi) yang ditandai confirmed.' }
   RingkasanGizi:
     type: object
     properties:

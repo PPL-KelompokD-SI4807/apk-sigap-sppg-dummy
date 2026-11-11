@@ -106,10 +106,10 @@ class JadwalDistribusiController extends ApiController
         return new JadwalDistribusiResource($diubah->load($this->relasi()));
     }
 
-    public function destroy(JadwalDistribusi $jadwalDistribusi): Response
+    public function destroy(Request $request, JadwalDistribusi $jadwalDistribusi): Response
     {
         $this->authorize('delete', $jadwalDistribusi);
-        $this->distribusi->hapus($jadwalDistribusi);
+        $this->hapusDenganDraf($request, 'jadwal', (int) $jadwalDistribusi->getKey(), fn () => $this->distribusi->hapus($jadwalDistribusi), 'distribusi');
 
         return response()->noContent();
     }

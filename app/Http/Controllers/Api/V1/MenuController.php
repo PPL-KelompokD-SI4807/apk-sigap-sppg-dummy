@@ -102,7 +102,7 @@ class MenuController extends ApiController
         return new MenuResource($menu->refresh()->load(['bahanBakus', 'pengajuanTerakhir']));
     }
 
-    public function destroy(Menu $menu): Response
+    public function destroy(Request $request, Menu $menu): Response
     {
         $this->authorize('delete', $menu);
 
@@ -116,7 +116,7 @@ class MenuController extends ApiController
             ]);
         }
 
-        DB::transaction(function () use ($menu): void {
+        $this->hapusDenganDraf($request, self::MODULE, (int) $menu->getKey(), function () use ($menu): void {
             $this->persetujuan->mulaiHapus($menu);
             $menu->delete();
         });

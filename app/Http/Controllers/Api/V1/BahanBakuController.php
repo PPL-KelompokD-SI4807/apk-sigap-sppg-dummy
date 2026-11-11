@@ -122,7 +122,7 @@ class BahanBakuController extends ApiController
         return new BahanBakuResource($bahanBaku->load('pemasok:id,nama'));
     }
 
-    public function destroy(BahanBaku $bahanBaku): Response
+    public function destroy(Request $request, BahanBaku $bahanBaku): Response
     {
         $this->authorize('delete', $bahanBaku);
 
@@ -138,7 +138,7 @@ class BahanBakuController extends ApiController
             ]);
         }
 
-        $bahanBaku->delete();
+        $this->hapusDenganDraf($request, self::MODULE, (int) $bahanBaku->getKey(), fn () => $bahanBaku->delete());
 
         return response()->noContent();
     }

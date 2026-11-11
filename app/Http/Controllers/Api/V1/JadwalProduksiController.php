@@ -165,10 +165,10 @@ class JadwalProduksiController extends ApiController
         return new JadwalProduksiResource($this->muat($diubah));
     }
 
-    public function destroy(JadwalProduksi $jadwal): Response
+    public function destroy(Request $request, JadwalProduksi $jadwal): Response
     {
         $this->authorize('delete', $jadwal);
-        $this->perencanaan->hapus($jadwal);
+        $this->hapusDenganDraf($request, 'jadwal', (int) $jadwal->getKey(), fn () => $this->perencanaan->hapus($jadwal));
 
         return response()->noContent();
     }
