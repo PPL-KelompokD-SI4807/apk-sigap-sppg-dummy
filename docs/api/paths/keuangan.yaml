@@ -146,6 +146,8 @@
       '422': { $ref: '#/components/responses/UploadRejected' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Keuangan]
     summary: Hapus lunak pencairan dana (akuntan)
     parameters:
@@ -155,6 +157,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
 /keuangan/pengeluaran:
   get:
     tags: [Keuangan]
@@ -277,6 +280,8 @@
       '422': { $ref: '#/components/responses/UploadRejected' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Keuangan]
     summary: Hapus lunak pengeluaran operasional (akuntan)
     parameters:
@@ -286,6 +291,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
 /keuangan/pengeluaran/{id}/keputusan:
   parameters:
     - { name: id, in: path, required: true, schema: { type: integer } }

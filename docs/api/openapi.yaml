@@ -203,6 +203,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Armada]
       summary: Hapus lunak armada
       description: 'Hapus lunak. Armada berstatus `bertugas` tidak dapat dihapus (422).'
@@ -323,6 +325,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Armada]
       summary: Hapus lunak pengemudi
       description: 'Hapus lunak.'
@@ -1082,6 +1086,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Bahan Baku]
       summary: Hapus lunak bahan baku
       description: Ditolak (422) bila bahan masih dipakai komposisi menu aktif.
@@ -1309,6 +1315,8 @@ paths:
         '422': { $ref: '#/components/responses/UploadRejected' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Bukti Distribusi]
       summary: Hapus lunak bukti distribusi (Kepala SPPG)
       description: Status jadwal yang "diterima" kembali ke "berangkat" sehingga bukti dapat dicatat ulang.
@@ -1319,6 +1327,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /dashboard:
     get:
       tags: [Dashboard]
@@ -1656,6 +1665,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Jadwal]
       summary: Hapus lunak jadwal distribusi
       description: 'Hanya status menunggu/siap/dibatalkan dan belum memiliki bukti distribusi; selain itu 422.'
@@ -1734,6 +1745,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Jadwal]
       summary: Hapus lunak jadwal produksi
       description: 'Hanya status direncanakan/dibatalkan tanpa log produksi dan tanpa jadwal distribusi aktif; selain itu 422.'
@@ -1924,6 +1937,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Keluhan]
       summary: Hapus lunak keluhan (Admin)
       parameters:
@@ -1936,6 +1951,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /keuangan/ringkasan:
     get:
       tags: [Keuangan]
@@ -2084,6 +2100,8 @@ paths:
         '422': { $ref: '#/components/responses/UploadRejected' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Keuangan]
       summary: Hapus lunak pencairan dana (akuntan)
       parameters:
@@ -2093,6 +2111,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /keuangan/pengeluaran:
     get:
       tags: [Keuangan]
@@ -2215,6 +2234,8 @@ paths:
         '422': { $ref: '#/components/responses/UploadRejected' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Keuangan]
       summary: Hapus lunak pengeluaran operasional (akuntan)
       parameters:
@@ -2224,6 +2245,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /keuangan/pengeluaran/{id}/keputusan:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -2480,6 +2502,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Log Produksi]
       summary: Hapus lunak log produksi
       description: Hak D (kepala_sppg). Tercatat di audit_logs sebagai deleted pada pemulihan/penghapusan.
@@ -2488,6 +2512,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /menu-gizi:
     get:
       tags: [Menu dan Gizi]
@@ -2656,6 +2681,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Menu dan Gizi]
       summary: Hapus lunak standar gizi
       responses:
@@ -2663,6 +2690,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /menu-gizi/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -2724,6 +2752,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Menu dan Gizi]
       summary: Hapus lunak menu
       description: Ditolak (422) bila masih dipakai jadwal produksi berstatus direncanakan/dimasak.
@@ -2958,6 +2988,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Mutu]
       summary: Hapus lunak pemeriksaan mutu
       description: |
@@ -3255,6 +3287,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Pemasok]
       summary: Hapus lunak pemasok
       description: 'Hanya Admin. Selalu hapus lunak (tidak ada penghapusan permanen), sehingga riwayat bahan baku/pengeluaran yang memakai pemasok tetap utuh.'
@@ -3614,6 +3648,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Penerima Manfaat]
       summary: Hapus lunak penerima manfaat
       description: 'Hanya Admin. Hapus lunak + log audit.'
@@ -3748,6 +3784,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Pengguna]
       summary: Hapus lunak pengguna (Admin)
       description: |
@@ -4759,6 +4797,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
+      parameters:
+        - $ref: '#/components/parameters/AiDraftIdQuery'
       tags: [Titik Layanan]
       summary: Hapus lunak titik layanan
       description: 'Hapus lunak.'
@@ -6789,6 +6829,7 @@ components:
         karbohidrat_max: { type: number }
         serat_min: { type: number, minimum: 0 }
         serat_max: { type: number }
+        ai_draft_id: { type: [string, 'null'], format: uuid, description: 'Draf Agen AI (modul menu-gizi, _resource standar_gizi) yang ditandai confirmed.' }
     RingkasanGizi:
       type: object
       properties:
@@ -7604,6 +7645,16 @@ components:
       name: to
       in: query
       schema: { type: string, format: date }
+    AiDraftIdQuery:
+      name: ai_draft_id
+      in: query
+      required: false
+      description: |
+        Opsional. UUID draf hapus Agen AI (aksi delete, target = id record) yang ditandai confirmed bersama penghapusan.
+        Query string (bukan body) karena body DELETE tidak andal lewat proxy/fetch. Tanpa parameter = perilaku lama.
+        Bukan uuid atau draf tidak cocok (pengguna/modul/aksi/sumber daya/target berbeda, sudah dipakai, kedaluwarsa)
+        -> 422 pada `ai_draft_id` dan data tidak dihapus.
+      schema: { type: string, format: uuid }
     IdempotencyKey:
       name: Idempotency-Key
       in: header

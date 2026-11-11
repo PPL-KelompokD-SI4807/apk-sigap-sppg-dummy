@@ -112,6 +112,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Penerima Manfaat]
     summary: Hapus lunak penerima manfaat
     description: 'Hanya Admin. Hapus lunak + log audit.'

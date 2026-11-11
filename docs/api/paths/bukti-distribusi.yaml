@@ -123,6 +123,8 @@
       '422': { $ref: '#/components/responses/UploadRejected' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Bukti Distribusi]
     summary: Hapus lunak bukti distribusi (Kepala SPPG)
     description: Status jadwal yang "diterima" kembali ke "berangkat" sehingga bukti dapat dicatat ulang.
@@ -133,3 +135,4 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
