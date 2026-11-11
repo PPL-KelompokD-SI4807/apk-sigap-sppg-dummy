@@ -125,7 +125,7 @@ Paralel dengan R-04: R07-4 menyentuh `resources/miniapp/**` dan sumber web bersa
 | K12 | Migrasi `sub_kategori`/kolom penerima pada tabel produksi | kunci tabel | hanya ADD COLUMN nullable, tanpa backfill; tes migrasi naik/turun |
 
 ## Keputusan (final, pengguna 2026-11-11)
-Seluruh pertanyaan Q-1..Q-12 sudah dijawab; tidak ada lagi item "menunggu keputusan" kecuali Q-13 (kecil, bawaan PM berlaku) dan persetujuan dependensi PDF pada R07-3a.
+Seluruh pertanyaan Q-1..Q-12 sudah dijawab; tidak ada item "menunggu keputusan" (Q-13 disetujui pengguna); satu-satunya persetujuan tersisa adalah dependensi PDF pada R07-3a.
 | No | Keputusan | Dampak ke tugas |
 |---|---|---|
 | Q-1 | 30a: baris `Kebutuhan` = 15 kelompok penerima manfaat Bab 4.7 juknis (hlm 73); `Anggaran` = acuan bahan baku per porsi: Rp8.000 (Balita, PAUD/TK/RA, SD/MI kelas 1-3), Rp10.000 (lainnya), dapat diubah per SPPG; biaya per hari = porsi x anggaran. Tafsiran DISETUJUI. Insentif fasilitas SPPG Rp6.000.000 per hari, maksimal 6 hari/minggu, dihitung dari hari operasional, dapat diatur per SPPG | R07-1 (pengaturan per SPPG), R07-2, R07-3 |
@@ -140,7 +140,7 @@ Seluruh pertanyaan Q-1..Q-12 sudah dijawab; tidak ada lagi item "menunggu keputu
 | Q-10 | Unduh lewat bot dengan `sendDocument`; versi web menyusul dengan unduhan langsung | R07-3 (kirim), R07-4 (tombol "Kirim ke Telegram"), R-04 web |
 | Q-11 | Kertas **F4/Folio (210 x 330 mm)**, sama dengan juknis (menggantikan "A4" dari permintaan awal) | R07-3 |
 | Q-12 | Bawaan: catatan kaki kecil "Dihasilkan oleh SiGAP SPPG, bukan keluaran aplikasi resmi BGN" di margin bawah | R07-3 |
-| Q-13 (baru, bawaan PM) | Penerima SLB/Santri/Pendidikan khusus lainnya/informal: `jenjang` setingkat 30b + `jenis_satuan`; Food Sample dan Uji Organoleptik = kolom porsi nullable di `log_produksis` (kosong = 0). R07-1 boleh memfinalkan bentuk kolom dan melapor ke PM | R07-1 |
+| Q-13 (disetujui pengguna, final) | Penerima SLB/Santri/Pendidikan khusus lainnya/informal: `jenjang` setingkat 30b + `jenis_satuan`; Food Sample dan Uji Organoleptik = kolom porsi nullable di `log_produksis` (kosong = 0). R07-1 boleh memfinalkan bentuk kolom dan melapor ke PM | R07-1 |
 
 Koreksi halaman: indeks PDF 30a=259; 30b=260-261; 30c=262-263; 30d=264-266 (A 264-265, B 265-266, C 266); nomor cetak = indeks + 1 untuk Lampiran 30.
 
