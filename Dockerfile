@@ -18,7 +18,7 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --no-progress --prefer-dist \
     --no-scripts --no-autoloader --ignore-platform-reqs
-COPY . .
+COPY --chmod=u=rwX,go=rX . .
 RUN composer dump-autoload --no-dev --optimize --classmap-authoritative --no-scripts
 
 # ---------- Stage 2: build Mini App (Vite: root resources/miniapp, keluaran public/miniapp) ----------
@@ -62,7 +62,7 @@ RUN addgroup -g "${GID}" sigap && adduser -D -H -u "${UID}" -G sigap -s /sbin/no
 WORKDIR /var/www/html
 
 # Kode dimiliki root (hanya-baca bagi proses PHP); hanya storage/ dan bootstrap/cache/ yang dapat ditulis.
-COPY . .
+COPY --chmod=u=rwX,go=rX . .
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=assets /app/public/miniapp ./public/miniapp
 RUN set -eux; \
