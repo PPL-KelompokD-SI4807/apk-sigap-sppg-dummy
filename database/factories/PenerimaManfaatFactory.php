@@ -22,7 +22,10 @@ class PenerimaManfaatFactory extends Factory
             'sppg_id' => Sppg::factory(),
             'titik_layanan_id' => fn (array $a) => TitikLayanan::factory()->state(['sppg_id' => $a['sppg_id']]),
             'nama' => fake('id_ID')->firstName().' '.strtoupper(fake()->randomLetter()).'.',
-            'kelompok_sasaran' => fake()->randomElement(KelompokSasaran::cases()),
+            'kelompok_sasaran' => fake()->randomElement([
+                // Pin ke 4 kelompok lama; kelompok baru (pendidik, tenaga_kependidikan, ats) diminta lewat state/atribut.
+                KelompokSasaran::Siswa, KelompokSasaran::Balita, KelompokSasaran::IbuHamil, KelompokSasaran::IbuMenyusui,
+            ]),
             'kelas_keterangan' => fake()->randomElement(['Kelas 1', 'Kelas 3', 'Kelas 5', 'Balita 2 th', 'Trimester 2']),
             'catatan_alergi' => fake()->optional(0.2)->randomElement(['Alergi kacang', 'Alergi telur', 'Alergi seafood', 'Intoleransi laktosa']),
             'is_active' => true,
