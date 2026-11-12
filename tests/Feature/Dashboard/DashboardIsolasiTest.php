@@ -157,7 +157,7 @@ class DashboardIsolasiTest extends DashboardTestCase
         $w = $this->sebagai($this->ahliGiziA)->getJson(self::URL)->assertOk()->json('data.widgets.kebutuhan_khusus');
         $sel = array_column($w['per_kelompok_sasaran'], 'jumlah', 'kelompok_sasaran');
 
-        $this->assertSame(['siswa' => 6, 'balita' => 7, 'ibu_hamil' => 0, 'ibu_menyusui' => 0], $sel);
+        $this->assertSame(['siswa' => 6, 'balita' => 7, 'ibu_hamil' => 0, 'ibu_menyusui' => 0, 'pendidik' => 0, 'tenaga_kependidikan' => 0, 'ats' => 0], $sel);
         $this->assertSame(13, $w['total']);
     }
 

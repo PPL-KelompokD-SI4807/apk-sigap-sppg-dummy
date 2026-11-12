@@ -57,6 +57,10 @@ class AgregatAmbangTest extends InvestorTestCase
             'balita' => ['jumlah' => null, 'penanda' => '<5'],
             'ibu_hamil' => ['jumlah' => null, 'penanda' => '<5'],
             'ibu_menyusui' => ['jumlah' => 0, 'penanda' => null],
+            // R07-1: kelompok baru (nol) hanya menambah sel; penyamaran sel lama tidak berubah.
+            'pendidik' => ['jumlah' => 0, 'penanda' => null],
+            'tenaga_kependidikan' => ['jumlah' => 0, 'penanda' => null],
+            'ats' => ['jumlah' => 0, 'penanda' => null],
         ], $this->sel($res->json('data.per_kelompok_sasaran'), 'kelompok_sasaran'));
 
         // Titik: nama boleh terlihat (keputusan S-04); posyandu kecil 2 (primer) + posyandu 6 (pelengkap).
