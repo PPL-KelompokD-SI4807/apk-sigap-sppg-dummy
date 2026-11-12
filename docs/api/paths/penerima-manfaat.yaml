@@ -8,7 +8,7 @@
       - $ref: '#/components/parameters/PerPage'
       - $ref: '#/components/parameters/Search'
       - { name: titik_layanan_id, in: query, schema: { type: integer } }
-      - { name: kelompok_sasaran, in: query, schema: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] } }
+      - { name: kelompok_sasaran, in: query, schema: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] } }
       - { name: is_active, in: query, schema: { type: boolean } }
       - { name: ada_alergi, in: query, description: 'true = hanya yang memiliki catatan alergi.', schema: { type: boolean } }
       - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
