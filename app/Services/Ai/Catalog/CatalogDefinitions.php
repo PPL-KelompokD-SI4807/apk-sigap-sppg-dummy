@@ -202,7 +202,7 @@ final class CatalogDefinitions
                 search: ['nama_menu', 'siklus'],
                 list: ['id', 'nama_menu', 'kelompok_sasaran', 'tanggal_sajian', 'siklus', 'energi_kkal', 'protein_g', 'lemak_g', 'karbohidrat_g', 'serat_g'],
                 detail: ['catatan'],
-                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => self::values(KelompokSasaran::class)]],
+                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => KelompokSasaran::valuesGizi()]],
                 date: 'tanggal_sajian', order: [['tanggal_sajian', 'desc'], ['id', 'desc']],
                 store: StoreMenuRequest::class, update: UpdateMenuRequest::class, routeParameter: 'menu',
                 // siklus = teks (Form Request string): contoh eksplisit agar model tidak mengirim angka (ditolak skema).
@@ -212,7 +212,7 @@ final class CatalogDefinitions
             new ResourceSpec(
                 key: 'standar_gizi', module: 'menu-gizi', label: 'standar gizi', model: StandarGizi::class,
                 list: ['id', 'kelompok_sasaran', 'energi_min', 'energi_max', 'protein_min', 'protein_max', 'lemak_min', 'lemak_max', 'karbohidrat_min', 'karbohidrat_max', 'serat_min', 'serat_max'],
-                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => self::values(KelompokSasaran::class)]],
+                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => KelompokSasaran::valuesGizi()]],
                 store: StoreStandarGiziRequest::class, update: StoreStandarGiziRequest::class, routeParameter: 'standar_gizi',
                 marker: 'standar_gizi',
             ),

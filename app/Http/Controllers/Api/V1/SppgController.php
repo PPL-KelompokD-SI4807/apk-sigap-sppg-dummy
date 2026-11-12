@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\StatusOperasional;
 use App\Http\Controllers\Api\V1\Concerns\FiltersMasterData;
+use App\Http\Requests\Sppg\SaldoAwalRequest;
 use App\Http\Requests\Sppg\StoreSppgRequest;
 use App\Http\Requests\Sppg\UpdateSppgRequest;
 use App\Http\Resources\Sppg\SppgResource;
 use App\Models\Sppg;
 use App\Services\Ai\AiDraftConfirmer;
+use App\Services\Sppg\SaldoAwalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -70,6 +72,15 @@ class SppgController extends ApiController
         });
 
         return new SppgResource($sppg->refresh());
+    }
+
+    /** Saldo awal (R-07 Q-2): hanya Akuntan SPPG-nya dan Admin; tiap perubahan masuk audit_logs. */
+    public function saldoAwal(SaldoAwalRequest $request, Sppg $sppg, SaldoAwalService $service): SppgResource
+    {
+        $data = $request->validated();
+        $hasil = $service->ubah($request->user(), $sppg, (int) $data['saldo_awal'], (string) $data['saldo_awal_tanggal']);
+
+        return new SppgResource($hasil->refresh());
     }
 
     public function destroy(Sppg $sppg): Response

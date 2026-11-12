@@ -3,6 +3,9 @@
 namespace App\Http\Requests\Keuangan;
 
 use App\Enums\KategoriPengeluaran;
+use App\Enums\SubKategoriPengeluaran;
+use App\Models\Pengeluaran;
+use Closure;
 use Illuminate\Validation\Rule;
 
 /**
@@ -53,6 +56,7 @@ trait AturanKeuangan
         return [
             'tanggal' => [$req, 'date_format:Y-m-d', 'before_or_equal:today'],
             'kategori' => [$req, Rule::enum(KategoriPengeluaran::class)],
+            'sub_kategori' => ['sometimes', 'nullable', Rule::enum(SubKategoriPengeluaran::class), $this->aturanSubKategori()],
             'uraian' => [$req, 'string', 'max:255'],
             'nominal' => $this->aturanNominal($req),
             'pemasok_id' => ['sometimes', 'nullable', 'integer', $milikSppg('pemasoks')],
@@ -60,6 +64,24 @@ trait AturanKeuangan
             'nota' => $this->aturanBerkas(),
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
         ];
+    }
+
+    /** Sub-kategori (17 baris Biaya Operasional) tidak berlaku untuk kategori bahan_baku dan insentif_fasilitas. */
+    private function aturanSubKategori(): Closure
+    {
+        return function (string $atribut, mixed $nilai, Closure $gagal): void {
+            if ($nilai === null || $nilai === '') {
+                return;
+            }
+
+            $model = $this->route('pengeluaran');
+            $kategori = KategoriPengeluaran::tryFrom((string) $this->input('kategori'))
+                ?? ($model instanceof Pengeluaran ? $model->kategori : null);
+
+            if ($kategori === KategoriPengeluaran::BahanBaku || $kategori === KategoriPengeluaran::InsentifFasilitas) {
+                $gagal('Sub-kategori hanya untuk pengeluaran operasional (bukan bahan baku atau insentif fasilitas).');
+            }
+        };
     }
 
     /** @return array<string, string> */

@@ -155,6 +155,6 @@ class LogProduksiService
      */
     private function atribut(array $data): array
     {
-        return array_intersect_key($data, array_flip(['realisasi_porsi', 'sisa_makanan_kg', 'waktu_mulai', 'jam_selesai', 'kendala']));
+        return array_intersect_key($data, array_flip(['realisasi_porsi', 'porsi_food_sample', 'porsi_uji_organoleptik', 'sisa_makanan_kg', 'waktu_mulai', 'jam_selesai', 'kendala']));
     }
 }
