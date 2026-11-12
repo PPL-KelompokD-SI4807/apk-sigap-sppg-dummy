@@ -54,25 +54,29 @@ npm run build
 Basis `develop`; `main` hanya untuk rilis. Branch fitur: `feat/pbi-<no>-<slug>`, perbaikan: `fix/<slug>`, rutin: `chore/<slug>`.
 Commit memakai Conventional Commits berbahasa Indonesia. PR berjudul `[PBI-<no>] <Nama fitur>`, memakai template PR, dan baru di-merge setelah persetujuan manusia dan CI hijau.
 
-## 16 fitur
-| No | Fitur | PIC | Sprint rencana |
-|---|---|---|---|
-| 1 | Data Pengguna (Login Akun) | Seluruh kelompok (auth: Dhimas) | 1 |
-| 2 | Notifikasi Perjalanan Mobil ke Tujuan | Dhimas | 2 |
-| 3 | Data SPPG | Dhimas | 1 |
-| 4 | Data Titik Layanan | Dhimas | 1 |
-| 5 | Data Penerima Manfaat | Daven | 1 |
-| 6 | Data Bahan Baku | Hilmy | 1 (scheduler stok: 2) |
-| 7 | Data Pemasok | Hilmy | 2 |
-| 8 | Data Menu dan Gizi | Hilmy | 1 |
-| 9 | Data Jadwal Produksi dan Distribusi | Prabowo | 1 (distribusi: 2) |
-| 10 | Data Log Produksi Harian | Prabowo | 2 |
-| 11 | Data Pemeriksaan Mutu dan Keamanan Pangan | Prabowo | 2 |
-| 12 | Data Armada dan Pengemudi | Daven | 1 |
-| 13 | Data Bukti Distribusi | Daven | 2 |
-| 14 | Data Keuangan (pencairan + pengeluaran) | Mutiara | 1 (pencairan), 2 (pengeluaran) |
-| 15 | Data Feedback dan Keluhan | Mutiara | 2 |
-| 16 | Laporan Rekapitulasi Harian Operasional | Mutiara | 2 |
+## 16 fitur (PBI 1-16)
+Setiap fitur adalah satu PBI. Nomor PBI dipakai di nama branch (`feat/pbi-<no>-<slug>`) dan judul PR (`[PBI-<no>] <Nama fitur>`).
+
+| PBI | Fitur | Keterangan | Penanggung jawab | Sprint rencana |
+|---|---|---|---|---|
+| 1 | Data Pengguna (Login Akun) | Akun pengguna, peran, login password + token dari bot, sesi, reset password | Seluruh kelompok (auth: Dhimas) | 1 |
+| 2 | Notifikasi Perjalanan Mobil ke Tujuan | Notifikasi saat mobil distribusi berangkat dan perkiraan tiba di tujuan | Dhimas | 2 |
+| 3 | Data SPPG | Data satuan pelayanan (dapur) beserta pengaturannya | Dhimas | 1 |
+| 4 | Data Titik Layanan | Lokasi tujuan distribusi, misalnya sekolah | Dhimas | 1 |
+| 5 | Data Penerima Manfaat | Data penerima manfaat per titik layanan; investor hanya melihat agregat (ambang k=5) | Daven | 1 |
+| 6 | Data Bahan Baku | Stok bahan, mutasi stok, peringatan stok minimum dan kedaluwarsa | Hilmy | 1 (scheduler stok: 2) |
+| 7 | Data Pemasok | Data pemasok dan harga bahan | Hilmy | 2 |
+| 8 | Data Menu dan Gizi | Menu, kandungan gizi, dan persetujuan menu oleh investor | Hilmy | 1 |
+| 9 | Data Jadwal Produksi dan Distribusi | Jadwal masak dan pengiriman, termasuk validasi kapasitas | Prabowo | 1 (distribusi: 2) |
+| 10 | Data Log Produksi Harian | Catatan produksi harian dapur | Prabowo | 2 |
+| 11 | Data Pemeriksaan Mutu dan Keamanan Pangan | Pemeriksaan mutu makanan dan pencatatan insiden | Prabowo | 2 |
+| 12 | Data Armada dan Pengemudi | Data kendaraan dan pengemudi | Daven | 1 |
+| 13 | Data Bukti Distribusi | Bukti makanan sampai di tujuan, termasuk foto | Daven | 2 |
+| 14 | Data Keuangan (pencairan + pengeluaran) | Pencairan dana, pengeluaran, pembelian bahan, ambang anggaran 80% dan 100% | Mutiara | 1 (pencairan), 2 (pengeluaran) |
+| 15 | Data Feedback dan Keluhan | Masukan dan keluhan dengan prioritas | Mutiara | 2 |
+| 16 | Laporan Rekapitulasi Harian Operasional | Rekap harian operasional otomatis pukul 17.00 | Mutiara | 2 |
+
+Kolom penanggung jawab menunjukkan pembagian tanggung jawab fitur dalam kelompok. Kode dikembangkan dengan bantuan Claude Code.
 
 Sprint 1 = 26 Okt - 22 Nov 2026; Sprint 2 = 23 Nov - 20 Des 2026.
 
