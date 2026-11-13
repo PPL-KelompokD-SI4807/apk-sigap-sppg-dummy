@@ -63,7 +63,7 @@ class User extends Authenticatable
     protected $hidden = ['password'];
 
     /** Tidak dicatat di audit: no telepon (UU PDP) dan penghitung login (bukan perubahan data). */
-    protected array $auditExclude = ['phone', 'failed_login_attempts', 'locked_until', 'password_changed_at'];
+    protected array $auditExclude = ['phone', 'username', 'failed_login_attempts', 'locked_until', 'password_changed_at'];
 
     /** Kolom yang bila berubah mencabut semua token aktif pengguna. */
     public const TOKEN_SENSITIVE = ['role', 'unit', 'sppg_id', 'is_active', 'telegram_id'];

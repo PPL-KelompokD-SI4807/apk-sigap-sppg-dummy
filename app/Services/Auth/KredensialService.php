@@ -149,14 +149,14 @@ class KredensialService
     private function usernameDipakaiAkunLain(User $user, ?string $username): bool
     {
         return $username !== null
-            && DB::table('users')->where('username', $username)->where('id', '!=', $user->getKey())->exists();
+            && DB::table('users')->where('username', $username)->whereNull('deleted_at')->where('id', '!=', $user->getKey())->exists();
     }
 
-    /** No telepon milik akun lain (termasuk terhapus lunak, sesuai indeks unik). */
+    /** No telepon milik akun lain yang belum terhapus lunak (identitas baris terhapus dilepas, R04-13). */
     private function teleponDipakaiAkunLain(User $user, ?string $phone): bool
     {
         return $phone !== null
-            && DB::table('users')->where('phone', $phone)->where('id', '!=', $user->getKey())->exists();
+            && DB::table('users')->where('phone', $phone)->whereNull('deleted_at')->where('id', '!=', $user->getKey())->exists();
     }
 
     /**
@@ -384,7 +384,7 @@ class KredensialService
     private function milikAkunLain(User $user, string $identitas): bool
     {
         $identitas = ltrim(trim($identitas), '@');
-        $query = DB::table('users')->where('id', '!=', $user->getKey());
+        $query = DB::table('users')->whereNull('deleted_at')->where('id', '!=', $user->getKey());
 
         if ($this->metode($identitas) === 'username') {
             return $query->where('username', mb_strtolower($identitas))->exists();

@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * No telepon (identitas login R-03) harus dikenali (format 08xx/62xx/+62xx) dan belum dipakai akun
- * lain, dibandingkan dalam bentuk normal E.164 (termasuk akun terhapus lunak, sesuai indeks unik).
+ * lain, dibandingkan dalam bentuk normal E.164. Akun terhapus lunak diabaikan (identitasnya dilepas
+ * saat dihapus, R04-13); akun aktif dan nonaktif-belum-dihapus tetap dihitung.
  */
 class TeleponUnik implements ValidationRule
 {
@@ -29,7 +30,7 @@ class TeleponUnik implements ValidationRule
             return;
         }
 
-        $dipakai = DB::table('users')->where('phone', $normal)
+        $dipakai = DB::table('users')->where('phone', $normal)->whereNull('deleted_at')
             ->when($this->abaikanUserId !== null, fn ($q) => $q->where('id', '!=', $this->abaikanUserId))
             ->exists();
 
