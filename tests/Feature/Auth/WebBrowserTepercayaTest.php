@@ -195,6 +195,7 @@ class WebBrowserTepercayaTest extends TestCase
 
     public function test_ingat_browser_membuat_cookie_host_dan_validator_tersimpan_sha256(): void
     {
+        $sebelum = time();
         $res = $this->loginKode($this->siti, 'siti.dapur', true)->assertOk()
             ->assertJsonPath('langkah', 'selesai')
             ->assertJsonPath('browser_tepercaya.dipakai', false)
@@ -207,7 +208,11 @@ class WebBrowserTepercayaTest extends TestCase
         $this->assertSame(Cookie::SAMESITE_STRICT, $cookie->getSameSite());
         $this->assertSame('/', $cookie->getPath());
         $this->assertNull($cookie->getDomain());
-        $this->assertSame(30 * 86400, $cookie->getMaxAge());
+        // Expires dibangun dari time() nyata (Symfony), bukan jam beku Carbon; getMaxAge() membaca time() lagi sehingga
+        // berubah bila detik berganti. Periksa Expires terhadap rentang time() nyata sebelum/sesudah permintaan.
+        $sesudah = time();
+        $this->assertGreaterThanOrEqual($sebelum + 30 * 86400, $cookie->getExpiresTime());
+        $this->assertLessThanOrEqual($sesudah + 30 * 86400, $cookie->getExpiresTime());
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/', (string) $cookie->getValue());
 
         [$selektor, $validator] = explode('.', (string) $cookie->getValue());
