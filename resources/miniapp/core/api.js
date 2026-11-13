@@ -109,7 +109,7 @@ export function tanganiStorage(e) {
 /** Cabut token di server tanpa efek samping klien (tanpa toast/401 handler); kegagalan diabaikan. */
 function cabutDiServer(t) {
   try {
-    fetch(`${BASE}/auth/logout`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${t}` }, keepalive: true }).catch(() => {});
+    fetch(`${BASE}/auth/logout`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${t}` }, keepalive: true, credentials: 'omit' }).catch(() => {});
   } catch { /* abaikan */ }
 }
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.addEventListener('storage', tanganiStorage);
@@ -222,7 +222,9 @@ export async function request(method, path, { query, body, key, silent = false }
 
   let res;
   try {
-    res = await fetch(url, { method: verb, headers, body: payload });
+    // credentials 'omit': klien Mini App hanya memakai Bearer. Cookie sesi web (__Host-sigap_sesi, satu origin) tidak
+    // boleh ikut terkirim; jalur cookie hanya milik api-web.js (R04-5).
+    res = await fetch(url, { method: verb, headers, body: payload, credentials: 'omit' });
   } catch {
     if (!silent) toast('Tidak ada koneksi internet.', 'error');
     throw new ApiError(0, 'Tidak ada koneksi internet.');
