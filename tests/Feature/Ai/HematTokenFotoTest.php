@@ -118,7 +118,8 @@ class HematTokenFotoTest extends MasterApiTestCase
         $this->assertEqualsCanonicalizing(['catat_mutasi_stok', 'buat_pembelian_bahan', 'cari_bahan_baku', 'cari_pemasok'], $offered);
         $this->assertSame([], array_diff($offered, array_keys(app(ToolRegistry::class)->forUser($this->stafGudangA))), 'Selalu subset hak peran.');
 
-        $this->assertSame(AiAgentService::PESAN_DRAF_FOTO, $reply->text);
+        // Ringkasan draf dirender server dari data draf (nama dari basis data, total rumus server), tanpa id internal.
+        $this->assertSame('Draf pembelian: Beras Fiktif 10 '.$this->beras->satuan." x Rp12.000 = Rp120.000, pemasok Toko Sumber Makmur Fiktif\n".AiAgentService::PESAN_DRAF_FOTO, $reply->text);
         $this->assertCount(1, $reply->drafts);
         $log = $this->interaksi()->argumen;
         $this->assertSame(2, $log['iterasi']);
@@ -320,7 +321,8 @@ class HematTokenFotoTest extends MasterApiTestCase
         $this->assertCount(3, $teks, json_encode($teks));
         $this->assertSame(1, substr_count($semua, AiChatHandler::PESAN_TUNDA_FOTO), 'Tepat satu pemberitahuan.');
         $this->assertSame(1, substr_count($semua, AiAgentService::PESAN_DRAF_FOTO), 'Tepat satu hasil akhir.');
-        $this->assertSame(AiAgentService::PESAN_DRAF_FOTO, $teks[1]);
+        $this->assertStringStartsWith('Draf pembelian: Beras Fiktif 10 ', $teks[1]);
+        $this->assertStringEndsWith(AiAgentService::PESAN_DRAF_FOTO, $teks[1]);
         $this->assertStringStartsWith('<b>Konfirmasi: Buat pembelian bahan</b>', $teks[2]);
     }
 
