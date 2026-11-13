@@ -131,6 +131,7 @@ schemas:
           - token_hangus
           - dev_bypass
           - csrf_ditolak
+          - kode_tidak_valid
       sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah' }
       terkunci_sampai: { type: string, format: date-time, description: 'terkunci' }
       langkah: { type: string, enum: [aktivasi, masuk], description: 'perlu_aktivasi / sudah_aktivasi' }
@@ -234,7 +235,66 @@ schemas:
       berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat; web: + idle 12 jam).' }
       diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya. Selalu null untuk web.' }
       sesi_ini: { type: boolean }
+  WebCsrfResponse:
+    type: object
+    required: [csrf, berlaku_sampai]
+    description: |
+      Token CSRF PRA-LOGIN (R04-2), terikat id pra-login di cookie `__Host-sigap_pra` (HttpOnly, Secure,
+      SameSite=Strict, Path=/, 15 menit). Simpan HANYA di memori JS; kirim sebagai `X-CSRF-Token` pada
+      POST /web/auth/*. Tidak berlaku untuk rute login penuh.
+    properties:
+      csrf: { type: string, pattern: '^[0-9a-f]{64}$' }
+      berlaku_sampai: { type: string, format: date-time, description: 'Akhir umur cookie pra-login (15 menit).' }
+  WebTantanganResponse:
+    type: object
+    required: [langkah, message, tantangan]
+    description: |
+      Respons SERAGAM langkah masuk dan kirim ulang (anti-enumerasi): status, bentuk, dan header sama untuk akun
+      tidak ada, sandi salah, akun nonaktif/belum aktivasi/tanpa Telegram, kanal web terkunci, dan sandi benar.
+      Waktu dihitung dari jam server saat respons. Kode hanya benar-benar dikirim bot bila sandi benar.
+    properties:
+      langkah: { type: string, const: kode }
+      message: { type: string }
+      tantangan:
+        type: object
+        required: [id, kedaluwarsa_pada, kirim_ulang_tersedia_pada, maks_kirim_ulang, maks_percobaan]
+        properties:
+          id: { type: string, pattern: '^[0-9a-z]{26}$', description: 'ULID huruf kecil. Bisa tiruan; klien tidak dapat membedakannya.' }
+          kedaluwarsa_pada: { type: string, format: date-time, description: 'Sekarang + 5 menit.' }
+          kirim_ulang_tersedia_pada: { type: string, format: date-time, description: 'Sekarang + 60 detik (jeda kirim ulang).' }
+          maks_kirim_ulang: { type: integer, examples: [3], description: 'Klien menghitung sendiri sisa kirim ulang.' }
+          maks_percobaan: { type: integer, examples: [5] }
+  WebLoginResponse:
+    type: object
+    required: [langkah, jenis_sesi, expires_at, csrf, user]
+    description: |
+      Login web selesai. Token sesi TIDAK PERNAH ada di badan (issue #76); hanya di `Set-Cookie: __Host-sigap_sesi`.
+      `csrf` = token CSRF SESI baru (terikat sesi ini) untuk `X-CSRF-Token` di rute login penuh; CSRF pra-login tidak
+      berlaku lagi dan cookie `__Host-sigap_pra` dihapus (Max-Age=0).
+    properties:
+      langkah: { type: string, const: selesai }
+      jenis_sesi: { type: string, const: web }
+      expires_at: { type: string, format: date-time, description: 'Akhir masa sesi (idle 12 jam untuk sesi web biasa; digeser saat dipakai).' }
+      csrf: { type: string, pattern: '^[0-9a-f]{64}$' }
+      user: { $ref: '#/components/schemas/AuthUser' }
 responses:
+  WebCsrfDitolak:
+    description: |
+      Rute web/auth/* tanpa `X-Sigap-Klien: web` (semua metode), atau metode pengubah tanpa cookie `__Host-sigap_pra`,
+      dengan `Origin` yang tidak persis origin APP_URL (kosong/`null` ditolak), atau `X-CSRF-Token` yang bukan CSRF
+      pra-login cookie itu. Pesan seragam tanpa menyebut syarat yang gagal. Klien: GET /web/auth/csrf lagi lalu ulangi.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.', alasan: csrf_ditolak }
+  WebKodeTidakValid:
+    description: |
+      Kode salah, kedaluwarsa (5 menit), sudah dipakai, tantangan hangus (5 kali salah, tombol "Bukan saya", sandi
+      diubah), tantangan tiruan atau milik browser lain, atau kanal web terkunci. SATU galat seragam tanpa sisa percobaan.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Kode salah atau kedaluwarsa.', errors: { kode: ['Kode salah atau kedaluwarsa.'] }, alasan: kode_tidak_valid }
   AuthForbidden:
     description: |
       Token tidak memegang ability yang diwajibkan rute (`alasan: perlu_login_penuh` untuk token
@@ -263,3 +323,28 @@ responses:
       application/json:
         schema: { $ref: '#/components/schemas/AuthError' }
         example: { message: 'Token tidak dapat dikirim. Buka chat bot SiGAP di Telegram, tekan Mulai (/start), lalu coba lagi.', alasan: gagal_kirim }
+parameters:
+  WebKlien:
+    in: header
+    name: X-Sigap-Klien
+    required: true
+    description: 'Wajib persis `web` pada semua rute web/auth/* dan semua permintaan jalur cookie.'
+    schema: { type: string, const: web }
+  WebOrigin:
+    in: header
+    name: Origin
+    required: true
+    description: 'Dikirim otomatis oleh browser; wajib persis origin APP_URL (mis. https://sigapsppg.app).'
+    schema: { type: string }
+  WebCsrfPra:
+    in: header
+    name: X-CSRF-Token
+    required: true
+    description: 'Nilai `csrf` dari GET /web/auth/csrf (CSRF pra-login, simpan di memori JS).'
+    schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+  WebCookiePra:
+    in: cookie
+    name: __Host-sigap_pra
+    required: true
+    description: 'Id pra-login dari GET /web/auth/csrf (HttpOnly; dikirim otomatis browser, tidak dibaca JS).'
+    schema: { type: string }

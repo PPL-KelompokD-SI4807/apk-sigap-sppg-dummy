@@ -13,7 +13,9 @@ info:
     (skema webCookie) tanpa header Authorization dan SELALU dengan `X-Sigap-Klien: web` (semua metode;
     tanpa header itu cookie diabaikan -> 401, cookie tidak dihapus); metode pengubah juga wajib `Origin` +
     `X-CSRF-Token` (403 `alasan: csrf_ditolak`). Token web lewat Bearer dan token Mini App lewat cookie -> 401.
-    Tidak ada CORS untuk origin lain. Endpoint login web (`/web/auth/*`) menyusul (R04-2).
+    Tidak ada CORS untuk origin lain. Login web (R04-2): GET /web/auth/csrf -> POST /web/auth/masuk
+    (identitas + sandi, respons seragam) -> POST /web/auth/kode (kode 6 digit dari bot) -> Set-Cookie
+    `__Host-sigap_sesi`; rute web/auth/* memakai CSRF pra-login (cookie `__Host-sigap_pra`), bukan cookie sesi.
     Otorisasi mengikuti matriks CRUD Tabel 5 (config/rbac.php) dan dibatasi SPPG pengguna
     (kecuali Admin). Galat selalu berbentuk `{message, errors?}`.
     SPPG aktif (R-06a): header opsional `X-SPPG-Id` divalidasi di setiap rute login penuh.

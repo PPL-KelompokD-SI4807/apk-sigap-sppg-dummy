@@ -1,0 +1,173 @@
+/web/auth/csrf:
+  get:
+    tags: [Auth]
+    summary: Login web (R04-2) - mulai, terbitkan cookie pra-login + CSRF pra-login
+    description: |
+      Panggil saat layar Masuk web dibuka (dan setiap kali menerima 403 `csrf_ditolak`). Menerbitkan id pra-login
+      acak 256-bit di cookie `__Host-sigap_pra` (HttpOnly, Secure, SameSite=Strict, Path=/, tanpa Domain, 15 menit)
+      dan membalas `csrf` = HMAC terikat id itu. Setiap panggilan = id baru (tantangan lama di browser ini tidak
+      lagi dapat diverifikasi). Rute web/auth/* TIDAK membaca cookie sesi `__Host-sigap_sesi` dan tidak memakai
+      header Authorization. Respons: `Cache-Control: no-store, private`, `Vary: Cookie`.
+      Batas laju seluruh web/auth/*: 30/menit per IP dan 300/menit global.
+    security: []
+    parameters:
+      - in: header
+        name: X-Sigap-Klien
+        required: true
+        schema: { type: string, const: web }
+    responses:
+      '200':
+        description: Cookie `__Host-sigap_pra` diterbitkan (Set-Cookie).
+        headers:
+          Set-Cookie:
+            schema: { type: string, example: '__Host-sigap_pra=Qm9va1NpR0FQ...; expires=...; Max-Age=900; path=/; secure; httponly; samesite=strict' }
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebCsrfResponse' }
+            example: { csrf: '3f0c9a...e1 (64 hex)', berlaku_sampai: '2026-11-13T08:15:00+07:00' }
+      '403': { $ref: '#/components/responses/WebCsrfDitolak' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/web/auth/masuk:
+  post:
+    tags: [Auth]
+    summary: Login web (R04-2) - langkah 1, identitas + sandi (respons seragam)
+    description: |
+      Respons SELALU `200 {langkah: kode, tantangan}` dengan bentuk, status, dan header sama untuk akun tidak ada,
+      sandi salah, akun nonaktif/belum aktivasi/tanpa Telegram, kanal web terkunci, jatah tantangan habis, dan sandi
+      benar (anti-enumerasi; tepat satu pemeriksaan hash sandi di setiap cabang). Kode 6 digit dikirim bot ke
+      Telegram pemilik akun HANYA bila sandi benar dan akun boleh masuk; pesan bot menyebut "MASUK WEB", browser
+      ringkas, waktu WIB, domain resmi, dan tombol "Bukan saya" (membatalkan tantangan, dicatat di audit, tidak
+      mengunci akun). UI: tampilkan `message` lalu layar Kode; tidak ada pesan "sandi salah".
+
+      Penguncian kanal web (terpisah dari Mini App): 5 gagal (sandi atau kode) -> 15 menit; terkunci lagi dalam
+      24 jam -> 60 menit. Selama terkunci respons tetap sama dan kode tidak dikirim. Login Mini App tidak terpengaruh.
+      Batas laju: 10/menit dan 100/jam per IP, 5 per 15 menit per identitas ter-normalisasi (429).
+      Identitas: username (huruf besar/kecil dan `@` diabaikan) atau no telepon (08xx/62xx/+62xx).
+      Lupa sandi tidak ada di web: arahkan ke Mini App > Lupa password.
+    security: []
+    parameters:
+      - { $ref: '#/components/parameters/WebKlien' }
+      - { $ref: '#/components/parameters/WebOrigin' }
+      - { $ref: '#/components/parameters/WebCsrfPra' }
+      - { $ref: '#/components/parameters/WebCookiePra' }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [identitas, password]
+            properties:
+              identitas: { type: string, minLength: 3, maxLength: 32, description: 'Username atau no telepon.' }
+              password: { type: string, maxLength: 64 }
+          example: { identitas: siti.dapur, password: 'Rahasia123x' }
+    responses:
+      '200':
+        description: Selalu, untuk semua kasus di atas.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebTantanganResponse' }
+            example:
+              langkah: kode
+              message: 'Bila data benar, kode telah dikirim ke Telegram Anda. Tidak menerima kode dalam 1 menit? Periksa kembali sandi.'
+              tantangan:
+                id: 01jcz8w3q4m5n6p7r8s9t0v1w2
+                kedaluwarsa_pada: '2026-11-13T08:05:00+07:00'
+                kirim_ulang_tersedia_pada: '2026-11-13T08:01:00+07:00'
+                maks_kirim_ulang: 3
+                maks_percobaan: 5
+      '403': { $ref: '#/components/responses/WebCsrfDitolak' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/web/auth/kode:
+  post:
+    tags: [Auth]
+    summary: Login web (R04-2) - langkah 2, kode dari bot -> sesi web (cookie)
+    description: |
+      Kode benar (sekali pakai, 5 menit, maks 5 percobaan per tantangan, hanya dari browser yang memintanya):
+      sesi web diterbitkan lewat `Set-Cookie: __Host-sigap_sesi` (HttpOnly, Secure, SameSite=Strict, Path=/,
+      Max-Age = expires_at), cookie `__Host-sigap_pra` dihapus (Max-Age=0), dan badan memuat `csrf` SESI yang baru
+      (anti-fiksasi). Token sesi tidak pernah ada di badan respons. Sesi web lama yang masih dibawa browser ini
+      dicabut. Kuota maks 3 sesi web (login ke-4 mencabut sesi web tertua; sesi Mini App tidak tersentuh).
+      Bot mengirim notifikasi "Login web SiGAP SPPG berhasil" ke pemilik akun.
+      Selanjutnya klien web memakai rute login penuh dengan cookie + `X-Sigap-Klien: web` (+ `Origin` dan
+      `X-CSRF-Token` = `csrf` ini untuk metode pengubah); setelah muat ulang halaman, ambil `csrf` dari GET /auth/me.
+      Gagal apa pun -> 422 `kode_tidak_valid` (seragam). Kode salah ikut menghitung penguncian kanal web.
+      `ingat_browser` diterima tetapi belum berefek (browser tepercaya menyusul di R04-3).
+      Batas laju 10/menit per IP (bersama kirim ulang).
+    security: []
+    parameters:
+      - { $ref: '#/components/parameters/WebKlien' }
+      - { $ref: '#/components/parameters/WebOrigin' }
+      - { $ref: '#/components/parameters/WebCsrfPra' }
+      - { $ref: '#/components/parameters/WebCookiePra' }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [tantangan_id, kode]
+            properties:
+              tantangan_id: { type: string, description: 'ULID dari langkah masuk.' }
+              kode: { type: string, pattern: '^\d{6}$' }
+              ingat_browser: { type: boolean, description: 'Belum berefek (R04-3). Admin selalu diabaikan.' }
+          example: { tantangan_id: 01jcz8w3q4m5n6p7r8s9t0v1w2, kode: '482915' }
+    responses:
+      '200':
+        description: Login web berhasil.
+        headers:
+          Set-Cookie:
+            description: 'Dua cookie: `__Host-sigap_sesi=<token>; Max-Age=43200; path=/; secure; httponly; samesite=strict` dan penghapus `__Host-sigap_pra=deleted; Max-Age=0; ...`.'
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebLoginResponse' }
+            example:
+              langkah: selesai
+              jenis_sesi: web
+              expires_at: '2026-11-13T20:00:00+07:00'
+              csrf: '9b1e...c4 (64 hex)'
+              user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 3, sppg_name: SPPG Sukamaju, modules: [], permissions: {}, unit_scope: {}, aksi: {} }
+      '403': { $ref: '#/components/responses/WebCsrfDitolak' }
+      '422':
+        description: Format salah (ValidationError) atau kode tidak valid (`alasan: kode_tidak_valid`, seragam).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthError' }
+            example: { message: 'Kode salah atau kedaluwarsa.', errors: { kode: ['Kode salah atau kedaluwarsa.'] }, alasan: kode_tidak_valid }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
+/web/auth/kode/kirim-ulang:
+  post:
+    tags: [Auth]
+    summary: Login web (R04-2) - kirim ulang kode (respons seragam)
+    description: |
+      Selalu `200` dengan bentuk sama seperti langkah masuk (tantangan tiruan, milik browser lain, hangus, jeda
+      60 detik belum lewat, atau sudah 3 kali kirim ulang -> tidak ada pesan, respons tetap sama). Bila berlaku,
+      kode BARU dikirim (kode lama tidak berlaku) dan masa 5 menit diperbarui; jumlah percobaan salah tidak di-reset.
+      Klien menghitung sendiri jeda (`kirim_ulang_tersedia_pada`) dan sisa kirim ulang (`maks_kirim_ulang`).
+    security: []
+    parameters:
+      - { $ref: '#/components/parameters/WebKlien' }
+      - { $ref: '#/components/parameters/WebOrigin' }
+      - { $ref: '#/components/parameters/WebCsrfPra' }
+      - { $ref: '#/components/parameters/WebCookiePra' }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [tantangan_id]
+            properties:
+              tantangan_id: { type: string }
+          example: { tantangan_id: 01jcz8w3q4m5n6p7r8s9t0v1w2 }
+    responses:
+      '200':
+        description: Selalu (lihat deskripsi).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebTantanganResponse' }
+      '403': { $ref: '#/components/responses/WebCsrfDitolak' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }
