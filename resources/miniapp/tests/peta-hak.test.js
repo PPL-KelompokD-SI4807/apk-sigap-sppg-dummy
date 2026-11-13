@@ -112,15 +112,15 @@ test('fail closed: record tanpa izin / izin rusak => tanpa tombol Ubah dan Hapus
 // ---------------------------------------------------------------------------------------------
 test('menu beranda per profil mengikuti peta server (dan tidak lebih)', () => {
   const harap = {
-    admin: ['pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'],
-    kepala_sppg: ['pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'],
+    admin: ['laporan-bgn', 'pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'],
+    kepala_sppg: ['laporan-bgn', 'pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'],
     ahli_gizi: ['pengguna', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'bukti-distribusi', 'keluhan', 'rekap-harian', 'persetujuan-menu'],
-    akuntan: ['pengguna', 'sppg', 'titik-layanan', 'bahan-baku', 'pemasok', 'log-produksi', 'armada', 'bukti-distribusi', 'keuangan', 'rekap-harian', 'pembelian-bahan'],
+    akuntan: ['laporan-bgn', 'pengguna', 'sppg', 'titik-layanan', 'bahan-baku', 'pemasok', 'log-produksi', 'armada', 'bukti-distribusi', 'keuangan', 'rekap-harian', 'pembelian-bahan'],
     staf_gudang: ['pengguna', 'sppg', 'titik-layanan', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'pembelian-bahan'],
     relawan_dapur: ['pengguna', 'sppg', 'titik-layanan', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'keluhan'],
     relawan_distribusi: ['pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'menu-gizi', 'jadwal', 'mutu', 'armada', 'bukti-distribusi', 'keluhan'],
     relawan_tanpa_unit: ['pengguna', 'sppg', 'titik-layanan', 'menu-gizi', 'mutu', 'armada', 'keluhan'],
-    investor: ['pengguna', 'sppg', 'bahan-baku', 'mutu', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu'],
+    investor: ['laporan-bgn', 'pengguna', 'sppg', 'bahan-baku', 'mutu', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu'],
   };
   assert.deepEqual(urut(Object.keys(harap)), urut(SEMUA), 'semua profil tercakup');
   for (const nama of SEMUA) {
