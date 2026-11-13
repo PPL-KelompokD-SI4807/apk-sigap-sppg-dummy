@@ -118,4 +118,10 @@ abstract class LaporanBgnTestCase extends InvestorTestCase
     {
         return $this->getJson('/api/v1/laporan-bgn/'.$jalur.'?'.http_build_query($query));
     }
+
+    /** @param array<string, mixed> $body */
+    protected function terbitkan(string $jalur, array $body = []): TestResponse
+    {
+        return $this->postJson('/api/v1/laporan-bgn/'.$jalur.'/nomor', $body);
+    }
 }

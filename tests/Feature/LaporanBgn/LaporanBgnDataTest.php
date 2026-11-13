@@ -2,8 +2,13 @@
 
 namespace Tests\Feature\LaporanBgn;
 
+use App\Enums\JenisLaporanBgn;
 use App\Enums\Role;
 use App\Models\AuditLog;
+use App\Models\Sppg;
+use App\Services\LaporanBgn\PenomoranLaporanService;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /** Agregasi benar untuk 30a-30d, rekonsiliasi antar laporan, saldo awal, penomoran LPA, audit. Data fiktif. */
@@ -245,46 +250,143 @@ class LaporanBgnDataTest extends LaporanBgnTestCase
 
     // ------------------------------------------------------------------ penomoran LPA
 
-    public function test_nomor_lpa_idempoten_berurutan_per_sppg_dan_per_tahun(): void
+    public function test_get_tidak_menerbitkan_nomor_dan_tidak_membuat_baris(): void
+    {
+        $this->sebagaiAkuntan();
+        $q = ['tanggal_awal' => '2026-11-01', 'tanggal_akhir' => '2026-11-15'];
+
+        foreach ([['dua-mingguan', $q], ['harian', ['tanggal' => '2026-11-02']], ['bulanan/ringkasan', ['bulan' => '2026-11']], ['bulanan/anggaran', ['bulan' => '2026-11']], ['porsi', $q], ['bulanan/penerima-manfaat', ['bulan' => '2026-11']]] as [$jalur, $query]) {
+            $this->laporan($jalur, $query)->assertOk()->assertJsonPath('data.nomor', null);
+            $this->laporan($jalur, $query)->assertOk()->assertJsonPath('data.nomor', null);
+        }
+
+        $this->forgetActor();
+        $this->assertSame(0, DB::table('laporan_bgns')->count());
+
+        // Setelah POST, GET menampilkan nomor yang sudah terbit (baca-saja) dan tidak menambah urutan.
+        $this->sebagaiAkuntan()->terbitkan('dua-mingguan', $q)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XI/2026');
+        $this->laporan('dua-mingguan', $q)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XI/2026');
+        $this->forgetActor();
+        $this->assertSame(1, DB::table('laporan_bgns')->count());
+    }
+
+    public function test_post_nomor_lpa_idempoten_berurutan_per_sppg_dan_per_tahun(): void
     {
         $this->sebagaiAkuntan();
         $q1 = ['tanggal_awal' => '2026-11-01', 'tanggal_akhir' => '2026-11-15'];
         $q2 = ['tanggal_awal' => '2026-11-16', 'tanggal_akhir' => '2026-11-30'];
 
-        $this->laporan('dua-mingguan', $q1)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XI/2026');
-        // Cetak ulang periode yang sama = nomor sama.
-        $this->laporan('dua-mingguan', $q1)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XI/2026');
-        $this->laporan('dua-mingguan', $q2)->assertOk()->assertJsonPath('data.nomor', '02/LPA/XI/2026');
-        $this->laporan('harian', ['tanggal' => '2026-11-02'])->assertOk()->assertJsonPath('data.nomor', '03/LPA/XI/2026');
+        $this->terbitkan('dua-mingguan', $q1)->assertOk()
+            ->assertJsonPath('data.nomor', '01/LPA/XI/2026')->assertJsonPath('data.nomor_urut', 1)
+            ->assertJsonPath('data.baru', true)->assertJsonPath('data.jenis', 'dua_mingguan')
+            ->assertJsonPath('data.periode.akhir', '2026-11-15');
+        // Ulang periode yang sama = nomor sama, tidak menghabiskan nomor baru.
+        $this->terbitkan('dua-mingguan', $q1)->assertOk()
+            ->assertJsonPath('data.nomor', '01/LPA/XI/2026')->assertJsonPath('data.baru', false);
+        $this->terbitkan('dua-mingguan', $q2)->assertOk()->assertJsonPath('data.nomor', '02/LPA/XI/2026');
+        $this->terbitkan('harian', ['tanggal' => '2026-11-02'])->assertOk()->assertJsonPath('data.nomor', '03/LPA/XI/2026');
+        $this->terbitkan('bulanan', ['bulan' => '2026-11'])->assertOk()->assertJsonPath('data.nomor', '04/LPA/XI/2026');
+        $this->terbitkan('bulanan', ['bulan' => '2026-11'])->assertOk()->assertJsonPath('data.nomor', '04/LPA/XI/2026');
+        // 30d A dan B satu laporan bulanan: GET keduanya menampilkan nomor yang sama.
         $this->laporan('bulanan/ringkasan', ['bulan' => '2026-11'])->assertOk()->assertJsonPath('data.nomor', '04/LPA/XI/2026');
         $this->laporan('bulanan/anggaran', ['bulan' => '2026-11'])->assertOk()->assertJsonPath('data.nomor', '04/LPA/XI/2026');
-        // 30a dan 30d-C tidak bernomor menurut juknis dan tidak menghabiskan urutan.
+        // 30a dan 30d-C tidak bernomor: tidak ada rute POST, urutan tidak terpakai.
+        $this->terbitkan('porsi', $q1)->assertNotFound();
+        $this->terbitkan('bulanan/penerima-manfaat', ['bulan' => '2026-11'])->assertNotFound();
         $this->laporan('porsi', $q1)->assertOk()->assertJsonPath('data.nomor', null);
         $this->laporan('bulanan/penerima-manfaat', ['bulan' => '2026-11'])->assertOk()->assertJsonPath('data.nomor', null);
         // Tahun baru: urutan mulai lagi, bulan Romawi mengikuti akhir periode.
-        $this->laporan('dua-mingguan', ['tanggal_awal' => '2027-01-01', 'tanggal_akhir' => '2027-01-15'])->assertOk()
+        $this->terbitkan('dua-mingguan', ['tanggal_awal' => '2027-01-01', 'tanggal_akhir' => '2027-01-15'])->assertOk()
             ->assertJsonPath('data.nomor', '01/LPA/I/2027');
 
         // SPPG lain punya urutan sendiri.
-        $this->as($this->kepalaB)->laporan('dua-mingguan', $q1)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XI/2026');
+        $this->as($this->kepalaB)->terbitkan('dua-mingguan', $q1)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XI/2026');
 
         $this->forgetActor();
         $this->assertSame(1, DB::table('laporan_bgns')->where('sppg_id', $this->sppgA)->where('jenis', 'dua_mingguan')->where('periode_awal', '2026-11-01')->count());
     }
 
-    public function test_investor_hanya_membaca_nomor_dan_tidak_menghabiskan_urutan(): void
+    public function test_post_validasi_periode_dan_admin_wajib_sppg(): void
+    {
+        $this->sebagaiKepala();
+        $this->terbitkan('harian')->assertStatus(422)->assertJsonValidationErrors('tanggal');
+        $this->terbitkan('bulanan', ['bulan' => '2026-13'])->assertStatus(422)->assertJsonValidationErrors('bulan');
+        $this->terbitkan('dua-mingguan', ['tanggal_awal' => '2026-11-10', 'tanggal_akhir' => '2026-11-01'])->assertStatus(422);
+
+        $this->as($this->admin)->terbitkan('harian', ['tanggal' => '2026-11-02'])->assertStatus(422)->assertJsonValidationErrors('sppg_id');
+        $this->terbitkan('harian', ['tanggal' => '2026-11-02', 'sppg_id' => $this->sppgA])->assertOk()
+            ->assertJsonPath('data.nomor', '01/LPA/XI/2026');
+    }
+
+    public function test_post_balapan_unik_memakai_baris_yang_sudah_ada(): void
+    {
+        $this->sebagaiAkuntan();
+        $q = ['tanggal_awal' => '2026-11-01', 'tanggal_akhir' => '2026-11-15'];
+        $this->terbitkan('dua-mingguan', $q)->assertOk();
+        $this->forgetActor();
+
+        // Pihak lain sudah menerbitkan (simulasi pelanggaran unik): baris dan nomor tetap satu.
+        $layanan = app(PenomoranLaporanService::class);
+        $sppg = Sppg::query()->findOrFail($this->sppgA);
+        $awal = CarbonImmutable::parse('2026-11-01');
+        $akhir = CarbonImmutable::parse('2026-11-15');
+        [$a, $baruA] = $layanan->terbitkan($sppg, JenisLaporanBgn::DuaMingguan, $awal, $akhir, null);
+        [$b, $baruB] = $layanan->terbitkan($sppg, JenisLaporanBgn::DuaMingguan, $awal, $akhir, null);
+
+        $this->assertFalse($baruA);
+        $this->assertFalse($baruB);
+        $this->assertSame($a->nomor, $b->nomor);
+        $this->assertSame(1, DB::table('laporan_bgns')->count());
+        // Indeks unik (sppg, tahun, nomor_urut) menolak nomor ganda.
+        $this->expectException(UniqueConstraintViolationException::class);
+        DB::table('laporan_bgns')->insert([
+            'sppg_id' => $this->sppgA, 'jenis' => 'harian', 'periode_awal' => '2026-11-02', 'periode_akhir' => '2026-11-02',
+            'tahun' => 2026, 'nomor_urut' => 1, 'nomor' => '01/LPA/XI/2026', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    public function test_investor_hanya_membaca_nomor_dan_tidak_dapat_menerbitkan(): void
     {
         $q = ['tanggal_awal' => '2026-12-01', 'tanggal_akhir' => '2026-12-15'];
 
         $this->sebagai($this->investorAB, $this->sppgA)->laporan('dua-mingguan', $q)->assertOk()
             ->assertJsonPath('data.nomor', null);
+        $this->sebagai($this->investorAB, $this->sppgA)->terbitkan('dua-mingguan', $q)->assertForbidden();
 
-        // Pengguna berhak menerbitkan sesudahnya mendapat urutan pertama (bukan urutan kedua).
-        $this->sebagai($this->kepalaA)->laporan('dua-mingguan', $q)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XII/2026');
+        // Pengguna berhak menerbitkan sesudahnya mendapat urutan pertama.
+        $this->sebagai($this->kepalaA)->terbitkan('dua-mingguan', $q)->assertOk()->assertJsonPath('data.nomor', '01/LPA/XII/2026');
 
-        // Setelah terbit, investor melihat nomor yang sama.
+        // Setelah terbit, investor melihat nomor yang sama (baca-saja).
         $this->sebagai($this->investorAB, $this->sppgA)->laporan('dua-mingguan', $q)->assertOk()
             ->assertJsonPath('data.nomor', '01/LPA/XII/2026');
+    }
+
+    public function test_post_peran_lain_dan_lintas_sppg_403_sebelum_validasi(): void
+    {
+        foreach ([$this->ahliGiziA, $this->stafGudangA, $this->relawanA] as $user) {
+            $this->as($user)->terbitkan('harian')->assertForbidden();
+        }
+        // Kepala SPPG A meminta SPPG B: 403, tidak ada baris.
+        $this->as($this->kepalaA)->terbitkan('harian', ['tanggal' => '2026-11-02', 'sppg_id' => $this->sppgB])->assertForbidden();
+        $this->as($this->akuntanA)->terbitkan('harian', ['tanggal' => '2026-11-02', 'sppg_id' => 999999])->assertForbidden();
+        $this->forgetActor();
+        $this->flushHeaders();
+        $this->terbitkan('harian', ['tanggal' => '2026-11-02'])->assertUnauthorized();
+        $this->assertSame(0, DB::table('laporan_bgns')->count());
+    }
+
+    public function test_post_tercatat_di_audit_hanya_saat_terbit_baru(): void
+    {
+        $q = ['tanggal' => '2026-11-02'];
+        $this->sebagaiAkuntan()->terbitkan('harian', $q)->assertOk();
+        $this->terbitkan('harian', $q)->assertOk();
+        $this->forgetActor();
+
+        $log = AuditLog::query()->withoutGlobalScopes()->where('event', 'laporan_bgn_nomor_terbit')->sole();
+        $this->assertSame($this->sppgA, (int) $log->sppg_id);
+        $this->assertSame($this->akuntanA->id, (int) $log->user_id);
+        $this->assertSame('01/LPA/XI/2026', $log->new_values['nomor']);
+        $this->assertSame(['jenis', 'periode_awal', 'periode_akhir', 'nomor'], array_keys($log->new_values));
     }
 
     // ------------------------------------------------------------------ penandatangan
