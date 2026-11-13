@@ -44,7 +44,7 @@ class WebSesiKuotaIdleTest extends TestCase
 
     private function sesiWeb(?User $user = null, string $label = 'Firefox · Linux'): string
     {
-        return app(SesiService::class)->terbitkanWeb($user ?? $this->siti, $label)['token'];
+        return app(SesiService::class)->terbitkanWeb($user ?? $this->siti, $label)['cookie']->getValue();
     }
 
     private function sesiMiniApp(int $ke, ?User $user = null): string
