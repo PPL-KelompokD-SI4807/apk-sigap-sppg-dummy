@@ -4,13 +4,17 @@ namespace Tests\Feature\LaporanBgn;
 
 use App\Models\TitikLayanan;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\TanpaKunciNik;
 
 /**
  * RBAC + scope SPPG laporan BGN: 403 tanpa hak, lintas SPPG, investor hanya agregat (Q-4) dengan ambang k=5.
  */
 class LaporanBgnAksesTest extends LaporanBgnTestCase
 {
+    use TanpaKunciNik;
+
     /** @return array<string, array{string, array<string, string>}> jalur => query minimal */
     public static function semuaJenis(): array
     {
@@ -128,6 +132,9 @@ class LaporanBgnAksesTest extends LaporanBgnTestCase
 
     public function test_investor_30a_kelompok_kecil_digabung_dan_tidak_membocorkan_penerima(): void
     {
+        // Nama penandatangan sengaja memuat "nik": tidak boleh dianggap kebocoran NIK.
+        DB::table('sppgs')->where('id', $this->sppgA)->update(['nama_ketua_yayasan' => 'Raden Damanik']);
+        $this->kepalaA->forceFill(['name' => 'Siti Damanik'])->save();
         $res = $this->sebagai($this->investorAB, $this->sppgA)
             ->laporan('porsi', ['tanggal_awal' => '2026-11-02', 'tanggal_akhir' => '2026-11-06'])->assertOk();
 
@@ -152,9 +159,25 @@ class LaporanBgnAksesTest extends LaporanBgnTestCase
 
         // Tanpa data pribadi: tidak ada nama titik layanan/sekolah, jenis kelamin, atau NIK di respons.
         $isi = $res->getContent();
-        foreach (['SDN Fiktif', 'Posyandu', 'laki_laki', 'nik', 'catatan_alergi'] as $terlarang) {
+        foreach (['SDN Fiktif', 'Posyandu', 'laki_laki', 'catatan_alergi'] as $terlarang) {
             $this->assertStringNotContainsStringIgnoringCase($terlarang, $isi);
         }
+        // NIK diperiksa sebagai kunci, bukan potongan teks (nama seperti "Damanik" memuat "nik").
+        $this->assertTanpaKunciNik($res->json());
+    }
+
+    public function test_pemeriksa_kunci_nik_mendeteksi_kebocoran_dan_mengabaikan_nilai(): void
+    {
+        $this->assertTanpaKunciNik(['penandatangan' => ['nama' => 'Raden Damanik'], 'baris' => [['catatan' => 'nikah']]]);
+
+        $this->assertSame(['a.0.b.NIK'], $this->jalurKunciNik(['a' => [['b' => ['NIK' => '1']]]]));
+
+        $res = $this->as($this->kepalaA)
+            ->laporan('dua-mingguan', ['tanggal_awal' => '2026-11-01', 'tanggal_akhir' => '2026-11-15'])->assertOk();
+        $disisipi = $res->json();
+        $disisipi['data']['rincian_keuangan']['nik'] = '3201000000000001';
+        $this->assertSame(['data.rincian_keuangan.nik'], $this->jalurKunciNik($disisipi));
+        $this->assertTanpaKunciNik($res->json());
     }
 
     public function test_investor_30a_satu_sel_kecil_menarik_sel_pelengkap_ke_gabungan(): void
