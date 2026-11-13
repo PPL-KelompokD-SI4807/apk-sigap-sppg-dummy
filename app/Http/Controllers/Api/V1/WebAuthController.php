@@ -7,6 +7,8 @@ use App\Http\Requests\Auth\Web\KirimUlangKodeWebRequest;
 use App\Http\Requests\Auth\Web\KodeWebRequest;
 use App\Http\Requests\Auth\Web\MasukWebRequest;
 use App\Http\Resources\AuthUserResource;
+use App\Models\User;
+use App\Services\Auth\BrowserTepercayaService;
 use App\Services\Auth\MasukWebService;
 use App\Services\Auth\SesiService;
 use App\Services\Auth\SesiWeb;
@@ -14,6 +16,7 @@ use App\Support\LabelBrowser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Symfony\Component\HttpFoundation\Cookie;
 
 /**
  * Login web R04-2 (ADR 2026-11-09 Keputusan 4): `api/v1/web/auth/*`, tanpa SesiWebCookie/auth:sanctum, digerbangi
@@ -38,17 +41,30 @@ class WebAuthController extends ApiController
         ])->withCookie(SesiWeb::cookiePra($id));
     }
 
-    /** POST /api/v1/web/auth/masuk — respons SELALU 200 `langkah: kode` (anti-enumerasi). */
+    /**
+     * POST /api/v1/web/auth/masuk — 200 `langkah: kode` (seragam, anti-enumerasi). Browser tepercaya (R04-3) yang
+     * sah untuk akun ini + sandi benar: 200 `langkah: selesai` + Set-Cookie sesi (kode dilewati); sandi salah pada
+     * browser tepercaya sah: 422 `alasan: kredensial_salah`. Cookie `__Host-sigap_tb` yang tidak berlaku lagi dihapus.
+     */
     public function masuk(MasukWebRequest $request): JsonResponse
     {
-        $tantangan = $this->masuk->masuk(
+        $cookieTb = $request->cookies->get(BrowserTepercayaService::namaCookie());
+        $cookieLama = $request->cookies->get(SesiWeb::namaCookieSesi());
+
+        $hasil = $this->masuk->masuk(
             (string) $request->validated('identitas'),
             (string) $request->validated('password'),
             $this->praLogin($request),
             LabelBrowser::dari($request->userAgent()),
+            is_string($cookieTb) ? $cookieTb : null,
+            is_string($cookieLama) ? $cookieLama : null,
         );
 
-        return $this->tantangan($tantangan);
+        $respons = $hasil['langkah'] === 'selesai'
+            ? $this->selesai($request, $hasil['sesi'], ['dipakai' => true, 'diingat' => true, 'berlaku_sampai' => $hasil['browser_sampai']->toIso8601String()])
+            : $this->tantangan($hasil['tantangan']);
+
+        return $hasil['lupakan_tb'] ? $respons->withCookie(BrowserTepercayaService::lupakanCookie()) : $respons;
     }
 
     /** POST /api/v1/web/auth/kode/kirim-ulang — respons seragam (tantangan tiruan pun 200). */
@@ -70,6 +86,7 @@ class WebAuthController extends ApiController
     public function kode(KodeWebRequest $request): JsonResponse
     {
         $cookieLama = $request->cookies->get(SesiWeb::namaCookieSesi());
+        $cookieTb = $request->cookies->get(BrowserTepercayaService::namaCookie());
 
         $sesi = $this->masuk->verifikasi(
             (string) $request->validated('tantangan_id'),
@@ -77,13 +94,33 @@ class WebAuthController extends ApiController
             $this->praLogin($request),
             LabelBrowser::dari($request->userAgent()),
             is_string($cookieLama) ? $cookieLama : null,
+            $request->boolean('ingat_browser'),
+            is_string($cookieTb) ? $cookieTb : null,
         );
 
+        $respons = $this->selesai($request, $sesi, [
+            'dipakai' => false,
+            'diingat' => $sesi['ingat_browser'] === 'diingat',
+            'berlaku_sampai' => $sesi['browser_sampai']?->toIso8601String(),
+        ] + ($sesi['ingat_browser'] === 'diabaikan_admin' ? ['alasan' => 'admin_selalu_kode'] : []));
+
+        return $sesi['browser_cookie'] instanceof Cookie ? $respons->withCookie($sesi['browser_cookie']) : $respons;
+    }
+
+    /**
+     * Respons login web selesai (jalur kode atau browser tepercaya). Token sesi hanya di Set-Cookie.
+     *
+     * @param  array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int}  $sesi
+     * @param  array<string, mixed>  $browser
+     */
+    private function selesai(Request $request, array $sesi, array $browser): JsonResponse
+    {
         return response()->json([
             'langkah' => 'selesai',
             'jenis_sesi' => SesiService::JENIS_WEB,
             'expires_at' => $sesi['expires_at']->toIso8601String(),
             'csrf' => $sesi['csrf'],
+            'browser_tepercaya' => $browser,
             'user' => (new AuthUserResource($sesi['user']))->resolve($request),
         ])->withCookie($sesi['cookie'])->withCookie(SesiWeb::lupakanCookiePra());
     }

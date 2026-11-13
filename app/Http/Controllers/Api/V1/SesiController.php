@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Auth\UbahPasswordRequest;
 use App\Services\Auth\AuditAuth;
+use App\Services\Auth\BrowserTepercayaService;
 use App\Services\Auth\KredensialService;
 use App\Services\Auth\SesiService;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +17,10 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class SesiController extends ApiController
 {
-    public function __construct(private readonly SesiService $sesi) {}
+    public function __construct(
+        private readonly SesiService $sesi,
+        private readonly BrowserTepercayaService $browser,
+    ) {}
 
     /**
      * GET /api/v1/auth/sesi — sesi Mini App + web milik sendiri. Tiap item ber-`jenis` (miniapp|web);
@@ -33,9 +37,43 @@ class SesiController extends ApiController
                 'kuota' => [
                     SesiService::JENIS_MINIAPP => $this->sesi->maksSesi(),
                     SesiService::JENIS_WEB => $this->sesi->maksSesiWeb(),
+                    'browser_tepercaya' => $this->browser->maks(),
                 ],
             ],
         ]);
+    }
+
+    /**
+     * GET /api/v1/auth/browser-tepercaya — browser web tepercaya BERLAKU milik sendiri (R04-3). Tanpa selektor/
+     * validator; `browser_ini` = browser sesi web yang sedang dipakai.
+     */
+    public function browserTepercaya(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'data' => $this->browser->daftar($user, $this->idBrowserIni($request)),
+            'meta' => ['kuota' => $this->browser->maks(), 'masa_hari' => $this->browser->masaHari()],
+        ]);
+    }
+
+    /**
+     * DELETE /api/v1/auth/browser-tepercaya/{browser} — cabut satu browser tepercaya milik sendiri beserta sesi web
+     * turunannya (milik akun lain/sudah dicabut: 404). Browser ini: cookie `__Host-sigap_tb` ikut dihapus.
+     */
+    public function cabutBrowserTepercaya(Request $request, int $browser): JsonResponse
+    {
+        $user = $request->user();
+        $browserIni = $this->idBrowserIni($request);
+        $dicabut = $this->browser->cabutSatu($user, $browser) ?? throw new NotFoundHttpException;
+        $ini = (int) $dicabut->getKey() === $browserIni;
+
+        $respons = response()->json([
+            'message' => $ini ? 'Browser ini tidak lagi tepercaya dan sesinya diakhiri. Silakan masuk kembali.' : 'Browser tepercaya dicabut.',
+            'browser_ini' => $ini,
+        ]);
+
+        return $ini ? $respons->withCookie(BrowserTepercayaService::lupakanCookie()) : $respons;
     }
 
     /** DELETE /api/v1/auth/sesi/{sesi} — cabut satu sesi milik sendiri (milik akun lain: 404). */
@@ -44,7 +82,7 @@ class SesiController extends ApiController
         $user = $request->user();
         $token = $this->sesi->cabutSatu($user, $sesi) ?? throw new NotFoundHttpException;
         $sesiIni = (int) $token->getKey() === $this->idTokenIni($request);
-        AuditAuth::catat($user, AuditAuth::SESI_DICABUT, ['sesi_ini' => $sesiIni]);
+        AuditAuth::catat($user, AuditAuth::SESI_DICABUT, ['sesi_ini' => $sesiIni, 'jenis' => SesiService::jenis($token)]);
 
         return response()->json([
             'message' => $sesiIni ? 'Sesi perangkat ini diakhiri. Silakan masuk kembali.' : 'Sesi perangkat dicabut.',
@@ -92,5 +130,14 @@ class SesiController extends ApiController
         $token = $request->user()->currentAccessToken();
 
         return $token instanceof PersonalAccessToken && $token->exists ? (int) $token->getKey() : null;
+    }
+
+    /** Browser tepercaya tempat sesi web ini terbit (null untuk Mini App/sesi web biasa). */
+    private function idBrowserIni(Request $request): ?int
+    {
+        $token = $request->user()->currentAccessToken();
+        $id = $token instanceof PersonalAccessToken && SesiService::tokenWeb($token) ? $token->getAttribute('browser_tepercaya_id') : null;
+
+        return $id === null ? null : (int) $id;
     }
 }

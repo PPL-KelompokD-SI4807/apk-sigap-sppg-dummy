@@ -87,7 +87,7 @@ class AuthController extends ApiController
 
         if ($token instanceof PersonalAccessToken && $token->exists) {
             $sesi->logout($user, $token);
-            AuditAuth::catat($user, AuditAuth::LOGOUT);
+            AuditAuth::catat($user, AuditAuth::LOGOUT, ['jenis' => SesiService::jenis($token)]);
         }
 
         return response()->json(['message' => 'Berhasil keluar.']);
