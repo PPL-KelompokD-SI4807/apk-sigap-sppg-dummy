@@ -7,6 +7,29 @@ securitySchemes:
       POST /auth/masuk atau /auth/token/verifikasi; tidak kedaluwarsa, berakhir hanya karena logout
       atau pencabutan. Token pra-login dari POST /auth/telegram hanya untuk rute /auth/masuk,
       /auth/aktivasi, /auth/lupa-password*, /auth/token/*.
+      Token sesi WEB (ability klien:web, R-04) DITOLAK bila dikirim sebagai Bearer (401).
+  webCookie:
+    type: apiKey
+    in: cookie
+    name: __Host-sigap_sesi
+    description: |
+      Sesi web R-04 (ADR 2026-11-09). Token Sanctum ber-ability `auth:penuh` + `klien:web`, HANYA lewat cookie
+      `__Host-sigap_sesi` (HttpOnly, Secure, SameSite=Strict, Path=/, tanpa Domain; Max-Age = expires_at sesi).
+      Klien web tidak pernah membaca/menyimpan token dan TIDAK mengirim header Authorization.
+      - Ada header `Authorization` -> hanya Bearer yang dievaluasi; cookie diabaikan (Bearer tidak sah tetap 401).
+      - SEMUA permintaan jalur cookie (termasuk GET/HEAD/OPTIONS) WAJIB membawa `X-Sigap-Klien: web` (persis).
+        Tanpa header itu cookie diabaikan sepenuhnya: 401 umum TANPA menghapus cookie (agar Mini App satu origin
+        tanpa Authorization tidak memakai maupun menghapus sesi web di browser yang sama).
+      - Token Mini App lewat cookie -> 401 (cookie dihapus). Hanya rute login penuh yang menerima cookie;
+        rute publik dan pra-login tidak.
+      - Metode pengubah (POST/PUT/PATCH/DELETE) juga WAJIB: `Origin` persis origin APP_URL (kosong/`null`
+        ditolak) dan `X-CSRF-Token` = nilai `csrf` dari GET /auth/me (atau dari respons login web).
+        Gagal -> 403 `alasan: csrf_ditolak`. Metode GET/HEAD tidak memerlukan Origin/CSRF.
+      - Semua respons jalur cookie: `Cache-Control: no-store, private` dan `Vary: Cookie`.
+      - Masa: idle 12 jam (sesi web biasa, termasuk semua sesi web Admin), 90 hari bergeser (Admin 30),
+        absolut 180 hari. Pemakaian ditulis paling sering tiap 15 menit; setiap penulisan menerbitkan ulang
+        cookie dengan Max-Age baru. 401 di jalur cookie selalu menghapus cookie (Max-Age=0).
+      - Kuota: maks 3 sesi web per pengguna, terpisah dari 5 sesi Mini App.
 schemas:
   Error:
     type: object
@@ -180,6 +203,10 @@ responses:
       terbuka (nilainya tetap sejak Mini App dibuka) dan hanya sah TELEGRAM_INIT_DATA_MAX_AGE detik
       (bawaan 3600) sejak auth_date. Bila /auth/telegram juga 401 (initData basi), minta pengguna menutup
       lalu membuka ulang Mini App. Jangan mengulang lebih dari sekali.
+      Jalur cookie web (R-04): 401 selalu disertai Set-Cookie penghapus `__Host-sigap_sesi` (Max-Age=0); sesi
+      web yang berakhir (idle 12 jam/90/30/180 hari) juga dicabut di server. Klien web: tampilkan layar Masuk
+      (tanpa login senyap). Token web lewat Bearer, token Mini App lewat cookie -> 401 umum tanpa `alasan`.
+      Permintaan tanpa Authorization dan tanpa `X-Sigap-Klien: web` -> 401 umum; cookie web TIDAK dihapus.
     headers:
       WWW-Authenticate:
         description: Hanya pada sesi_kedaluwarsa.

@@ -105,6 +105,7 @@
 /auth/masuk:
   post:
     tags: [Auth]
+    security: [{ bearerAuth: [] }]
     summary: Lapis 2 - masuk dengan username ATAU no telepon + password (token pra-login)
     description: |
       Identitas HANYA dicocokkan dengan akun pemilik token pra-login (akun Telegram dari initData).
@@ -158,6 +159,7 @@
 /auth/aktivasi:
   post:
     tags: [Auth]
+    security: [{ bearerAuth: [] }]
     summary: Aktivasi / atur password pertama (token pra-login)
     description: |
       Untuk akun tanpa password: akun dari undangan 72 jam (sudah /start di bot), akun
@@ -200,6 +202,7 @@
 /auth/lupa-password:
   get:
     tags: [Auth]
+    security: [{ bearerAuth: [] }]
     summary: Status permintaan reset password terkini (token pra-login)
     description: Permintaan aktif, atau yang terakhir (ditolak/selesai/kedaluwarsa); `data` null bila belum pernah.
     responses:
@@ -219,6 +222,7 @@
       '403': { $ref: '#/components/responses/AuthForbidden' }
   post:
     tags: [Auth]
+    security: [{ bearerAuth: [] }]
     summary: Lupa password - ajukan permintaan reset ke Admin (token pra-login)
     description: |
       Tidak mengirim token apa pun. Admin dalam scope akun ini diberi tahu lewat bot dan wajib
@@ -260,6 +264,7 @@
 /auth/lupa-password/lanjut:
   post:
     tags: [Auth]
+    security: [{ bearerAuth: [] }]
     summary: Password baru setelah permintaan reset disetujui (token pra-login)
     description: |
       Hanya bila permintaan akun ini DISETUJUI dan belum kedaluwarsa (selain itu 409
@@ -301,6 +306,7 @@
 /auth/token/verifikasi:
   post:
     tags: [Auth]
+    security: [{ bearerAuth: [] }]
     summary: Konfirmasi token 6 digit -> token login penuh (token pra-login)
     description: |
       Token berlaku 5 menit, sekali pakai, terikat ke akun + device_id + token PRA-LOGIN yang
@@ -346,6 +352,7 @@
 /auth/token/kirim-ulang:
   post:
     tags: [Auth]
+    security: [{ bearerAuth: [] }]
     summary: Kirim ulang token 6 digit (token pra-login)
     description: |
       Kode baru (kode lama tidak berlaku), masa berlaku 5 menit lagi. Jeda 60 detik, maks 3 kali per
@@ -383,6 +390,9 @@
       `expires_at` = akhir masa sesi bergeser saat ini (sudah termasuk perpanjangan oleh permintaan ini),
       `batas_absolut_at` = batas yang tidak dapat diperpanjang = min(login + 180 hari, akhir kepercayaan
       perangkat = token bot terakhir + 180 hari); dapat lebih awal dari login + 180 hari.
+      Sesi web (cookie, R-04): `expires_at` juga dijepit idle 12 jam; respons menambah `jenis_sesi: web` dan
+      `csrf` (token CSRF sesi ini untuk header `X-CSRF-Token`; simpan di memori JS saja). Respons Bearer
+      (Mini App) tidak memuat kedua field itu.
     responses:
       '200':
         description: OK
@@ -393,8 +403,10 @@
               required: [user]
               properties:
                 user: { $ref: '#/components/schemas/AuthUser' }
-                expires_at: { type: [string, 'null'], format: date-time, description: 'Akhir masa sesi bergeser (90 hari sejak terakhir dipakai; Admin 30). null hanya untuk token tiruan tes.' }
+                expires_at: { type: [string, 'null'], format: date-time, description: 'Akhir masa sesi bergeser (90 hari sejak terakhir dipakai; Admin 30; sesi web biasa: idle 12 jam). null hanya untuk token tiruan tes.' }
                 batas_absolut_at: { type: [string, 'null'], format: date-time, description: 'Batas efektif yang tidak dapat diperpanjang: min(login + 180 hari, token bot terakhir perangkat + 180 hari); expires_at tidak pernah melewatinya.' }
+                jenis_sesi: { type: string, const: web, description: 'Hanya pada jalur cookie web.' }
+                csrf: { type: string, pattern: '^[0-9a-f]{64}$', description: 'Hanya pada jalur cookie web: nilai header X-CSRF-Token untuk metode pengubah, terikat sesi ini.' }
             examples:
               relawan_dapur:
                 summary: Relawan unit dapur (peta hak ringkas)
@@ -486,7 +498,10 @@
   get:
     tags: [Auth]
     summary: Daftar sesi/perangkat aktif milik sendiri
-    description: Hanya sesi yang masih berlaku (sesi kedaluwarsa tidak ditampilkan). Maks 5 sesi per pengguna.
+    description: |
+      Hanya sesi yang masih berlaku (sesi kedaluwarsa/idle tidak ditampilkan). Kuota terpisah (R-04 Q2):
+      maks 5 sesi Mini App (`jenis: miniapp`) + maks 3 sesi web (`jenis: web`); `meta.kuota` memuat batas
+      efektif. Sesi web tidak punya perangkat tepercaya (`diverifikasi_pada: null`, `perangkat` = label browser).
     responses:
       '200':
         description: OK
@@ -494,15 +509,28 @@
           application/json:
             schema:
               type: object
-              required: [data]
+              required: [data, meta]
               properties:
                 data:
                   type: array
                   items: { $ref: '#/components/schemas/Sesi' }
+                meta:
+                  type: object
+                  required: [jenis_sesi_ini, kuota]
+                  properties:
+                    jenis_sesi_ini: { type: string, enum: [miniapp, web] }
+                    kuota:
+                      type: object
+                      required: [miniapp, web]
+                      properties:
+                        miniapp: { type: integer, maximum: 5 }
+                        web: { type: integer, maximum: 3 }
             example:
               data:
-                - { id: 51, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: true }
-                - { id: 47, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
+                - { id: 60, jenis: web, perangkat: 'Firefox · Linux', dibuat_pada: '2026-10-26T10:00:00+07:00', terakhir_dipakai_pada: '2026-10-26T10:15:00+07:00', berlaku_sampai: '2026-10-26T22:15:00+07:00', diverifikasi_pada: null, sesi_ini: true }
+                - { id: 51, jenis: miniapp, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: false }
+                - { id: 47, jenis: miniapp, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
+              meta: { jenis_sesi_ini: web, kuota: { miniapp: 5, web: 3 } }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/AuthForbidden' }
 /auth/sesi/{id}:
