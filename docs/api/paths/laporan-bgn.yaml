@@ -1,0 +1,166 @@
+/laporan-bgn/porsi:
+  get:
+    tags: [Laporan BGN]
+    summary: Lampiran 30a - Rekapitulasi Perhitungan Porsi MBG di SPPG
+    description: |
+      Data JSON (bukan PDF) untuk 30a. Hak: admin, kepala_sppg, akuntan, dan investor (agregat) pada SPPG aktifnya;
+      ahli_gizi, staf_gudang, relawan = 403. Periode maksimal 16 hari. Kolom = hari kerja (Sen-Jum) per pekan, ditambah
+      Sabtu/Minggu bila ada produksi. Baris = 15 kelompok juknis + `belum_terklasifikasi` (hanya bila ada isinya).
+      Porsi per kelompok adalah ESTIMASI (proporsi penerima aktif x realisasi porsi harian; Food Sample dan Uji
+      Organoleptik tercatat langsung). `anggaran_per_porsi` dari pengaturan SPPG (bawaan Rp8.000 / Rp10.000).
+
+      Investor: kelompok dengan penerima aktif 1..k-1 (k=5, ADR 2026-10-26) beserta sel pelengkapnya digabung ke satu baris
+      `kelompok: digabung` (`penanda: "<5"`); `penyamaran` menjelaskan penerapannya. Tanpa nama sekolah/posyandu dan tanpa
+      jenis kelamin. Tidak bernomor LPA (`nomor` null).
+    parameters:
+      - $ref: '#/components/parameters/LaporanSppgId'
+      - $ref: '#/components/parameters/LaporanTanggalAwal'
+      - $ref: '#/components/parameters/LaporanTanggalAkhir'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LaporanBgnPorsi' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/laporan-bgn/harian:
+  get:
+    tags: [Laporan BGN]
+    summary: Lampiran 30b - Laporan Harian Penggunaan Dana
+    description: |
+      Hak: admin, kepala_sppg, akuntan. INVESTOR = 403 (30b menyilangkan titik layanan x kelompok x jenis kelamin; Q-4).
+      Sasaran penerima per baris juknis x sekolah/posyandu x jenis kelamin (hanya hitungan, tanpa nama/NIK penerima).
+      Bahan baku: total dari pengeluaran `disetujui`; rincian dari pembelian terverifikasi; selisih = `bahan_baku_lainnya`
+      (tidak dihitung ganda). Biaya operasional = 17 baris baku; data lama tanpa `sub_kategori`: insentif_relawan ->
+      Insentif Relawan, energi/transportasi/peralatan/lainnya -> Lain-lain (keterangan memuat kategori lama).
+      Bernomor `xx/LPA/x/tahun`.
+    parameters:
+      - $ref: '#/components/parameters/LaporanSppgId'
+      - $ref: '#/components/parameters/LaporanAkuntanId'
+      - $ref: '#/components/parameters/LaporanKepalaSppgId'
+      - name: tanggal
+        in: query
+        required: true
+        schema: { type: string, format: date }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LaporanBgnHarian' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/laporan-bgn/dua-mingguan:
+  get:
+    tags: [Laporan BGN]
+    summary: Lampiran 30c - Laporan 2 Mingguan Penggunaan Dana
+    description: |
+      Hak: admin, kepala_sppg, akuntan, investor (agregat). Periode maksimal 16 hari (mis. 1-15 dan 16-akhir bulan).
+      `sisa_anggaran_total = saldo_awal + dana_pemasukan_total - realisasi total`. Saldo awal: kolom `sppgs.saldo_awal`
+      (diisi Akuntan) pada periode pertama, selanjutnya otomatis = saldo akhir sebelumnya; bila belum diisi, dipakai 0
+      ditambah mutasi sebelum periode dengan peringatan `saldo_awal_belum_diisi`. Realisasi = pengeluaran `disetujui`
+      (diajukan/ditolak tidak dihitung). Insentif fasilitas = pengeluaran tercatat; `insentif_fasilitas_acuan` memuat
+      ketentuan hitung (hari operasional x nilai per hari, maksimal hari per minggu) sebagai pembanding.
+      Bernomor; nomor baru hanya diterbitkan pada panggilan pertama pengguna admin/kepala_sppg/akuntan (investor
+      menerima `nomor` null bila belum terbit; investor tidak menghabiskan urutan).
+    parameters:
+      - $ref: '#/components/parameters/LaporanSppgId'
+      - $ref: '#/components/parameters/LaporanAkuntanId'
+      - $ref: '#/components/parameters/LaporanKepalaSppgId'
+      - $ref: '#/components/parameters/LaporanTanggalAwal'
+      - $ref: '#/components/parameters/LaporanTanggalAkhir'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LaporanBgnRingkasan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/laporan-bgn/bulanan/ringkasan:
+  get:
+    tags: [Laporan BGN]
+    summary: Lampiran 30d bagian A - Laporan Bulanan (Summary)
+    description: |
+      Isi dan angka identik 30c untuk satu bulan kalender. Hak: admin, kepala_sppg, akuntan, investor (agregat).
+      Bagian A dan B satu laporan bulanan dengan satu nomor LPA.
+    parameters:
+      - $ref: '#/components/parameters/LaporanSppgId'
+      - $ref: '#/components/parameters/LaporanAkuntanId'
+      - $ref: '#/components/parameters/LaporanKepalaSppgId'
+      - $ref: '#/components/parameters/LaporanBulan'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LaporanBgnRingkasan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/laporan-bgn/bulanan/anggaran:
+  get:
+    tags: [Laporan BGN]
+    summary: Lampiran 30d bagian B - Laporan Bulanan (Anggaran)
+    description: |
+      Tabel `No | Tanggal | Perihal | Dana Masuk | Dana Keluar | Saldo | Keterangan` dengan saldo berjalan; urutan baris:
+      Penerimaan Saldo Awal, penerimaan dana (pencairan), "Pembelanjaan:", lalu subkelompok Bahan Baku Pangan, Biaya
+      Operasional, Insentif Fasilitas SPPG. `total.saldo_akhir` selalu sama dengan `sisa_anggaran_total` bagian A.
+      Hak: admin, kepala_sppg, akuntan, investor (agregat). Untuk investor `perihal` memakai label baku (bukan teks
+      bebas uraian) dan `keterangan` pencairan dikosongkan.
+    parameters:
+      - $ref: '#/components/parameters/LaporanSppgId'
+      - $ref: '#/components/parameters/LaporanAkuntanId'
+      - $ref: '#/components/parameters/LaporanKepalaSppgId'
+      - $ref: '#/components/parameters/LaporanBulan'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LaporanBgnAnggaran' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+/laporan-bgn/bulanan/penerima-manfaat:
+  get:
+    tags: [Laporan BGN]
+    summary: Lampiran 30d bagian C - Laporan Bulanan (Penerima Manfaat)
+    description: |
+      Satu baris per hari kalender; 9 kolom peserta didik + 3 kolom non-peserta didik + `belum_terklasifikasi` + total.
+      Porsi per kolom adalah ESTIMASI (proporsi penerima aktif per baris sasaran x realisasi porsi harian);
+      `total` harian = realisasi porsi. Hak: admin, kepala_sppg, akuntan. INVESTOR = 403 (Q-4). Tidak bernomor.
+    parameters:
+      - $ref: '#/components/parameters/LaporanSppgId'
+      - $ref: '#/components/parameters/LaporanBulan'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/LaporanBgnPenerimaBulanan' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
