@@ -127,6 +127,10 @@ return [
     */
     'aksi_peran' => [
         'lihat-mutasi-stok' => ['admin', 'kepala_sppg', 'staf_gudang', 'akuntan'],
+        // R07-2 (Lampiran 30 BGN): laporan penuh (30b dan 30d-C memuat sekolah x kelompok x jenis kelamin) tanpa investor;
+        // bentuk agregat (30a, 30c, 30d-A, 30d-B) juga untuk investor SPPG miliknya. Tetap wajib R modul `keuangan`.
+        'lihat-laporan-bgn' => ['admin', 'kepala_sppg', 'akuntan'],
+        'lihat-laporan-bgn-agregat' => ['admin', 'kepala_sppg', 'akuntan', 'investor'],
     ],
 
     /*
