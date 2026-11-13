@@ -118,6 +118,44 @@ final class SesiWeb
         return self::lupakanCookie(self::COOKIE_SESI);
     }
 
+    // ------------------------------------------------------------------ pra-login web (R04-2)
+
+    /** Umur cookie `__Host-sigap_pra` (menit), sama dengan token pra-login Mini App. */
+    public static function umurPraMenit(): int
+    {
+        return max(1, (int) config('kredensial.pra_login_menit', 15));
+    }
+
+    /** Id pra-login acak 256-bit (base64url, 43 karakter). Tidak disimpan di server; hanya HMAC-nya (tantangan). */
+    public static function idPraLoginBaru(): string
+    {
+        return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    }
+
+    public static function cookiePra(string $idPraLogin): Cookie
+    {
+        return self::buatCookie(self::COOKIE_PRA, $idPraLogin, now()->addMinutes(self::umurPraMenit()));
+    }
+
+    public static function lupakanCookiePra(): Cookie
+    {
+        return self::lupakanCookie(self::COOKIE_PRA);
+    }
+
+    /** Id pra-login dari cookie `__Host-sigap_pra` bila formatnya sah; selain itu null. */
+    public static function idPraLoginDari(Request $request): ?string
+    {
+        $nilai = $request->cookies->get(self::namaCookie(self::COOKIE_PRA));
+
+        return is_string($nilai) && preg_match('/^[A-Za-z0-9_-]{43}$/D', $nilai) === 1 ? $nilai : null;
+    }
+
+    /** Pengikat tantangan login web ke browser ini (tantangan_tokens.device_hash). Domain HMAC terpisah. */
+    public static function hashPraLogin(string $idPraLogin): string
+    {
+        return hash_hmac('sha256', 'pra-web|'.$idPraLogin, (string) config('app.key'));
+    }
+
     // ------------------------------------------------------------------ pemilihan jalur
 
     /**

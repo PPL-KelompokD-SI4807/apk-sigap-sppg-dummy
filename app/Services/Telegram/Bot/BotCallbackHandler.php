@@ -4,6 +4,7 @@ namespace App\Services\Telegram\Bot;
 
 use App\Models\BotAksi;
 use App\Models\User;
+use App\Services\Auth\MasukWebService;
 use App\Services\Auth\SesiService;
 use App\Services\Telegram\Bot\Layar\KonteksLayar;
 use App\Services\Telegram\TelegramApiException;
@@ -68,6 +69,7 @@ class BotCallbackHandler
         private readonly BotNavigasi $nav,
         private readonly BotAksiTulisService $tulis,
         private readonly BotAksiAiService $ai,
+        private readonly MasukWebService $masukWeb,
     ) {}
 
     /** @param array<string, mixed> $query objek CallbackQuery Telegram */
@@ -96,6 +98,14 @@ class BotCallbackHandler
 
         if (! RateLimiter::attempt('tg:cb:'.$fromId, (int) config('telegram.callback_rate', 30), fn () => true, 60)) {
             $this->jawab($id, 'Terlalu cepat. Coba lagi sebentar.');
+
+            return;
+        }
+
+        // Tombol "Bukan saya" pada pesan kode MASUK WEB (R04-2, `w1`): tidak memerlukan sesi penuh (hanya membatalkan
+        // tantangan login web milik akun Telegram pengirim; MAC mengikat ke from.id). Tidak mengunci akun.
+        if (MasukWebService::cocokPrefiksBukanSaya($query['data'] ?? null)) {
+            $this->bukanSayaWeb($id, $query['data'], $fromId, $chatId, $messageId);
 
             return;
         }
@@ -390,6 +400,36 @@ class BotCallbackHandler
         } catch (TelegramApiException $e) {
             Log::info('bot.netralkan_gagal', ['kode' => $e->errorCode]);
         }
+    }
+
+    // ------------------------------------------------------------------ login web "Bukan saya" (R04-2)
+
+    public const BUKAN_SAYA_DIBATALKAN = 'Permintaan MASUK WEB dibatalkan. Kode di pesan ini tidak berlaku lagi. Karena sandi Anda dipakai orang lain, segera ubah password lewat Mini App SiGAP dan hubungi Admin.';
+
+    public const BUKAN_SAYA_SUDAH_DIPAKAI = 'Kode ini SUDAH dipakai untuk masuk web. Bila itu bukan Anda, segera ubah password lewat Mini App SiGAP (semua sesi ikut keluar) dan hubungi Admin.';
+
+    public const BUKAN_SAYA_TIDAK_BERLAKU = 'Permintaan MASUK WEB ini sudah tidak berlaku. Bila Anda tidak mencoba masuk, ubah password lewat Mini App SiGAP dan hubungi Admin.';
+
+    /** Pesan kode diganti teks netral (kode dan tombol hilang dari chat); callback dijawab tepat sekali. */
+    private function bukanSayaWeb(?string $id, string $data, int $fromId, int $chatId, ?int $messageId): void
+    {
+        $status = $chatId === $fromId ? $this->masukWeb->bukanSaya($data, $fromId) : null;
+
+        if ($status === null) {
+            RateLimiter::hit('tg:cbgagal:'.$fromId, 60);
+            $this->jawab($id, self::TIDAK_BERLAKU);
+
+            return;
+        }
+
+        $teks = match ($status) {
+            MasukWebService::BUKAN_SAYA_DIBATALKAN => self::BUKAN_SAYA_DIBATALKAN,
+            MasukWebService::BUKAN_SAYA_SUDAH_DIPAKAI => self::BUKAN_SAYA_SUDAH_DIPAKAI,
+            default => self::BUKAN_SAYA_TIDAK_BERLAKU,
+        };
+
+        $this->jawab($id, $status === MasukWebService::BUKAN_SAYA_DIBATALKAN ? 'Permintaan masuk web dibatalkan.' : null);
+        $this->netralkan($chatId, $messageId, $teks);
     }
 
     // ------------------------------------------------------------------ aksi tulis (R-02 PR-3)

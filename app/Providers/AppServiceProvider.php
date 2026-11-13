@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Policies\DashboardPolicy;
+use App\Services\Auth\MasukWebService;
 use App\Services\Auth\SesiService;
 use App\Services\Auth\SesiWeb;
 use App\Services\Telegram\InitDataValidator;
@@ -75,5 +76,26 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(max(1, (int) config('kredensial.throttle.per_ip', 30)))
                 ->by('kred:ip:'.$request->ip()),
         ]);
+
+        // R04-2 login web `web/auth/*` (ADR Keputusan 5): global (pemutus arus) + per IP untuk semua rute web/auth;
+        // masuk: per IP per menit/jam + per identitas ter-normalisasi (HMAC, tanpa identitas mentah di cache);
+        // kode/kirim ulang: per IP. Batas tidak bergantung keberadaan akun (bukan oracle). Penguncian per akun
+        // ada di MasukWebService.
+        $web = fn (string $kunci, int $bawaan): int => max(1, (int) config('kredensial.web.throttle.'.$kunci, $bawaan));
+
+        RateLimiter::for('auth-web', fn (Request $request) => [
+            Limit::perMinute($web('global_per_menit', 300))->by('web:global'),
+            Limit::perMinute($web('per_ip_per_menit', 30))->by('web:ip:'.$request->ip()),
+        ]);
+
+        RateLimiter::for('auth-web-masuk', fn (Request $request) => [
+            Limit::perMinute($web('masuk_per_ip_per_menit', 10))->by('web:masuk:ip:'.$request->ip()),
+            Limit::perHour($web('masuk_per_ip_per_jam', 100))->by('web:masuk:ip-jam:'.$request->ip()),
+            Limit::perMinutes($web('masuk_per_identitas_menit', 15), $web('masuk_per_identitas', 5))
+                ->by('web:masuk:id:'.MasukWebService::hashIdentitas(is_string($request->input('identitas')) ? $request->input('identitas') : '')),
+        ]);
+
+        RateLimiter::for('auth-web-kode', fn (Request $request) => Limit::perMinute($web('kode_per_ip_per_menit', 10))
+            ->by('web:kode:ip:'.$request->ip()));
     }
 }
