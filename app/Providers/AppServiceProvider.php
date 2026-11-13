@@ -6,6 +6,8 @@ use App\Policies\DashboardPolicy;
 use App\Services\Auth\MasukWebService;
 use App\Services\Auth\SesiService;
 use App\Services\Auth\SesiWeb;
+use App\Services\LaporanBgn\Pdf\FpdfRenderer;
+use App\Services\LaporanBgn\Pdf\PdfRenderer;
 use App\Services\Telegram\InitDataValidator;
 use App\Support\SppgAktif;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -28,6 +30,9 @@ class AppServiceProvider extends ServiceProvider
 
         // SPPG aktif (R-06a): satu instance per permintaan/job, tidak terbawa ke permintaan lain.
         $this->app->scoped(SppgAktif::class);
+
+        // R07-3: render PDF laporan BGN (setasign/fpdf); dapat ditukar tanpa mengubah agregator/job.
+        $this->app->bind(PdfRenderer::class, FpdfRenderer::class);
     }
 
     public function boot(): void
@@ -63,6 +68,10 @@ class AppServiceProvider extends ServiceProvider
         // Unggah berkas (NFR-06): per pengguna, di atas batas umum 'api'.
         RateLimiter::for('unggah', fn (Request $request) => Limit::perMinute(max(1, (int) config('unggahan.rate_limit_per_menit', 20)))
             ->by('unggah:'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
+
+        // R07-3: permintaan PDF laporan BGN per pengguna (pembuatan PDF mahal; berjalan di antrean).
+        RateLimiter::for('laporan-bgn-pdf', fn (Request $request) => Limit::perMinute(max(1, (int) config('laporan-bgn.rate_limit_per_menit', 5)))
+            ->by('lapbgn:'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
 
         // Tukar initData -> token: 10/menit per IP.
         RateLimiter::for('auth-telegram', fn (Request $request) => Limit::perMinute(10)
