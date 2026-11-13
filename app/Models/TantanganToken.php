@@ -37,6 +37,13 @@ class TantanganToken extends Model
     /** Password baru setelah permintaan reset disetujui Admin (PermintaanResetService). */
     public const TUJUAN_RESET_PASSWORD = 'reset_password';
 
+    /**
+     * Login web R04-2 (MasukWebService): personal_access_token_id SELALU null (tanpa token pra-login Mini App) dan
+     * device_hash = HMAC id pra-login web (cookie `__Host-sigap_pra`). Jalur Mini App tidak pernah menerimanya
+     * karena mewajibkan personal_access_token_id = token pra-loginnya.
+     */
+    public const TUJUAN_MASUK_WEB = 'masuk_web';
+
     protected $table = 'tantangan_tokens';
 
     protected $guarded = ['*'];

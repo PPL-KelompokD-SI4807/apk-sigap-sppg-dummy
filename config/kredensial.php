@@ -46,6 +46,28 @@ return [
         // Pengembangan lokal TANPA HTTPS: nama cookie tanpa prefiks `__Host-` dan tanpa Secure. Hanya
         // berlaku bila APP_ENV=local; di lingkungan lain diabaikan (tetap `__Host-` + Secure).
         'cookie_lokal_http' => (bool) env('SIGAP_WEB_COOKIE_LOKAL_HTTP', false),
+
+        // Login web R04-2 (ADR Keputusan 5). Tidak dari env. Kode memakai 'token' di bawah (6 digit, 5 menit,
+        // 5 percobaan, 3 kirim ulang/60 detik) dengan jatah tantangan web TERPISAH dari Mini App.
+        'penguncian' => [
+            // 5 gagal (sandi atau kode) -> kanal web terkunci 15 menit; terkunci lagi dalam 24 jam -> 60 menit.
+            // Mini App tidak ikut terkunci (kolom users.web_*).
+            'maks_gagal' => 5,
+            'kunci_menit' => 15,
+            'kunci_berulang_menit' => 60,
+            'jendela_berulang_jam' => 24,
+        ],
+        // Batas laju rute web/auth/* (throttle). Penguncian per akun di atas tetap berlaku.
+        'throttle' => [
+            'global_per_menit' => 300,
+            'per_ip_per_menit' => 30,
+            'masuk_per_ip_per_menit' => 10,
+            'masuk_per_ip_per_jam' => 100,
+            // Per identitas ter-normalisasi (di-HMAC): 5 per 15 menit.
+            'masuk_per_identitas' => 5,
+            'masuk_per_identitas_menit' => 15,
+            'kode_per_ip_per_menit' => 10,
+        ],
     ],
 
     // Umur token pra-login (menit). Hanya untuk rute login/aktivasi/reset/token.

@@ -80,6 +80,30 @@ final class AuditAuth
     /** Semua sesi dicabut otomatis karena hak akses berubah, akun dihapus, atau akun dipulihkan. */
     public const SESI_DICABUT_OTOMATIS = 'auth.sesi_dicabut_otomatis';
 
+    // ---- Login web R04-2 (ADR 2026-11-09 Keputusan 7). Tidak pernah memuat sandi, kode, token, cookie, id
+    // pra-login, atau identitas mentah. Akun tak dikenal tidak punya subjek audit: hanya log aplikasi ber-hash.
+
+    /** Langkah 1 web (identitas + sandi) untuk akun yang dikenal; `hasil` = alasan internal (tidak dibalas ke klien). */
+    public const WEB_MASUK_LANGKAH1 = 'auth.web.masuk_langkah1';
+
+    public const WEB_KODE_DIKIRIM = 'auth.web.kode_dikirim';
+
+    public const WEB_KODE_GAGAL_KIRIM = 'auth.web.kode_gagal_kirim';
+
+    /** Kode web salah/hangus/kedaluwarsa/terkunci (`alasan`). */
+    public const WEB_KODE_GAGAL = 'auth.web.kode_gagal';
+
+    public const WEB_MASUK_BERHASIL = 'auth.web.masuk_berhasil';
+
+    /** Kanal web dikunci (Mini App tidak terpengaruh). */
+    public const WEB_TERKUNCI = 'auth.web.terkunci';
+
+    /** Percobaan web ditolak karena kanal web sedang terkunci. */
+    public const WEB_DITOLAK_TERKUNCI = 'auth.web.ditolak_terkunci';
+
+    /** Tombol bot "Bukan saya" ditekan pemilik akun Telegram. */
+    public const WEB_BUKAN_SAYA = 'auth.web.bukan_saya';
+
     /** @param array<string, mixed> $konteks */
     public static function catat(User $subjek, string $event, array $konteks = [], ?User $aktor = null): void
     {

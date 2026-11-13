@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureTokenAbility;
 use App\Http\Middleware\PastikanJalurSesi;
+use App\Http\Middleware\PraLoginWeb;
 use App\Http\Middleware\ResolveSppgAktif;
 use App\Http\Middleware\SesiWebCookie;
 use App\Services\Auth\SesiService;
@@ -19,6 +20,9 @@ use Illuminate\Support\Facades\Route;
 |                                    (auth:sanctum + akun aktif + ability auth:penuh + throttle:api).
 |                                    Peran & scope SPPG tetap diputuskan Policy; header SPPG aktif
 |                                    X-SPPG-Id divalidasi ResolveSppgAktif (R-06a).
+| - routes/api/v1/_web/*.php       : login web R04-2 (prefix web/, nama api.v1.web.*), TANPA token dan TANPA
+|                                    SesiWebCookie: throttle:auth-web + PraLoginWeb (X-Sigap-Klien: web, CSRF
+|                                    pra-login cookie `__Host-sigap_pra` untuk metode pengubah).
 |
 | Satu berkas per modul (mis. routes/api/v1/bahan-baku.php) agar agen modul tidak bentrok.
 | Nama rute otomatis diawali "api.v1.".
@@ -27,6 +31,13 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::middleware('throttle:auth-telegram')->group(function () {
         foreach (glob(__DIR__.'/api/v1/_public/*.php') ?: [] as $file) {
+            require $file;
+        }
+    });
+
+    // Login web (R04-2): glob tingkat atas di bawah TIDAK memuat subfolder _web/.
+    Route::prefix('web')->name('web.')->middleware(['throttle:auth-web', PraLoginWeb::class])->group(function () {
+        foreach (glob(__DIR__.'/api/v1/_web/*.php') ?: [] as $file) {
             require $file;
         }
     });
