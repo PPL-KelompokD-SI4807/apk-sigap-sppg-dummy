@@ -225,7 +225,7 @@ schemas:
           sppg_id: { type: [integer, 'null'] }
   Sesi:
     type: object
-    required: [id, jenis, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
+    required: [id, jenis, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, browser_tepercaya_id, sesi_ini]
     properties:
       id: { type: integer }
       jenis: { type: string, enum: [miniapp, web], description: 'miniapp = token Bearer Mini App; web = cookie __Host-sigap_sesi (R-04).' }
@@ -234,7 +234,19 @@ schemas:
       terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam untuk Mini App, maks 15 menit untuk web.' }
       berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat; web: + idle 12 jam).' }
       diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya. Selalu null untuk web.' }
+      browser_tepercaya_id: { type: [integer, 'null'], description: 'R04-3: id browser tepercaya tempat sesi web ini terbit (bebas idle 12 jam, berakhir paling lambat bersama browser itu). Null untuk Mini App dan sesi web biasa.' }
       sesi_ini: { type: boolean }
+  BrowserTepercaya:
+    type: object
+    required: [id, label, diverifikasi_pada, berlaku_sampai, terakhir_dipakai_pada, browser_ini]
+    description: Browser web tepercaya (R04-3). Selektor/validator cookie tidak pernah dikirim.
+    properties:
+      id: { type: integer }
+      label: { type: [string, 'null'], description: 'Browser + OS ringkas dari User-Agent, mis. "Firefox · Linux".' }
+      diverifikasi_pada: { type: string, format: date-time, description: 'Kode Telegram terakhir + "Ingat browser ini".' }
+      berlaku_sampai: { type: string, format: date-time, description: 'diverifikasi_pada + 30 hari, TETAP.' }
+      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time }
+      browser_ini: { type: boolean, description: 'Browser sesi web yang sedang dipakai.' }
   WebCsrfResponse:
     type: object
     required: [csrf, berlaku_sampai]
@@ -266,7 +278,7 @@ schemas:
           maks_percobaan: { type: integer, examples: [5] }
   WebLoginResponse:
     type: object
-    required: [langkah, jenis_sesi, expires_at, csrf, user]
+    required: [langkah, jenis_sesi, expires_at, csrf, browser_tepercaya, user]
     description: |
       Login web selesai. Token sesi TIDAK PERNAH ada di badan (issue #76); hanya di `Set-Cookie: __Host-sigap_sesi`.
       `csrf` = token CSRF SESI baru (terikat sesi ini) untuk `X-CSRF-Token` di rute login penuh; CSRF pra-login tidak
@@ -276,6 +288,18 @@ schemas:
       jenis_sesi: { type: string, const: web }
       expires_at: { type: string, format: date-time, description: 'Akhir masa sesi (idle 12 jam untuk sesi web biasa; digeser saat dipakai).' }
       csrf: { type: string, pattern: '^[0-9a-f]{64}$' }
+      browser_tepercaya:
+        type: object
+        required: [dipakai, diingat, berlaku_sampai]
+        description: |
+          R04-3. `dipakai` = login ini melewati kode karena browser tepercaya (POST /web/auth/masuk). `diingat` =
+          browser ini tepercaya setelah login ini. `alasan: admin_selalu_kode` bila Admin mencentang "Ingat browser
+          ini" (diabaikan; UI menampilkan "Admin selalu memakai kode").
+        properties:
+          dipakai: { type: boolean }
+          diingat: { type: boolean }
+          berlaku_sampai: { type: [string, 'null'], format: date-time, description: 'Akhir 30 hari browser tepercaya (tetap).' }
+          alasan: { type: string, const: admin_selalu_kode }
       user: { $ref: '#/components/schemas/AuthUser' }
 responses:
   WebCsrfDitolak:
@@ -347,4 +371,10 @@ parameters:
     name: __Host-sigap_pra
     required: true
     description: 'Id pra-login dari GET /web/auth/csrf (HttpOnly; dikirim otomatis browser, tidak dibaca JS).'
+    schema: { type: string }
+  WebCookieTb:
+    in: cookie
+    name: __Host-sigap_tb
+    required: false
+    description: 'R04-3 browser tepercaya `selektor.validator` (HttpOnly, 30 hari tetap; dikirim otomatis browser, tidak dibaca JS). Hanya melewati kode Telegram; sandi tetap wajib.'
     schema: { type: string }
