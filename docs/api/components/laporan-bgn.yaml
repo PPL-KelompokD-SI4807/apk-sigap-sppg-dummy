@@ -1,0 +1,403 @@
+parameters:
+  LaporanSppgId:
+    name: sppg_id
+    in: query
+    description: |
+      WAJIB untuk Admin (SPPG yang ada). Peran lain: opsional dan harus sama dengan SPPG aktifnya
+      (investor: header `X-SPPG-Id`); nilai lain = 403.
+    schema: { type: integer }
+  LaporanAkuntanId:
+    name: akuntan_id
+    in: query
+    description: Pilihan Pihak Kedua (Staf Akuntansi) bila SPPG punya lebih dari satu akuntan aktif; harus akuntan aktif SPPG itu (422).
+    schema: { type: integer, minimum: 1 }
+  LaporanKepalaSppgId:
+    name: kepala_sppg_id
+    in: query
+    description: Pilihan penandatangan Mengetahui (Kepala SPPG) bila ada lebih dari satu; harus kepala_sppg aktif SPPG itu (422).
+    schema: { type: integer, minimum: 1 }
+  LaporanTanggalAwal:
+    name: tanggal_awal
+    in: query
+    required: true
+    schema: { type: string, format: date }
+  LaporanTanggalAkhir:
+    name: tanggal_akhir
+    in: query
+    required: true
+    description: Tidak boleh sebelum `tanggal_awal`; rentang maksimal 16 hari.
+    schema: { type: string, format: date }
+  LaporanBulan:
+    name: bulan
+    in: query
+    required: true
+    description: Format `YYYY-MM`.
+    schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-11' }
+schemas:
+  NomorLaporanBgn:
+    type: object
+    properties:
+      jenis: { type: string, enum: [harian, dua_mingguan, bulanan], description: Jenis dokumen (30d A/B satu dokumen `bulanan`). }
+      periode:
+        type: object
+        properties:
+          awal: { type: string, format: date }
+          akhir: { type: string, format: date }
+          tahun: { type: integer }
+      nomor: { type: string, example: 01/LPA/XI/2026 }
+      nomor_urut: { type: integer, example: 1 }
+      baru: { type: boolean, description: true bila nomor terbit pada panggilan ini; false bila sudah pernah terbit. }
+  LaporanBgnPeringatan:
+    type: object
+    properties:
+      kode:
+        type: string
+        description: |
+          `saldo_awal_belum_diisi`, `periode_sebelum_saldo_awal`, `penerima_belum_terklasifikasi`,
+          `identitas_sppg_belum_lengkap`, `penandatangan_<peran>_kosong`, `penandatangan_<peran>_lebih_dari_satu`.
+      pesan: { type: string }
+  LaporanBgnSppg:
+    type: object
+    properties:
+      id: { type: integer }
+      nama: { type: string }
+      kode: { type: string }
+      id_sppg_bgn: { type: [string, 'null'] }
+      kecamatan: { type: [string, 'null'] }
+      kab_kota: { type: [string, 'null'] }
+      provinsi: { type: [string, 'null'] }
+      no_va: { type: [string, 'null'] }
+      yayasan: { type: [string, 'null'] }
+  LaporanBgnKandidat:
+    type: object
+    properties:
+      id: { type: integer }
+      nama: { type: string }
+  LaporanBgnPenandatangan:
+    type: object
+    description: Pihak Pertama = ketua yayasan; Pihak Kedua = akuntan SPPG; Mengetahui = kepala SPPG. Nama null bila tidak ada atau lebih dari satu (pilih lewat parameter).
+    properties:
+      kota: { type: [string, 'null'] }
+      tanggal: { type: string, format: date }
+      pihak_pertama:
+        type: object
+        properties:
+          jabatan: { type: string, example: Ketua/Mewakili }
+          yayasan: { type: [string, 'null'] }
+          nama: { type: [string, 'null'] }
+      pihak_kedua:
+        type: object
+        properties:
+          jabatan: { type: string, example: Staf Akuntansi SPPG }
+          nama: { type: [string, 'null'] }
+          kandidat: { type: array, items: { $ref: '#/components/schemas/LaporanBgnKandidat' } }
+      mengetahui:
+        type: object
+        properties:
+          jabatan: { type: string, example: Kepala SPPG }
+          nama: { type: [string, 'null'] }
+          kandidat: { type: array, items: { $ref: '#/components/schemas/LaporanBgnKandidat' } }
+  LaporanBgnUmum:
+    type: object
+    properties:
+      jenis: { type: string, enum: [porsi, harian, dua_mingguan, bulanan_ringkasan, bulanan_anggaran, bulanan_penerima] }
+      lampiran: { type: string, enum: ['30a', '30b', '30c', '30d-A', '30d-B', '30d-C'] }
+      judul: { type: string }
+      periode:
+        type: object
+        properties:
+          awal: { type: string, format: date }
+          akhir: { type: string, format: date }
+          tahun: { type: integer }
+      nomor:
+        type: [string, 'null']
+        description: |
+          `xx/LPA/x/tahun` (xx = urut dua digit per SPPG per tahun; x = bulan akhir periode, angka Romawi). Periode yang
+          sama selalu bernomor sama. null untuk 30a dan 30d-C (tak bernomor), dan bila nomor belum diterbitkan lewat POST `.../nomor` (GET tidak pernah menerbitkan).
+        example: 01/LPA/XI/2026
+      sppg: { $ref: '#/components/schemas/LaporanBgnSppg' }
+      penandatangan: { $ref: '#/components/schemas/LaporanBgnPenandatangan' }
+      peringatan: { type: array, items: { $ref: '#/components/schemas/LaporanBgnPeringatan' } }
+  LaporanBgnHariPorsi:
+    type: object
+    properties:
+      tanggal: { type: string, format: date }
+      porsi: { type: [integer, 'null'], description: null bila disembunyikan (investor) }
+      biaya: { type: [integer, 'null'], description: porsi x anggaran_per_porsi (rupiah) }
+  LaporanBgnPorsiBaris:
+    type: object
+    properties:
+      kelompok:
+        type: string
+        description: Nilai KelompokPorsiBgn (15 kelompok juknis), `belum_terklasifikasi`, atau `digabung` (investor).
+      label: { type: string }
+      anggaran_per_porsi: { type: [integer, 'null'] }
+      estimasi: { type: boolean, description: false untuk Food Sample dan Uji Organoleptik (porsi tercatat) }
+      per_hari: { type: array, items: { $ref: '#/components/schemas/LaporanBgnHariPorsi' } }
+      total_porsi: { type: [integer, 'null'] }
+      total_biaya: { type: [integer, 'null'] }
+      penanda: { type: [string, 'null'], example: '<5' }
+  LaporanBgnPorsi:
+    allOf:
+      - $ref: '#/components/schemas/LaporanBgnUmum'
+      - type: object
+        properties:
+          catatan_estimasi: { type: string }
+          anggaran:
+            type: object
+            properties:
+              acuan_bahan_baku_kecil: { type: integer, example: 8000 }
+              acuan_bahan_baku_lainnya: { type: integer, example: 10000 }
+          tabel:
+            type: array
+            description: Satu tabel per pekan (Senin-Jumat, ditambah hari akhir pekan yang berproduksi).
+            items:
+              type: object
+              properties:
+                pekan_mulai: { type: string, format: date }
+                hari:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      tanggal: { type: string, format: date }
+                      hari: { type: string, example: Senin }
+                baris: { type: array, items: { $ref: '#/components/schemas/LaporanBgnPorsiBaris' } }
+                total:
+                  type: object
+                  properties:
+                    per_hari: { type: array, items: { $ref: '#/components/schemas/LaporanBgnHariPorsi' } }
+                    total_porsi: { type: [integer, 'null'] }
+                    total_biaya: { type: [integer, 'null'] }
+                    penanda: { type: [string, 'null'] }
+          total_periode:
+            type: object
+            properties:
+              porsi: { type: integer }
+              biaya: { type: integer }
+          penyamaran:
+            type: object
+            properties:
+              diterapkan: { type: boolean }
+              ambang_k: { type: [integer, 'null'], example: 5 }
+              penanda: { type: [string, 'null'], example: '<5' }
+  LaporanBgnSasaranBaris:
+    type: object
+    properties:
+      baris: { type: string, description: Nilai BarisSasaranBgn }
+      label: { type: string }
+      rincian:
+        type: array
+        description: Satu entri per titik layanan (nama sekolah/posyandu).
+        items:
+          type: object
+          properties:
+            nama: { type: string }
+            laki_laki: { type: integer }
+            perempuan: { type: integer }
+            tanpa_jenis_kelamin: { type: integer }
+            jumlah: { type: integer }
+      laki_laki: { type: integer }
+      perempuan: { type: integer }
+      tanpa_jenis_kelamin: { type: integer }
+      jumlah: { type: integer }
+  LaporanBgnSasaranTotal:
+    type: object
+    properties:
+      laki_laki: { type: integer }
+      perempuan: { type: integer }
+      tanpa_jenis_kelamin: { type: integer }
+      jumlah: { type: integer }
+  LaporanBgnHarian:
+    allOf:
+      - $ref: '#/components/schemas/LaporanBgnUmum'
+      - type: object
+        properties:
+          tanggal: { type: string, format: date }
+          sasaran_penerima_manfaat:
+            type: object
+            properties:
+              peserta_didik:
+                type: object
+                properties:
+                  baris: { type: array, items: { $ref: '#/components/schemas/LaporanBgnSasaranBaris' } }
+                  total: { $ref: '#/components/schemas/LaporanBgnSasaranTotal' }
+              non_peserta_didik:
+                type: object
+                properties:
+                  baris: { type: array, items: { $ref: '#/components/schemas/LaporanBgnSasaranBaris' } }
+                  total: { $ref: '#/components/schemas/LaporanBgnSasaranTotal' }
+              belum_terklasifikasi: { type: integer, description: Penerima aktif tanpa klasifikasi lengkap; tidak ditebak. }
+          rincian_pembelanjaan:
+            type: object
+            properties:
+              bahan_baku_pangan:
+                type: object
+                properties:
+                  rincian:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        nama: { type: string }
+                        jumlah: { type: string, example: '10.000' }
+                        satuan: { type: string }
+                        harga_satuan: { type: integer }
+                        total: { type: integer }
+                  bahan_baku_lainnya: { type: integer, description: Total pengeluaran bahan baku dikurangi rincian pembelian (tanpa hitung ganda). }
+                  total: { type: integer }
+              biaya_operasional:
+                type: object
+                properties:
+                  baris:
+                    type: array
+                    description: 17 baris baku juknis.
+                    items:
+                      type: object
+                      properties:
+                        sub_kategori: { type: string }
+                        label: { type: string }
+                        biaya_per_hari: { type: integer }
+                        keterangan: { type: [string, 'null'] }
+                  total: { type: integer }
+              insentif_fasilitas:
+                type: object
+                properties:
+                  uraian: { type: string, example: Biaya Insentif Fasilitas SPPG }
+                  jumlah: { type: integer, description: Pengeluaran `insentif_fasilitas` yang disetujui. }
+                  acuan: { type: integer, description: Nilai per hari SPPG bila hari operasional, selain itu 0. }
+                  keterangan: { type: string }
+              total_belanja: { type: integer }
+  LaporanBgnRingkasan:
+    allOf:
+      - $ref: '#/components/schemas/LaporanBgnUmum'
+      - type: object
+        properties:
+          pelapor:
+            type: object
+            description: Penandatangan "Yang bertandatangan di bawah" (ketua yayasan) dan identitas SPPG.
+            properties:
+              nama: { type: [string, 'null'] }
+              jabatan: { type: string }
+              yayasan: { type: [string, 'null'] }
+              sppg: { type: string }
+              id_sppg: { type: [string, 'null'] }
+              kecamatan: { type: [string, 'null'] }
+              kab_kota: { type: [string, 'null'] }
+              provinsi: { type: [string, 'null'] }
+          rincian_keuangan:
+            type: object
+            properties:
+              saldo_awal: { type: integer }
+              dana_pemasukan_total: { type: integer }
+              realisasi_anggaran:
+                type: object
+                properties:
+                  bahan_baku: { type: integer }
+                  operasional: { type: integer }
+                  insentif_fasilitas: { type: integer }
+                  total: { type: integer }
+              sisa_anggaran_total: { type: integer }
+          keterangan:
+            type: object
+            properties:
+              kalimat_pembuka: { type: string }
+              bahan_baku: { type: string }
+              operasional: { type: string }
+              insentif_fasilitas: { type: string }
+              no_rekening_va: { type: [string, 'null'] }
+              sisa_dana_dialihkan: { type: string }
+          insentif_fasilitas_acuan:
+            type: object
+            properties:
+              hari_operasional: { type: integer }
+              hari_dihitung: { type: integer }
+              per_hari: { type: integer }
+              maks_hari_minggu: { type: integer }
+              nilai_acuan: { type: integer }
+  LaporanBgnAnggaranBaris:
+    type: object
+    properties:
+      no: { type: [integer, 'null'] }
+      tipe: { type: string, enum: [saldo_awal, penerimaan, judul, subkelompok, pengeluaran] }
+      kelompok: { type: [string, 'null'], enum: [bahan_baku, operasional, insentif_fasilitas, null] }
+      tanggal: { type: [string, 'null'], format: date }
+      perihal: { type: string }
+      dana_masuk: { type: [integer, 'null'] }
+      dana_keluar: { type: [integer, 'null'] }
+      saldo: { type: [integer, 'null'] }
+      keterangan: { type: [string, 'null'] }
+      subtotal: { type: integer, description: Hanya pada baris `subkelompok`. }
+  LaporanBgnAnggaran:
+    allOf:
+      - $ref: '#/components/schemas/LaporanBgnUmum'
+      - type: object
+        properties:
+          saldo_awal: { type: integer }
+          baris: { type: array, items: { $ref: '#/components/schemas/LaporanBgnAnggaranBaris' } }
+          total:
+            type: object
+            properties:
+              dana_masuk: { type: integer, description: Pencairan pada periode (tanpa saldo awal). }
+              dana_keluar: { type: integer }
+              saldo_akhir: { type: integer }
+          subtotal_pengeluaran:
+            type: object
+            properties:
+              bahan_baku: { type: integer }
+              operasional: { type: integer }
+              insentif_fasilitas: { type: integer }
+          catatan_kaki: { type: string }
+  LaporanBgnPenerimaHari:
+    type: object
+    properties:
+      hari: { type: string, example: Senin }
+      tanggal: { type: string, format: date }
+      ket: { type: string, enum: [produksi, rencana_distribusi, tidak_ada_produksi] }
+      peserta_didik:
+        type: array
+        items:
+          type: object
+          properties:
+            baris: { type: string }
+            porsi: { type: integer }
+      non_peserta_didik:
+        type: array
+        items:
+          type: object
+          properties:
+            baris: { type: string }
+            porsi: { type: integer }
+      belum_terklasifikasi: { type: integer }
+      total: { type: integer, description: Realisasi porsi harian (= jumlah semua kolom). }
+  LaporanBgnPenerimaBulanan:
+    allOf:
+      - $ref: '#/components/schemas/LaporanBgnUmum'
+      - type: object
+        properties:
+          catatan_estimasi: { type: string }
+          kolom:
+            type: object
+            properties:
+              peserta_didik:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    baris: { type: string }
+                    label: { type: string }
+              non_peserta_didik:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    baris: { type: string }
+                    label: { type: string }
+          hari: { type: array, items: { $ref: '#/components/schemas/LaporanBgnPenerimaHari' } }
+          total_bulan:
+            type: object
+            properties:
+              peserta_didik: { type: array, items: { type: object, properties: { baris: { type: string }, porsi: { type: integer } } } }
+              non_peserta_didik: { type: array, items: { type: object, properties: { baris: { type: string }, porsi: { type: integer } } } }
+              belum_terklasifikasi: { type: integer }
+              total: { type: integer }
