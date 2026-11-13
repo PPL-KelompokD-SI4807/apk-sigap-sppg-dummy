@@ -252,7 +252,8 @@ class KredensialService
         }
 
         $jumlah = DB::transaction(function () use ($user, $passwordBaru, $tokenIni, $perangkatId): int {
-            $jumlah = $user->tokens()->where('name', 'like', SesiService::PREFIX_SESI.'%')->whereKeyNot($tokenIni->getKey())->count();
+            // Sesi Mini App + sesi web (R-04) lain milik pengguna.
+            $jumlah = SesiService::hanyaSesiLogin($user->tokens())->whereKeyNot($tokenIni->getKey())->count();
 
             // saveQuietly: event updated (cabut SEMUA sesi) tidak boleh mencabut sesi perangkat ini.
             $user->forceFill([

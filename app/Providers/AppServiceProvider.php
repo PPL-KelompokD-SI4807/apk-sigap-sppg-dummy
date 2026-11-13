@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Policies\DashboardPolicy;
 use App\Services\Auth\SesiService;
+use App\Services\Auth\SesiWeb;
 use App\Services\Telegram\InitDataValidator;
 use App\Support\SppgAktif;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -46,6 +47,10 @@ class AppServiceProvider extends ServiceProvider
             fn (PersonalAccessToken $token, bool $sah): bool => app(SesiService::class)->validasiToken($token, $sah),
         );
         Event::listen(TokenAuthenticated::class, fn (TokenAuthenticated $e) => app(SesiService::class)->catatPemakaian($e->token));
+
+        // Akses web R-04: header Authorization ada -> hanya Bearer; tanpa Authorization -> cookie
+        // `__Host-sigap_sesi` bila SesiWebCookie berjalan di rute itu. Penolakan silang di validasiToken.
+        Sanctum::getAccessTokenFromRequestUsing(fn (Request $request): ?string => SesiWeb::tokenDariRequest($request));
 
         // R-07: gerbang dashboard per peran (isi disaring lagi per modul oleh DashboardService).
         Gate::define('dashboard.lihat', [DashboardPolicy::class, 'lihat']);

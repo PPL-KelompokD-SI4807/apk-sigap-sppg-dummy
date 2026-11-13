@@ -11,7 +11,8 @@
 | logout/pencabutan). Nilai di sini sengaja tidak dibaca dari env agar tidak dilonggarkan per
 | server, KECUALI 'sesi': env SIGAP_SESI_* hanya dapat MENGETATKAN. SesiService menjepit ke batas
 | keras di kode (absolut <= 180 hari, masa <= 90 hari, masa Admin <= 30 hari dan <= masa peran
-| biasa, masa <= absolut, maks 5 sesi); nilai lebih besar diabaikan.
+| biasa, masa <= absolut, maks 5 sesi Mini App, maks 3 sesi web, idle web <= 12 jam); nilai lebih
+| besar diabaikan.
 */
 
 return [
@@ -27,6 +28,24 @@ return [
         'maks_per_pengguna' => (int) env('SIGAP_SESI_MAKS_PER_PENGGUNA', 5),
         // Jeda minimum antar-penulisan last_used_at/expires_at per token (menit). Tidak dari env.
         'perpanjang_tiap_menit' => 60,
+        // Akses web R-04 (ADR 2026-11-09, Q2/Q3). Kuota sesi web TERPISAH dari Mini App: maks keras 3;
+        // login web baru di atas batas hanya mencabut sesi web yang paling lama tidak dipakai.
+        'maks_web_per_pengguna' => (int) env('SIGAP_SESI_MAKS_WEB_PER_PENGGUNA', 3),
+        // Sesi web biasa berakhir setelah sekian jam tidak dipakai. Maks keras 12.
+        'idle_web_jam' => (int) env('SIGAP_SESI_IDLE_WEB_JAM', 12),
+        // Jeda tulis last_used_at/expires_at token web (menit), maks keras 15 agar idle akurat. Tidak dari env.
+        'jeda_tulis_web_menit' => 15,
+    ],
+
+    /*
+     * Jalur cookie web (R-04). Token web hanya dikirim lewat cookie `__Host-sigap_sesi` (HttpOnly, Secure,
+     * SameSite=Strict, Path=/, tanpa Domain). Origin yang diizinkan untuk metode pengubah = skema+host+port
+     * dari config('app.url') (bukan header Host).
+     */
+    'web' => [
+        // Pengembangan lokal TANPA HTTPS: nama cookie tanpa prefiks `__Host-` dan tanpa Secure. Hanya
+        // berlaku bila APP_ENV=local; di lingkungan lain diabaikan (tetap `__Host-` + Secure).
+        'cookie_lokal_http' => (bool) env('SIGAP_WEB_COOKIE_LOKAL_HTTP', false),
     ],
 
     // Umur token pra-login (menit). Hanya untuk rute login/aktivasi/reset/token.

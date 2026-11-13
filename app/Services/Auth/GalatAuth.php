@@ -48,6 +48,9 @@ final class GalatAuth
 
     public const TIDAK_ADA_PEMUTUS = 'tidak_ada_pemutus';
 
+    /** 403 jalur cookie web (R-04): Origin/X-Sigap-Klien/X-CSRF-Token tidak sah pada metode pengubah. */
+    public const CSRF_DITOLAK = 'csrf_ditolak';
+
     /** 401: token Bearer dikenali tetapi masa sesinya habis (bergeser/absolut). Klien: tukar initData sekali. */
     public const SESI_KEDALUWARSA = 'sesi_kedaluwarsa';
 

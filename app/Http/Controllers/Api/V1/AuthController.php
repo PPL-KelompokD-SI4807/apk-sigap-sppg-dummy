@@ -6,6 +6,7 @@ use App\Http\Requests\Auth\TelegramLoginRequest;
 use App\Http\Resources\AuthUserResource;
 use App\Services\Auth\AuditAuth;
 use App\Services\Auth\SesiService;
+use App\Services\Auth\SesiWeb;
 use App\Services\Telegram\TelegramAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,13 +59,24 @@ class AuthController extends ApiController
         $token = $user->currentAccessToken();
         $tersimpan = $token instanceof PersonalAccessToken && $token->exists;
 
-        return response()->json([
+        $body = [
             'user' => (new AuthUserResource($user))->resolve($request),
             // Masa sesi bergeser saat ini (sudah termasuk perpanjangan request ini) dan batas absolutnya.
             'expires_at' => $tersimpan ? $sesi->kedaluwarsaEfektif($token, $user)->toIso8601String() : null,
             // min(login + 180 hari, akhir kepercayaan perangkat = token bot terakhir + 180 hari).
             'batas_absolut_at' => $tersimpan ? $sesi->batasAkhir($token, $user)->toIso8601String() : null,
-        ]);
+        ];
+
+        // Jalur cookie web (R-04): token CSRF sesi ini untuk disimpan di memori JS (bukan cookie/storage),
+        // dipakai ulang setelah halaman dimuat ulang. Respons Mini App (Bearer) tidak berubah.
+        $cookie = $request->attributes->get(SesiWeb::ATRIBUT_COOKIE);
+
+        if ($tersimpan && SesiWeb::jalurCookie($request) && is_string($cookie)) {
+            $body['jenis_sesi'] = SesiService::JENIS_WEB;
+            $body['csrf'] = SesiWeb::csrfSesi($cookie);
+        }
+
+        return response()->json($body);
     }
 
     /** POST /api/v1/auth/logout — akhiri sesi perangkat ini (kepercayaan perangkat ikut dicabut). */
