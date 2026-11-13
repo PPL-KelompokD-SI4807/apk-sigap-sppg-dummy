@@ -265,7 +265,8 @@ class GalatToolPenyediaTest extends MasterApiTestCase
         $draf = AiDraft::query()->withoutGlobalScopes()->sole();
         $this->assertSame([['bahan_baku_id' => $this->ayam->id, 'gram_per_porsi' => 10]], $draf->payload['bahan']);
         $this->assertFalse(GalatDraf::ada($draf));
-        $this->assertSame('Draf siap.', $reply->text);
+        // Balasan draf dirender server dari data draf (bukan teks model "Draf siap.").
+        $this->assertSame("Draf menu baru\n".AiAgentService::PESAN_DRAF, $reply->text);
 
         $requests = $this->llmRequests();
         $this->assertCount(3, $requests);

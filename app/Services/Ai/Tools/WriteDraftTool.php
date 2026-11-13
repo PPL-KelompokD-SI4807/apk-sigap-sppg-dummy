@@ -203,6 +203,29 @@ abstract class WriteDraftTool extends BaseAiTool
         return new RingkasanDraf($judul, $baris, $target, $this->action === 'D' ? 'Data akan dihapus.' : null);
     }
 
+    /**
+     * Satu kalimat ringkasan draf untuk balasan chat Agen AI (dibangun SERVER, dipanggil di dalam ActingUser::run),
+     * TANPA id internal dan skor keyakinan. Bawaan: jenis aksi + label sumber daya (+ nama target tanpa "#id").
+     * Subkelas boleh menambah isian penting (mis. pembelian: bahan, jumlah, harga, total, pemasok).
+     */
+    public function kalimatDraf(User $user, AiDraft $draft): string
+    {
+        $label = self::satuBaris($this->labelSumberDaya(), 60);
+        $teks = match ($this->action) {
+            'U' => 'Draf ubah '.$label,
+            'D' => 'Draf hapus '.$label,
+            default => 'Draf '.$label.' baru',
+        };
+        $target = $draft->target_id === null ? null : $this->ringkasan($user, $draft)->target;
+        $target = $target === null ? '' : trim((string) preg_replace('/\s*\(#\d+\)\s*$/u', '', $target));
+
+        if ($target !== '' && preg_match('/#\d+/u', $target) !== 1) {
+            $teks .= ': '.self::satuBaris($target, 80);
+        }
+
+        return $teks;
+    }
+
     /** Kolom teks bebas yang dapat memuat data pribadi: tidak ditampilkan di ringkasan chat. */
     protected function kolomTersembunyi(): array
     {

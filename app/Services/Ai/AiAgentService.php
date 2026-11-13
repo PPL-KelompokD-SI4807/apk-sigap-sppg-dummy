@@ -7,6 +7,7 @@ use App\Enums\JenisInputAi;
 use App\Models\AiDraft;
 use App\Models\AiInteraction;
 use App\Models\User;
+use App\Services\Ai\Catalog\DraftToolResolver;
 use App\Services\Ai\Drafts\DraftLimitException;
 use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Llm\JalurSkema;
@@ -42,8 +43,11 @@ use Throwable;
  *   5. masukan salah pada tool TULIS (galat skema argumen, kolom ditolak penyedia, rujukan tidak ditemukan, satuan
  *      salah, galat Form Request) -> draf "perlu diperbaiki" (GalatDraf) dan loop BERHENTI tanpa panggilan LLM lagi;
  *      balasan = satu pesan server (daftar kolom) + tombol Mini App ke formulir draf;
- *   6. jawaban teks polos (penanda Markdown dibuang) dipotong; jejak + jumlah token (angka) dicatat di
- *      ai_interactions (tanpa isi pesan).
+ *   6. draf terbentuk -> balasan = ringkasan SERVER dari draf (WriteDraftTool::kalimatDraf, tanpa id/keyakinan), bukan
+ *      teks model; tanpa draf -> jawaban model disaring (PenyaringBalasan: tag hasil_tool, JSON), klaim "draf disiapkan"
+ *      atau sisa jejak internal -> PESAN_TANPA_DRAF + tombol Mini App. Teks yang meniru panggilan tool -> SATU iterasi
+ *      koreksi (ai.agent.koreksi_tool_teks). Jawaban teks polos dipotong; jejak + token (angka) dicatat di
+ *      ai_interactions dan SATU baris log 'ai.pesan' per pesan (tanpa isi pesan).
  * LLM gagal/tidak tersedia/terlalu lama -> balasan ramah per kategori + fallback formulir manual; galat penyedia
  * dicatat aman ('ai.llm_galat'); tool call ditolak penyedia (tool_use_failed) diulang sekali dengan catatan perbaikan;
  * draf yang sudah dibuat sebelum galat tetap ditawarkan.
@@ -59,6 +63,18 @@ class AiAgentService
 
     /** Balasan server setelah draf dari foto terbentuk (loop berhenti tanpa iterasi ringkasan LLM). */
     public const PESAN_DRAF_FOTO = 'Draf dari foto sudah disiapkan. Periksa lalu simpan; data BELUM disimpan.';
+
+    /** Penutup ringkasan draf (jalur teks/suara) yang disusun server, menggantikan jawaban teks model. */
+    public const PESAN_DRAF = 'Data BELUM disimpan. Periksa lalu konfirmasi lewat tombol yang muncul.';
+
+    /**
+     * Balasan JUJUR server bila tidak ada AiDraft baru pada giliran ini, padahal jawaban model mengklaim draf/data sudah
+     * disiapkan atau masih memuat jejak internal (tag hasil tool, JSON, ID). Disertai tombol formulir Mini App.
+     */
+    public const PESAN_TANPA_DRAF = 'Draf belum dibuat dan tidak ada data yang disimpan. Agen AI belum berhasil menyiapkan draf dari pesan ini. Silakan isi lewat formulir di Mini App, atau kirim ulang dengan keterangan yang lebih jelas.';
+
+    /** Jumlah kalimat ringkasan draf maksimum di balasan (sama dengan batas tombol draf AiChatHandler). */
+    private const MAKS_RINGKASAN_DRAF = 3;
 
     /** Hasil baca foto pesan yang sedang diproses (untuk dipakai ulang bila pesan ditunda). Tidak di-log. */
     private ?string $teksVision = null;
@@ -85,6 +101,7 @@ class AiAgentService
         private readonly ArgumentValidator $validator,
         private readonly ToolSelector $selector,
         private readonly TokenBudget $budget,
+        private readonly DraftToolResolver $resolver,
     ) {}
 
     /**
@@ -253,6 +270,7 @@ class AiAgentService
         $model = $this->llm->modelName();
 
         $sudahUlang = false;
+        $dikoreksi = false;
 
         for ($i = 0; $i < $maxIterations; $i++) {
             if (microtime(true) - $started > $budget) {
@@ -276,13 +294,24 @@ class AiAgentService
 
                 // Draf dari langkah sebelumnya sudah tersimpan sebagai AiDraft: tetap ditawarkan (tidak dibuat ulang).
                 return $this->finish($interaction, $started, $log, HasilAi::Fallback, $e->logLabel(), new AiReply(
-                    'Sebagian permintaan sudah disiapkan sebagai draf. Periksa dan simpan di Mini App.',
+                    $this->teksDraf($user, $drafts, 'Sebagian permintaan sudah disiapkan sebagai draf. Periksa dan simpan di Mini App.'),
                     $drafts,
                     interactionId: $interaction->id,
                 ));
             }
 
             if (! $response->hasToolCalls()) {
+                // Model meniru panggilan/hasil tool sebagai TEKS (tag hasil_tool + JSON argumen) atau mengklaim draf tanpa
+                // memanggil tool tulis (temuan staging): SATU iterasi koreksi dengan catatan sistem. Teks itu tidak
+                // dikirim ke pengguna dan tidak dikirim balik ke penyedia (riwayat pesan tidak diubah).
+                if (! $dikoreksi && $drafts === [] && $i + 1 < $maxIterations && $this->perluKoreksi($response->text, $tools, $deadline)) {
+                    $dikoreksi = true;
+                    $log['koreksi_tool_teks'] = 1;
+                    $system .= "\n\n".$this->parser->catatanToolTeks($this->namaToolTulis($tools));
+
+                    continue;
+                }
+
                 $final = $response->text;
                 break;
             }
@@ -329,7 +358,7 @@ class AiAgentService
                 $log['berhenti_setelah_draf'] = 1;
 
                 return $this->finish($interaction, $started, $log, HasilAi::Sukses, null, new AiReply(
-                    self::PESAN_DRAF_FOTO,
+                    $this->teksDraf($user, $drafts, self::PESAN_DRAF_FOTO),
                     $drafts,
                     interactionId: $interaction->id,
                 ));
@@ -344,24 +373,111 @@ class AiAgentService
             return $this->finish($interaction, $started, $log, HasilAi::Fallback, 'loop_terpotong', new AiReply(
                 $drafts === []
                     ? 'Maaf, permintaan ini belum dapat diselesaikan otomatis. Silakan isi lewat formulir di Mini App.'
-                    : 'Sebagian permintaan sudah disiapkan sebagai draf. Periksa dan simpan di Mini App.',
+                    : $this->teksDraf($user, $drafts, 'Sebagian permintaan sudah disiapkan sebagai draf. Periksa dan simpan di Mini App.'),
                 $drafts,
                 fallback: $drafts === [],
                 interactionId: $interaction->id,
             ));
         }
 
-        $reply = $this->cleanOutput($final);
+        // Draf terbentuk pada giliran ini: balasan = ringkasan yang dirender SERVER dari data draf (tanpa id internal dan
+        // skor keyakinan), BUKAN teks model. Layar konfirmasi/tombol per draf dikirim AiChatHandler.
+        if ($drafts !== []) {
+            $log['balasan'] = 'server';
 
-        if ($reply === '') {
-            $reply = $drafts === [] ? 'Baik.' : 'Draf sudah disiapkan. Periksa dan simpan di Mini App.';
+            return $this->finish($interaction, $started, $log, $deniedOnly ? HasilAi::Ditolak : HasilAi::Sukses, null, new AiReply(
+                $this->teksDraf($user, $drafts, self::PESAN_DRAF),
+                $drafts,
+                interactionId: $interaction->id,
+            ));
+        }
+
+        // Tanpa draf: jawaban model disaring (tag hasil_tool, JSON hasil tool). Sisa jejak internal (fail-safe) atau klaim
+        // "draf disiapkan/data tersimpan" padahal tidak ada AiDraft baru -> pesan server yang jujur + tombol Mini App.
+        [$bersih, $dibuang] = PenyaringBalasan::saring($final);
+
+        if ($dibuang > 0) {
+            $log['balasan_disaring'] = $dibuang;
+        }
+
+        $reply = $bersih === null ? '' : $this->cleanOutput($bersih);
+        $alasan = match (true) {
+            $bersih === null || PenyaringBalasan::adaJejakInternal($reply) => 'tanpa_draf:sisa_jejak',
+            PenyaringBalasan::klaimDraf($reply) => 'tanpa_draf:klaim_draf',
+            $reply === '' && $dibuang > 0 => 'tanpa_draf:jejak_dibuang',
+            default => null,
+        };
+
+        if ($alasan !== null) {
+            $log['balasan'] = 'server';
+
+            return $this->finish($interaction, $started, $log, HasilAi::Fallback, $alasan, new AiReply(
+                self::PESAN_TANPA_DRAF,
+                fallback: true,
+                interactionId: $interaction->id,
+            ));
         }
 
         return $this->finish($interaction, $started, $log, $deniedOnly ? HasilAi::Ditolak : HasilAi::Sukses, null, new AiReply(
-            $reply,
-            $drafts,
+            $reply === '' ? 'Baik.' : $reply,
             interactionId: $interaction->id,
         ));
+    }
+
+    /**
+     * Ringkasan draf yang dirender SERVER dari draf tersimpan: satu kalimat per draf (WriteDraftTool::kalimatDraf: nama
+     * dari basis data, tanpa id internal/skor keyakinan) + kalimat penutup. Dipanggil di dalam ActingUser::run. Galat
+     * menyusun ringkasan tidak menggagalkan balasan (label modul saja).
+     *
+     * @param  list<AiDraft>  $drafts
+     */
+    private function teksDraf(User $user, array $drafts, string $penutup): string
+    {
+        $baris = [];
+
+        foreach (array_slice($drafts, 0, self::MAKS_RINGKASAN_DRAF) as $draft) {
+            $kalimat = null;
+
+            try {
+                $kalimat = $this->resolver->resolve($draft)?->kalimatDraf($user, $draft);
+            } catch (Throwable $e) {
+                report($e);
+            }
+
+            $kalimat = is_string($kalimat) ? WriteDraftTool::satuBaris($kalimat, 300) : '';
+            $baris[] = $kalimat !== '' && ! PenyaringBalasan::adaJejakInternal($kalimat)
+                ? $kalimat
+                : 'Draf '.WriteDraftTool::satuBaris((string) config("rbac.modules.{$draft->module}.label", $draft->module), 60);
+        }
+
+        if (count($drafts) > self::MAKS_RINGKASAN_DRAF) {
+            $baris[] = 'Dan '.(count($drafts) - self::MAKS_RINGKASAN_DRAF).' draf lain (lihat di Mini App).';
+        }
+
+        return implode("\n", [...$baris, $penutup]);
+    }
+
+    /**
+     * Jawaban teks (tanpa tool call) perlu satu iterasi koreksi: fitur aktif, ada tool tulis yang ditawarkan, sisa waktu
+     * cukup, dan teks meniru panggilan/hasil tool (jejak internal) atau mengklaim draf tanpa draf.
+     *
+     * @param  array<string, AiTool>  $tools
+     */
+    private function perluKoreksi(string $text, array $tools, float $deadline): bool
+    {
+        return (bool) config('ai.agent.koreksi_tool_teks', true)
+            && $this->namaToolTulis($tools) !== []
+            && $deadline - microtime(true) >= self::MIN_SISA_ULANG
+            && (PenyaringBalasan::adaJejakInternal($text) || PenyaringBalasan::klaimDraf($text));
+    }
+
+    /**
+     * @param  array<string, AiTool>  $tools
+     * @return list<string>
+     */
+    private function namaToolTulis(array $tools): array
+    {
+        return array_values(array_map(fn (AiTool $t) => $t->name(), array_filter($tools, fn (AiTool $t) => $t instanceof WriteDraftTool)));
     }
 
     /**
@@ -424,7 +540,7 @@ class AiAgentService
         }
 
         return $this->finish($interaction, $started, $log, HasilAi::Sukses, null, new AiReply(
-            'Draf sudah disiapkan. Periksa dan simpan di Mini App. Data BELUM disimpan.',
+            $this->teksDraf($user, $drafts, 'Draf sudah disiapkan. Periksa dan simpan di Mini App. Data BELUM disimpan.'),
             $drafts,
             interactionId: $interaction->id,
         ));
@@ -847,6 +963,43 @@ class AiAgentService
             'error' => $error === null ? null : mb_substr($error, 0, 500),
         ])->save();
 
+        $this->logPesan($interaction, $log, $hasil, $error, $reply);
+
         return $reply;
+    }
+
+    /**
+     * SATU baris log per pesan Agen AI ('ai.pesan'): hasil (draf_dibuat | tanpa_draf | galat), jumlah iterasi, token
+     * terpakai (angka), jenis masukan, sumber balasan, dan kode galat bertipe tetap. TANPA isi pesan, hasil baca foto,
+     * nama, argumen, atau JSON (UU PDP). Level dari config ai.agent.log_level (bawaan info).
+     *
+     * @param  array<string, mixed>  $log
+     */
+    private function logPesan(AiInteraction $interaction, array $log, HasilAi $hasil, ?string $error, AiReply $reply): void
+    {
+        $status = match (true) {
+            $reply->drafts !== [] => 'draf_dibuat',
+            $hasil === HasilAi::Gagal || ($error !== null && str_starts_with($error, 'llm:')) => 'galat',
+            default => 'tanpa_draf',
+        };
+        $vision = (array) ($log['token_vision'] ?? []);
+        $jenis = $interaction->jenis_input;
+        $level = (string) config('ai.agent.log_level', 'info');
+
+        Log::log(in_array($level, ['debug', 'info', 'notice', 'warning', 'error'], true) ? $level : 'info', 'ai.pesan', array_filter([
+            'interaksi_id' => $interaction->id,
+            'jenis' => $jenis instanceof \BackedEnum ? $jenis->value : (is_string($jenis) ? mb_substr($jenis, 0, 16) : null),
+            'hasil' => $status,
+            'iterasi' => (int) ($log['iterasi'] ?? 0),
+            'token' => (int) ($log['token_pesan'] ?? 0),
+            'token_vision' => (int) ($vision['masuk'] ?? 0) + (int) ($vision['keluar'] ?? 0),
+            'draf' => count($reply->drafts),
+            'balasan' => $log['balasan'] ?? ($error === null && $reply->drafts === [] ? 'model' : 'server'),
+            'ditunda' => $reply->tunda !== null ? 1 : null,
+            'koreksi' => isset($log['koreksi_tool_teks']) ? 1 : null,
+            'disaring' => isset($log['balasan_disaring']) ? (int) $log['balasan_disaring'] : null,
+            // Kode tetap buatan server (kategori LLM / nama kelas / label tanpa_draf); tanpa isi pesan.
+            'kode' => $error === null ? null : mb_substr((string) preg_replace('/[^A-Za-z0-9_:=() .-]/', '', $error), 0, 80),
+        ], fn ($v) => $v !== null));
     }
 }
