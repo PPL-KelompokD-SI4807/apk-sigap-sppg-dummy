@@ -43,7 +43,7 @@ class MenuController extends ApiController
         $this->applySearch($query, $request, ['nama_menu', 'siklus']);
         $this->applyDateRange($query, $request, 'tanggal_sajian');
 
-        if (in_array($request->query('kelompok_sasaran'), KelompokSasaran::values(), true)) {
+        if (in_array($request->query('kelompok_sasaran'), KelompokSasaran::valuesGizi(), true)) {
             $query->where('kelompok_sasaran', $request->query('kelompok_sasaran'));
         }
 

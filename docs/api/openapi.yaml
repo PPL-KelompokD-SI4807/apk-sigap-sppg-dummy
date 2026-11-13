@@ -3544,7 +3544,7 @@ paths:
         - $ref: '#/components/parameters/PerPage'
         - $ref: '#/components/parameters/Search'
         - { name: titik_layanan_id, in: query, schema: { type: integer } }
-        - { name: kelompok_sasaran, in: query, schema: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] } }
+        - { name: kelompok_sasaran, in: query, schema: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] } }
         - { name: is_active, in: query, schema: { type: boolean } }
         - { name: ada_alergi, in: query, description: 'true = hanya yang memiliki catatan alergi.', schema: { type: boolean } }
         - { name: sppg_id, in: query, description: 'Hanya berpengaruh untuk Admin.', schema: { type: integer } }
@@ -4631,6 +4631,57 @@ paths:
       description: 'Hanya Admin. Ditolak (422) bila SPPG masih memiliki pengguna atau titik layanan aktif.'
       responses:
         '204': { description: Dihapus }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /sppg/{id}/saldo-awal:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [SPPG]
+      summary: Isi/ubah saldo awal SPPG (R-07)
+      description: |
+        Hanya **akuntan SPPG ini** dan **admin**; peran lain (termasuk kepala_sppg dan investor) dan akuntan SPPG lain = 403
+        (sebelum validasi). Saldo awal dipakai laporan 30c/30d sebagai saldo awal periode pertama. Tiap perubahan nilai
+        atau tanggal dicatat di `audit_logs` (event `saldo_awal_diubah`, nilai lama/baru nominal + tanggal). Permintaan
+        identik dengan nilai tersimpan tidak menambah log. Field ini tidak dapat diisi lewat PUT/PATCH `/sppg/{id}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaldoAwalInput' }
+            example: { saldo_awal: 25000000, saldo_awal_tanggal: '2026-11-01' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Sppg' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [SPPG]
+      summary: Sama dengan PUT saldo awal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaldoAwalInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Sppg' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -5904,7 +5955,7 @@ components:
           items:
             type: object
             properties:
-              kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+              kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
               label: { type: string }
               jumlah: { type: [integer, 'null'] }
               penanda: { type: [string, 'null'], examples: ['<5'] }
@@ -6503,8 +6554,12 @@ components:
       type: string
       description: |
         bahan_baku (belanja bahan), insentif_relawan (gaji/upah), energi (utilitas: gas/listrik/air),
-        transportasi (BBM/transport), peralatan, lainnya.
-      enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya]
+        transportasi (BBM/transport), peralatan, lainnya, insentif_fasilitas (R07-1: Insentif Fasilitas SPPG, Lampiran 30b-C).
+      enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya, insentif_fasilitas]
+    SubKategoriPengeluaran:
+      type: string
+      description: '17 baris baku Biaya Operasional Lampiran 30b-B (R07-1). Hanya untuk kategori operasional; bahan_baku dan insentif_fasilitas tidak memakainya (422).'
+      enum: [insentif_relawan, insentif_harian_pj_satuan, insentif_kader, bpjs_ketenagakerjaan, listrik, air_kemasan_galon, air_pdam, air_minum, gas, sewa_kendaraan, bbm, pulsa, internet, atk, alat_kebersihan, apd, lain_lain]
     PencairanDanaInput:
       type: object
       required: [periode, sumber_dana, nominal, tanggal_cair]
@@ -6545,6 +6600,7 @@ components:
       properties:
         tanggal: { type: string, format: date, description: 'Tidak boleh di masa depan; periode = bulan tanggal.' }
         kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+        sub_kategori: { oneOf: [{ $ref: '#/components/schemas/SubKategoriPengeluaran' }, { type: 'null' }], description: 'Opsional. Data lama kosong.' }
         uraian: { type: string, maxLength: 255 }
         nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
         pemasok_id: { type: [integer, 'null'], description: Pemasok SPPG sendiri. }
@@ -6561,6 +6617,8 @@ components:
         tanggal: { type: string, format: date }
         kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
         kategori_label: { type: string }
+        sub_kategori: { oneOf: [{ $ref: '#/components/schemas/SubKategoriPengeluaran' }, { type: 'null' }] }
+        sub_kategori_label: { type: [string, 'null'], examples: ['Gas'] }
         uraian: { type: string }
         nominal: { type: integer }
         melebihi_anggaran: { type: boolean, description: 'Dihitung SAAT DISETUJUI: nominal melebihi sisa anggaran periode.' }
@@ -6680,6 +6738,8 @@ components:
             menu: { type: [object, 'null'], properties: { id: { type: integer }, nama_menu: { type: string } } }
         kode_batch: { type: [string, 'null'], examples: ['BATCH-20261102-01'] }
         realisasi_porsi: { type: integer }
+        porsi_food_sample: { type: [integer, 'null'], description: 'R07-1. Porsi (bukan orang); kosong = 0.' }
+        porsi_uji_organoleptik: { type: [integer, 'null'], description: 'R07-1. Porsi (bukan orang); kosong = 0.' }
         target_porsi: { type: [integer, 'null'] }
         selisih_porsi: { type: [integer, 'null'], description: 'realisasi - target (negatif = kurang dari target)' }
         persentase_capaian: { type: [number, 'null'], description: 'realisasi / target x 100 (1 desimal)' }
@@ -6703,6 +6763,8 @@ components:
       properties:
         jadwal_produksi_id: { type: integer, description: 'Hanya saat membuat; jadwal SPPG yang sama, tidak dibatalkan, tanggal produksi <= hari ini' }
         realisasi_porsi: { type: integer, minimum: 0 }
+        porsi_food_sample: { type: [integer, 'null'], minimum: 0, maximum: 1000000 }
+        porsi_uji_organoleptik: { type: [integer, 'null'], minimum: 0, maximum: 1000000 }
         sisa_makanan_kg: { type: number, minimum: 0, maximum: 99999 }
         waktu_mulai: { type: [string, 'null'], examples: ['03:10'], description: 'HH:MM' }
         jam_selesai: { type: [string, 'null'], examples: ['08:20'], description: 'HH:MM; harus setelah waktu_mulai' }
@@ -7149,7 +7211,10 @@ components:
         titik_layanan_id: { type: integer }
         titik_layanan_nama: { type: string, description: 'Ada bila relasi dimuat.' }
         nama: { type: string, description: 'Inisial/nama minimal, tanpa NIK.' }
-        kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+        kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
+        jenis_kelamin: { type: [string, 'null'], enum: [laki_laki, perempuan, null], description: 'R07-1. Data lama kosong (tidak diisi otomatis).' }
+        jenjang: { type: [string, 'null'], enum: [paud_tk, sd_1_3, sd_4_6, smp, sma, ats_kurang_9, ats_9_18, null], description: 'R07-1. Setingkat baris Lampiran 30b-A. Siswa: paud_tk..sma; ats: ats_kurang_9/ats_9_18; kelompok lain: null.' }
+        jenis_satuan: { type: [string, 'null'], enum: [reguler, slb, pesantren, pendidikan_khusus, informal, null], description: 'R07-1. Hanya kelompok siswa; pemisah 15 kelompok Lampiran 30a (SLB, Santri, Pendidikan khusus lainnya, informal).' }
         kelas_keterangan: { type: [string, 'null'] }
         catatan_alergi: { type: [string, 'null'] }
         is_active: { type: boolean }
@@ -7161,7 +7226,10 @@ components:
       properties:
         titik_layanan_id: { type: integer }
         nama: { type: string, maxLength: 100 }
-        kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+        kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
+        jenis_kelamin: { type: [string, 'null'], enum: [laki_laki, perempuan, null] }
+        jenjang: { type: [string, 'null'], enum: [paud_tk, sd_1_3, sd_4_6, smp, sma, ats_kurang_9, ats_9_18, null], description: 'Tidak sesuai kelompok (mis. siswa + ats_*) = 422.' }
+        jenis_satuan: { type: [string, 'null'], enum: [reguler, slb, pesantren, pendidikan_khusus, informal, null], description: 'Hanya kelompok siswa, selain itu 422.' }
         kelas_keterangan: { type: [string, 'null'], maxLength: 100 }
         catatan_alergi: { type: [string, 'null'], maxLength: 1000 }
         is_active: { type: boolean, default: true }
@@ -7541,7 +7609,7 @@ components:
             type: object
             required: [kelompok_sasaran, label, jumlah, penanda]
             properties:
-              kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+              kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
               label: { type: string }
               jumlah: { type: [integer, 'null'] }
               penanda: { type: [string, 'null'], description: 'Terisi ("<5") bila jumlah disamarkan.' }
@@ -7562,13 +7630,28 @@ components:
         id: { type: integer }
         kode: { type: string }
         nama: { type: string }
+        id_sppg_bgn: { type: [string, 'null'], description: 'R07-1. ID SPPG menurut BGN (Lampiran 30).' }
         alamat: { type: string }
+        kecamatan: { type: [string, 'null'] }
+        kab_kota: { type: [string, 'null'] }
+        provinsi: { type: [string, 'null'] }
         mitra_yayasan: { type: [string, 'null'] }
         telepon: { type: [string, 'null'] }
         kapasitas_porsi_harian: { type: integer, minimum: 1 }
         status_operasional: { type: string, enum: [aktif, libur, nonaktif] }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        nama_ketua_yayasan: { type: [string, 'null'], description: 'R07-1. HANYA untuk peran yang boleh membaca modul keuangan (admin, kepala_sppg, akuntan, investor); peran lain: kunci tidak ada.' }
+        no_va: { type: [string, 'null'], description: 'R07-1. Rekening/Virtual Account; pembatasan peran sama dengan nama_ketua_yayasan.' }
+        saldo_awal: { type: [integer, 'null'], description: 'R07-1. Rupiah bulat; diisi lewat PUT /sppg/{id}/saldo-awal; null = belum diisi. Pembatasan peran sama.' }
+        saldo_awal_tanggal: { type: [string, 'null'], format: date }
+        pengaturan_anggaran: { $ref: '#/components/schemas/PengaturanAnggaran' }
+        pengaturan_anggaran_kustom: { $ref: '#/components/schemas/PengaturanAnggaranKustom' }
+        izin:
+          type: object
+          description: 'Hanya untuk peran pembaca keuangan.'
+          properties:
+            ubah_saldo_awal: { type: boolean, description: 'true hanya untuk admin dan akuntan SPPG ini.' }
       example:
         id: 1
         kode: SPPG-DEMO-01
@@ -7580,6 +7663,28 @@ components:
         status_operasional: aktif
         created_at: '2026-10-26T08:00:00+07:00'
         updated_at: '2026-10-26T08:00:00+07:00'
+    PengaturanAnggaran:
+      type: object
+      description: 'Nilai EFEKTIF: kolom kosong diganti nilai bawaan kode (8000 / 10000 / 6000000 / 6).'
+      properties:
+        acuan_bahan_baku_kecil: { type: integer, examples: [8000], description: 'Rupiah per porsi: Balita, PAUD/TK/RA, SD/MI kelas 1-3.' }
+        acuan_bahan_baku_lainnya: { type: integer, examples: [10000], description: 'Rupiah per porsi: kelompok lain (termasuk Food Sample dan Uji Organoleptik).' }
+        insentif_fasilitas_per_hari: { type: integer, examples: [6000000] }
+        insentif_fasilitas_maks_hari_minggu: { type: integer, examples: [6] }
+    PengaturanAnggaranKustom:
+      type: object
+      description: 'Nilai tersimpan; null = memakai bawaan.'
+      properties:
+        acuan_bahan_baku_kecil: { type: [integer, 'null'] }
+        acuan_bahan_baku_lainnya: { type: [integer, 'null'] }
+        insentif_fasilitas_per_hari: { type: [integer, 'null'] }
+        insentif_fasilitas_maks_hari_minggu: { type: [integer, 'null'] }
+    SaldoAwalInput:
+      type: object
+      required: [saldo_awal, saldo_awal_tanggal]
+      properties:
+        saldo_awal: { type: integer, minimum: 0, maximum: 9999999999999, description: 'Rupiah bulat, nol sah.' }
+        saldo_awal_tanggal: { type: string, format: date, description: 'Tidak boleh di masa depan.' }
     SppgInput:
       type: object
       required: [kode, nama, alamat, kapasitas_porsi_harian]
@@ -7588,6 +7693,16 @@ components:
         nama: { type: string, maxLength: 255 }
         alamat: { type: string, maxLength: 255 }
         mitra_yayasan: { type: [string, 'null'], maxLength: 255 }
+        id_sppg_bgn: { type: [string, 'null'], maxLength: 30, description: 'Huruf, angka, . / _ -' }
+        kecamatan: { type: [string, 'null'], maxLength: 100 }
+        kab_kota: { type: [string, 'null'], maxLength: 100 }
+        provinsi: { type: [string, 'null'], maxLength: 100 }
+        nama_ketua_yayasan: { type: [string, 'null'], maxLength: 150, description: 'Tanpa nomor identitas (8+ angka berurutan ditolak).' }
+        no_va: { type: [string, 'null'], maxLength: 50, description: 'Angka, spasi, titik, tanda hubung.' }
+        acuan_bahan_baku_kecil: { type: [integer, 'null'], minimum: 1, maximum: 1000000, description: 'null = bawaan 8000.' }
+        acuan_bahan_baku_lainnya: { type: [integer, 'null'], minimum: 1, maximum: 1000000, description: 'null = bawaan 10000.' }
+        insentif_fasilitas_per_hari: { type: [integer, 'null'], minimum: 0, maximum: 1000000000, description: 'null = bawaan 6000000.' }
+        insentif_fasilitas_maks_hari_minggu: { type: [integer, 'null'], minimum: 1, maximum: 7, description: 'null = bawaan 6.' }
         telepon: { type: [string, 'null'], maxLength: 30 }
         kapasitas_porsi_harian: { type: integer, minimum: 1, maximum: 100000 }
         status_operasional: { type: string, enum: [aktif, libur, nonaktif], default: aktif }

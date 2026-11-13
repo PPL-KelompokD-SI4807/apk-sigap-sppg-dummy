@@ -397,7 +397,7 @@ schemas:
         items:
           type: object
           properties:
-            kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+            kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
             label: { type: string }
             jumlah: { type: [integer, 'null'] }
             penanda: { type: [string, 'null'], examples: ['<5'] }

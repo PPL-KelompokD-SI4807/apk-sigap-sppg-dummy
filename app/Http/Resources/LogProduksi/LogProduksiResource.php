@@ -35,6 +35,8 @@ class LogProduksiResource extends JsonResource
             ]),
             'kode_batch' => $l->kode_batch,
             'realisasi_porsi' => $l->realisasi_porsi,
+            'porsi_food_sample' => $l->porsi_food_sample,
+            'porsi_uji_organoleptik' => $l->porsi_uji_organoleptik,
             'target_porsi' => $target,
             'selisih_porsi' => $selisih,
             'persentase_capaian' => $target ? round($l->realisasi_porsi / $target * 100, 1) : null,

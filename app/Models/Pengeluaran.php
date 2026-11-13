@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\KategoriPengeluaran;
 use App\Enums\StatusPersetujuanPengeluaran;
+use App\Enums\SubKategoriPengeluaran;
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Builder;
@@ -37,6 +38,7 @@ class Pengeluaran extends Model
         'dicatat_oleh',
         'tanggal',
         'kategori',
+        'sub_kategori',
         'uraian',
         'nominal',
         'melebihi_anggaran',
@@ -49,6 +51,7 @@ class Pengeluaran extends Model
         return [
             'tanggal' => 'date:Y-m-d',
             'kategori' => KategoriPengeluaran::class,
+            'sub_kategori' => SubKategoriPengeluaran::class,
             'nominal' => 'decimal:2',
             'melebihi_anggaran' => 'boolean',
             'status_persetujuan' => StatusPersetujuanPengeluaran::class,

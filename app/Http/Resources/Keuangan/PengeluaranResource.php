@@ -31,6 +31,8 @@ class PengeluaranResource extends JsonResource
             'tanggal' => $p->tanggal?->toDateString(),
             'kategori' => $p->kategori?->value,
             'kategori_label' => $p->kategori?->label(),
+            'sub_kategori' => $p->sub_kategori?->value,
+            'sub_kategori_label' => $p->sub_kategori?->label(),
             'uraian' => $p->uraian,
             'nominal' => app(BudgetService::class)->rupiah($p->getRawOriginal('nominal') ?? $p->nominal),
             'melebihi_anggaran' => (bool) $p->melebihi_anggaran,

@@ -197,7 +197,7 @@ class BudgetService
                 'status_persetujuan' => StatusPersetujuanPengeluaran::Diajukan,
                 'versi' => 1,
             ]);
-            $pengeluaran->fill($this->ambil($data, ['pencairan_dana_id', 'pemasok_id', 'tanggal', 'kategori', 'uraian']) + [
+            $pengeluaran->fill($this->ambil($data, ['pencairan_dana_id', 'pemasok_id', 'tanggal', 'kategori', 'sub_kategori', 'uraian']) + [
                 'dicatat_oleh' => $pencatat->getKey(),
                 'nominal' => $nominal,
                 'melebihi_anggaran' => false,
@@ -227,7 +227,7 @@ class BudgetService
 
             $this->pastikanBisaDiubah($pengeluaran, $versi);
 
-            $pengeluaran->fill($this->ambil($data, ['pencairan_dana_id', 'pemasok_id', 'tanggal', 'kategori', 'uraian']));
+            $pengeluaran->fill($this->ambil($data, ['pencairan_dana_id', 'pemasok_id', 'tanggal', 'kategori', 'sub_kategori', 'uraian']));
 
             if (array_key_exists('nominal', $data)) {
                 $pengeluaran->nominal = (int) $data['nominal'];

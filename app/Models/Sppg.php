@@ -22,12 +22,33 @@ class Sppg extends Model
     protected $fillable = [
         'kode',
         'nama',
+        'id_sppg_bgn',
         'alamat',
+        'kecamatan',
+        'kab_kota',
+        'provinsi',
         'mitra_yayasan',
+        'nama_ketua_yayasan',
         'telepon',
+        'no_va',
         'kapasitas_porsi_harian',
         'status_operasional',
+        'acuan_bahan_baku_kecil',
+        'acuan_bahan_baku_lainnya',
+        'insentif_fasilitas_per_hari',
+        'insentif_fasilitas_maks_hari_minggu',
     ];
+
+    // saldo_awal dan saldo_awal_tanggal TIDAK mass-assignable: hanya SaldoAwalService (Akuntan/Admin + audit).
+
+    /** Nilai bawaan pengaturan anggaran bila kolom kosong (Q-1 R-07). */
+    public const ACUAN_KECIL_BAWAAN = 8000;
+
+    public const ACUAN_LAINNYA_BAWAAN = 10000;
+
+    public const INSENTIF_FASILITAS_BAWAAN = 6_000_000;
+
+    public const MAKS_HARI_MINGGU_BAWAAN = 6;
 
     /** @return array<string, string> */
     protected function casts(): array
@@ -35,6 +56,23 @@ class Sppg extends Model
         return [
             'kapasitas_porsi_harian' => 'integer',
             'status_operasional' => StatusOperasional::class,
+            'saldo_awal' => 'decimal:2',
+            'saldo_awal_tanggal' => 'date:Y-m-d',
+            'acuan_bahan_baku_kecil' => 'integer',
+            'acuan_bahan_baku_lainnya' => 'integer',
+            'insentif_fasilitas_per_hari' => 'integer',
+            'insentif_fasilitas_maks_hari_minggu' => 'integer',
+        ];
+    }
+
+    /** @return array{acuan_bahan_baku_kecil: int, acuan_bahan_baku_lainnya: int, insentif_fasilitas_per_hari: int, insentif_fasilitas_maks_hari_minggu: int} nilai efektif (kolom kosong = bawaan) */
+    public function pengaturanAnggaran(): array
+    {
+        return [
+            'acuan_bahan_baku_kecil' => $this->acuan_bahan_baku_kecil ?? self::ACUAN_KECIL_BAWAAN,
+            'acuan_bahan_baku_lainnya' => $this->acuan_bahan_baku_lainnya ?? self::ACUAN_LAINNYA_BAWAAN,
+            'insentif_fasilitas_per_hari' => $this->insentif_fasilitas_per_hari ?? self::INSENTIF_FASILITAS_BAWAAN,
+            'insentif_fasilitas_maks_hari_minggu' => $this->insentif_fasilitas_maks_hari_minggu ?? self::MAKS_HARI_MINGGU_BAWAAN,
         ];
     }
 

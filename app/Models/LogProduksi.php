@@ -26,6 +26,8 @@ class LogProduksi extends Model
         'dicatat_oleh',
         'kode_batch',
         'realisasi_porsi',
+        'porsi_food_sample',
+        'porsi_uji_organoleptik',
         'waktu_mulai',
         'sisa_makanan_kg',
         'jam_selesai',
@@ -38,6 +40,8 @@ class LogProduksi extends Model
     {
         return [
             'realisasi_porsi' => 'integer',
+            'porsi_food_sample' => 'integer',
+            'porsi_uji_organoleptik' => 'integer',
             'sisa_makanan_kg' => 'decimal:2',
         ];
     }

@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\JenisKelamin;
+use App\Enums\JenisSatuanPendidikan;
+use App\Enums\JenjangPenerima;
 use App\Enums\KelompokSasaran;
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
@@ -24,6 +27,9 @@ class PenerimaManfaat extends Model
         'titik_layanan_id',
         'nama',
         'kelompok_sasaran',
+        'jenis_kelamin',
+        'jenjang',
+        'jenis_satuan',
         'kelas_keterangan',
         'catatan_alergi',
         'is_active',
@@ -34,6 +40,9 @@ class PenerimaManfaat extends Model
     {
         return [
             'kelompok_sasaran' => KelompokSasaran::class,
+            'jenis_kelamin' => JenisKelamin::class,
+            'jenjang' => JenjangPenerima::class,
+            'jenis_satuan' => JenisSatuanPendidikan::class,
             'is_active' => 'boolean',
         ];
     }

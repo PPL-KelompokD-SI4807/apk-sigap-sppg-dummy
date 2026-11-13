@@ -29,7 +29,7 @@ class StoreStandarGiziRequest extends FormRequest
     public function rules(): array
     {
         $wajib = $this->isMethod('POST') ? 'required' : 'sometimes';
-        $rules = ['kelompok_sasaran' => [$wajib, Rule::enum(KelompokSasaran::class)]];
+        $rules = ['kelompok_sasaran' => [$wajib, Rule::enum(KelompokSasaran::class)->only(KelompokSasaran::untukGizi())]];
 
         foreach (self::ZAT as $zat) {
             $rules["{$zat}_min"] = [$wajib, 'numeric', 'min:0', 'max:99999'];

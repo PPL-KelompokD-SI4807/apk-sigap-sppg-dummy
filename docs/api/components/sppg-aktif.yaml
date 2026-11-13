@@ -66,7 +66,7 @@ schemas:
           type: object
           required: [kelompok_sasaran, label, jumlah, penanda]
           properties:
-            kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+            kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
             label: { type: string }
             jumlah: { type: [integer, 'null'] }
             penanda: { type: [string, 'null'], description: 'Terisi ("<5") bila jumlah disamarkan.' }

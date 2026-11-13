@@ -31,8 +31,12 @@ schemas:
     type: string
     description: |
       bahan_baku (belanja bahan), insentif_relawan (gaji/upah), energi (utilitas: gas/listrik/air),
-      transportasi (BBM/transport), peralatan, lainnya.
-    enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya]
+      transportasi (BBM/transport), peralatan, lainnya, insentif_fasilitas (R07-1: Insentif Fasilitas SPPG, Lampiran 30b-C).
+    enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya, insentif_fasilitas]
+  SubKategoriPengeluaran:
+    type: string
+    description: '17 baris baku Biaya Operasional Lampiran 30b-B (R07-1). Hanya untuk kategori operasional; bahan_baku dan insentif_fasilitas tidak memakainya (422).'
+    enum: [insentif_relawan, insentif_harian_pj_satuan, insentif_kader, bpjs_ketenagakerjaan, listrik, air_kemasan_galon, air_pdam, air_minum, gas, sewa_kendaraan, bbm, pulsa, internet, atk, alat_kebersihan, apd, lain_lain]
   PencairanDanaInput:
     type: object
     required: [periode, sumber_dana, nominal, tanggal_cair]
@@ -73,6 +77,7 @@ schemas:
     properties:
       tanggal: { type: string, format: date, description: 'Tidak boleh di masa depan; periode = bulan tanggal.' }
       kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+      sub_kategori: { oneOf: [{ $ref: '#/components/schemas/SubKategoriPengeluaran' }, { type: 'null' }], description: 'Opsional. Data lama kosong.' }
       uraian: { type: string, maxLength: 255 }
       nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
       pemasok_id: { type: [integer, 'null'], description: Pemasok SPPG sendiri. }
@@ -89,6 +94,8 @@ schemas:
       tanggal: { type: string, format: date }
       kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
       kategori_label: { type: string }
+      sub_kategori: { oneOf: [{ $ref: '#/components/schemas/SubKategoriPengeluaran' }, { type: 'null' }] }
+      sub_kategori_label: { type: [string, 'null'], examples: ['Gas'] }
       uraian: { type: string }
       nominal: { type: integer }
       melebihi_anggaran: { type: boolean, description: 'Dihitung SAAT DISETUJUI: nominal melebihi sisa anggaran periode.' }

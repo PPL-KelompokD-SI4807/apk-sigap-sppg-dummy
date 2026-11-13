@@ -7,7 +7,10 @@ schemas:
       titik_layanan_id: { type: integer }
       titik_layanan_nama: { type: string, description: 'Ada bila relasi dimuat.' }
       nama: { type: string, description: 'Inisial/nama minimal, tanpa NIK.' }
-      kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+      kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
+      jenis_kelamin: { type: [string, 'null'], enum: [laki_laki, perempuan, null], description: 'R07-1. Data lama kosong (tidak diisi otomatis).' }
+      jenjang: { type: [string, 'null'], enum: [paud_tk, sd_1_3, sd_4_6, smp, sma, ats_kurang_9, ats_9_18, null], description: 'R07-1. Setingkat baris Lampiran 30b-A. Siswa: paud_tk..sma; ats: ats_kurang_9/ats_9_18; kelompok lain: null.' }
+      jenis_satuan: { type: [string, 'null'], enum: [reguler, slb, pesantren, pendidikan_khusus, informal, null], description: 'R07-1. Hanya kelompok siswa; pemisah 15 kelompok Lampiran 30a (SLB, Santri, Pendidikan khusus lainnya, informal).' }
       kelas_keterangan: { type: [string, 'null'] }
       catatan_alergi: { type: [string, 'null'] }
       is_active: { type: boolean }
@@ -19,7 +22,10 @@ schemas:
     properties:
       titik_layanan_id: { type: integer }
       nama: { type: string, maxLength: 100 }
-      kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui] }
+      kelompok_sasaran: { type: string, enum: [siswa, balita, ibu_hamil, ibu_menyusui, pendidik, tenaga_kependidikan, ats] }
+      jenis_kelamin: { type: [string, 'null'], enum: [laki_laki, perempuan, null] }
+      jenjang: { type: [string, 'null'], enum: [paud_tk, sd_1_3, sd_4_6, smp, sma, ats_kurang_9, ats_9_18, null], description: 'Tidak sesuai kelompok (mis. siswa + ats_*) = 422.' }
+      jenis_satuan: { type: [string, 'null'], enum: [reguler, slb, pesantren, pendidikan_khusus, informal, null], description: 'Hanya kelompok siswa, selain itu 422.' }
       kelas_keterangan: { type: [string, 'null'], maxLength: 100 }
       catatan_alergi: { type: [string, 'null'], maxLength: 1000 }
       is_active: { type: boolean, default: true }

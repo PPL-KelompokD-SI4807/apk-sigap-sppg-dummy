@@ -24,7 +24,11 @@ class PengeluaranFactory extends Factory
             'pemasok_id' => null,
             'dicatat_oleh' => null,
             'tanggal' => now()->toDateString(),
-            'kategori' => fake()->randomElement(KategoriPengeluaran::cases()),
+            'kategori' => fake()->randomElement([
+                // Pin ke 6 kategori lama agar tes lama tidak bergantung kategori baru (insentif_fasilitas).
+                KategoriPengeluaran::BahanBaku, KategoriPengeluaran::InsentifRelawan, KategoriPengeluaran::Energi,
+                KategoriPengeluaran::Transportasi, KategoriPengeluaran::Peralatan, KategoriPengeluaran::Lainnya,
+            ]),
             'uraian' => fake()->randomElement(['Belanja sayur pasar pagi', 'Beli telur 30 kg', 'Insentif relawan dapur', 'Gas elpiji 12 kg', 'Beras 100 kg']),
             'nominal' => fake()->numberBetween(150, 4000) * 1000,
             'nota_path' => null,
