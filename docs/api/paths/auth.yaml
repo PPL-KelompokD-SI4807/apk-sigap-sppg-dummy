@@ -502,6 +502,8 @@
       Hanya sesi yang masih berlaku (sesi kedaluwarsa/idle tidak ditampilkan). Kuota terpisah (R-04 Q2):
       maks 5 sesi Mini App (`jenis: miniapp`) + maks 3 sesi web (`jenis: web`); `meta.kuota` memuat batas
       efektif. Sesi web tidak punya perangkat tepercaya (`diverifikasi_pada: null`, `perangkat` = label browser).
+      `meta.kuota.browser_tepercaya` (R04-3) = maks browser tepercaya (5), terpisah dari kuota sesi; daftarnya di
+      GET /auth/browser-tepercaya. `browser_tepercaya_id` menandai sesi web yang terbit dari browser tepercaya.
     responses:
       '200':
         description: OK
@@ -521,18 +523,76 @@
                     jenis_sesi_ini: { type: string, enum: [miniapp, web] }
                     kuota:
                       type: object
-                      required: [miniapp, web]
+                      required: [miniapp, web, browser_tepercaya]
                       properties:
                         miniapp: { type: integer, maximum: 5 }
                         web: { type: integer, maximum: 3 }
+                        browser_tepercaya: { type: integer, maximum: 5 }
             example:
               data:
-                - { id: 60, jenis: web, perangkat: 'Firefox · Linux', dibuat_pada: '2026-10-26T10:00:00+07:00', terakhir_dipakai_pada: '2026-10-26T10:15:00+07:00', berlaku_sampai: '2026-10-26T22:15:00+07:00', diverifikasi_pada: null, sesi_ini: true }
-                - { id: 51, jenis: miniapp, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: false }
-                - { id: 47, jenis: miniapp, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
-              meta: { jenis_sesi_ini: web, kuota: { miniapp: 5, web: 3 } }
+                - { id: 60, jenis: web, perangkat: 'Firefox · Linux', dibuat_pada: '2026-10-26T10:00:00+07:00', terakhir_dipakai_pada: '2026-10-26T10:15:00+07:00', berlaku_sampai: '2026-10-26T22:15:00+07:00', diverifikasi_pada: null, browser_tepercaya_id: null, sesi_ini: true }
+                - { id: 51, jenis: miniapp, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', browser_tepercaya_id: null, sesi_ini: false }
+                - { id: 47, jenis: miniapp, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', browser_tepercaya_id: null, sesi_ini: false }
+              meta: { jenis_sesi_ini: web, kuota: { miniapp: 5, web: 3, browser_tepercaya: 5 } }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/AuthForbidden' }
+/auth/browser-tepercaya:
+  get:
+    tags: [Auth]
+    summary: Daftar browser web tepercaya milik sendiri (R04-3)
+    description: |
+      Browser yang masih berlaku ("Ingat browser ini 30 hari"), terbaru dipakai dulu. Maks 5 per pengguna, terpisah
+      dari kuota sesi. Nilai cookie (selektor/validator) tidak pernah dikirim. Bisa dipanggil dari Mini App maupun web.
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data, meta]
+              properties:
+                data:
+                  type: array
+                  items: { $ref: '#/components/schemas/BrowserTepercaya' }
+                meta:
+                  type: object
+                  required: [kuota, masa_hari]
+                  properties:
+                    kuota: { type: integer, const: 5 }
+                    masa_hari: { type: integer, const: 30 }
+            example:
+              data:
+                - { id: 7, label: 'Firefox · Linux', diverifikasi_pada: '2026-11-13T08:00:00+07:00', berlaku_sampai: '2026-12-13T08:00:00+07:00', terakhir_dipakai_pada: '2026-11-20T07:45:00+07:00', browser_ini: true }
+              meta: { kuota: 5, masa_hari: 30 }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+/auth/browser-tepercaya/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer }, description: 'id dari GET /auth/browser-tepercaya.' }
+  delete:
+    tags: [Auth]
+    summary: Cabut satu browser tepercaya milik sendiri (R04-3)
+    description: |
+      Browser itu tidak lagi melewati kode (login berikutnya wajib sandi + kode) dan semua sesi web yang terbit
+      darinya ikut dicabut. Id milik akun lain, tidak ada, atau sudah dicabut -> 404 (tanpa efek). Bila
+      `browser_ini: true`, sesi web ini juga berakhir: respons menghapus cookie `__Host-sigap_tb` dan
+      `__Host-sigap_sesi` (Max-Age=0); klien kembali ke layar Masuk. Dicatat di audit (`auth.web.browser_tepercaya_dicabut`).
+    responses:
+      '200':
+        description: Dicabut
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, browser_ini]
+              properties:
+                message: { type: string }
+                browser_ini: { type: boolean }
+            example: { message: 'Browser tepercaya dicabut.', browser_ini: false }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/AuthForbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
 /auth/sesi/{id}:
   parameters:
     - { name: id, in: path, required: true, schema: { type: integer }, description: 'id dari GET /auth/sesi.' }
@@ -566,7 +626,8 @@
       Password lama wajib benar dan ikut penguncian akun yang sama dengan Masuk (5 salah -> 429
       `alasan: terkunci` 15 menit; sesi ini tetap berlaku). Password baru mengikuti aturan aktivasi
       dan harus berbeda dari password lama. Sesi perangkat ini dipertahankan; semua sesi, perangkat
-      tepercaya, dan tantangan token lain dicabut. Throttle 10/menit per akun.
+      tepercaya, browser web tepercaya (R04-3, termasuk browser sesi ini; sesi ini tetap sebagai sesi web biasa
+      yang terkena idle 12 jam), dan tantangan token lain dicabut. Throttle 10/menit per akun.
     requestBody:
       required: true
       content:
@@ -606,7 +667,7 @@
     summary: Keluar dari semua perangkat (termasuk perangkat ini)
     responses:
       '200':
-        description: Semua sesi & kepercayaan perangkat dicabut.
+        description: Semua sesi (Mini App + web), kepercayaan perangkat, dan browser tepercaya web (R04-3) dicabut.
         content:
           application/json:
             schema:

@@ -111,7 +111,7 @@ final class PenghapusDataUji
                 // agar token lama tidak tetap berlaku tanpa SPPG (pencabutan seketika, R-03).
                 User::query()->withoutGlobalScopes()->withTrashed()->where('sppg_id', $id)->get()
                     ->each(function (User $u): void {
-                        $jumlah = $u->cabutSemuaSesi();
+                        $jumlah = $u->cabutSemuaSesi(alasan: 'sppg_uji_dihapus');
 
                         if ($jumlah > 0) {
                             $u->catatPencabutanOtomatis('sppg_uji_dihapus', $jumlah, ['kolom' => ['sppg_id']]);

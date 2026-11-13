@@ -7,6 +7,7 @@ use App\Enums\Role;
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use App\Services\Auth\AuditAuth;
+use App\Services\Auth\BrowserTepercayaService;
 use App\Support\SppgAktif;
 use App\Support\Telepon;
 use Database\Factories\UserFactory;
@@ -96,10 +97,9 @@ class User extends Authenticatable
         // sehingga ability peran lama tidak pernah terbawa.
         static::updated(function (User $user): void {
             if ($user->wasChanged([...self::TOKEN_SENSITIVE, 'password'])) {
-                $jumlah = $user->cabutSemuaSesi();
-
                 // Perubahan password sudah punya event audit sendiri (auth.password_*/reset_*).
                 $kolom = array_values(array_filter(self::TOKEN_SENSITIVE, fn (string $k) => $user->wasChanged($k)));
+                $jumlah = $user->cabutSemuaSesi(alasan: $kolom === [] ? 'password_berubah' : 'hak_akses_berubah');
 
                 if ($jumlah > 0 && $kolom !== []) {
                     $user->catatPencabutanOtomatis('hak_akses_berubah', $jumlah, ['kolom' => $kolom]);
@@ -110,7 +110,7 @@ class User extends Authenticatable
         // Dihapus lunak atau dipulihkan (daftar ulang lewat undangan): sesi lama dan tautan bot lama
         // tidak pernah berlaku lagi untuk akun ini.
         static::deleted(function (User $user): void {
-            $jumlah = $user->cabutSemuaSesi();
+            $jumlah = $user->cabutSemuaSesi(alasan: 'akun_dihapus');
             $user->cabutTautanBot();
 
             if ($jumlah > 0) {
@@ -119,7 +119,7 @@ class User extends Authenticatable
         });
 
         static::restored(function (User $user): void {
-            $jumlah = $user->cabutSemuaSesi();
+            $jumlah = $user->cabutSemuaSesi(alasan: 'akun_dipulihkan');
             $user->cabutTautanBot();
 
             if ($jumlah > 0) {
@@ -160,14 +160,28 @@ class User extends Authenticatable
         return $this->hasMany(TantanganToken::class);
     }
 
-    /**
-     * Cabut semua sesi: token (penuh + pra-login), kepercayaan perangkat, dan tantangan terbuka.
-     * $kecualiTokenId/$kecualiPerangkatId dipertahankan (mis. sesi yang sedang mengubah password).
-     * Mengembalikan jumlah token yang dihapus.
-     */
-    public function cabutSemuaSesi(?int $kecualiTokenId = null, ?int $kecualiPerangkatId = null): int
+    /** Browser web tepercaya R04-3 (lewati kode Telegram; sandi tetap wajib). */
+    public function browserTepercaya(): HasMany
     {
+        return $this->hasMany(BrowserTepercaya::class);
+    }
+
+    /**
+     * Cabut semua sesi: token (penuh + pra-login), kepercayaan perangkat, browser tepercaya web (R04-3), dan
+     * tantangan terbuka. $kecualiTokenId/$kecualiPerangkatId dipertahankan (mis. sesi yang sedang mengubah
+     * password). Browser tepercaya TIDAK pernah dikecualikan: bila token yang dipertahankan berasal dari browser
+     * tepercaya, tautannya dilepas sehingga sesi itu kembali menjadi sesi web biasa (idle 12 jam).
+     * $alasan = pemicu yang dicatat pada pencabutan browser tepercaya. Mengembalikan jumlah token yang dihapus.
+     */
+    public function cabutSemuaSesi(?int $kecualiTokenId = null, ?int $kecualiPerangkatId = null, string $alasan = BrowserTepercayaService::ALASAN_SESI_DICABUT): int
+    {
+        if ($kecualiTokenId !== null) {
+            $this->tokens()->whereKey($kecualiTokenId)->update(['browser_tepercaya_id' => null]);
+        }
+
         $jumlah = (int) $this->tokens()->when($kecualiTokenId !== null, fn ($q) => $q->whereKeyNot($kecualiTokenId))->delete();
+
+        app(BrowserTepercayaService::class)->cabutSemua($this, $alasan);
 
         $this->perangkatTepercaya()->belumDicabut()
             ->when($kecualiPerangkatId !== null, fn ($q) => $q->whereKeyNot($kecualiPerangkatId))

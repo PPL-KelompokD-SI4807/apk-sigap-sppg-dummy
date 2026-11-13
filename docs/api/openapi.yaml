@@ -848,6 +848,8 @@ paths:
         Hanya sesi yang masih berlaku (sesi kedaluwarsa/idle tidak ditampilkan). Kuota terpisah (R-04 Q2):
         maks 5 sesi Mini App (`jenis: miniapp`) + maks 3 sesi web (`jenis: web`); `meta.kuota` memuat batas
         efektif. Sesi web tidak punya perangkat tepercaya (`diverifikasi_pada: null`, `perangkat` = label browser).
+        `meta.kuota.browser_tepercaya` (R04-3) = maks browser tepercaya (5), terpisah dari kuota sesi; daftarnya di
+        GET /auth/browser-tepercaya. `browser_tepercaya_id` menandai sesi web yang terbit dari browser tepercaya.
       responses:
         '200':
           description: OK
@@ -867,18 +869,76 @@ paths:
                       jenis_sesi_ini: { type: string, enum: [miniapp, web] }
                       kuota:
                         type: object
-                        required: [miniapp, web]
+                        required: [miniapp, web, browser_tepercaya]
                         properties:
                           miniapp: { type: integer, maximum: 5 }
                           web: { type: integer, maximum: 3 }
+                          browser_tepercaya: { type: integer, maximum: 5 }
               example:
                 data:
-                  - { id: 60, jenis: web, perangkat: 'Firefox · Linux', dibuat_pada: '2026-10-26T10:00:00+07:00', terakhir_dipakai_pada: '2026-10-26T10:15:00+07:00', berlaku_sampai: '2026-10-26T22:15:00+07:00', diverifikasi_pada: null, sesi_ini: true }
-                  - { id: 51, jenis: miniapp, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: false }
-                  - { id: 47, jenis: miniapp, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
-                meta: { jenis_sesi_ini: web, kuota: { miniapp: 5, web: 3 } }
+                  - { id: 60, jenis: web, perangkat: 'Firefox · Linux', dibuat_pada: '2026-10-26T10:00:00+07:00', terakhir_dipakai_pada: '2026-10-26T10:15:00+07:00', berlaku_sampai: '2026-10-26T22:15:00+07:00', diverifikasi_pada: null, browser_tepercaya_id: null, sesi_ini: true }
+                  - { id: 51, jenis: miniapp, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', browser_tepercaya_id: null, sesi_ini: false }
+                  - { id: 47, jenis: miniapp, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', browser_tepercaya_id: null, sesi_ini: false }
+                meta: { jenis_sesi_ini: web, kuota: { miniapp: 5, web: 3, browser_tepercaya: 5 } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AuthForbidden' }
+  /auth/browser-tepercaya:
+    get:
+      tags: [Auth]
+      summary: Daftar browser web tepercaya milik sendiri (R04-3)
+      description: |
+        Browser yang masih berlaku ("Ingat browser ini 30 hari"), terbaru dipakai dulu. Maks 5 per pengguna, terpisah
+        dari kuota sesi. Nilai cookie (selektor/validator) tidak pernah dikirim. Bisa dipanggil dari Mini App maupun web.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/BrowserTepercaya' }
+                  meta:
+                    type: object
+                    required: [kuota, masa_hari]
+                    properties:
+                      kuota: { type: integer, const: 5 }
+                      masa_hari: { type: integer, const: 30 }
+              example:
+                data:
+                  - { id: 7, label: 'Firefox · Linux', diverifikasi_pada: '2026-11-13T08:00:00+07:00', berlaku_sampai: '2026-12-13T08:00:00+07:00', terakhir_dipakai_pada: '2026-11-20T07:45:00+07:00', browser_ini: true }
+                meta: { kuota: 5, masa_hari: 30 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AuthForbidden' }
+  /auth/browser-tepercaya/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer }, description: 'id dari GET /auth/browser-tepercaya.' }
+    delete:
+      tags: [Auth]
+      summary: Cabut satu browser tepercaya milik sendiri (R04-3)
+      description: |
+        Browser itu tidak lagi melewati kode (login berikutnya wajib sandi + kode) dan semua sesi web yang terbit
+        darinya ikut dicabut. Id milik akun lain, tidak ada, atau sudah dicabut -> 404 (tanpa efek). Bila
+        `browser_ini: true`, sesi web ini juga berakhir: respons menghapus cookie `__Host-sigap_tb` dan
+        `__Host-sigap_sesi` (Max-Age=0); klien kembali ke layar Masuk. Dicatat di audit (`auth.web.browser_tepercaya_dicabut`).
+      responses:
+        '200':
+          description: Dicabut
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, browser_ini]
+                properties:
+                  message: { type: string }
+                  browser_ini: { type: boolean }
+              example: { message: 'Browser tepercaya dicabut.', browser_ini: false }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AuthForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /auth/sesi/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer }, description: 'id dari GET /auth/sesi.' }
@@ -912,7 +972,8 @@ paths:
         Password lama wajib benar dan ikut penguncian akun yang sama dengan Masuk (5 salah -> 429
         `alasan: terkunci` 15 menit; sesi ini tetap berlaku). Password baru mengikuti aturan aktivasi
         dan harus berbeda dari password lama. Sesi perangkat ini dipertahankan; semua sesi, perangkat
-        tepercaya, dan tantangan token lain dicabut. Throttle 10/menit per akun.
+        tepercaya, browser web tepercaya (R04-3, termasuk browser sesi ini; sesi ini tetap sebagai sesi web biasa
+        yang terkena idle 12 jam), dan tantangan token lain dicabut. Throttle 10/menit per akun.
       requestBody:
         required: true
         content:
@@ -952,7 +1013,7 @@ paths:
       summary: Keluar dari semua perangkat (termasuk perangkat ini)
       responses:
         '200':
-          description: Semua sesi & kepercayaan perangkat dicabut.
+          description: Semua sesi (Mini App + web), kepercayaan perangkat, dan browser tepercaya web (R04-3) dicabut.
           content:
             application/json:
               schema:
@@ -5231,12 +5292,21 @@ paths:
         Batas laju: 10/menit dan 100/jam per IP, 5 per 15 menit per identitas ter-normalisasi (429).
         Identitas: username (huruf besar/kecil dan `@` diabaikan) atau no telepon (08xx/62xx/+62xx).
         Lupa sandi tidak ada di web: arahkan ke Mini App > Lupa password.
+
+        Browser tepercaya (R04-3): bila browser membawa cookie `__Host-sigap_tb` yang sah, milik akun yang sama,
+        belum lewat 30 hari, belum dicabut, akun BUKAN Admin, DAN sandi benar -> `200 {langkah: selesai}` langsung
+        (bentuk sama dengan POST /web/auth/kode, `browser_tepercaya.dipakai: true`, Set-Cookie sesi; kode TIDAK
+        dikirim; bot mengirim notifikasi login dari browser tepercaya). Cookie itu hanya melewati KODE: sandi selalu
+        wajib. Sandi salah dengan browser tepercaya sah -> `422 kredensial_salah` (dihitung gagal untuk penguncian).
+        Cookie milik akun lain diabaikan (respons seragam di atas). Cookie yang tidak dapat berlaku lagi (tidak
+        dikenal, dirusak, lewat 30 hari, dicabut) dihapus lewat `Set-Cookie: __Host-sigap_tb=deleted; Max-Age=0`.
       security: []
       parameters:
         - { $ref: '#/components/parameters/WebKlien' }
         - { $ref: '#/components/parameters/WebOrigin' }
         - { $ref: '#/components/parameters/WebCsrfPra' }
         - { $ref: '#/components/parameters/WebCookiePra' }
+        - { $ref: '#/components/parameters/WebCookieTb' }
       requestBody:
         required: true
         content:
@@ -5250,10 +5320,13 @@ paths:
             example: { identitas: siti.dapur, password: 'Rahasia123x' }
       responses:
         '200':
-          description: Selalu, untuk semua kasus di atas.
+          description: '`langkah: kode` (seragam, semua kasus di atas) atau `langkah: selesai` (browser tepercaya sah + sandi benar).'
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/WebTantanganResponse' }
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/WebTantanganResponse' }
+                  - { $ref: '#/components/schemas/WebLoginResponse' }
               example:
                 langkah: kode
                 message: 'Bila data benar, kode telah dikirim ke Telegram Anda. Tidak menerima kode dalam 1 menit? Periksa kembali sandi.'
@@ -5264,7 +5337,12 @@ paths:
                   maks_kirim_ulang: 3
                   maks_percobaan: 5
         '403': { $ref: '#/components/responses/WebCsrfDitolak' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '422':
+          description: Format salah (ValidationError), atau sandi salah pada browser tepercaya sah (`alasan: kredensial_salah`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthError' }
+              example: { message: 'Identitas atau sandi salah.', errors: { password: ['Identitas atau sandi salah.'] }, alasan: kredensial_salah }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /web/auth/kode:
     post:
@@ -5280,14 +5358,28 @@ paths:
         Selanjutnya klien web memakai rute login penuh dengan cookie + `X-Sigap-Klien: web` (+ `Origin` dan
         `X-CSRF-Token` = `csrf` ini untuk metode pengubah); setelah muat ulang halaman, ambil `csrf` dari GET /auth/me.
         Gagal apa pun -> 422 `kode_tidak_valid` (seragam). Kode salah ikut menghitung penguncian kanal web.
-        `ingat_browser` diterima tetapi belum berefek (browser tepercaya menyusul di R04-3).
         Batas laju 10/menit per IP (bersama kirim ulang).
+
+        `ingat_browser: true` (R04-3, sukarela, bawaan false): browser ini menjadi browser tepercaya 30 hari TETAP
+        (tidak bergeser saat dipakai) lewat `Set-Cookie: __Host-sigap_tb=<selektor.validator>` (HttpOnly, Secure,
+        SameSite=Strict, Path=/, tanpa Domain, Max-Age=2592000). Login berikutnya di browser ini cukup sandi (kode
+        dilewati). Sesi login ini dan sesi berikutnya dari browser itu tidak terkena idle 12 jam (tetap 90 hari
+        sliding, absolut 180 hari) dan tidak pernah melewati akhir 30 hari browser. Browser tepercaya lama milik akun
+        yang sama di browser ini diganti. Maks 5 per pengguna (yang ke-6 mencabut yang paling lama diverifikasi),
+        terpisah dari kuota sesi. UI WAJIB menampilkan peringatan: "Jangan centang di komputer bersama/warnet. Sandi
+        tetap diminta; hanya kode Telegram yang dilewati." Admin: nilai ini diabaikan tanpa galat
+        (`browser_tepercaya.diingat: false`, `alasan: admin_selalu_kode`, tanpa cookie); Admin selalu memasukkan kode.
+        Browser tepercaya dicabut otomatis saat sandi diubah/direset, peran/unit/SPPG/status/akun Telegram berubah,
+        akun dihapus/dipulihkan, "keluar dari semua perangkat", pencabutan sesi oleh Admin, atau dicabut satu per satu
+        (DELETE /auth/browser-tepercaya/{id}); sesi web turunannya ikut berakhir. Keluar (POST /auth/logout) tidak
+        mencabut browser tepercaya.
       security: []
       parameters:
         - { $ref: '#/components/parameters/WebKlien' }
         - { $ref: '#/components/parameters/WebOrigin' }
         - { $ref: '#/components/parameters/WebCsrfPra' }
         - { $ref: '#/components/parameters/WebCookiePra' }
+        - { $ref: '#/components/parameters/WebCookieTb' }
       requestBody:
         required: true
         content:
@@ -5298,14 +5390,14 @@ paths:
               properties:
                 tantangan_id: { type: string, description: 'ULID dari langkah masuk.' }
                 kode: { type: string, pattern: '^\d{6}$' }
-                ingat_browser: { type: boolean, description: 'Belum berefek (R04-3). Admin selalu diabaikan.' }
-            example: { tantangan_id: 01jcz8w3q4m5n6p7r8s9t0v1w2, kode: '482915' }
+                ingat_browser: { type: boolean, default: false, description: 'Jadikan browser ini browser tepercaya 30 hari (R04-3). Diabaikan untuk Admin.' }
+            example: { tantangan_id: 01jcz8w3q4m5n6p7r8s9t0v1w2, kode: '482915', ingat_browser: true }
       responses:
         '200':
           description: Login web berhasil.
           headers:
             Set-Cookie:
-              description: 'Dua cookie: `__Host-sigap_sesi=<token>; Max-Age=43200; path=/; secure; httponly; samesite=strict` dan penghapus `__Host-sigap_pra=deleted; Max-Age=0; ...`.'
+              description: 'Cookie `__Host-sigap_sesi=<token>; Max-Age=43200 (sesi biasa) atau s.d. akhir browser tepercaya; path=/; secure; httponly; samesite=strict`, penghapus `__Host-sigap_pra=deleted; Max-Age=0; ...`, dan bila `ingat_browser` berlaku `__Host-sigap_tb=<selektor.validator>; Max-Age=2592000; path=/; secure; httponly; samesite=strict`.'
               schema: { type: string }
           content:
             application/json:
@@ -5313,8 +5405,9 @@ paths:
               example:
                 langkah: selesai
                 jenis_sesi: web
-                expires_at: '2026-11-13T20:00:00+07:00'
+                expires_at: '2026-12-13T08:00:00+07:00'
                 csrf: '9b1e...c4 (64 hex)'
+                browser_tepercaya: { dipakai: false, diingat: true, berlaku_sampai: '2026-12-13T08:00:00+07:00' }
                 user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 3, sppg_name: SPPG Sukamaju, modules: [], permissions: {}, unit_scope: {}, aksi: {} }
         '403': { $ref: '#/components/responses/WebCsrfDitolak' }
         '422':
@@ -5875,7 +5968,7 @@ components:
             sppg_id: { type: [integer, 'null'] }
     Sesi:
       type: object
-      required: [id, jenis, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
+      required: [id, jenis, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, browser_tepercaya_id, sesi_ini]
       properties:
         id: { type: integer }
         jenis: { type: string, enum: [miniapp, web], description: 'miniapp = token Bearer Mini App; web = cookie __Host-sigap_sesi (R-04).' }
@@ -5884,7 +5977,19 @@ components:
         terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam untuk Mini App, maks 15 menit untuk web.' }
         berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat; web: + idle 12 jam).' }
         diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya. Selalu null untuk web.' }
+        browser_tepercaya_id: { type: [integer, 'null'], description: 'R04-3: id browser tepercaya tempat sesi web ini terbit (bebas idle 12 jam, berakhir paling lambat bersama browser itu). Null untuk Mini App dan sesi web biasa.' }
         sesi_ini: { type: boolean }
+    BrowserTepercaya:
+      type: object
+      required: [id, label, diverifikasi_pada, berlaku_sampai, terakhir_dipakai_pada, browser_ini]
+      description: Browser web tepercaya (R04-3). Selektor/validator cookie tidak pernah dikirim.
+      properties:
+        id: { type: integer }
+        label: { type: [string, 'null'], description: 'Browser + OS ringkas dari User-Agent, mis. "Firefox · Linux".' }
+        diverifikasi_pada: { type: string, format: date-time, description: 'Kode Telegram terakhir + "Ingat browser ini".' }
+        berlaku_sampai: { type: string, format: date-time, description: 'diverifikasi_pada + 30 hari, TETAP.' }
+        terakhir_dipakai_pada: { type: [string, 'null'], format: date-time }
+        browser_ini: { type: boolean, description: 'Browser sesi web yang sedang dipakai.' }
     WebCsrfResponse:
       type: object
       required: [csrf, berlaku_sampai]
@@ -5916,7 +6021,7 @@ components:
             maks_percobaan: { type: integer, examples: [5] }
     WebLoginResponse:
       type: object
-      required: [langkah, jenis_sesi, expires_at, csrf, user]
+      required: [langkah, jenis_sesi, expires_at, csrf, browser_tepercaya, user]
       description: |
         Login web selesai. Token sesi TIDAK PERNAH ada di badan (issue #76); hanya di `Set-Cookie: __Host-sigap_sesi`.
         `csrf` = token CSRF SESI baru (terikat sesi ini) untuk `X-CSRF-Token` di rute login penuh; CSRF pra-login tidak
@@ -5926,6 +6031,18 @@ components:
         jenis_sesi: { type: string, const: web }
         expires_at: { type: string, format: date-time, description: 'Akhir masa sesi (idle 12 jam untuk sesi web biasa; digeser saat dipakai).' }
         csrf: { type: string, pattern: '^[0-9a-f]{64}$' }
+        browser_tepercaya:
+          type: object
+          required: [dipakai, diingat, berlaku_sampai]
+          description: |
+            R04-3. `dipakai` = login ini melewati kode karena browser tepercaya (POST /web/auth/masuk). `diingat` =
+            browser ini tepercaya setelah login ini. `alasan: admin_selalu_kode` bila Admin mencentang "Ingat browser
+            ini" (diabaikan; UI menampilkan "Admin selalu memakai kode").
+          properties:
+            dipakai: { type: boolean }
+            diingat: { type: boolean }
+            berlaku_sampai: { type: [string, 'null'], format: date-time, description: 'Akhir 30 hari browser tepercaya (tetap).' }
+            alasan: { type: string, const: admin_selalu_kode }
         user: { $ref: '#/components/schemas/AuthUser' }
     KategoriBahan:
       type: string
@@ -8700,6 +8817,12 @@ components:
       name: __Host-sigap_pra
       required: true
       description: 'Id pra-login dari GET /web/auth/csrf (HttpOnly; dikirim otomatis browser, tidak dibaca JS).'
+      schema: { type: string }
+    WebCookieTb:
+      in: cookie
+      name: __Host-sigap_tb
+      required: false
+      description: 'R04-3 browser tepercaya `selektor.validator` (HttpOnly, 30 hari tetap; dikirim otomatis browser, tidak dibaca JS). Hanya melewati kode Telegram; sandi tetap wajib.'
       schema: { type: string }
     IdempotencyKey:
       name: Idempotency-Key
