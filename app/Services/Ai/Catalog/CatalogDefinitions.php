@@ -332,6 +332,8 @@ final class CatalogDefinitions
                 store: StorePembelianBahanRequest::class, update: UpdatePembelianBahanRequest::class, routeParameter: 'pembelian_bahan',
                 hints: ['jumlah' => 'Jumlah dalam satuan bahan baku.', 'harga_satuan' => 'Harga per satuan bahan, rupiah.'],
                 exclude: ['versi'], berversi: true, berkas: true,
+                // Ringkasan chat dari server: nama bahan/pemasok + total, tanpa id internal.
+                kelasTulis: PembelianBahanWriteTool::class,
             ),
 
             // 15. Data Feedback dan Keluhan (deskripsi ditulis pengguna lain: DATA tak tepercaya). Deskripsi dan
