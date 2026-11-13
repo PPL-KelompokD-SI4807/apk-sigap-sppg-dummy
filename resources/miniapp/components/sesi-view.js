@@ -7,16 +7,17 @@ import {
 import { showConfirm, toast } from '../core/ui.js';
 import { errorMessage } from '../core/errors.js';
 import { pesanGalatAkun } from '../core/kredensial.js';
+import { elemenLabelSesi, teksLabelSesi } from '../core/sesi-label.js';
 
 const galat = (e, fallback) => pesanGalatAkun(e) || errorMessage(e, fallback);
 
 /** Kartu satu sesi. onCabut dipanggil saat tombol Hapus ditekan. */
 function kartuSesi(s, onCabut, labelTombol = 'Hapus') {
-  const btn = h('button', { class: 'btn btn-danger', type: 'button', 'aria-label': `${labelTombol} sesi ${s.perangkat || 'perangkat tidak dikenal'}` }, labelTombol);
+  const btn = h('button', { class: 'btn btn-danger', type: 'button', 'aria-label': `${labelTombol} sesi ${teksLabelSesi(s)}` }, labelTombol);
   btn.addEventListener('click', () => onCabut(s, btn));
   return h('div', { class: 'row-card' },
     h('span', { class: 'rc-main' },
-      h('span', { class: 'rc-title' }, s.perangkat || 'Perangkat tidak dikenal'),
+      elemenLabelSesi(s, { kelas: 'rc-title' }),
       h('div', { class: 'rc-sub' }, `Terakhir dipakai ${formatValue(s.terakhir_dipakai_pada, 'datetime')}`),
       h('div', { class: 'rc-sub' }, `Masuk ${formatValue(s.diverifikasi_pada || s.dibuat_pada, 'datetime')}`),
       s.berlaku_sampai ? h('div', { class: 'rc-sub' }, `Berlaku sampai ${formatValue(s.berlaku_sampai, 'datetime')}`) : null),
