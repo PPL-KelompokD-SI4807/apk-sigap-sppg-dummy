@@ -11,4 +11,10 @@ Route::prefix('laporan-bgn')->name('laporan-bgn.')->group(function () {
     Route::get('bulanan/ringkasan', [LaporanBgnController::class, 'bulananRingkasan'])->defaults('jenis', 'bulanan_ringkasan')->name('bulanan-ringkasan');
     Route::get('bulanan/anggaran', [LaporanBgnController::class, 'bulananAnggaran'])->defaults('jenis', 'bulanan_anggaran')->name('bulanan-anggaran');
     Route::get('bulanan/penerima-manfaat', [LaporanBgnController::class, 'bulananPenerima'])->defaults('jenis', 'bulanan_penerima')->name('bulanan-penerima');
+
+    // POST nomor LPA (idempoten per periode). 30a dan 30d-C tidak bernomor: rute tidak ada (404).
+    // 30d A/B satu laporan bulanan, satu nomor: satu rute `bulanan/nomor`.
+    Route::post('harian/nomor', [LaporanBgnController::class, 'terbitkanNomor'])->defaults('jenis', 'harian')->name('nomor-harian');
+    Route::post('dua-mingguan/nomor', [LaporanBgnController::class, 'terbitkanNomor'])->defaults('jenis', 'dua_mingguan')->name('nomor-dua-mingguan');
+    Route::post('bulanan/nomor', [LaporanBgnController::class, 'terbitkanNomor'])->defaults('jenis', 'bulanan_ringkasan')->name('nomor-bulanan');
 });

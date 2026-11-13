@@ -39,9 +39,15 @@ class LaporanBgnPolicy
         return $aktif !== null && $aktif === $sppgId;
     }
 
-    /** Boleh menerbitkan nomor LPA baru: investor hanya membaca (nomor yang sudah terbit tetap tampil). */
-    public function terbitkanNomor(User $user): bool
+    /**
+     * Boleh menerbitkan nomor LPA (POST nomor): hanya admin, kepala_sppg, akuntan (`lihat-laporan-bgn`), jenis bernomor,
+     * dan SPPG sendiri. Investor hanya membaca nomor yang sudah terbit.
+     */
+    public function terbitkanNomor(User $user, JenisLaporanBgn $jenis, int $sppgId): bool
     {
-        return $user->canAuthenticate() && Rbac::canAction($user, 'lihat-laporan-bgn');
+        return $jenis->bernomor()
+            && $user->canAuthenticate()
+            && Rbac::canAction($user, 'lihat-laporan-bgn')
+            && $this->lihat($user, $jenis, $sppgId);
     }
 }

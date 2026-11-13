@@ -24,6 +24,12 @@ class LaporanBgnRequest extends FormRequest
         return JenisLaporanBgn::from((string) $this->route('jenis'));
     }
 
+    /** Kemampuan Policy yang diperiksa sebelum validasi. */
+    protected function kemampuan(): string
+    {
+        return 'lihat';
+    }
+
     public function authorize(): bool
     {
         $user = $this->user();
@@ -32,7 +38,7 @@ class LaporanBgnRequest extends FormRequest
             return false;
         }
 
-        $diminta = $this->query('sppg_id');
+        $diminta = $this->input('sppg_id');
         $sppgId = is_scalar($diminta) && ctype_digit((string) $diminta) ? (int) $diminta : null;
 
         if ($user->isAdmin()) {
@@ -43,7 +49,7 @@ class LaporanBgnRequest extends FormRequest
             $sppgId ??= -1;
         }
 
-        return Gate::forUser($user)->allows('lihat', [LaporanBgn::class, $this->jenis(), $sppgId]);
+        return Gate::forUser($user)->allows($this->kemampuan(), [LaporanBgn::class, $this->jenis(), $sppgId]);
     }
 
     /** @return array<string, mixed> */

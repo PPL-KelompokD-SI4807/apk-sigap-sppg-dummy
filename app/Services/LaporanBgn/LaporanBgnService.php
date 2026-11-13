@@ -8,13 +8,13 @@ use App\Enums\KelompokPorsiBgn;
 use App\Enums\Role;
 use App\Enums\SubKategoriPengeluaran;
 use App\Models\AuditLog;
-use App\Models\LaporanBgn;
 use App\Models\Pengeluaran;
 use App\Models\Sppg;
 use App\Models\User;
 use App\Services\PenerimaManfaat\AgregatPenerimaService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\App;
 use Illuminate\Validation\ValidationException;
@@ -50,9 +50,15 @@ class LaporanBgnService
      */
     public function susun(JenisLaporanBgn $jenis, Sppg $sppg, CarbonImmutable $awal, CarbonImmutable $akhir, User $pengguna, array $opsi = []): array
     {
-        $terbitkan = $pengguna->can('terbitkanNomor', LaporanBgn::class);
-        $catatan = $this->penomoran->catat($sppg, $jenis, $awal, $akhir, (int) $pengguna->getKey(), $terbitkan);
-        $this->catatAudit($pengguna, $sppg, $jenis, $catatan);
+        // GET hanya membaca: nomor tampil bila sudah pernah diterbitkan (POST nomor), tidak pernah diterbitkan di sini.
+        $catatan = $jenis->bernomor() ? $this->penomoran->baca($sppg, $jenis, $awal, $akhir) : null;
+        $this->catatAudit($pengguna, $sppg, 'laporan_bgn_diakses', $sppg, [
+            'jenis' => $jenis->value,
+            'lampiran' => $jenis->lampiran(),
+            'periode_awal' => $awal->toDateString(),
+            'periode_akhir' => $akhir->toDateString(),
+            'nomor' => $catatan?->nomor,
+        ]);
 
         $peringatan = [];
         $samarkan = $pengguna->isInvestor();
@@ -76,7 +82,7 @@ class LaporanBgnService
             'lampiran' => $jenis->lampiran(),
             'judul' => $jenis->judul(),
             'periode' => ['awal' => $awal->toDateString(), 'akhir' => $akhir->toDateString(), 'tahun' => (int) $akhir->format('Y')],
-            'nomor' => $jenis->bernomor() ? $catatan->nomor : null,
+            'nomor' => $catatan?->nomor,
             'sppg' => $this->identitas($sppg),
             'penandatangan' => $penandatangan,
             'peringatan' => self::unik($peringatan),
@@ -778,24 +784,49 @@ class LaporanBgnService
         }));
     }
 
-    private function catatAudit(User $pengguna, Sppg $sppg, JenisLaporanBgn $jenis, LaporanBgn $catatan): void
+    /**
+     * Terbitkan nomor LPA periode (idempoten): panggilan ulang mengembalikan nomor yang sama. Hanya terbitan baru
+     * yang dicatat di audit (`laporan_bgn_nomor_terbit`, tanpa isi data laporan).
+     *
+     * @return array<string, mixed>
+     */
+    public function terbitkanNomor(JenisLaporanBgn $jenis, Sppg $sppg, CarbonImmutable $awal, CarbonImmutable $akhir, User $pengguna): array
+    {
+        abort_unless($jenis->bernomor(), 404);
+
+        [$catatan, $baru] = $this->penomoran->terbitkan($sppg, $jenis, $awal, $akhir, (int) $pengguna->getKey());
+
+        if ($baru) {
+            $this->catatAudit($pengguna, $sppg, 'laporan_bgn_nomor_terbit', $catatan, [
+                'jenis' => $catatan->jenis,
+                'periode_awal' => $awal->toDateString(),
+                'periode_akhir' => $akhir->toDateString(),
+                'nomor' => $catatan->nomor,
+            ]);
+        }
+
+        return [
+            'jenis' => $catatan->jenis,
+            'periode' => ['awal' => $awal->toDateString(), 'akhir' => $akhir->toDateString(), 'tahun' => (int) $catatan->tahun],
+            'nomor' => $catatan->nomor,
+            'nomor_urut' => $catatan->nomor_urut,
+            'baru' => $baru,
+        ];
+    }
+
+    /** @param array<string, mixed> $nilai */
+    private function catatAudit(User $pengguna, Sppg $sppg, string $event, Model $objek, array $nilai): void
     {
         $request = App::runningInConsole() && ! App::runningUnitTests() ? null : request();
         $log = new AuditLog;
         $log->forceFill([
             'sppg_id' => $sppg->getKey(),
             'user_id' => $pengguna->getKey(),
-            'event' => 'laporan_bgn_diakses',
-            'auditable_type' => $catatan->getMorphClass(),
-            'auditable_id' => $catatan->getKey(),
+            'event' => $event,
+            'auditable_type' => $objek->getMorphClass(),
+            'auditable_id' => $objek->getKey(),
             'old_values' => null,
-            'new_values' => [
-                'jenis' => $jenis->value,
-                'lampiran' => $jenis->lampiran(),
-                'periode_awal' => $catatan->periode_awal->toDateString(),
-                'periode_akhir' => $catatan->periode_akhir->toDateString(),
-                'nomor' => $jenis->bernomor() ? $catatan->nomor : null,
-            ],
+            'new_values' => $nilai,
             'ip' => $request?->ip(),
             'user_agent' => $request ? mb_substr((string) $request->userAgent(), 0, 512) : null,
             'sumber' => AuditLog::currentSource() ?? ($request ? 'web' : 'sistem'),
