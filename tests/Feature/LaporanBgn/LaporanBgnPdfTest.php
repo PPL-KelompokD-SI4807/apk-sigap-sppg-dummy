@@ -67,7 +67,9 @@ class LaporanBgnPdfTest extends LaporanBgnTestCase
     private function teksPdf(string $pdf): string
     {
         $hasil = '';
-        preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $m);
+        // FPDF menulis "stream\n<data>\nendstream". Jangan pakai "\r?" di sini: byte terakhir data zlib
+        // (adler32) bisa kebetulan "\r" dan ikut terbuang sehingga aliran gagal diurai.
+        preg_match_all('/stream\n(.*?)\nendstream/s', $pdf, $m);
 
         foreach ($m[1] as $aliran) {
             $buka = @gzuncompress($aliran);
@@ -208,6 +210,23 @@ class LaporanBgnPdfTest extends LaporanBgnTestCase
         $this->assertMatchesRegularExpression('/Halaman 1 dari \d+/', $teks);
         // Data SPPG B tidak boleh bocor.
         $this->assertStringNotContainsString('777.777', $teks);
+    }
+
+    public function test_teks_pdf_membaca_aliran_yang_berakhir_byte_cr(): void
+    {
+        $data = null;
+        $isi = '';
+        for ($i = 0; $i < 100000; $i++) {
+            $kandidat = gzcompress("BT\n(Catatan kaki $i) Tj\nET");
+            if (str_ends_with($kandidat, "\r")) {
+                $data = $kandidat;
+                $isi = "Catatan kaki $i";
+                break;
+            }
+        }
+
+        $this->assertNotNull($data);
+        $this->assertStringContainsString($isi, $this->teksPdf("%PDF-1.3\n1 0 obj\n<<>>\nstream\n{$data}\nendstream\nendobj\n"));
     }
 
     public function test_isi_30c_angka_dan_tanda_tangan(): void
