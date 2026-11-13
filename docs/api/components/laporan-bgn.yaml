@@ -34,6 +34,19 @@ parameters:
     description: Format `YYYY-MM`.
     schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-11' }
 schemas:
+  NomorLaporanBgn:
+    type: object
+    properties:
+      jenis: { type: string, enum: [harian, dua_mingguan, bulanan], description: Jenis dokumen (30d A/B satu dokumen `bulanan`). }
+      periode:
+        type: object
+        properties:
+          awal: { type: string, format: date }
+          akhir: { type: string, format: date }
+          tahun: { type: integer }
+      nomor: { type: string, example: 01/LPA/XI/2026 }
+      nomor_urut: { type: integer, example: 1 }
+      baru: { type: boolean, description: true bila nomor terbit pada panggilan ini; false bila sudah pernah terbit. }
   LaporanBgnPeringatan:
     type: object
     properties:
@@ -100,7 +113,7 @@ schemas:
         type: [string, 'null']
         description: |
           `xx/LPA/x/tahun` (xx = urut dua digit per SPPG per tahun; x = bulan akhir periode, angka Romawi). Periode yang
-          sama selalu bernomor sama. null untuk 30a dan 30d-C (tak bernomor), dan untuk investor bila belum terbit.
+          sama selalu bernomor sama. null untuk 30a dan 30d-C (tak bernomor), dan bila nomor belum diterbitkan lewat POST `.../nomor` (GET tidak pernah menerbitkan).
         example: 01/LPA/XI/2026
       sppg: { $ref: '#/components/schemas/LaporanBgnSppg' }
       penandatangan: { $ref: '#/components/schemas/LaporanBgnPenandatangan' }

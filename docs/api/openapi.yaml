@@ -2456,7 +2456,7 @@ paths:
         Bahan baku: total dari pengeluaran `disetujui`; rincian dari pembelian terverifikasi; selisih = `bahan_baku_lainnya`
         (tidak dihitung ganda). Biaya operasional = 17 baris baku; data lama tanpa `sub_kategori`: insentif_relawan ->
         Insentif Relawan, energi/transportasi/peralatan/lainnya -> Lain-lain (keterangan memuat kategori lama).
-        Bernomor `xx/LPA/x/tahun`.
+        Bernomor `xx/LPA/x/tahun`; GET hanya membaca (`nomor` null sampai diterbitkan lewat `POST /laporan-bgn/harian/nomor`).
       parameters:
         - $ref: '#/components/parameters/LaporanSppgId'
         - $ref: '#/components/parameters/LaporanAkuntanId'
@@ -2488,8 +2488,7 @@ paths:
         ditambah mutasi sebelum periode dengan peringatan `saldo_awal_belum_diisi`. Realisasi = pengeluaran `disetujui`
         (diajukan/ditolak tidak dihitung). Insentif fasilitas = pengeluaran tercatat; `insentif_fasilitas_acuan` memuat
         ketentuan hitung (hari operasional x nilai per hari, maksimal hari per minggu) sebagai pembanding.
-        Bernomor; nomor baru hanya diterbitkan pada panggilan pertama pengguna admin/kepala_sppg/akuntan (investor
-        menerima `nomor` null bila belum terbit; investor tidak menghabiskan urutan).
+        Bernomor; GET hanya membaca: `nomor` null sampai diterbitkan lewat `POST /laporan-bgn/dua-mingguan/nomor`.
       parameters:
         - $ref: '#/components/parameters/LaporanSppgId'
         - $ref: '#/components/parameters/LaporanAkuntanId'
@@ -2514,7 +2513,7 @@ paths:
       summary: Lampiran 30d bagian A - Laporan Bulanan (Summary)
       description: |
         Isi dan angka identik 30c untuk satu bulan kalender. Hak: admin, kepala_sppg, akuntan, investor (agregat).
-        Bagian A dan B satu laporan bulanan dengan satu nomor LPA.
+        Bagian A dan B satu laporan bulanan dengan satu nomor LPA (terbit lewat `POST /laporan-bgn/bulanan/nomor`; GET hanya membaca).
       parameters:
         - $ref: '#/components/parameters/LaporanSppgId'
         - $ref: '#/components/parameters/LaporanAkuntanId'
@@ -2582,6 +2581,104 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+  /laporan-bgn/harian/nomor:
+    post:
+      tags: [Laporan BGN]
+      summary: Terbitkan nomor LPA Lampiran 30b (idempoten)
+      description: |
+        Menerbitkan nomor LPA `xx/LPA/x/tahun` untuk periode. IDEMPOTEN per (SPPG, jenis dokumen, periode): panggilan
+        ulang mengembalikan nomor yang sama (`baru: false`) tanpa menghabiskan nomor baru. Urutan dua digit per SPPG per
+        tahun, dibagi seluruh laporan bernomor. Hak: admin, kepala_sppg, akuntan pada SPPG aktifnya (admin wajib `sppg_id`
+        di body); investor, ahli_gizi, staf_gudang, relawan = 403 (dicek sebelum validasi); lintas SPPG = 403. Dicatat di
+        audit (`laporan_bgn_nomor_terbit`, hanya terbitan baru, tanpa isi data laporan).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tanggal]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                tanggal: { type: string, format: date }
+      responses:
+        '200':
+          description: Nomor terbit atau sudah pernah terbit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NomorLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /laporan-bgn/dua-mingguan/nomor:
+    post:
+      tags: [Laporan BGN]
+      summary: Terbitkan nomor LPA Lampiran 30c (idempoten)
+      description: |
+        Menerbitkan nomor LPA `xx/LPA/x/tahun` untuk periode. IDEMPOTEN per (SPPG, jenis dokumen, periode): panggilan
+        ulang mengembalikan nomor yang sama (`baru: false`) tanpa menghabiskan nomor baru. Urutan dua digit per SPPG per
+        tahun, dibagi seluruh laporan bernomor. Hak: admin, kepala_sppg, akuntan pada SPPG aktifnya (admin wajib `sppg_id`
+        di body); investor, ahli_gizi, staf_gudang, relawan = 403 (dicek sebelum validasi); lintas SPPG = 403. Dicatat di
+        audit (`laporan_bgn_nomor_terbit`, hanya terbitan baru, tanpa isi data laporan).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tanggal_awal, tanggal_akhir]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                tanggal_awal: { type: string, format: date }
+                tanggal_akhir: { type: string, format: date, description: 'Tidak sebelum tanggal_awal; maksimal 16 hari.' }
+      responses:
+        '200':
+          description: Nomor terbit atau sudah pernah terbit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NomorLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /laporan-bgn/bulanan/nomor:
+    post:
+      tags: [Laporan BGN]
+      summary: Terbitkan nomor LPA Lampiran 30d (idempoten)
+      description: |
+        Menerbitkan nomor LPA `xx/LPA/x/tahun` untuk periode bulanan (30d A dan B satu nomor). IDEMPOTEN per (SPPG, jenis dokumen, periode): panggilan
+        ulang mengembalikan nomor yang sama (`baru: false`) tanpa menghabiskan nomor baru. Urutan dua digit per SPPG per
+        tahun, dibagi seluruh laporan bernomor. Hak: admin, kepala_sppg, akuntan pada SPPG aktifnya (admin wajib `sppg_id`
+        di body); investor, ahli_gizi, staf_gudang, relawan = 403 (dicek sebelum validasi); lintas SPPG = 403. Dicatat di
+        audit (`laporan_bgn_nomor_terbit`, hanya terbitan baru, tanpa isi data laporan).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bulan]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                bulan: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-11' }
+      responses:
+        '200':
+          description: Nomor terbit atau sudah pernah terbit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NomorLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  # 30a dan 30d-C tidak bernomor menurut juknis: tidak ada rute POST nomor (404).
   /log-produksi:
     get:
       tags: [Log Produksi]
@@ -7165,6 +7262,19 @@ components:
         sppg_id: { type: integer, description: 'Wajib untuk Admin pada unggahan tertunda; diabaikan untuk peran lain (SPPG pengguna).' }
         kategori: { type: [string, 'null'], pattern: '^[a-z0-9_]{1,30}$', description: 'Modul keluhan/mutu/log-produksi hanya menerima `foto` (default).' }
         berkas: { type: string, format: binary, description: 'JPEG/PNG/WebP, maks 5 MB, sisi maks 8000 px.' }
+    NomorLaporanBgn:
+      type: object
+      properties:
+        jenis: { type: string, enum: [harian, dua_mingguan, bulanan], description: Jenis dokumen (30d A/B satu dokumen `bulanan`). }
+        periode:
+          type: object
+          properties:
+            awal: { type: string, format: date }
+            akhir: { type: string, format: date }
+            tahun: { type: integer }
+        nomor: { type: string, example: 01/LPA/XI/2026 }
+        nomor_urut: { type: integer, example: 1 }
+        baru: { type: boolean, description: true bila nomor terbit pada panggilan ini; false bila sudah pernah terbit. }
     LaporanBgnPeringatan:
       type: object
       properties:
@@ -7231,7 +7341,7 @@ components:
           type: [string, 'null']
           description: |
             `xx/LPA/x/tahun` (xx = urut dua digit per SPPG per tahun; x = bulan akhir periode, angka Romawi). Periode yang
-            sama selalu bernomor sama. null untuk 30a dan 30d-C (tak bernomor), dan untuk investor bila belum terbit.
+            sama selalu bernomor sama. null untuk 30a dan 30d-C (tak bernomor), dan bila nomor belum diterbitkan lewat POST `.../nomor` (GET tidak pernah menerbitkan).
           example: 01/LPA/XI/2026
         sppg: { $ref: '#/components/schemas/LaporanBgnSppg' }
         penandatangan: { $ref: '#/components/schemas/LaporanBgnPenandatangan' }
