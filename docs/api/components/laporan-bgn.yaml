@@ -401,3 +401,17 @@ schemas:
               non_peserta_didik: { type: array, items: { type: object, properties: { baris: { type: string }, porsi: { type: integer } } } }
               belum_terklasifikasi: { type: integer }
               total: { type: integer }
+  PermintaanPdfLaporanBgn:
+    type: object
+    properties:
+      status: { type: string, enum: [antre] }
+      jenis: { type: string, enum: [porsi, harian, dua_mingguan, bulanan_ringkasan, bulanan_anggaran, bulanan_penerima] }
+      lampiran: { type: string, example: 30d-B }
+      periode:
+        type: object
+        properties:
+          awal: { type: string, format: date }
+          akhir: { type: string, format: date }
+      tujuan: { type: string, enum: [telegram] }
+      nomor: { type: string, nullable: true, description: Nomor LPA bila sudah terbit (30a dan 30d-C tidak bernomor), selain itu null. }
+      nomor_terbit: { type: boolean }

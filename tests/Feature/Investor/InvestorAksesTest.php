@@ -204,7 +204,11 @@ class InvestorAksesTest extends InvestorTestCase
         $name = (string) $route->getName();
 
         // Keputusan investor atas pengajuan pengeluaran adalah satu-satunya tulis yang sah (diuji di tests/Feature/Persetujuan).
-        return $name === 'api.v1.keuangan.pengeluaran.keputusan' || str_starts_with($name, 'api.v1.auth.') || $name === 'api.v1.telegram.webhook' || str_contains($route->uri(), 'telegram');
+        // Minta-PDF laporan BGN agregat (R07-3, Q-4) bukan tulis data: investor sah meminta 30a, 30c, 30d-A, 30d-B (202/422);
+        // 30b dan 30d-C tetap 403 dan ikut tersapu (diuji di LaporanBgnPdfTest).
+        $pdfAgregat = in_array($name, ['api.v1.laporan-bgn.pdf-porsi', 'api.v1.laporan-bgn.pdf-dua-mingguan', 'api.v1.laporan-bgn.pdf-bulanan-ringkasan', 'api.v1.laporan-bgn.pdf-bulanan-anggaran'], true);
+
+        return $pdfAgregat || $name === 'api.v1.keuangan.pengeluaran.keputusan' || str_starts_with($name, 'api.v1.auth.') || $name === 'api.v1.telegram.webhook' || str_contains($route->uri(), 'telegram');
     }
 
     public function test_peran_lain_header_sppg_lain_ditolak_dan_perilaku_lama_tetap(): void

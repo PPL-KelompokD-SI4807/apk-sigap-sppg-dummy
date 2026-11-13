@@ -117,6 +117,36 @@ class TelegramBotService
         return (array) $this->call('sendMessage', $payload);
     }
 
+    /**
+     * Kirim berkas lokal sebagai dokumen (multipart). Isi dibaca ke memori (berkas laporan kecil, batas Telegram 50 MB)
+     * agar percobaan ulang HTTP tidak membaca aliran yang sudah habis. $caption teks polos, maks 1024 karakter.
+     *
+     * @return array<string, mixed> objek Message
+     */
+    public function sendDocument(int|string $chatId, string $berkas, string $namaBerkas, ?string $caption = null): array
+    {
+        $isi = is_file($berkas) && is_readable($berkas) ? file_get_contents($berkas) : false;
+
+        if ($isi === false) {
+            throw new TelegramApiException('Berkas dokumen tidak dapat dibaca.');
+        }
+
+        $url = rtrim((string) config('telegram.api_base_url'), '/').'/bot'.$this->token().'/sendDocument';
+
+        try {
+            $response = $this->http()->timeout(max(30, (int) config('telegram.http_timeout', 10)))
+                ->attach('document', $isi, $namaBerkas)
+                ->post($url, array_filter([
+                    'chat_id' => $chatId,
+                    'caption' => $caption === null ? null : mb_substr($caption, 0, 1024),
+                ], fn ($v) => $v !== null));
+        } catch (Throwable $e) {
+            throw $this->sanitize($e);
+        }
+
+        return (array) $this->result($response, 'sendDocument');
+    }
+
     /** Teks polos (tanpa parse_mode): aman untuk keluaran model/isi pengguna. */
     public function sendText(int|string $chatId, string $text, ?array $replyMarkup = null): array
     {

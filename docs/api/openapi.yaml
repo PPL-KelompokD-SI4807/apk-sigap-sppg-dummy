@@ -2739,6 +2739,225 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+  # R07-3: minta PDF laporan BGN (antre, dikirim lewat bot Telegram). Satu rute per jenis, jalur sama dengan GET laporan + `/pdf`.
+  /laporan-bgn/porsi/pdf:
+    post:
+      tags: [Laporan BGN]
+      summary: Minta PDF Lampiran 30a - Rekapitulasi Perhitungan Porsi MBG di SPPG
+      description: |
+        Mengantre pembuatan PDF (Folio 210x330 mm, FPDF) lalu mengirimnya ke chat Telegram pemohon lewat `sendDocument`
+        (Q-6, Q-10); respons 202 segera, PDF TIDAK dikembalikan di respons. Hak: admin, kepala_sppg, akuntan, dan investor (agregat) pada SPPG aktifnya. Hak dan batas SPPG sama dengan
+        GET laporan jenis yang sama (dicek sebelum validasi, lalu diperiksa ULANG saat job berjalan). Nomor LPA tidak
+        diterbitkan di sini: bila belum terbit, PDF memuat "(belum diterbitkan)" (terbitkan lebih dulu lewat POST `.../nomor`
+        untuk jenis bernomor). 422 `telegram_belum_terhubung` bila akun belum punya `telegram_id`.
+        Batas 5 permintaan/menit per pengguna (429). Job: 3 percobaan (jeda 10/30/90 s); gagal = pesan teks singkat dari bot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tanggal_awal, tanggal_akhir]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                tanggal_awal: { type: string, format: date }
+                tanggal_akhir: { type: string, format: date, description: 'Tidak boleh sebelum tanggal_awal; rentang maksimal 16 hari.' }
+                akuntan_id: { type: integer, minimum: 1, description: 'Pihak Kedua bila ada lebih dari satu akuntan aktif; harus akuntan aktif SPPG itu (422).' }
+                kepala_sppg_id: { type: integer, minimum: 1, description: 'Penandatangan Mengetahui bila ada lebih dari satu kepala SPPG aktif (422 bila bukan).' }
+      responses:
+        '202':
+          description: Diantre
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /laporan-bgn/harian/pdf:
+    post:
+      tags: [Laporan BGN]
+      summary: Minta PDF Lampiran 30b - Laporan Harian Penggunaan Dana
+      description: |
+        Mengantre pembuatan PDF (Folio 210x330 mm, FPDF) lalu mengirimnya ke chat Telegram pemohon lewat `sendDocument`
+        (Q-6, Q-10); respons 202 segera, PDF TIDAK dikembalikan di respons. Hak: admin, kepala_sppg, akuntan. INVESTOR = 403 (Q-4). Hak dan batas SPPG sama dengan
+        GET laporan jenis yang sama (dicek sebelum validasi, lalu diperiksa ULANG saat job berjalan). Nomor LPA tidak
+        diterbitkan di sini: bila belum terbit, PDF memuat "(belum diterbitkan)" (terbitkan lebih dulu lewat POST `.../nomor`
+        untuk jenis bernomor). 422 `telegram_belum_terhubung` bila akun belum punya `telegram_id`. Halaman lampiran bukti (foto nota, maks 20, diperkecil) ditambahkan terpisah dari halaman format BGN untuk peran non-investor.
+        Batas 5 permintaan/menit per pengguna (429). Job: 3 percobaan (jeda 10/30/90 s); gagal = pesan teks singkat dari bot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tanggal]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                tanggal: { type: string, format: date }
+                akuntan_id: { type: integer, minimum: 1, description: 'Pihak Kedua bila ada lebih dari satu akuntan aktif; harus akuntan aktif SPPG itu (422).' }
+                kepala_sppg_id: { type: integer, minimum: 1, description: 'Penandatangan Mengetahui bila ada lebih dari satu kepala SPPG aktif (422 bila bukan).' }
+      responses:
+        '202':
+          description: Diantre
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /laporan-bgn/dua-mingguan/pdf:
+    post:
+      tags: [Laporan BGN]
+      summary: Minta PDF Lampiran 30c - Laporan 2 Mingguan Penggunaan Dana
+      description: |
+        Mengantre pembuatan PDF (Folio 210x330 mm, FPDF) lalu mengirimnya ke chat Telegram pemohon lewat `sendDocument`
+        (Q-6, Q-10); respons 202 segera, PDF TIDAK dikembalikan di respons. Hak: admin, kepala_sppg, akuntan, dan investor (agregat) pada SPPG aktifnya. Hak dan batas SPPG sama dengan
+        GET laporan jenis yang sama (dicek sebelum validasi, lalu diperiksa ULANG saat job berjalan). Nomor LPA tidak
+        diterbitkan di sini: bila belum terbit, PDF memuat "(belum diterbitkan)" (terbitkan lebih dulu lewat POST `.../nomor`
+        untuk jenis bernomor). 422 `telegram_belum_terhubung` bila akun belum punya `telegram_id`.
+        Batas 5 permintaan/menit per pengguna (429). Job: 3 percobaan (jeda 10/30/90 s); gagal = pesan teks singkat dari bot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tanggal_awal, tanggal_akhir]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                tanggal_awal: { type: string, format: date }
+                tanggal_akhir: { type: string, format: date, description: 'Tidak boleh sebelum tanggal_awal; rentang maksimal 16 hari.' }
+                akuntan_id: { type: integer, minimum: 1, description: 'Pihak Kedua bila ada lebih dari satu akuntan aktif; harus akuntan aktif SPPG itu (422).' }
+                kepala_sppg_id: { type: integer, minimum: 1, description: 'Penandatangan Mengetahui bila ada lebih dari satu kepala SPPG aktif (422 bila bukan).' }
+      responses:
+        '202':
+          description: Diantre
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /laporan-bgn/bulanan/ringkasan/pdf:
+    post:
+      tags: [Laporan BGN]
+      summary: Minta PDF Lampiran 30d-A - Laporan Bulanan (Summary)
+      description: |
+        Mengantre pembuatan PDF (Folio 210x330 mm, FPDF) lalu mengirimnya ke chat Telegram pemohon lewat `sendDocument`
+        (Q-6, Q-10); respons 202 segera, PDF TIDAK dikembalikan di respons. Hak: admin, kepala_sppg, akuntan, dan investor (agregat) pada SPPG aktifnya. Hak dan batas SPPG sama dengan
+        GET laporan jenis yang sama (dicek sebelum validasi, lalu diperiksa ULANG saat job berjalan). Nomor LPA tidak
+        diterbitkan di sini: bila belum terbit, PDF memuat "(belum diterbitkan)" (terbitkan lebih dulu lewat POST `.../nomor`
+        untuk jenis bernomor). 422 `telegram_belum_terhubung` bila akun belum punya `telegram_id`.
+        Batas 5 permintaan/menit per pengguna (429). Job: 3 percobaan (jeda 10/30/90 s); gagal = pesan teks singkat dari bot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bulan]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                bulan: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-11' }
+                akuntan_id: { type: integer, minimum: 1, description: 'Pihak Kedua bila ada lebih dari satu akuntan aktif; harus akuntan aktif SPPG itu (422).' }
+                kepala_sppg_id: { type: integer, minimum: 1, description: 'Penandatangan Mengetahui bila ada lebih dari satu kepala SPPG aktif (422 bila bukan).' }
+      responses:
+        '202':
+          description: Diantre
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /laporan-bgn/bulanan/anggaran/pdf:
+    post:
+      tags: [Laporan BGN]
+      summary: Minta PDF Lampiran 30d-B - Laporan Bulanan (Anggaran)
+      description: |
+        Mengantre pembuatan PDF (Folio 210x330 mm, FPDF) lalu mengirimnya ke chat Telegram pemohon lewat `sendDocument`
+        (Q-6, Q-10); respons 202 segera, PDF TIDAK dikembalikan di respons. Hak: admin, kepala_sppg, akuntan, dan investor (agregat) pada SPPG aktifnya. Hak dan batas SPPG sama dengan
+        GET laporan jenis yang sama (dicek sebelum validasi, lalu diperiksa ULANG saat job berjalan). Nomor LPA tidak
+        diterbitkan di sini: bila belum terbit, PDF memuat "(belum diterbitkan)" (terbitkan lebih dulu lewat POST `.../nomor`
+        untuk jenis bernomor). 422 `telegram_belum_terhubung` bila akun belum punya `telegram_id`. Halaman lampiran bukti (foto nota, maks 20, diperkecil) ditambahkan terpisah dari halaman format BGN untuk peran non-investor.
+        Batas 5 permintaan/menit per pengguna (429). Job: 3 percobaan (jeda 10/30/90 s); gagal = pesan teks singkat dari bot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bulan]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                bulan: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-11' }
+                akuntan_id: { type: integer, minimum: 1, description: 'Pihak Kedua bila ada lebih dari satu akuntan aktif; harus akuntan aktif SPPG itu (422).' }
+                kepala_sppg_id: { type: integer, minimum: 1, description: 'Penandatangan Mengetahui bila ada lebih dari satu kepala SPPG aktif (422 bila bukan).' }
+      responses:
+        '202':
+          description: Diantre
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /laporan-bgn/bulanan/penerima-manfaat/pdf:
+    post:
+      tags: [Laporan BGN]
+      summary: Minta PDF Lampiran 30d-C - Laporan Bulanan (Penerima Manfaat)
+      description: |
+        Mengantre pembuatan PDF (Folio 210x330 mm, FPDF) lalu mengirimnya ke chat Telegram pemohon lewat `sendDocument`
+        (Q-6, Q-10); respons 202 segera, PDF TIDAK dikembalikan di respons. Hak: admin, kepala_sppg, akuntan. INVESTOR = 403 (Q-4). Hak dan batas SPPG sama dengan
+        GET laporan jenis yang sama (dicek sebelum validasi, lalu diperiksa ULANG saat job berjalan). Nomor LPA tidak
+        diterbitkan di sini: bila belum terbit, PDF memuat "(belum diterbitkan)" (terbitkan lebih dulu lewat POST `.../nomor`
+        untuk jenis bernomor). 422 `telegram_belum_terhubung` bila akun belum punya `telegram_id`.
+        Batas 5 permintaan/menit per pengguna (429). Job: 3 percobaan (jeda 10/30/90 s); gagal = pesan teks singkat dari bot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bulan]
+              properties:
+                sppg_id: { type: integer, description: 'WAJIB untuk admin; peran lain opsional dan harus SPPG aktifnya (lain = 403).' }
+                bulan: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', example: '2026-11' }
+                akuntan_id: { type: integer, minimum: 1, description: 'Pihak Kedua bila ada lebih dari satu akuntan aktif; harus akuntan aktif SPPG itu (422).' }
+                kepala_sppg_id: { type: integer, minimum: 1, description: 'Penandatangan Mengetahui bila ada lebih dari satu kepala SPPG aktif (422 bila bukan).' }
+      responses:
+        '202':
+          description: Diantre
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   # 30a dan 30d-C tidak bernomor menurut juknis: tidak ada rute POST nomor (404).
   /log-produksi:
     get:
@@ -7746,6 +7965,20 @@ components:
                 non_peserta_didik: { type: array, items: { type: object, properties: { baris: { type: string }, porsi: { type: integer } } } }
                 belum_terklasifikasi: { type: integer }
                 total: { type: integer }
+    PermintaanPdfLaporanBgn:
+      type: object
+      properties:
+        status: { type: string, enum: [antre] }
+        jenis: { type: string, enum: [porsi, harian, dua_mingguan, bulanan_ringkasan, bulanan_anggaran, bulanan_penerima] }
+        lampiran: { type: string, example: 30d-B }
+        periode:
+          type: object
+          properties:
+            awal: { type: string, format: date }
+            akhir: { type: string, format: date }
+        tujuan: { type: string, enum: [telegram] }
+        nomor: { type: string, nullable: true, description: Nomor LPA bila sudah terbit (30a dan 30d-C tidak bernomor), selain itu null. }
+        nomor_terbit: { type: boolean }
     LogProduksi:
       type: object
       properties:
