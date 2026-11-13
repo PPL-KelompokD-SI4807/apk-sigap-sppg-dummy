@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# SiGAP SPPG - image multi-stage: vendor (composer, tanpa dev) -> assets (Vite -> public/miniapp)
+# SiGAP SPPG - image multi-stage: vendor (composer, tanpa dev) -> assets (Vite -> public/miniapp + public/web)
 # -> app (php-fpm, non-root) -> web (nginx + berkas statis public/).
 # Rahasia TIDAK pernah masuk image: .env, bootstrap/cache/*.php, storage/* dikecualikan (.dockerignore);
 # cache config/route/event dibuat saat kontainer mulai (docker/php/entrypoint.sh).
@@ -21,7 +21,7 @@ RUN composer install --no-dev --no-interaction --no-progress --prefer-dist \
 COPY --chmod=u=rwX,go=rX . .
 RUN composer dump-autoload --no-dev --optimize --classmap-authoritative --no-scripts
 
-# ---------- Stage 2: build Mini App (Vite: root resources/miniapp, keluaran public/miniapp) ----------
+# ---------- Stage 2: build Mini App dan klien web (Vite: keluaran public/miniapp dan public/web) ----------
 FROM node:${NODE_VERSION}-alpine AS assets
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
@@ -29,7 +29,7 @@ RUN npm ci --no-audit --no-fund
 COPY vite.config.js ./
 # main.js mengimpor ../css/miniapp.css, jadi seluruh resources/ disalin.
 COPY resources ./resources
-RUN npm run build && test -f public/miniapp/index.html
+RUN npm run build && test -f public/miniapp/index.html && test -f public/web/index.html
 
 # ---------- Stage 3: runtime PHP-FPM ----------
 FROM php:${PHP_VERSION}-fpm-alpine AS app
@@ -65,6 +65,7 @@ WORKDIR /var/www/html
 COPY --chmod=u=rwX,go=rX . .
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=assets /app/public/miniapp ./public/miniapp
+COPY --from=assets /app/public/web ./public/web
 RUN set -eux; \
     rm -f bootstrap/cache/*.php public/hot; \
     mkdir -p storage/app/secure storage/app/private storage/app/public \
@@ -73,6 +74,7 @@ RUN set -eux; \
     chown -R sigap:sigap storage bootstrap/cache; \
     chmod -R u+rwX,g+rX,o-rwx storage bootstrap/cache; \
     test -f public/miniapp/index.html; \
+    test -f public/web/index.html; \
     test ! -e .env
 
 ARG VCS_REF

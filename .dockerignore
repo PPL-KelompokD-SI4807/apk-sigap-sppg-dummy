@@ -15,6 +15,7 @@ node_modules
 vendor
 # Hasil build lokal (dibangun ulang di stage assets)
 public/miniapp
+public/web
 public/hot
 public/build
 public/storage
