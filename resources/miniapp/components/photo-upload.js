@@ -124,7 +124,7 @@ export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a),
   if (!lampiranPath(path)) throw new Error('Alamat berkas tidak valid.');
   let res;
   try {
-    res = await fetchFn(path, { headers: terapkanHeaderSppg({ Accept: 'image/*', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, sppgId) });
+    res = await fetchFn(path, { headers: terapkanHeaderSppg({ Accept: 'image/*', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, sppgId), credentials: 'omit' });
   } catch { throw new Error('Tidak ada koneksi internet.'); }
   if (!res.ok) {
     // 403 lampiran_disembunyikan (Investor) bukan galat SPPG aktif: pilihan SPPG tidak dihapus.

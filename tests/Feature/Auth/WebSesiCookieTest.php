@@ -46,7 +46,7 @@ class WebSesiCookieTest extends TestCase
 
     private function sesiWeb(?User $user = null): string
     {
-        return app(SesiService::class)->terbitkanWeb($user ?? $this->siti, 'Firefox · Linux')['token'];
+        return app(SesiService::class)->terbitkanWeb($user ?? $this->siti, 'Firefox · Linux')['cookie']->getValue();
     }
 
     private function sesiMiniApp(?User $user = null): string

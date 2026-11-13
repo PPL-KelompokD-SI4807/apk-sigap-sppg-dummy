@@ -12,6 +12,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\NewAccessToken;
 use Laravel\Sanctum\PersonalAccessToken;
+use Symfony\Component\HttpFoundation\Cookie;
 
 /**
  * Sesi & token Sanctum R-03.
@@ -475,7 +476,11 @@ class SesiService
      * yang paling lama tidak dipakai; sesi Mini App dan sesi yang baru terbit tidak pernah ikut dicabut. Baris
      * pengguna dikunci (lockForUpdate) sehingga login web/Mini App paralel diserialkan.
      *
-     * @return array{token: string, user: User, expires_at: Carbon, sesi_id: int}
+     * Issue #76: token mentah TIDAK dikembalikan sebagai string; ia hanya keluar sebagai objek Cookie
+     * `__Host-sigap_sesi` siap pasang (Max-Age = expires_at) beserta token CSRF terikat sesi, sehingga pemanggil
+     * tidak dapat menaruhnya di badan JSON/log secara tidak sengaja.
+     *
+     * @return array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int}
      */
     public function terbitkanWeb(User $user, ?string $label): array
     {
@@ -505,7 +510,13 @@ class SesiService
             User::withoutGlobalScopes()->whereKey($user->getKey())->update(['last_login_at' => $sekarang]);
             $user->setRawAttributes(array_merge($user->getAttributes(), ['last_login_at' => $sekarang]), true);
 
-            return ['token' => $baru->plainTextToken, 'user' => $user, 'expires_at' => $expiresAt, 'sesi_id' => $id];
+            return [
+                'cookie' => SesiWeb::cookieSesi($baru->plainTextToken, $expiresAt),
+                'csrf' => SesiWeb::csrfSesi($baru->plainTextToken),
+                'user' => $user,
+                'expires_at' => $expiresAt,
+                'sesi_id' => $id,
+            ];
         });
     }
 

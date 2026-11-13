@@ -38,6 +38,9 @@ use Laravel\Sanctum\HasApiTokens;
  * @property Carbon|null $password_changed_at
  * @property int $failed_login_attempts
  * @property Carbon|null $locked_until
+ * @property int $web_gagal_login penguncian kanal web R04-2 (terpisah dari Mini App)
+ * @property Carbon|null $web_terkunci_sampai
+ * @property Carbon|null $web_terkunci_terakhir_pada
  * @property bool $is_active
  * @property Carbon|null $last_login_at
  */
@@ -63,7 +66,7 @@ class User extends Authenticatable
     protected $hidden = ['password'];
 
     /** Tidak dicatat di audit: no telepon (UU PDP) dan penghitung login (bukan perubahan data). */
-    protected array $auditExclude = ['phone', 'username', 'failed_login_attempts', 'locked_until', 'password_changed_at'];
+    protected array $auditExclude = ['phone', 'username', 'failed_login_attempts', 'locked_until', 'password_changed_at', 'web_gagal_login', 'web_terkunci_sampai', 'web_terkunci_terakhir_pada'];
 
     /** Kolom yang bila berubah mencabut semua token aktif pengguna. */
     public const TOKEN_SENSITIVE = ['role', 'unit', 'sppg_id', 'is_active', 'telegram_id'];
@@ -79,6 +82,9 @@ class User extends Authenticatable
             'password_changed_at' => 'datetime',
             'failed_login_attempts' => 'integer',
             'locked_until' => 'datetime',
+            'web_gagal_login' => 'integer',
+            'web_terkunci_sampai' => 'datetime',
+            'web_terkunci_terakhir_pada' => 'datetime',
         ];
     }
 
