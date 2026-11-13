@@ -3,9 +3,12 @@
 use App\Http\Middleware\ApiSecurityHeaders;
 use App\Http\Middleware\EnsureTokenAbility;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\PastikanJalurSesi;
 use App\Http\Middleware\ResolveSppgAktif;
+use App\Http\Middleware\SesiWebCookie;
 use App\Services\Auth\GalatAuth;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -31,6 +34,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(SubstituteBindings::class, ResolveSppgAktif::class);
         $middleware->prependToPriorityList(ResolveSppgAktif::class, EnsureTokenAbility::class);
         $middleware->prependToPriorityList(EnsureTokenAbility::class, EnsureUserIsActive::class);
+        // R-04: cookie `__Host-sigap_sesi` -> token + CSRF jalur cookie WAJIB sebelum auth:sanctum.
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, SesiWebCookie::class);
+        // R-04: pemeriksaan kedua penolakan silang cookie/Bearer tepat sesudah auth:sanctum (fail closed).
+        $middleware->appendToPriorityList(AuthenticatesRequests::class, PastikanJalurSesi::class);
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -9,6 +9,11 @@ info:
     username/no telepon + password (+ token 6 digit dari bot untuk perangkat baru, aktivasi, reset)
     menghasilkan token login penuh (ability auth:penuh, tanpa kedaluwarsa). Kirim header
     `Authorization: Bearer <token>`.
+    Akses web (R-04): rute login penuh juga menerima sesi web lewat cookie `__Host-sigap_sesi`
+    (skema webCookie) tanpa header Authorization dan SELALU dengan `X-Sigap-Klien: web` (semua metode;
+    tanpa header itu cookie diabaikan -> 401, cookie tidak dihapus); metode pengubah juga wajib `Origin` +
+    `X-CSRF-Token` (403 `alasan: csrf_ditolak`). Token web lewat Bearer dan token Mini App lewat cookie -> 401.
+    Tidak ada CORS untuk origin lain. Endpoint login web (`/web/auth/*`) menyusul (R04-2).
     Otorisasi mengikuti matriks CRUD Tabel 5 (config/rbac.php) dan dibatasi SPPG pengguna
     (kecuali Admin). Galat selalu berbentuk `{message, errors?}`.
     SPPG aktif (R-06a): header opsional `X-SPPG-Id` divalidasi di setiap rute login penuh.
@@ -24,6 +29,7 @@ servers:
     description: Docker Compose lokal
 security:
   - bearerAuth: []
+  - webCookie: []
 tags:
   - name: Auth
     description: Login Telegram (initData) dan sesi token

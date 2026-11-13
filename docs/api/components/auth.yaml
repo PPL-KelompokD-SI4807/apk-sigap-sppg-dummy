@@ -130,6 +130,7 @@ schemas:
           - token_dipakai
           - token_hangus
           - dev_bypass
+          - csrf_ditolak
       sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah' }
       terkunci_sampai: { type: string, format: date-time, description: 'terkunci' }
       langkah: { type: string, enum: [aktivasi, masuk], description: 'perlu_aktivasi / sudah_aktivasi' }
@@ -223,25 +224,30 @@ schemas:
           sppg_id: { type: [integer, 'null'] }
   Sesi:
     type: object
-    required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
+    required: [id, jenis, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
     properties:
       id: { type: integer }
-      perangkat: { type: [string, 'null'], description: 'label_perangkat saat login.' }
+      jenis: { type: string, enum: [miniapp, web], description: 'miniapp = token Bearer Mini App; web = cookie __Host-sigap_sesi (R-04).' }
+      perangkat: { type: [string, 'null'], description: 'label_perangkat saat login (Mini App) atau label browser ringkas (web).' }
       dibuat_pada: { type: [string, 'null'], format: date-time }
-      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam (ditulis paling sering sekali per jam).' }
-      berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat).' }
-      diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya.' }
+      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam untuk Mini App, maks 15 menit untuk web.' }
+      berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat; web: + idle 12 jam).' }
+      diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya. Selalu null untuk web.' }
       sesi_ini: { type: boolean }
 responses:
   AuthForbidden:
     description: |
       Token tidak memegang ability yang diwajibkan rute (`alasan: perlu_login_penuh` untuk token
       pra-login/lama di rute data; `bukan_pra_login` untuk token penuh di rute masuk; `dev_bypass`),
-      atau akun nonaktif.
+      atau akun nonaktif. Jalur cookie web (R-04, dengan `X-Sigap-Klien: web`): metode pengubah tanpa `Origin`
+      persis atau `X-CSRF-Token` sah -> `alasan: csrf_ditolak` (diperiksa sebelum autentikasi). Tanpa
+      `X-Sigap-Klien: web` cookie diabaikan sehingga hasilnya 401, bukan 403.
     content:
       application/json:
         schema: { $ref: '#/components/schemas/AuthError' }
-        example: { message: 'Silakan masuk dengan username/no telepon dan password terlebih dahulu.', alasan: perlu_login_penuh }
+        examples:
+          perlu_login_penuh: { value: { message: 'Silakan masuk dengan username/no telepon dan password terlebih dahulu.', alasan: perlu_login_penuh } }
+          csrf_ditolak: { value: { message: 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.', alasan: csrf_ditolak } }
   AuthTooManyRequests:
     description: Akun terkunci sementara (`terkunci`), terlalu sering meminta/kirim ulang token (`terlalu_sering`), atau throttle rute.
     headers:

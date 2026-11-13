@@ -11,6 +11,11 @@ info:
     username/no telepon + password (+ token 6 digit dari bot untuk perangkat baru, aktivasi, reset)
     menghasilkan token login penuh (ability auth:penuh, tanpa kedaluwarsa). Kirim header
     `Authorization: Bearer <token>`.
+    Akses web (R-04): rute login penuh juga menerima sesi web lewat cookie `__Host-sigap_sesi`
+    (skema webCookie) tanpa header Authorization dan SELALU dengan `X-Sigap-Klien: web` (semua metode;
+    tanpa header itu cookie diabaikan -> 401, cookie tidak dihapus); metode pengubah juga wajib `Origin` +
+    `X-CSRF-Token` (403 `alasan: csrf_ditolak`). Token web lewat Bearer dan token Mini App lewat cookie -> 401.
+    Tidak ada CORS untuk origin lain. Endpoint login web (`/web/auth/*`) menyusul (R04-2).
     Otorisasi mengikuti matriks CRUD Tabel 5 (config/rbac.php) dan dibatasi SPPG pengguna
     (kecuali Admin). Galat selalu berbentuk `{message, errors?}`.
     SPPG aktif (R-06a): header opsional `X-SPPG-Id` divalidasi di setiap rute login penuh.
@@ -26,6 +31,7 @@ servers:
     description: Docker Compose lokal
 security:
   - bearerAuth: []
+  - webCookie: []
 tags:
   - name: Auth
     description: Login Telegram (initData) dan sesi token
@@ -443,6 +449,7 @@ paths:
   /auth/masuk:
     post:
       tags: [Auth]
+      security: [{ bearerAuth: [] }]
       summary: Lapis 2 - masuk dengan username ATAU no telepon + password (token pra-login)
       description: |
         Identitas HANYA dicocokkan dengan akun pemilik token pra-login (akun Telegram dari initData).
@@ -496,6 +503,7 @@ paths:
   /auth/aktivasi:
     post:
       tags: [Auth]
+      security: [{ bearerAuth: [] }]
       summary: Aktivasi / atur password pertama (token pra-login)
       description: |
         Untuk akun tanpa password: akun dari undangan 72 jam (sudah /start di bot), akun
@@ -538,6 +546,7 @@ paths:
   /auth/lupa-password:
     get:
       tags: [Auth]
+      security: [{ bearerAuth: [] }]
       summary: Status permintaan reset password terkini (token pra-login)
       description: Permintaan aktif, atau yang terakhir (ditolak/selesai/kedaluwarsa); `data` null bila belum pernah.
       responses:
@@ -557,6 +566,7 @@ paths:
         '403': { $ref: '#/components/responses/AuthForbidden' }
     post:
       tags: [Auth]
+      security: [{ bearerAuth: [] }]
       summary: Lupa password - ajukan permintaan reset ke Admin (token pra-login)
       description: |
         Tidak mengirim token apa pun. Admin dalam scope akun ini diberi tahu lewat bot dan wajib
@@ -598,6 +608,7 @@ paths:
   /auth/lupa-password/lanjut:
     post:
       tags: [Auth]
+      security: [{ bearerAuth: [] }]
       summary: Password baru setelah permintaan reset disetujui (token pra-login)
       description: |
         Hanya bila permintaan akun ini DISETUJUI dan belum kedaluwarsa (selain itu 409
@@ -639,6 +650,7 @@ paths:
   /auth/token/verifikasi:
     post:
       tags: [Auth]
+      security: [{ bearerAuth: [] }]
       summary: Konfirmasi token 6 digit -> token login penuh (token pra-login)
       description: |
         Token berlaku 5 menit, sekali pakai, terikat ke akun + device_id + token PRA-LOGIN yang
@@ -684,6 +696,7 @@ paths:
   /auth/token/kirim-ulang:
     post:
       tags: [Auth]
+      security: [{ bearerAuth: [] }]
       summary: Kirim ulang token 6 digit (token pra-login)
       description: |
         Kode baru (kode lama tidak berlaku), masa berlaku 5 menit lagi. Jeda 60 detik, maks 3 kali per
@@ -721,6 +734,9 @@ paths:
         `expires_at` = akhir masa sesi bergeser saat ini (sudah termasuk perpanjangan oleh permintaan ini),
         `batas_absolut_at` = batas yang tidak dapat diperpanjang = min(login + 180 hari, akhir kepercayaan
         perangkat = token bot terakhir + 180 hari); dapat lebih awal dari login + 180 hari.
+        Sesi web (cookie, R-04): `expires_at` juga dijepit idle 12 jam; respons menambah `jenis_sesi: web` dan
+        `csrf` (token CSRF sesi ini untuk header `X-CSRF-Token`; simpan di memori JS saja). Respons Bearer
+        (Mini App) tidak memuat kedua field itu.
       responses:
         '200':
           description: OK
@@ -731,8 +747,10 @@ paths:
                 required: [user]
                 properties:
                   user: { $ref: '#/components/schemas/AuthUser' }
-                  expires_at: { type: [string, 'null'], format: date-time, description: 'Akhir masa sesi bergeser (90 hari sejak terakhir dipakai; Admin 30). null hanya untuk token tiruan tes.' }
+                  expires_at: { type: [string, 'null'], format: date-time, description: 'Akhir masa sesi bergeser (90 hari sejak terakhir dipakai; Admin 30; sesi web biasa: idle 12 jam). null hanya untuk token tiruan tes.' }
                   batas_absolut_at: { type: [string, 'null'], format: date-time, description: 'Batas efektif yang tidak dapat diperpanjang: min(login + 180 hari, token bot terakhir perangkat + 180 hari); expires_at tidak pernah melewatinya.' }
+                  jenis_sesi: { type: string, const: web, description: 'Hanya pada jalur cookie web.' }
+                  csrf: { type: string, pattern: '^[0-9a-f]{64}$', description: 'Hanya pada jalur cookie web: nilai header X-CSRF-Token untuk metode pengubah, terikat sesi ini.' }
               examples:
                 relawan_dapur:
                   summary: Relawan unit dapur (peta hak ringkas)
@@ -824,7 +842,10 @@ paths:
     get:
       tags: [Auth]
       summary: Daftar sesi/perangkat aktif milik sendiri
-      description: Hanya sesi yang masih berlaku (sesi kedaluwarsa tidak ditampilkan). Maks 5 sesi per pengguna.
+      description: |
+        Hanya sesi yang masih berlaku (sesi kedaluwarsa/idle tidak ditampilkan). Kuota terpisah (R-04 Q2):
+        maks 5 sesi Mini App (`jenis: miniapp`) + maks 3 sesi web (`jenis: web`); `meta.kuota` memuat batas
+        efektif. Sesi web tidak punya perangkat tepercaya (`diverifikasi_pada: null`, `perangkat` = label browser).
       responses:
         '200':
           description: OK
@@ -832,15 +853,28 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data]
+                required: [data, meta]
                 properties:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/Sesi' }
+                  meta:
+                    type: object
+                    required: [jenis_sesi_ini, kuota]
+                    properties:
+                      jenis_sesi_ini: { type: string, enum: [miniapp, web] }
+                      kuota:
+                        type: object
+                        required: [miniapp, web]
+                        properties:
+                          miniapp: { type: integer, maximum: 5 }
+                          web: { type: integer, maximum: 3 }
               example:
                 data:
-                  - { id: 51, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: true }
-                  - { id: 47, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
+                  - { id: 60, jenis: web, perangkat: 'Firefox · Linux', dibuat_pada: '2026-10-26T10:00:00+07:00', terakhir_dipakai_pada: '2026-10-26T10:15:00+07:00', berlaku_sampai: '2026-10-26T22:15:00+07:00', diverifikasi_pada: null, sesi_ini: true }
+                  - { id: 51, jenis: miniapp, perangkat: 'Android · Telegram', dibuat_pada: '2026-10-26T07:30:00+07:00', terakhir_dipakai_pada: '2026-10-26T09:12:00+07:00', berlaku_sampai: '2027-01-24T09:12:00+07:00', diverifikasi_pada: '2026-10-26T07:30:00+07:00', sesi_ini: false }
+                  - { id: 47, jenis: miniapp, perangkat: 'Telegram Desktop', dibuat_pada: '2026-10-20T13:00:00+07:00', terakhir_dipakai_pada: null, berlaku_sampai: '2027-01-18T13:00:00+07:00', diverifikasi_pada: '2026-10-20T13:00:00+07:00', sesi_ini: false }
+                meta: { jenis_sesi_ini: web, kuota: { miniapp: 5, web: 3 } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AuthForbidden' }
   /auth/sesi/{id}:
@@ -4896,6 +4930,29 @@ components:
         POST /auth/masuk atau /auth/token/verifikasi; tidak kedaluwarsa, berakhir hanya karena logout
         atau pencabutan. Token pra-login dari POST /auth/telegram hanya untuk rute /auth/masuk,
         /auth/aktivasi, /auth/lupa-password*, /auth/token/*.
+        Token sesi WEB (ability klien:web, R-04) DITOLAK bila dikirim sebagai Bearer (401).
+    webCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-sigap_sesi
+      description: |
+        Sesi web R-04 (ADR 2026-11-09). Token Sanctum ber-ability `auth:penuh` + `klien:web`, HANYA lewat cookie
+        `__Host-sigap_sesi` (HttpOnly, Secure, SameSite=Strict, Path=/, tanpa Domain; Max-Age = expires_at sesi).
+        Klien web tidak pernah membaca/menyimpan token dan TIDAK mengirim header Authorization.
+        - Ada header `Authorization` -> hanya Bearer yang dievaluasi; cookie diabaikan (Bearer tidak sah tetap 401).
+        - SEMUA permintaan jalur cookie (termasuk GET/HEAD/OPTIONS) WAJIB membawa `X-Sigap-Klien: web` (persis).
+          Tanpa header itu cookie diabaikan sepenuhnya: 401 umum TANPA menghapus cookie (agar Mini App satu origin
+          tanpa Authorization tidak memakai maupun menghapus sesi web di browser yang sama).
+        - Token Mini App lewat cookie -> 401 (cookie dihapus). Hanya rute login penuh yang menerima cookie;
+          rute publik dan pra-login tidak.
+        - Metode pengubah (POST/PUT/PATCH/DELETE) juga WAJIB: `Origin` persis origin APP_URL (kosong/`null`
+          ditolak) dan `X-CSRF-Token` = nilai `csrf` dari GET /auth/me (atau dari respons login web).
+          Gagal -> 403 `alasan: csrf_ditolak`. Metode GET/HEAD tidak memerlukan Origin/CSRF.
+        - Semua respons jalur cookie: `Cache-Control: no-store, private` dan `Vary: Cookie`.
+        - Masa: idle 12 jam (sesi web biasa, termasuk semua sesi web Admin), 90 hari bergeser (Admin 30),
+          absolut 180 hari. Pemakaian ditulis paling sering tiap 15 menit; setiap penulisan menerbitkan ulang
+          cookie dengan Max-Age baru. 401 di jalur cookie selalu menghapus cookie (Max-Age=0).
+        - Kuota: maks 3 sesi web per pengguna, terpisah dari 5 sesi Mini App.
   schemas:
     Error:
       type: object
@@ -5285,6 +5342,7 @@ components:
             - token_dipakai
             - token_hangus
             - dev_bypass
+            - csrf_ditolak
         sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah' }
         terkunci_sampai: { type: string, format: date-time, description: 'terkunci' }
         langkah: { type: string, enum: [aktivasi, masuk], description: 'perlu_aktivasi / sudah_aktivasi' }
@@ -5378,14 +5436,15 @@ components:
             sppg_id: { type: [integer, 'null'] }
     Sesi:
       type: object
-      required: [id, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
+      required: [id, jenis, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, sesi_ini]
       properties:
         id: { type: integer }
-        perangkat: { type: [string, 'null'], description: 'label_perangkat saat login.' }
+        jenis: { type: string, enum: [miniapp, web], description: 'miniapp = token Bearer Mini App; web = cookie __Host-sigap_sesi (R-04).' }
+        perangkat: { type: [string, 'null'], description: 'label_perangkat saat login (Mini App) atau label browser ringkas (web).' }
         dibuat_pada: { type: [string, 'null'], format: date-time }
-        terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam (ditulis paling sering sekali per jam).' }
-        berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat).' }
-        diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya.' }
+        terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam untuk Mini App, maks 15 menit untuk web.' }
+        berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat; web: + idle 12 jam).' }
+        diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya. Selalu null untuk web.' }
         sesi_ini: { type: boolean }
     KategoriBahan:
       type: string
@@ -7808,6 +7867,10 @@ components:
         terbuka (nilainya tetap sejak Mini App dibuka) dan hanya sah TELEGRAM_INIT_DATA_MAX_AGE detik
         (bawaan 3600) sejak auth_date. Bila /auth/telegram juga 401 (initData basi), minta pengguna menutup
         lalu membuka ulang Mini App. Jangan mengulang lebih dari sekali.
+        Jalur cookie web (R-04): 401 selalu disertai Set-Cookie penghapus `__Host-sigap_sesi` (Max-Age=0); sesi
+        web yang berakhir (idle 12 jam/90/30/180 hari) juga dicabut di server. Klien web: tampilkan layar Masuk
+        (tanpa login senyap). Token web lewat Bearer, token Mini App lewat cookie -> 401 umum tanpa `alasan`.
+        Permintaan tanpa Authorization dan tanpa `X-Sigap-Klien: web` -> 401 umum; cookie web TIDAK dihapus.
       headers:
         WWW-Authenticate:
           description: Hanya pada sesi_kedaluwarsa.
@@ -7861,11 +7924,15 @@ components:
       description: |
         Token tidak memegang ability yang diwajibkan rute (`alasan: perlu_login_penuh` untuk token
         pra-login/lama di rute data; `bukan_pra_login` untuk token penuh di rute masuk; `dev_bypass`),
-        atau akun nonaktif.
+        atau akun nonaktif. Jalur cookie web (R-04, dengan `X-Sigap-Klien: web`): metode pengubah tanpa `Origin`
+        persis atau `X-CSRF-Token` sah -> `alasan: csrf_ditolak` (diperiksa sebelum autentikasi). Tanpa
+        `X-Sigap-Klien: web` cookie diabaikan sehingga hasilnya 401, bukan 403.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/AuthError' }
-          example: { message: 'Silakan masuk dengan username/no telepon dan password terlebih dahulu.', alasan: perlu_login_penuh }
+          examples:
+            perlu_login_penuh: { value: { message: 'Silakan masuk dengan username/no telepon dan password terlebih dahulu.', alasan: perlu_login_penuh } }
+            csrf_ditolak: { value: { message: 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.', alasan: csrf_ditolak } }
     AuthTooManyRequests:
       description: Akun terkunci sementara (`terkunci`), terlalu sering meminta/kirim ulang token (`terlalu_sering`), atau throttle rute.
       headers:

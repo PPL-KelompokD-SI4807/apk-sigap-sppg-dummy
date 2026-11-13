@@ -18,10 +18,24 @@ class SesiController extends ApiController
 {
     public function __construct(private readonly SesiService $sesi) {}
 
-    /** GET /api/v1/auth/sesi */
+    /**
+     * GET /api/v1/auth/sesi — sesi Mini App + web milik sendiri. Tiap item ber-`jenis` (miniapp|web);
+     * `meta` memuat jenis sesi ini dan kuota per jenis (R-04 Q2).
+     */
     public function index(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->sesi->daftarSesi($request->user(), $this->idTokenIni($request))]);
+        $token = $request->user()->currentAccessToken();
+
+        return response()->json([
+            'data' => $this->sesi->daftarSesi($request->user(), $this->idTokenIni($request)),
+            'meta' => [
+                'jenis_sesi_ini' => $token instanceof PersonalAccessToken ? SesiService::jenis($token) : SesiService::JENIS_MINIAPP,
+                'kuota' => [
+                    SesiService::JENIS_MINIAPP => $this->sesi->maksSesi(),
+                    SesiService::JENIS_WEB => $this->sesi->maksSesiWeb(),
+                ],
+            ],
+        ]);
     }
 
     /** DELETE /api/v1/auth/sesi/{sesi} — cabut satu sesi milik sendiri (milik akun lain: 404). */

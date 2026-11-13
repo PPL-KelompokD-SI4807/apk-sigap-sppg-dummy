@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Middleware\EnsureTokenAbility;
+use App\Http\Middleware\PastikanJalurSesi;
 use App\Http\Middleware\ResolveSppgAktif;
+use App\Http\Middleware\SesiWebCookie;
 use App\Services\Auth\SesiService;
 use Illuminate\Support\Facades\Route;
 
@@ -35,7 +37,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         }
     });
 
-    Route::middleware(['auth:sanctum', 'active', EnsureTokenAbility::class.':'.SesiService::ABILITY_PENUH, ResolveSppgAktif::class, 'throttle:api'])->group(function () {
+    // SesiWebCookie (R-04) WAJIB sebelum auth:sanctum: cookie `__Host-sigap_sesi` -> token + CSRF metode pengubah.
+    // Hanya grup ini yang menerima cookie web; Bearer (Mini App) tidak tersentuh. PastikanJalurSesi memeriksa ulang
+    // penolakan silang cookie/Bearer sesudah auth:sanctum, sebelum controller (fail closed).
+    Route::middleware([SesiWebCookie::class, 'auth:sanctum', PastikanJalurSesi::class, 'active', EnsureTokenAbility::class.':'.SesiService::ABILITY_PENUH, ResolveSppgAktif::class, 'throttle:api'])->group(function () {
         foreach (glob(__DIR__.'/api/v1/*.php') ?: [] as $file) {
             require $file;
         }
