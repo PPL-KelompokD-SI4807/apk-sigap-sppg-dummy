@@ -365,7 +365,7 @@ class WebSesiKuotaIdleTest extends TestCase
         $res = $this->web('GET', '/api/v1/auth/sesi', $web)->assertOk()
             ->assertJsonCount(3, 'data')
             ->assertJsonPath('meta.jenis_sesi_ini', 'web')
-            ->assertJsonPath('meta.kuota', ['miniapp' => 5, 'web' => 3]);
+            ->assertJsonPath('meta.kuota', ['miniapp' => 5, 'web' => 3, 'browser_tepercaya' => 5]);
 
         $data = collect($res->json('data'));
         $ini = $data->firstWhere('sesi_ini', true);

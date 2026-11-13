@@ -53,7 +53,7 @@ class SesiAdminTest extends TestCase
         $this->assertSame(1, collect($res->json('data'))->where('sesi_ini', true)->count());
         $this->assertStringNotContainsString(SesiService::hashPerangkat(self::HP), $res->getContent());
         $this->assertStringNotContainsString(self::HP, $res->getContent());
-        $this->assertSame(['id', 'jenis', 'perangkat', 'dibuat_pada', 'terakhir_dipakai_pada', 'berlaku_sampai', 'diverifikasi_pada', 'sesi_ini'], array_keys($res->json('data.0')));
+        $this->assertSame(['id', 'jenis', 'perangkat', 'dibuat_pada', 'terakhir_dipakai_pada', 'berlaku_sampai', 'diverifikasi_pada', 'browser_tepercaya_id', 'sesi_ini'], array_keys($res->json('data.0')));
     }
 
     public function test_keluar_dari_semua_perangkat(): void
