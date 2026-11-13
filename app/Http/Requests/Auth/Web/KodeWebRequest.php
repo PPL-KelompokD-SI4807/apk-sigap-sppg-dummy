@@ -5,8 +5,8 @@ namespace App\Http\Requests\Auth\Web;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * POST /web/auth/kode (R04-2): tantangan_id dari langkah masuk + kode 6 digit dari bot. `ingat_browser` diterima
- * (kontrak ADR Keputusan 4) tetapi belum berefek sampai R04-3 (browser tepercaya).
+ * POST /web/auth/kode (R04-2): tantangan_id dari langkah masuk + kode 6 digit dari bot. `ingat_browser` (R04-3,
+ * bawaan false): jadikan browser ini browser tepercaya 30 hari (diabaikan tanpa galat untuk Admin).
  */
 class KodeWebRequest extends FormRequest
 {

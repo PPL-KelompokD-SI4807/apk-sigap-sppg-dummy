@@ -209,15 +209,16 @@ class KredensialService
         }
 
         DB::transaction(function () use ($target): void {
+            // Dicabut lebih dulu (pemicu tercatat `password_direset`), dan tetap dicabut walau password memang sudah
+            // null (event updated tidak terpicu).
+            $target->cabutSemuaSesi(alasan: 'password_direset');
+
             $target->forceFill([
                 'password' => null,
                 'password_changed_at' => now(),
                 'failed_login_attempts' => 0,
                 'locked_until' => null,
             ])->save();
-
-            // Tetap cabut walau password memang sudah null (event updated tidak terpicu).
-            $target->cabutSemuaSesi();
         });
 
         AuditAuth::catat($target, AuditAuth::PASSWORD_DIRESET_ADMIN, $aktor === null ? ['oleh' => 'perintah_server'] : [], $aktor);
@@ -263,7 +264,8 @@ class KredensialService
                 'locked_until' => null,
             ])->saveQuietly();
 
-            $user->cabutSemuaSesi($tokenIni->getKey(), $perangkatId === null ? null : (int) $perangkatId);
+            // Browser tepercaya (R04-3) selalu dicabut, termasuk browser sesi ini (sesi ini tetap, menjadi sesi web biasa).
+            $user->cabutSemuaSesi($tokenIni->getKey(), $perangkatId === null ? null : (int) $perangkatId, 'password_diubah');
 
             return $jumlah;
         });
@@ -276,7 +278,7 @@ class KredensialService
     /** Cabut semua sesi pengguna oleh Admin. Mengembalikan jumlah sesi login penuh yang dicabut. */
     public function cabutSesiOlehAdmin(User $admin, User $target): int
     {
-        $jumlah = $this->sesi->keluarSemua($target);
+        $jumlah = $this->sesi->keluarSemua($target, 'dicabut_admin');
         AuditAuth::catat($target, AuditAuth::SESI_DICABUT_ADMIN, ['jumlah_sesi' => $jumlah], $admin);
 
         return $jumlah;

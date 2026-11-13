@@ -2,6 +2,7 @@
 
 namespace App\Services\Auth;
 
+use App\Models\BrowserTepercaya;
 use App\Models\PerangkatTepercaya;
 use App\Models\User;
 use App\Support\Rbac;
@@ -39,8 +40,12 @@ use Symfony\Component\HttpFoundation\Cookie;
  * - Kuota TERPISAH (Q2): maks maksSesi() sesi Mini App (`sesi:*`) + maks maksSesiWeb() sesi web (`web:*`);
  *   login satu jenis hanya mencabut sesi jenis yang sama yang paling lama tidak dipakai; sesi baru tidak pernah.
  * - Idle (Q3): sesi web biasa berakhir idleWebJam() jam setelah terakhir dipakai (expires_at ikut dijepit), jeda
- *   tulis last_used_at token web <= 15 menit. Pengecualian browser tepercaya: dikecualikanDariIdle() (R04-3).
+ *   tulis last_used_at token web <= 15 menit. Pengecualian browser tepercaya (R04-3): sesi web ber-
+ *   browser_tepercaya_id tidak terkena idle, mengikuti 90 hari sliding, dan tidak pernah melewati berlaku_sampai
+ *   browser itu (browserSampai; browser dicabut/hilang = berakhir sekarang, fail closed).
  * - Penolakan silang (validasiToken): token web lewat Bearer -> 401; token non-web lewat cookie -> 401.
+ * - Jenis sesi (issue #79): jenis ditentukan ability `klien:web` (tokenWeb/jenis). Nama `web:` dipakai kueri SQL;
+ *   invarian "nama `web:` <=> ability `klien:web`" ditegakkan saat validasi (jenisKonsisten, fail closed).
  */
 class SesiService
 {
@@ -107,6 +112,16 @@ class SesiService
     }
 
     /**
+     * Invarian jenis sesi (issue #79): nama berprefiks `web:` jika dan hanya jika ability `klien:web`. Kueri SQL
+     * (hanyaBerlaku, rapikanSesi, daftarSesi) memakai prefiks nama, sedangkan kenaIdle/validasiToken memakai
+     * ability; token yang melanggar invarian ditolak (tidak pernah dibuat oleh kode ini).
+     */
+    public static function jenisKonsisten(PersonalAccessToken $token): bool
+    {
+        return str_starts_with((string) $token->name, self::PREFIX_WEB) === self::tokenWeb($token);
+    }
+
+    /**
      * Batasi kueri token pada sesi login penuh kedua jenis: Mini App (`sesi:*`) dan web (`web:*`).
      *
      * @template T of Builder|Relation
@@ -170,14 +185,13 @@ class SesiService
     }
 
     /**
-     * TITIK EKSTENSI R04-3 (browser tepercaya): sesi web yang terbit lewat browser tepercaya
-     * (personal_access_tokens.browser_tepercaya_id terisi) dikecualikan dari idle, mengikuti 90 hari sliding
-     * dan tidak melewati `berlaku_sampai` browser itu (jepit lewat batasAkhir/catatPemakaian). R04-1 belum
-     * memiliki tabel/kolomnya sehingga semua sesi web terkena idle. Ubah juga klausa idle di hanyaBerlaku().
+     * R04-3: sesi web yang terbit lewat browser tepercaya (personal_access_tokens.browser_tepercaya_id terisi)
+     * dikecualikan dari idle, mengikuti 90 hari sliding dan tidak melewati `berlaku_sampai` browser itu (jepit lewat
+     * terbitkanWeb/catatPemakaian/batasAkhir, diperiksa ulang di validasiToken). Padanan SQL: hanyaBerlaku().
      */
     protected function dikecualikanDariIdle(PersonalAccessToken $token): bool
     {
-        return false;
+        return self::tokenWeb($token) && $token->getAttribute('browser_tepercaya_id') !== null;
     }
 
     /** Jeda tulis last_used_at/expires_at per token: token web <= 15 menit; Mini App tetap config. */
@@ -245,7 +259,7 @@ class SesiService
         // pemeriksaan ini fail closed HANYA untuk token web. Bila request() berbeda dari request guard, token
         // Mini App lewat cookie bisa lolos di sini; itu ditutup oleh PastikanJalurSesi (pemeriksaan kedua pada
         // request pipeline, sesudah auth:sanctum dan sebelum controller).
-        if (self::tokenWeb($token) !== SesiWeb::jalurCookie(request())) {
+        if (self::tokenWeb($token) !== SesiWeb::jalurCookie(request()) || ! self::jenisKonsisten($token)) {
             return false;
         }
 
@@ -259,7 +273,10 @@ class SesiService
             || $this->kedaluwarsaEfektif($token, $user)->isPast()
             // Token lama tanpa expires_at belum pernah dijepit ke kepercayaan perangkat: periksa langsung
             // (satu kueri, hanya sampai pemakaian pertamanya mengisi expires_at).
-            || ($token->expires_at === null && self::tokenPenuh($token) && ($this->perangkatSampai($token, $user)?->isPast() ?? false));
+            || ($token->expires_at === null && self::tokenPenuh($token) && ($this->perangkatSampai($token, $user)?->isPast() ?? false))
+            // Sesi turunan browser tepercaya (R04-3): browser dicabut/lewat 30 hari -> sesi berakhir (fail closed,
+            // melengkapi penghapusan berantai saat pencabutan).
+            || ($this->browserSampai($token, $user)?->isPast() ?? false);
 
         if ($kedaluwarsa) {
             request()->attributes->set(GalatAuth::ATRIBUT_SESI_KEDALUWARSA, true);
@@ -309,7 +326,9 @@ class SesiService
             }
 
             $perangkat = $this->perangkatSampai($token, $user);
-            $nilai['expires_at'] = $perangkat === null ? $sampai : $sampai->min($perangkat);
+            $sampai = $perangkat === null ? $sampai : $sampai->min($perangkat);
+            $browser = $this->browserSampai($token, $user);
+            $nilai['expires_at'] = $browser === null ? $sampai : $sampai->min($browser);
         }
 
         $sebelumnya = $token->last_used_at ?? $token->created_at;
@@ -340,16 +359,39 @@ class SesiService
                 'sesi_id' => (int) $token->getKey(),
                 'perangkat_id' => $token->getAttribute('perangkat_tepercaya_id'),
                 'berlaku_sampai' => $nilai['expires_at']->toIso8601String(),
+                'jenis' => self::jenis($token),
             ]);
         }
     }
 
-    /** Batas yang tidak dapat diperpanjang: min(login + batas absolut, akhir kepercayaan perangkat). */
+    /** Batas yang tidak dapat diperpanjang: min(login + batas absolut, akhir kepercayaan perangkat/browser). */
     public function batasAkhir(PersonalAccessToken $token, User $user): Carbon
     {
+        $batas = $this->batasAbsolut($token);
         $perangkat = $this->perangkatSampai($token, $user);
+        $browser = $this->browserSampai($token, $user);
 
-        return $perangkat === null ? $this->batasAbsolut($token) : $this->batasAbsolut($token)->min($perangkat);
+        $batas = $perangkat === null ? $batas : $batas->min($perangkat);
+
+        return $browser === null ? $batas : $batas->min($browser);
+    }
+
+    /**
+     * Akhir browser tepercaya (R04-3) tempat sesi web terbit; null bila token tidak terikat browser. Browser hilang,
+     * milik akun lain, atau sudah dicabut: sekarang (fail closed, sesi berakhir).
+     */
+    public function browserSampai(PersonalAccessToken $token, User $user): ?Carbon
+    {
+        $id = $token->getAttribute('browser_tepercaya_id');
+
+        if ($id === null) {
+            return null;
+        }
+
+        $browser = BrowserTepercaya::query()->where('user_id', $user->getKey())->whereKey($id)->first();
+
+        // Dicabut/hilang: satu detik lalu, sehingga isPast() benar pada detik yang sama (fail closed).
+        return $browser === null || $browser->dicabut_at !== null ? now()->subSecond() : $browser->berlaku_sampai->copy();
     }
 
     /**
@@ -385,9 +427,15 @@ class SesiService
             ->where('created_at', '>', $sekarang->copy()->subDays($this->batasAbsolutHari()))
             ->whereRaw('COALESCE(last_used_at, created_at) > ?', [$sekarang->copy()->subDays($this->masaHari($user))])
             ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', $sekarang))
-            // Idle sesi web (Q3). R04-3: kecualikan token ber-browser_tepercaya_id di sini (lihat dikecualikanDariIdle).
+            // Idle sesi web (Q3); sesi turunan browser tepercaya dikecualikan (dikecualikanDariIdle).
             ->where(fn ($q) => $q->where('name', 'not like', self::PREFIX_WEB.'%')
+                ->orWhereNotNull('browser_tepercaya_id')
                 ->orWhereRaw('COALESCE(last_used_at, created_at) > ?', [$sekarang->copy()->subHours($this->idleWebJam())]))
+            // Sesi turunan browser tepercaya hanya berlaku selama browser itu berlaku (fail closed, R04-3).
+            ->where(fn ($q) => $q->whereNull('browser_tepercaya_id')->orWhereIn(
+                'browser_tepercaya_id',
+                BrowserTepercaya::query()->select('id')->where('user_id', $user->getKey())->aktif(),
+            ))
             // Token terikat perangkat hanya berlaku selama kepercayaan perangkatnya berlaku (fail closed).
             ->where(fn ($q) => $q->whereNull('perangkat_tepercaya_id')->orWhereIn(
                 'perangkat_tepercaya_id',
@@ -471,7 +519,9 @@ class SesiService
 
     /**
      * Terbitkan sesi WEB (R-04): token login penuh + `klien:web`, dibawa HANYA lewat cookie (SesiWeb::cookieSesi
-     * dengan expires_at hasil ini). Pemanggil (alur login web R04-2) WAJIB sudah memverifikasi sandi + kode bot.
+     * dengan expires_at hasil ini). Pemanggil (alur login web R04-2) WAJIB sudah memverifikasi sandi + kode bot,
+     * ATAU sandi + browser tepercaya $browser yang berlaku milik $user (R04-3). Sesi ber-$browser tidak terkena idle
+     * 12 jam dan expires_at-nya tidak pernah melewati berlaku_sampai browser itu.
      * Tidak membuat/memakai perangkat_tepercayas. Kuota web terpisah: login di atas maksSesiWeb() mencabut sesi web
      * yang paling lama tidak dipakai; sesi Mini App dan sesi yang baru terbit tidak pernah ikut dicabut. Baris
      * pengguna dikunci (lockForUpdate) sehingga login web/Mini App paralel diserialkan.
@@ -482,20 +532,27 @@ class SesiService
      *
      * @return array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int}
      */
-    public function terbitkanWeb(User $user, ?string $label): array
+    public function terbitkanWeb(User $user, ?string $label, ?BrowserTepercaya $browser = null): array
     {
         if (! $user->canAuthenticate()) {
             throw new \DomainException('Akun tidak dapat masuk.');
         }
 
-        return DB::transaction(function () use ($user, $label): array {
+        if ($browser !== null && ((int) $browser->user_id !== (int) $user->getKey() || ! $browser->berlaku() || $user->isAdmin())) {
+            throw new \DomainException('Browser tidak tepercaya untuk akun ini.');
+        }
+
+        return DB::transaction(function () use ($user, $label, $browser): array {
             User::withoutGlobalScopes()->withTrashed()->whereKey($user->getKey())->lockForUpdate()->first();
 
             $sekarang = now();
             $expiresAt = $sekarang->copy()->addDays($this->masaHari($user))
-                ->min($sekarang->copy()->addDays($this->batasAbsolutHari()))
-                // Semua sesi web R04-1 terkena idle; R04-3 melewati baris ini untuk sesi browser tepercaya.
-                ->min($sekarang->copy()->addHours($this->idleWebJam()));
+                ->min($sekarang->copy()->addDays($this->batasAbsolutHari()));
+
+            // Sesi web biasa terkena idle 12 jam (Q3); sesi browser tepercaya dijepit ke berlaku_sampai browser.
+            $expiresAt = $browser === null
+                ? $expiresAt->min($sekarang->copy()->addHours($this->idleWebJam()))
+                : $expiresAt->min($browser->berlaku_sampai);
 
             /** @var NewAccessToken $baru */
             $baru = $user->createToken(
@@ -504,6 +561,10 @@ class SesiService
                 $expiresAt,
             );
             $id = (int) $baru->accessToken->getKey();
+
+            if ($browser !== null) {
+                $baru->accessToken->forceFill(['browser_tepercaya_id' => $browser->getKey()])->save();
+            }
 
             $this->rapikanSesi($user, $id, self::PREFIX_WEB, $this->maksSesiWeb());
 
@@ -550,18 +611,19 @@ class SesiService
             return;
         }
 
-        $web = $prefix === self::PREFIX_WEB;
+        $jenis = $prefix === self::PREFIX_WEB ? self::JENIS_WEB : self::JENIS_MINIAPP;
 
         $berlaku
             ->sortBy(fn (PersonalAccessToken $t) => sprintf('%015d.%015d', ($t->last_used_at ?? $t->created_at)?->getTimestamp() ?? 0, $t->getKey()))
             ->take($lebih)
-            ->each(function (PersonalAccessToken $t) use ($user, $maks, $web): void {
+            ->each(function (PersonalAccessToken $t) use ($user, $maks, $jenis): void {
                 $this->logout($user, $t);
                 AuditAuth::catat($user, AuditAuth::SESI_DICABUT_BATAS, [
                     'sesi_id' => (int) $t->getKey(),
                     'perangkat_id' => $t->getAttribute('perangkat_tepercaya_id'),
                     'maks_sesi' => $maks,
-                ] + ($web ? ['jenis' => self::JENIS_WEB] : []));
+                    'jenis' => $jenis,
+                ]);
             });
     }
 
@@ -726,7 +788,7 @@ class SesiService
      *
      * Sesi Mini App (`jenis: miniapp`, terikat perangkat) dan sesi web (`jenis: web`, label browser) R-04.
      *
-     * @return Collection<int, array{id: int, jenis: string, perangkat: string|null, dibuat_pada: string|null, terakhir_dipakai_pada: string|null, berlaku_sampai: string, diverifikasi_pada: string|null, sesi_ini: bool}>
+     * @return Collection<int, array{id: int, jenis: string, perangkat: string|null, dibuat_pada: string|null, terakhir_dipakai_pada: string|null, berlaku_sampai: string, diverifikasi_pada: string|null, browser_tepercaya_id: int|null, sesi_ini: bool}>
      */
     public function daftarSesi(User $user, ?int $tokenSaatIniId): Collection
     {
@@ -756,6 +818,7 @@ class SesiService
                 'terakhir_dipakai_pada' => $token->last_used_at?->toIso8601String(),
                 'berlaku_sampai' => $this->kedaluwarsaEfektif($token, $user)->toIso8601String(),
                 'diverifikasi_pada' => $p?->diverifikasi_pada?->toIso8601String(),
+                'browser_tepercaya_id' => $web && $token->getAttribute('browser_tepercaya_id') !== null ? (int) $token->getAttribute('browser_tepercaya_id') : null,
                 'sesi_ini' => $tokenSaatIniId !== null && (int) $token->getKey() === $tokenSaatIniId,
             ];
         })->values();
@@ -763,7 +826,11 @@ class SesiService
 
     // ------------------------------------------------------------------ pencabutan
 
-    /** Logout perangkat ini: token dihapus dan kepercayaan perangkat dicabut. */
+    /**
+     * Logout perangkat ini: token dihapus dan kepercayaan perangkat (Mini App) dicabut. Browser tepercaya web
+     * (R04-3) TIDAK dicabut oleh logout/pencabutan satu sesi/batas kuota sesi: ia punya kuota dan pencabutan
+     * sendiri (BrowserTepercayaService::cabutSatu, keluar semua, pencabutan otomatis).
+     */
     public function logout(User $user, PersonalAccessToken $token): void
     {
         DB::transaction(function () use ($user, $token): void {
@@ -796,11 +863,11 @@ class SesiService
     }
 
     /** Keluar dari semua perangkat (termasuk perangkat ini). Mengembalikan jumlah sesi penuh yang dicabut. */
-    public function keluarSemua(User $user): int
+    public function keluarSemua(User $user, string $alasan = 'keluar_semua'): int
     {
-        return DB::transaction(function () use ($user): int {
+        return DB::transaction(function () use ($user, $alasan): int {
             $jumlah = self::hanyaSesiLogin($user->tokens())->count();
-            $user->cabutSemuaSesi();
+            $user->cabutSemuaSesi(alasan: $alasan);
 
             return $jumlah;
         });

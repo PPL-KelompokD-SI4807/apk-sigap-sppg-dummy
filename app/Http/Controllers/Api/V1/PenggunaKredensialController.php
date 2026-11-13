@@ -61,8 +61,8 @@ class PenggunaKredensialController extends ApiController
     {
         $this->authorize('kelolaSesi', $user);
 
-        $this->sesi->cabutSatu($user, $sesi) ?? throw new NotFoundHttpException;
-        AuditAuth::catat($user, AuditAuth::SESI_DICABUT_ADMIN, ['jumlah_sesi' => 1], $request->user());
+        $token = $this->sesi->cabutSatu($user, $sesi) ?? throw new NotFoundHttpException;
+        AuditAuth::catat($user, AuditAuth::SESI_DICABUT_ADMIN, ['jumlah_sesi' => 1, 'jenis' => SesiService::jenis($token)], $request->user());
 
         return response()->json(['message' => 'Sesi pengguna dicabut.', 'jumlah_sesi' => 1]);
     }

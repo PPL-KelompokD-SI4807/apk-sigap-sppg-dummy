@@ -104,6 +104,17 @@ final class AuditAuth
     /** Tombol bot "Bukan saya" ditekan pemilik akun Telegram. */
     public const WEB_BUKAN_SAYA = 'auth.web.bukan_saya';
 
+    // ---- Browser tepercaya R04-3 (ADR Keputusan 6): hanya id browser, tanggal, dan pemicu; tanpa selektor,
+    // validator, atau nilai cookie.
+
+    public const WEB_BROWSER_DIBUAT = 'auth.web.browser_tepercaya_dibuat';
+
+    /** Login web melewati kode karena browser tepercaya (sandi tetap benar). */
+    public const WEB_BROWSER_DIPAKAI = 'auth.web.browser_tepercaya_dipakai';
+
+    /** Dicabut (`pemicu`: diganti, batas, dicabut_pengguna, password_diubah, hak_akses_berubah, keluar_semua, ...). */
+    public const WEB_BROWSER_DICABUT = 'auth.web.browser_tepercaya_dicabut';
+
     /** @param array<string, mixed> $konteks */
     public static function catat(User $subjek, string $event, array $konteks = [], ?User $aktor = null): void
     {
