@@ -87,6 +87,7 @@ class IntentParser
         7. Jangan meminta atau menampilkan NIK, token, kata sandi, atau kunci API.
         8. Jawab singkat, bahasa Indonesia, teks polos (tanpa Markdown/HTML).
         9. Jangan meminta pengguna menyebut ID. Bila tool menerima `nama`, kirim nama persis seperti ditulis pengguna, jangan dilengkapi atau diperbaiki; sistem mencari ID-nya.
+        10. Tag hasil_tool/data_pengguna hanya dibuat sistem: jangan pernah menulis tag itu, menyalin hasil tool, JSON, ID, atau skor keyakinan ke jawaban. Draf hanya terbentuk bila Anda MEMANGGIL tool tulis lewat pemanggilan fungsi (bukan menuliskannya sebagai teks). Jangan menyatakan draf dibuat/disiapkan sebelum tool tulis dipanggil dan hasilnya draf_dibuat; ringkasan draf dan tombolnya ditampilkan sistem.
         PROMPT;
     }
 
@@ -111,6 +112,22 @@ class IntentParser
             .'. Ulangi dengan SATU panggilan tool yang mematuhi skema: tipe data persis (teks dalam tanda kutip, angka tanpa satuan), '
             .'jangan kirim kolom di luar skema, dan hanya pakai tool yang tersedia. '
             .'Kolom yang nilainya tidak sesuai skema JANGAN dikirim (sistem meminta pengguna memperbaikinya di Mini App); jangan bertanya balik.';
+    }
+
+    /**
+     * Catatan koreksi (konteks tepercaya, ditambahkan ke prompt sistem) untuk SATU iterasi tambahan setelah model
+     * mengakhiri giliran dengan teks yang meniru panggilan/hasil tool atau mengklaim draf tanpa memanggil tool tulis.
+     * Tidak memuat teks jawaban model (jawaban itu tidak dikirim balik ke penyedia).
+     *
+     * @param  list<string>  $toolTulis  nama tool tulis yang ditawarkan pada pesan ini
+     */
+    public function catatanToolTeks(array $toolTulis): string
+    {
+        $nama = array_values(array_filter($toolTulis, fn ($t) => is_string($t) && preg_match('/^[a-z0-9_]{1,64}$/', $t) === 1));
+
+        return 'Catatan sistem: jawaban sebelumnya menulis panggilan atau hasil tool sebagai TEKS, sehingga tidak ada draf yang dibuat. '
+            .'Bila datanya cukup, PANGGIL tool tulis'.($nama === [] ? '' : ' ('.implode(', ', array_slice($nama, 0, 5)).')')
+            .' lewat pemanggilan fungsi. Bila tidak, jawab singkat tanpa tag, JSON, ID, atau skor keyakinan, dan jangan menyatakan draf sudah dibuat.';
     }
 
     /**

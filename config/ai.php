@@ -80,6 +80,13 @@ return [
         // tiap panggilan: melampaui -> draf yang sudah ada ditawarkan, atau balasan "permintaan terlalu besar" tanpa
         // memanggil penyedia. Bawaan 7000 untuk openai_compat (di bawah Groq gratis 8000 TPM), 0 = nonaktif.
         'token_per_pesan' => (int) env('AI_TOKEN_PER_PESAN', env('LLM_PROVIDER') === 'openai_compat' ? 7000 : 0),
+        // Model mengakhiri giliran dengan teks yang meniru panggilan/hasil tool (tag hasil_tool, JSON argumen) atau
+        // mengklaim draf tanpa memanggil tool tulis: SATU iterasi koreksi (catatan sistem) bila masih ada sisa iterasi,
+        // waktu, dan tool tulis ditawarkan. Teks itu tidak pernah dikirim ke pengguna maupun ke penyedia.
+        'koreksi_tool_teks' => (bool) env('AI_KOREKSI_TOOL_TEKS', true),
+        // Level log ringkas SATU baris per pesan ('ai.pesan': hasil, iterasi, token; tanpa isi). Naikkan (mis.
+        // 'warning') bila LOG_LEVEL server di atas info agar baris ini tetap tercatat.
+        'log_level' => env('AI_LOG_LEVEL', 'info'),
     ],
 
     /*
