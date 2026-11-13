@@ -220,6 +220,14 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
     if (r?.sesi_ini) lupakan();
     return r;
   }
+  // ---- Browser tepercaya (R04-3/R04-9) ----
+  const daftarBrowserTepercaya = () => request('GET', '/auth/browser-tepercaya');
+  /** DELETE /auth/browser-tepercaya/{id}; bila itu browser ini (`browser_ini: true`) sesi web ikut berakhir -> memori dibersihkan. */
+  async function cabutBrowserTepercaya(id) {
+    const r = await request('DELETE', `/auth/browser-tepercaya/${encodeURIComponent(id)}`);
+    if (r?.browser_ini) lupakan();
+    return r;
+  }
   async function keluarSemua() {
     const r = await request('POST', '/auth/keluar-semua', { body: {} });
     lupakan();
@@ -227,7 +235,7 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
   }
 
   return {
-    request, api, masuk, kirimKode, kirimUlangKode, muatCsrf: muatCsrfPra, muatSesi, logout, daftarSesi, cabutSesi, keluarSemua,
+    request, api, masuk, kirimKode, kirimUlangKode, muatCsrf: muatCsrfPra, muatSesi, logout, daftarSesi, cabutSesi, daftarBrowserTepercaya, cabutBrowserTepercaya, keluarSemua,
     getUser: () => user,
     adaSesi: () => mode === 'sesi',
     /** Hanya untuk tes/diagnostik: nilai CSRF di memori. */
@@ -240,6 +248,6 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
 
 export const klienWeb = buatKlienWeb();
 export const {
-  api, request, masuk, kirimKode, kirimUlangKode, muatCsrf, muatSesi, logout, daftarSesi, cabutSesi, keluarSemua,
+  api, request, masuk, kirimKode, kirimUlangKode, muatCsrf, muatSesi, logout, daftarSesi, cabutSesi, daftarBrowserTepercaya, cabutBrowserTepercaya, keluarSemua,
   getUser, adaSesi, onSesiHabis,
 } = klienWeb;
