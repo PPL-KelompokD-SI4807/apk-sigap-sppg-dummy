@@ -2,6 +2,7 @@
 
 namespace App\Services\Auth;
 
+use App\Models\BrowserTepercaya;
 use App\Models\TantanganToken;
 use App\Models\User;
 use App\Services\Telegram\TelegramApiException;
@@ -54,21 +55,96 @@ class MasukWebService
 
     public const PESAN_KODE_TIDAK_VALID = 'Kode salah atau kedaluwarsa.';
 
+    public const PESAN_SANDI_SALAH = 'Identitas atau sandi salah.';
+
     public function __construct(
         private readonly SesiService $sesi,
         private readonly TelegramBotService $bot,
+        private readonly BrowserTepercayaService $browser,
     ) {}
 
     // ------------------------------------------------------------------ langkah 1
 
     /**
-     * @return array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon}
+     * Langkah 1. Bawaan: `langkah: kode` dengan deskriptor tantangan seragam. Browser tepercaya (R04-3, cookie
+     * `__Host-sigap_tb`): HANYA bila cookie sah, milik akun yang sama, akun bukan Admin, DAN sandi benar -> sesi web
+     * langsung (`langkah: selesai`, kode dilewati). Sandi salah dengan browser tepercaya sah -> 422 kredensial_salah
+     * (dihitung gagal; pemegang cookie sudah terikat ke akun ini, jadi tidak ada enumerasi baru). `lupakan_tb` = cookie
+     * yang dibawa tidak dapat berlaku lagi (dinilai dari cookie saja, tidak bergantung pada identitas yang diketik).
+     *
+     * @return array{langkah: 'kode', tantangan: array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon}, lupakan_tb: bool}|array{langkah: 'selesai', sesi: array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int}, browser_sampai: Carbon, lupakan_tb: bool}
      */
-    public function masuk(string $identitas, string $password, string $idPraLogin, ?string $label): array
+    public function masuk(string $identitas, string $password, string $idPraLogin, ?string $label, ?string $cookieTb = null, ?string $cookieSesiLama = null): array
     {
         $user = $this->cariAkun($identitas);
         $hasil = $this->periksaLangkah1($user, $password);
 
+        $browser = $cookieTb === null ? null : $this->browser->dariCookie($cookieTb);
+        $tepercaya = $user !== null && $browser !== null && in_array($hasil, ['sandi_benar', 'sandi_salah'], true)
+            && $this->browser->bolehUntuk($browser, $user);
+        // Cookie tidak dikenal/kedaluwarsa/dicabut (termasuk baru dicabut karena pemiliknya Admin): hapus di browser.
+        $lupakanTb = $cookieTb !== null && ($browser === null || $browser->dicabut_at !== null);
+
+        if ($tepercaya && $hasil === 'sandi_salah') {
+            AuditAuth::catat($user, AuditAuth::WEB_MASUK_LANGKAH1, ['hasil' => $hasil, 'metode' => self::metode($identitas), 'jalur' => 'browser_tepercaya']);
+
+            throw GalatAuth::respons(422, GalatAuth::KREDENSIAL_SALAH, self::PESAN_SANDI_SALAH, ['password' => [self::PESAN_SANDI_SALAH]]);
+        }
+
+        if ($tepercaya) {
+            $lewat = $this->lewatiKode($user, $browser, $label, $cookieSesiLama);
+
+            if ($lewat !== null) {
+                return ['langkah' => 'selesai', 'sesi' => $lewat['sesi'], 'browser_sampai' => $lewat['browser_sampai'], 'lupakan_tb' => false];
+            }
+        }
+
+        return ['langkah' => 'kode', 'tantangan' => $this->langkahKode($user, $hasil, $identitas, $idPraLogin, $label), 'lupakan_tb' => $lupakanTb];
+    }
+
+    /**
+     * Sandi benar + browser tepercaya sah: terbitkan sesi web turunan browser (tanpa kode). Baris browser dikunci dan
+     * diperiksa ulang di dalam transaksi (pencabutan paralel menang); null = tidak lagi berlaku (lanjut jalur kode).
+     *
+     * @return array{sesi: array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int}, browser_sampai: Carbon}|null
+     */
+    private function lewatiKode(User $user, BrowserTepercaya $browser, ?string $label, ?string $cookieSesiLama): ?array
+    {
+        $hasil = DB::transaction(function () use ($user, $browser, $label): ?array {
+            $terkunci = BrowserTepercaya::query()->whereKey($browser->getKey())->lockForUpdate()->first();
+
+            if ($terkunci === null || ! $terkunci->berlaku() || (int) $terkunci->user_id !== (int) $user->getKey()) {
+                return null;
+            }
+
+            $sesi = $this->sesi->terbitkanWeb($user, $label, $terkunci);
+            $this->browser->tandaiDipakai($terkunci);
+            DB::table('users')->where('id', $user->getKey())->update(['web_gagal_login' => 0, 'web_terkunci_sampai' => null]);
+
+            return ['sesi' => $sesi, 'browser_sampai' => $terkunci->berlaku_sampai->copy()];
+        });
+
+        if ($hasil === null) {
+            return null;
+        }
+
+        $this->cabutSesiWebLama($cookieSesiLama, $hasil['sesi']['sesi_id']);
+
+        AuditAuth::catat($user, AuditAuth::WEB_BROWSER_DIPAKAI, ['browser_id' => (int) $browser->getKey()]);
+        AuditAuth::catat($user, AuditAuth::WEB_MASUK_BERHASIL, ['jalur' => 'browser_tepercaya', 'sesi_id' => $hasil['sesi']['sesi_id'], 'browser_id' => (int) $browser->getKey()]);
+        $this->kabariLoginNanti($user, $label, browserTepercaya: true);
+
+        return $hasil;
+    }
+
+    /**
+     * Jalur kode (R04-2): tantangan sungguhan + kode lewat bot hanya bila sandi benar dan syarat lain terpenuhi;
+     * selain itu deskriptor tiruan berbentuk sama.
+     *
+     * @return array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon}
+     */
+    private function langkahKode(?User $user, string $hasil, string $identitas, string $idPraLogin, ?string $label): array
+    {
         if ($user === null) {
             // Tanpa subjek audit: hanya log aplikasi ber-hash (tanpa identitas mentah).
             Log::info('auth.web.masuk_langkah1', ['hasil' => 'akun_tidak_dikenal', 'identitas' => substr(self::hashIdentitas($identitas), 0, 12)]);
@@ -211,13 +287,17 @@ class MasukWebService
      * Gagal apa pun -> 422 `alasan: kode_tidak_valid` (seragam). $cookieSesiLama = cookie `__Host-sigap_sesi`
      * yang masih dibawa browser ini; bila itu sesi web, dicabut (browser ini mendapat sesi baru).
      *
-     * @return array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int}
+     * $ingatBrowser (R04-3, sukarela): bila benar dan pengguna BUKAN Admin, browser ini dijadikan browser tepercaya
+     * 30 hari (cookie `__Host-sigap_tb`; browser tepercaya lama milik akun yang sama yang dibawa $cookieTb diganti)
+     * dan sesi ini menjadi sesi turunannya. Untuk Admin nilai ini diabaikan tanpa galat (Q1).
+     *
+     * @return array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int, ingat_browser: string, browser_cookie: Cookie|null, browser_sampai: Carbon|null}
      */
-    public function verifikasi(string $tantanganId, string $kode, string $idPraLogin, ?string $label, ?string $cookieSesiLama = null): array
+    public function verifikasi(string $tantanganId, string $kode, string $idPraLogin, ?string $label, ?string $cookieSesiLama = null, bool $ingatBrowser = false, ?string $cookieTb = null): array
     {
         $maks = max(1, (int) config('kredensial.token.maks_percobaan', 5));
 
-        $hasil = DB::transaction(function () use ($tantanganId, $kode, $idPraLogin, $label, $maks): array {
+        $hasil = DB::transaction(function () use ($tantanganId, $kode, $idPraLogin, $label, $maks, $ingatBrowser, $cookieTb): array {
             $tantangan = $this->milikBrowser($tantanganId, $idPraLogin, kunci: true);
 
             if ($tantangan === null) {
@@ -265,11 +345,25 @@ class MasukWebService
                 return ['galat' => GalatAuth::TOKEN_DIPAKAI, 'user' => $user];
             }
 
-            $sesi = $this->sesi->terbitkanWeb($user, $label);
+            $browser = null;
+            $ingat = 'tidak';
+
+            if ($ingatBrowser && $user->isAdmin()) {
+                $ingat = 'diabaikan_admin';
+            } elseif ($ingatBrowser) {
+                $browser = $this->browser->buat($user, $label, $cookieTb === null ? null : $this->browser->dariCookie($cookieTb));
+                $ingat = 'diingat';
+            }
+
+            $sesi = $this->sesi->terbitkanWeb($user, $label, $browser['browser'] ?? null);
 
             DB::table('users')->where('id', $user->getKey())->update(['web_gagal_login' => 0, 'web_terkunci_sampai' => null]);
 
-            return ['ok' => $sesi];
+            return ['ok' => $sesi + [
+                'ingat_browser' => $ingat,
+                'browser_cookie' => $browser['cookie'] ?? null,
+                'browser_sampai' => isset($browser['browser']) ? $browser['browser']->berlaku_sampai->copy() : null,
+            ]];
         });
 
         if (! array_key_exists('ok', $hasil)) {
@@ -283,11 +377,11 @@ class MasukWebService
             throw self::kodeTidakValid();
         }
 
-        /** @var array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int} $sesi */
+        /** @var array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int, ingat_browser: string, browser_cookie: Cookie|null, browser_sampai: Carbon|null} $sesi */
         $sesi = $hasil['ok'];
         $this->cabutSesiWebLama($cookieSesiLama, $sesi['sesi_id']);
 
-        AuditAuth::catat($sesi['user'], AuditAuth::WEB_MASUK_BERHASIL, ['jalur' => 'kode', 'sesi_id' => $sesi['sesi_id']]);
+        AuditAuth::catat($sesi['user'], AuditAuth::WEB_MASUK_BERHASIL, ['jalur' => 'kode', 'sesi_id' => $sesi['sesi_id'], 'ingat_browser' => $sesi['ingat_browser']]);
         $this->kabariLoginNanti($sesi['user'], $label);
 
         return $sesi;
@@ -571,14 +665,15 @@ class MasukWebService
         });
     }
 
-    private function kabariLoginNanti(User $user, ?string $label): void
+    private function kabariLoginNanti(User $user, ?string $label, bool $browserTepercaya = false): void
     {
         if ($user->telegram_id === null) {
             return;
         }
 
         $chatId = (int) $user->telegram_id;
-        $teks = 'Login web SiGAP SPPG berhasil dari '.self::label($label).' pada '.self::waktuWib().".\n\n"
+        $teks = ($browserTepercaya ? 'Login web SiGAP SPPG dari browser tepercaya (tanpa kode) berhasil: ' : 'Login web SiGAP SPPG berhasil dari ')
+            .self::label($label).' pada '.self::waktuWib().".\n\n"
             .'Bukan Anda? Segera ubah password lewat Mini App SiGAP (semua sesi lain ikut keluar) dan hubungi Admin.';
 
         defer(function () use ($user, $chatId, $teks): void {
