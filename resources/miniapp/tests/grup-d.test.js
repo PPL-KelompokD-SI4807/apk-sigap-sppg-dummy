@@ -102,10 +102,10 @@ test('periode dan tanggal keuangan', () => {
 });
 
 test('skema keuangan: kategori enum kontrak, payload integer, nota/bukti opsional', () => {
-  assert.deepEqual(keu.KATEGORI.map((k) => k.value), ['bahan_baku', 'insentif_relawan', 'energi', 'transportasi', 'peralatan', 'lainnya']);
+  assert.deepEqual(keu.KATEGORI.map((k) => k.value), ['bahan_baku', 'insentif_relawan', 'energi', 'transportasi', 'peralatan', 'lainnya', 'insentif_fasilitas']);
   const custom = { periode: { type: 'custom' }, nominal: (name, label) => ({ name, label, type: 'custom', required: true }) };
   const peng = keu.pengeluaranFields({ custom });
-  assert.deepEqual(names(peng), ['tanggal', 'kategori', 'uraian', 'nominal', 'pemasok_id', 'pencairan_dana_id', 'nota']);
+  assert.deepEqual(names(peng), ['tanggal', 'kategori', 'sub_kategori', 'uraian', 'nominal', 'pemasok_id', 'pencairan_dana_id', 'nota']);
   assert.equal(peng.find((f) => f.name === 'nota').type, 'photo');
   assert.equal(peng.find((f) => f.name === 'nota').required, undefined);
   assert.equal(keu.pengeluaranFields({ custom, record: { pemasok: { id: 7 } } }).find((f) => f.name === 'pemasok_id').default, 7);

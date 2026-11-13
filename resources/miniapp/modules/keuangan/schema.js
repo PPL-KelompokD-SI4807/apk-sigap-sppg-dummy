@@ -14,7 +14,31 @@ export const KATEGORI = [
   { value: 'transportasi', label: 'Transportasi (BBM)' },
   { value: 'peralatan', label: 'Peralatan' },
   { value: 'lainnya', label: 'Lainnya' },
+  { value: 'insentif_fasilitas', label: 'Insentif Fasilitas SPPG' },
 ];
+// 17 baris baku Biaya Operasional Lampiran 30b-B (R07-1). Hanya kategori operasional; bahan_baku dan insentif_fasilitas tanpa sub-kategori.
+export const SUB_KATEGORI = [
+  { value: 'insentif_relawan', label: 'Insentif Relawan' },
+  { value: 'insentif_harian_pj_satuan', label: 'Insentif Harian PJ Satuan' },
+  { value: 'insentif_kader', label: 'Insentif Kader' },
+  { value: 'bpjs_ketenagakerjaan', label: 'BPJS Ketenagakerjaan' },
+  { value: 'listrik', label: 'Listrik' },
+  { value: 'air_kemasan_galon', label: 'Air kemasan/galon' },
+  { value: 'air_pdam', label: 'Air PDAM' },
+  { value: 'air_minum', label: 'Air minum' },
+  { value: 'gas', label: 'Gas' },
+  { value: 'sewa_kendaraan', label: 'Sewa kendaraan' },
+  { value: 'bbm', label: 'BBM' },
+  { value: 'pulsa', label: 'Pulsa' },
+  { value: 'internet', label: 'Internet' },
+  { value: 'atk', label: 'ATK' },
+  { value: 'alat_kebersihan', label: 'Alat kebersihan' },
+  { value: 'apd', label: 'APD' },
+  { value: 'lain_lain', label: 'Lain-lain' },
+];
+export const subKategoriLabel = (v) => SUB_KATEGORI.find((k) => k.value === v)?.label ?? v ?? '-';
+export const KATEGORI_TANPA_SUB = ['bahan_baku', 'insentif_fasilitas'];
+export const kategoriBerSub = (k) => !!k && !KATEGORI_TANPA_SUB.includes(k);
 export const kategoriLabel = (v) => KATEGORI.find((k) => k.value === v)?.label ?? v ?? '-';
 
 // ---- Rupiah: tampil "1.250.000", kirim integer ----
@@ -111,6 +135,7 @@ export function pengeluaranFields({ custom, record = null }) {
   return [
     { name: 'tanggal', label: 'Tanggal', type: 'date', required: true, default: todayWIB(), validate: (v) => tidakMasaDepan(v, 'Tanggal') },
     { name: 'kategori', label: 'Kategori', type: 'select', required: true, options: KATEGORI },
+    { name: 'sub_kategori', label: 'Sub-kategori (Lampiran 30b)', type: 'select', options: SUB_KATEGORI, showIf: (v) => kategoriBerSub(v.kategori), help: 'Opsional. Pilih baris Biaya Operasional yang sesuai.' },
     { name: 'uraian', label: 'Uraian', type: 'text', required: true, maxlength: 255, placeholder: 'Mis. Belanja daging ayam 140 kg' },
     { ...custom.nominal('nominal', 'Nominal') },
     { name: 'pemasok_id', label: 'Pemasok (opsional)', type: 'relasi', default: record?.pemasok?.id ?? '', relation: { endpoint: '/pemasok', label: 'nama', value: 'id' } },
@@ -132,6 +157,7 @@ export const pengeluaranDetailFields = [
   { name: 'tanggal', label: 'Tanggal', type: 'date' },
   { name: 'periode', label: 'Periode', display: (r) => labelPeriode(r.periode) },
   { name: 'kategori', label: 'Kategori', display: (r) => r.kategori_label || kategoriLabel(r.kategori) },
+  { name: 'sub_kategori', label: 'Sub-kategori', display: (r) => r.sub_kategori_label || subKategoriLabel(r.sub_kategori), onlyIfPresent: true },
   { name: 'uraian', label: 'Uraian' },
   { name: 'nominal', label: 'Nominal', display: (r) => formatRupiah(r.nominal) },
   { name: 'status_persetujuan', label: 'Persetujuan investor', display: (r) => r.status_persetujuan_label || ({ diajukan: 'Menunggu persetujuan', disetujui: 'Disetujui', ditolak: 'Ditolak' }[r.status_persetujuan] ?? 'Disetujui') },
@@ -146,9 +172,9 @@ export const pencairanPayload = (v) => buildPayload(v, {
   nullable: ['no_referensi', 'catatan'],
 });
 export const pengeluaranPayload = (v) => buildPayload(v, {
-  keys: ['tanggal', 'kategori', 'uraian', 'nominal', 'pemasok_id', 'pencairan_dana_id', 'nota'],
+  keys: ['tanggal', 'kategori', 'sub_kategori', 'uraian', 'nominal', 'pemasok_id', 'pencairan_dana_id', 'nota'],
   ints: ['nominal', 'pemasok_id', 'pencairan_dana_id'],
-  nullable: ['pemasok_id', 'pencairan_dana_id'],
+  nullable: ['sub_kategori', 'pemasok_id', 'pencairan_dana_id'],
 });
 
 /** Seri donat per kategori dari ringkasan (label, nominal, persen). */

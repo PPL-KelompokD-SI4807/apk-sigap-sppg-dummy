@@ -12,6 +12,8 @@ export function logFields({ mode, record } = {}) {
     { name: 'kode_batch', label: 'Kode batch', type: 'text', readonly: true, placeholder: 'Dibuat otomatis (BATCH-TTTTBBHH-NN)', default: record?.kode_batch ?? '' },
     { name: 'realisasi_porsi', label: 'Realisasi porsi', type: 'number', required: true, min: 0, step: 1 },
     { name: 'sisa_makanan_kg', label: 'Sisa makanan (kg)', type: 'number', min: 0, max: 99999, step: 'any', default: 0 },
+    { name: 'porsi_food_sample', label: 'Porsi food sample', type: 'number', min: 0, max: 1000000, step: 1, help: 'Dalam porsi (bukan orang). Kosong = 0.' },
+    { name: 'porsi_uji_organoleptik', label: 'Porsi uji organoleptik', type: 'number', min: 0, max: 1000000, step: 1, help: 'Dalam porsi (bukan orang). Kosong = 0.' },
     { name: 'waktu_mulai', label: 'Jam mulai', type: 'time' },
     { name: 'jam_selesai', label: 'Jam selesai', type: 'time', validate: (v, all) => (v && all.waktu_mulai && String(v).slice(0, 5) <= String(all.waktu_mulai).slice(0, 5) ? 'Jam selesai harus setelah jam mulai.' : '') },
     { name: 'kendala', label: 'Kendala', type: 'textarea', maxlength: 2000, placeholder: 'Mis. gas hampir habis' },
@@ -27,6 +29,8 @@ export const logDetailFields = [
   { name: 'selisih_porsi', label: 'Selisih', display: (r) => selisihText(r.selisih_porsi) },
   { name: 'persentase_capaian', label: 'Capaian', display: (r) => (r.persentase_capaian == null ? '-' : `${Number(r.persentase_capaian).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`) },
   { name: 'sisa_makanan_kg', label: 'Sisa makanan', display: (r) => `${Number(r.sisa_makanan_kg ?? 0).toLocaleString('id-ID')} kg` },
+  { name: 'porsi_food_sample', label: 'Porsi food sample', display: (r) => Number(r.porsi_food_sample ?? 0).toLocaleString('id-ID') },
+  { name: 'porsi_uji_organoleptik', label: 'Porsi uji organoleptik', display: (r) => Number(r.porsi_uji_organoleptik ?? 0).toLocaleString('id-ID') },
   { name: 'waktu_mulai', label: 'Jam mulai', display: (r) => hhmm(r.waktu_mulai) },
   { name: 'jam_selesai', label: 'Jam selesai', display: (r) => hhmm(r.jam_selesai) },
   { name: 'kendala', label: 'Kendala' },
@@ -35,10 +39,10 @@ export const logDetailFields = [
 
 export const logPayload = (values, { mode } = {}) => {
   const out = buildPayload(values, {
-    keys: ['jadwal_produksi_id', 'realisasi_porsi', 'sisa_makanan_kg', 'waktu_mulai', 'jam_selesai', 'kendala'],
-    ints: ['jadwal_produksi_id', 'realisasi_porsi'],
+    keys: ['jadwal_produksi_id', 'realisasi_porsi', 'porsi_food_sample', 'porsi_uji_organoleptik', 'sisa_makanan_kg', 'waktu_mulai', 'jam_selesai', 'kendala'],
+    ints: ['jadwal_produksi_id', 'realisasi_porsi', 'porsi_food_sample', 'porsi_uji_organoleptik'],
     nums: ['sisa_makanan_kg'],
-    nullable: ['waktu_mulai', 'jam_selesai', 'kendala'],
+    nullable: ['porsi_food_sample', 'porsi_uji_organoleptik', 'waktu_mulai', 'jam_selesai', 'kendala'],
   });
   if (mode === 'update') delete out.jadwal_produksi_id; // tidak dapat diubah
   const lampiran = lampiranIdsPayload(values.lampiran_ids);
