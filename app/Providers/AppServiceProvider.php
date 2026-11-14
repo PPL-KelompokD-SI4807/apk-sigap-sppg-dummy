@@ -86,16 +86,15 @@ class AppServiceProvider extends ServiceProvider
                 ->by('kred:ip:'.$request->ip()),
         ]);
 
-        // R04-2 login web `web/auth/*` (ADR Keputusan 5): global (pemutus arus) + per IP untuk semua rute web/auth;
-        // masuk: per IP per menit/jam + per identitas ter-normalisasi (HMAC, tanpa identitas mentah di cache);
+        // R04-2 login web `web/auth/*` (ADR Keputusan 5): tanpa pemutus arus global (tuas DoS; limit_req nginx +
+        // BatasLajuSesiWeb per IP). Masuk: per IP per menit/jam + per identitas ter-normalisasi (HMAC, tanpa identitas mentah di cache);
         // kode/kirim ulang: per IP. Batas tidak bergantung keberadaan akun (bukan oracle). Penguncian per akun
         // ada di MasukWebService.
         $web = fn (string $kunci, int $bawaan): int => max(1, (int) config('kredensial.web.throttle.'.$kunci, $bawaan));
 
-        RateLimiter::for('auth-web', fn (Request $request) => [
-            Limit::perMinute($web('global_per_menit', 300))->by('web:global'),
-            Limit::perMinute($web('per_ip_per_menit', 30))->by('web:ip:'.$request->ip()),
-        ]);
+        // Semua rute web/auth/*: hanya per IP, tanpa pemutus global.
+        RateLimiter::for('auth-web', fn (Request $request) => Limit::perMinute($web('per_ip_per_menit', 30))
+            ->by('web:ip:'.$request->ip()));
 
         RateLimiter::for('auth-web-masuk', fn (Request $request) => [
             Limit::perMinute($web('masuk_per_ip_per_menit', 10))->by('web:masuk:ip:'.$request->ip()),

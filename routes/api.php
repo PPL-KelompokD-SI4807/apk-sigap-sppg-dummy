@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 |                                    Peran & scope SPPG tetap diputuskan Policy; header SPPG aktif
 |                                    X-SPPG-Id divalidasi ResolveSppgAktif (R-06a).
 | - routes/api/v1/_web/*.php       : login web R04-2 (prefix web/, nama api.v1.web.*), TANPA token dan TANPA
-|                                    SesiWebCookie: throttle:auth-web + PraLoginWeb (X-Sigap-Klien: web, CSRF
+|                                    SesiWebCookie: PraLoginWeb (X-Sigap-Klien: web, CSRF
 |                                    pra-login cookie `__Host-sigap_pra` untuk metode pengubah).
 |
 | Satu berkas per modul (mis. routes/api/v1/bahan-baku.php) agar agen modul tidak bentrok.
