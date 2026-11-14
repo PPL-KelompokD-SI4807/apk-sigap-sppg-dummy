@@ -46,6 +46,8 @@ export default defineConfig(({ mode }) => {
       outDir: fileURLToPath(new URL(web ? './public/web' : './public/miniapp', import.meta.url)),
       emptyOutDir: true,
       target: 'es2020',
+      // Web: tanpa pembungkus preload (helper + peta dependensi) agar aset awal kecil; chunk lazy dimuat saat dibutuhkan.
+      modulePreload: web ? false : undefined,
       chunkSizeWarningLimit: 300,
       rollupOptions: web ? { input: fileURLToPath(new URL('./resources/miniapp/web.html', import.meta.url)) } : undefined,
     },
