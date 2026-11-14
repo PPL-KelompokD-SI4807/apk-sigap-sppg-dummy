@@ -17,6 +17,18 @@ const webIndeks = () => ({
   },
 });
 
+// R04-8: pada build web, `core/transport.js` (Bearer, Mini App) diganti `core/transport-web.js` (cookie + CSRF).
+const transportWeb = () => ({
+  name: 'sigap-transport-web',
+  enforce: 'pre',
+  resolveId(source) {
+    if (/(^|\/)core\/transport\.js$/.test(source) || /^\.\/transport\.js$/.test(source)) {
+      return fileURLToPath(new URL('./resources/miniapp/core/transport-web.js', import.meta.url));
+    }
+    return null;
+  },
+});
+
 // Dua keluaran dari satu sumber:
 //   `vite build`            -> Mini App: entri index.html, keluaran public/miniapp, base /miniapp/ (tidak berubah)
 //   `vite build --mode web` -> Web (R04-6): entri web.html, keluaran public/web, base /web/ (tanpa telegram-web-app.js)
@@ -26,7 +38,7 @@ export default defineConfig(({ mode }) => {
     root,
     base: web ? '/web/' : '/miniapp/',
     publicDir: false,
-    plugins: web ? [webIndeks()] : [],
+    plugins: web ? [transportWeb(), webIndeks()] : [],
     build: {
       outDir: fileURLToPath(new URL(web ? './public/web' : './public/miniapp', import.meta.url)),
       emptyOutDir: true,

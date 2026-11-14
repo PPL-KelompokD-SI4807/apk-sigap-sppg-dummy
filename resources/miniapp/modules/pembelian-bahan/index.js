@@ -6,7 +6,7 @@ import { rowCard } from '../../components/row-card.js';
 import { createAuthImage } from '../../components/photo-upload.js';
 import { lampiranField } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
-import { fetchList, request, newKey } from '../../core/api.js';
+import { fetchList, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, punyaKeputusan } from '../../core/permissions.js';
 import { resolve } from '../../core/router.js';

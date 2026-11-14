@@ -1,5 +1,5 @@
 import { h } from '../core/dom.js';
-import { fetchList } from '../core/api.js';
+import { fetchList } from '../core/transport.js';
 import { createPhotoUpload } from './photo-upload.js';
 import { petakanGalatDraf, pilihanPerBaris, ringkasGalatBaris } from '../core/draf-galat.js';
 import { setMainButton, setMainButtonLoading, setMainButtonDisabled, hideMainButton } from '../core/ui.js';

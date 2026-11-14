@@ -1,6 +1,6 @@
 // Kolom kustom "Komposisi bahan": baris dinamis (bahan + takaran gram per porsi). Dipakai form-view type 'custom'.
 import { h, clear } from '../../core/dom.js';
-import { fetchList } from '../../core/api.js';
+import { fetchList } from '../../core/transport.js';
 import { validasiKomposisi, MAX_BAHAN } from './schema.js';
 import { labelKandidat, ringkasGalatBaris } from '../../core/draf-galat.js';
 

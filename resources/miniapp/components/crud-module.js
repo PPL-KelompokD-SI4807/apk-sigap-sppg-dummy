@@ -1,5 +1,5 @@
 import { h, clear, formatValue } from '../core/dom.js';
-import { api, submitWithQueue, request, newKey } from '../core/api.js';
+import { api, submitWithQueue, request, newKey } from '../core/transport.js';
 import { getUser } from '../core/auth.js';
 import { userPerms, permsDariIzin, PESAN_BUKAN_HAK } from '../core/permissions.js';
 import { tujuanDraf, jalurBersih, draftCocok, pathHapus } from '../core/draf-tujuan.js';

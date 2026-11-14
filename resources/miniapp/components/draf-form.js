@@ -1,6 +1,6 @@
 // Bagian formulir yang dipakai bersama untuk draf Agen AI (crud-module dan layar khusus seperti mutasi stok).
 import { h } from '../core/dom.js';
-import { api } from '../core/api.js';
+import { api } from '../core/transport.js';
 import { toast } from '../core/ui.js';
 import { perluDiperbaiki } from '../core/draf-galat.js';
 

@@ -6,7 +6,7 @@ import { showInviteLink } from '../../components/invite-dialog.js';
 import { h } from '../../core/dom.js';
 import { getUser } from '../../core/auth.js';
 import { bolehAksi } from '../../core/permissions.js';
-import { api } from '../../core/api.js';
+import { api } from '../../core/transport.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
 import { titikFields, mapPayload, JENIS, jenisLabel, jarakText } from './schema.js';

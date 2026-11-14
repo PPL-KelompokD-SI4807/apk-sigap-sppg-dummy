@@ -1,7 +1,7 @@
 // Persetujuan Menu oleh Investor (R-06b-1). Rute: #/persetujuan-menu dan #/persetujuan-menu/<id>.
 // Investor memutuskan lewat POST /persetujuan-menu/{id}/keputusan; peran lain hanya membaca.
 import { h, formatValue } from '../../core/dom.js';
-import { api, request, newKey } from '../../core/api.js';
+import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms } from '../../core/permissions.js';
 import { route, resolve } from '../../core/router.js';

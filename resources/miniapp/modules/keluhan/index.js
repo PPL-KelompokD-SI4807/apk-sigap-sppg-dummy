@@ -4,7 +4,7 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { rowCard } from '../../components/row-card.js';
 import { h } from '../../core/dom.js';
-import { api } from '../../core/api.js';
+import { api } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { lampiranDisembunyikan } from '../../core/lampiran-uploader.js';
 import { bolehAksi, tanpaSppgSendiri } from '../../core/permissions.js';

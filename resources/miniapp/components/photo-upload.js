@@ -2,7 +2,7 @@
 // batas jumlah, dan tampilan gambar privat lewat fetch + Authorization (blob -> objectURL).
 // Bagian murni (tanpa DOM) diekspor agar dapat diuji dengan node --test.
 import { h } from '../core/dom.js';
-import { getToken, newKey } from '../core/api.js';
+import { getToken, newKey } from '../core/transport.js';
 import { terapkanHeaderSppg, getSppgAktif } from '../core/sppg-aktif.js';
 
 export const MAX_SIDE = 1600;

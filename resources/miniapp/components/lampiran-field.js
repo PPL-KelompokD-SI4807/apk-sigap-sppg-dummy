@@ -2,7 +2,7 @@
 // Dipakai di detailExtras modul (bukti distribusi, keuangan, nanti keluhan/mutu/log produksi).
 // Foto yang menjadi bagian payload formulir (foto/nota/bukti) cukup memakai kolom {type:'photo'} di form-view.
 import { h } from '../core/dom.js';
-import { request, newKey, uploadMultipart } from '../core/api.js';
+import { request, newKey, uploadMultipart } from '../core/transport.js';
 import { enqueue } from '../core/offline-queue.js';
 import { firstError, PESAN_413, PESAN_429, PESAN_409 } from '../core/errors.js';
 import { createPhotoUpload, createAuthImage, formatUkuran } from './photo-upload.js';

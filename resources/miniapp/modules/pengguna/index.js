@@ -9,7 +9,7 @@ import { renderPermintaanReset } from '../../components/permintaan-reset-view.js
 import { renderSesiPengguna } from '../../components/sesi-view.js';
 import { kepemilikanSppgPanel } from '../../components/kepemilikan-sppg.js';
 import { h } from '../../core/dom.js';
-import { api } from '../../core/api.js';
+import { api } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { route, navigate } from '../../core/router.js';
