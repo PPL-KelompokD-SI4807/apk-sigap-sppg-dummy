@@ -179,7 +179,11 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
       if (segar && !terikatTantangan) ({ res, data } = await kirim(method, path, { ...opts, csrfPakai: csrf }));
       else if (segar) { const e = galat(res, data); e.perluMasukUlang = true; throw e; }
     }
-    if (res.ok) return data;
+    if (res.ok) {
+      // Rotasi CSRF (R04-4): PUT /auth/password lewat cookie mengembalikan `csrf` baru; yang lama langsung tidak sah.
+      if (method === 'PUT' && path === '/auth/password' && mode === 'sesi' && typeof data?.csrf === 'string' && data.csrf) csrf = data.csrf;
+      return data;
+    }
     if (res.status === 401 && !jalurPra) sesiHabis();
     throw galat(res, data);
   }
