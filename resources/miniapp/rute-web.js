@@ -18,6 +18,8 @@ export const BACA_WEB = new Set([
   // 4b operasional (jadwal/distribusi dan keuangan/* adalah sub-modul tersembunyi)
   'jadwal/distribusi', 'jadwal', 'log-produksi', 'mutu', 'notifikasi-perjalanan', 'bukti-distribusi', 'keluhan',
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keuangan', 'rekap-harian', 'dashboard',
+  // ekspor PDF Laporan BGN (hak = aksi.lihat_laporan_bgn*, bolehMenu)
+  'laporan-bgn',
 ]);
 
 /** modules: getModules() dari registry. getUser: () => pengguna sesi. */

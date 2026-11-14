@@ -6,6 +6,7 @@ import { getUser } from '../../core/auth.js';
 import { bolehAksi, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route } from '../../core/router.js';
 import { setMainButton } from '../../core/ui.js';
+import { isWeb } from '../../core/platform.js';
 import { todayWIB } from '../../core/waktu.js';
 import { jenisUntuk, jenisByKey, periodeBawaan, validasiPeriode, badanPermintaan, ringkasGalatEkspor, kandidatDari, bolehTerbitkanNomor } from './logika.js';
 
@@ -17,6 +18,14 @@ const bolehBuka = (user) => bolehAksi(user, 'lihat_laporan_bgn') || bolehAksi(us
 
 export async function layarEkspor(ctx) {
   const user = getUser();
+  // Web: tombol kirim hanya di dalam layar (tanpa bilah bawah MainButton, agar tidak ada dua tombol). Mini App: MainButton seperti semula.
+  const tombolUtama = (o) => { if (!isWeb()) setMainButton(o); };
+  let btnKirim = null;
+  const keadaanTombol = (memproses) => {
+    if (!isWeb() || !btnKirim) return;
+    btnKirim.disabled = memproses;
+    btnKirim.textContent = memproses ? 'Memproses...' : 'Kirim PDF ke Telegram';
+  };
   const opsi = jenisUntuk(user);
   const today = todayWIB();
   let jenis = opsi[0];
@@ -106,7 +115,8 @@ export async function layarEkspor(ctx) {
       if (wajibPilih.has(k) && !pilihan[k]) { galat.textContent = `Pilih ${label} terlebih dahulu.`; return; }
     }
     sibuk = true;
-    setMainButton({ text: 'Memproses...', loading: true });
+    tombolUtama({ text: 'Memproses...', loading: true });
+    keadaanTombol(true);
     const body = badanPermintaan(jenis, nilai, sppgId, pilihan);
     let langkah = 'nomor';
     try {
@@ -129,7 +139,8 @@ export async function layarEkspor(ctx) {
       galat.textContent = g.pesan;
     } finally {
       sibuk = false;
-      setMainButton({ text: 'Kirim PDF ke Telegram', onClick: kirim });
+      tombolUtama({ text: 'Kirim PDF ke Telegram', onClick: kirim });
+      keadaanTombol(false);
     }
   }
 
@@ -139,10 +150,10 @@ export async function layarEkspor(ctx) {
     sppgBox, periodeBox, penandatanganBox,
     h('p', { class: 'muted small' }, 'Nomor LPA diterbitkan lebih dulu (bila laporan bernomor), lalu PDF dikirim ke chat Telegram Anda lewat bot.'),
     galat, status,
-    h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: kirim }, 'Kirim PDF ke Telegram')));
+    (btnKirim = h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: kirim }, 'Kirim PDF ke Telegram'))));
   gambarPeriode();
   muatKandidat();
-  setMainButton({ text: 'Kirim PDF ke Telegram', onClick: kirim });
+  tombolUtama({ text: 'Kirim PDF ke Telegram', onClick: kirim });
 }
 
 export default {
@@ -152,6 +163,11 @@ export default {
   icon: '📄',
   description: 'Lampiran 30a-30d (PDF dikirim lewat bot Telegram)',
   register() {
+    route(`/${SLUG}`, layarEkspor, { title: 'Ekspor Laporan BGN', guard: () => bolehBuka(getUser()) });
+  },
+  // Web (R04-8): layar yang sama lewat core/transport (cookie + CSRF); admin memilih SPPG lewat sppg_id di badan permintaan.
+  // Guard membaca pengguna sesi sendiri (router memanggil guard(params)).
+  registerWeb() {
     route(`/${SLUG}`, layarEkspor, { title: 'Ekspor Laporan BGN', guard: () => bolehBuka(getUser()) });
   },
 };
