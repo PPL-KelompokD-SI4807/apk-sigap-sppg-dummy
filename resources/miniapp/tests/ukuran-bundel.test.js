@@ -65,6 +65,7 @@ test('pindai bundel web: seluruh modul (registry + beranda + komponen) tanpa jej
     `import { api } from '${mini}/core/transport.js';`,
     `import { renderHome } from '${mini}/home.js';`,
     `import '${mini}/components/sesi-view.js';`,
+    `import '${mini}/components/sppg-picker.js';`,
     `import '${mini}/components/password-view.js';`,
     `window.__x = [registerAllRoutes, getUser, logout, ubahPassword, api, renderHome];`,
   ].join('\n'));
@@ -72,7 +73,8 @@ test('pindai bundel web: seluruh modul (registry + beranda + komponen) tanpa jej
     const asli = (await bangun('web')).map((b) => b.isi).join('\n'); // bundel web nyata (web.html)
     const lebar = (await bangun('web', { rollupOptions: { input: entri } })).map((b) => b.isi).join('\n');
     for (const [nama, kode] of [['web.html', asli], ['semua-modul', lebar]]) {
-      assert.ok(!/localStorage/.test(kode), `${nama}: memuat localStorage`);
+      assert.ok(!/localStorage|sessionStorage/.test(kode), `${nama}: memuat localStorage/sessionStorage`);
+      assert.ok(kode.includes('X-SPPG-Id'), `${nama}: header SPPG aktif (memori) tidak terpasang`);
       // Celah yang diketahui: fetchLampiranBlob (components/photo-upload.js) masih memakai Bearer + credentials 'omit' untuk gambar privat.
       // Diperbaiki di PR5 (foto web, T3); saat itu batas ini menjadi 0. Sampai saat itu tidak boleh bertambah dari 1 (registry lazy ikut memuatnya).
       const batasAuth = 1;

@@ -49,7 +49,7 @@ test('registry nyata memuat modul dan menu setiap peran sama dengan menuUntuk da
     const href = tautan(render(user));
     for (const m of menuUntuk(user, MODUL)) assert.ok(href.includes(`#/${m.slug}`), `${nama}: menu ${m.slug} hilang`);
     // Tidak ada kartu modul di luar peta: tiap tautan '#/slug' (selain pintasan tetap) berasal dari menu.
-    const tetap = new Set(['#/', '#/sesi', '#/dashboard', '#/penerima-manfaat-agregat']);
+    const tetap = new Set(['#/', '#/sesi', '#/dashboard', '#/penerima-manfaat-agregat', '#/ganti-sppg']);
     const dari = new Set(menuUntuk(user, MODUL).map((m) => `#/${m.slug}`));
     for (const x of href) assert.ok(tetap.has(x) || dari.has(x), `${nama}: tautan tak dikenal ${x}`);
   }

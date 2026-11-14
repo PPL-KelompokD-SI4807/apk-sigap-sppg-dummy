@@ -1,7 +1,8 @@
 // Beranda WEB (R04-8 PR3): pengguna, peran, SPPG, dan menu modul. Menu = hasil menuUntuk() dari peta hak SERVER
 // (GET /auth/me); klien tidak menyimpan matriks hak. Tanpa fitur Telegram-only (draf AI, ?r=, share t.me, undangan, antrean offline).
 import { h } from './core/dom.js';
-import { roleLabel, petaValid, dashboardTersedia, agregatBoleh } from './core/permissions.js';
+import { roleLabel, petaValid, dashboardTersedia, agregatBoleh, multiSppg } from './core/permissions.js';
+import { getSppgAktif } from './core/sppg-aktif.js'; // build web: versi memori (sppg-aktif-web.js)
 
 export const PESAN_SEGERA = 'Segera tersedia di web';
 export const PESAN_PETA_RUSAK = 'Hak akses akun Anda tidak dapat dimuat, jadi menu disembunyikan. Muat ulang halaman, atau hubungi Admin bila berulang.';
@@ -26,6 +27,11 @@ export function renderBerandaWeb(el, { user, menu }) {
     h('p', { class: 'muted small' }, 'Selamat datang'),
     h('h2', {}, u.name || ''),
     h('p', { class: 'muted small' }, [u.role_label || roleLabel(u.role), u.sppg_name].filter(Boolean).join(' • '))));
+  // Investor multi-SPPG: SPPG aktif dan tautan ganti (pilihan hanya di memori; server tetap memvalidasi header).
+  if (multiSppg(user)) {
+    el.append(h('div', { class: 'notice' }, getSppgAktif() ? `SPPG aktif: #${getSppgAktif()}. ` : 'Belum memilih SPPG. ',
+      h('a', { class: 'link', href: '#/ganti-sppg' }, getSppgAktif() ? 'Ganti SPPG' : 'Pilih SPPG')));
+  }
   const adaPeta = petaValid(user);
   if (!adaPeta) el.append(h('div', { class: 'alert-danger', role: 'alert' }, PESAN_PETA_RUSAK));
   el.append(h('h2', { class: 'section-title' }, 'Menu'));

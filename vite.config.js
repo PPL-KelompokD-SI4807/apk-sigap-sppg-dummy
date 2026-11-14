@@ -17,7 +17,7 @@ const webIndeks = () => ({
   },
 });
 
-// R04-8: pada build web, `core/transport.js` dan `core/auth.js` (Bearer/initData, Mini App) diganti `core/transport-web.js` dan `core/auth-web.js` (cookie + CSRF, GET /auth/me).
+// R04-8: pada build web, `core/transport.js` dan `core/auth.js` (Bearer/initData, Mini App) diganti `core/transport-web.js` dan `core/auth-web.js` (cookie + CSRF, GET /auth/me); `core/sppg-aktif.js` -> `sppg-aktif-web.js` (hanya memori).
 const transportWeb = () => ({
   name: 'sigap-transport-web',
   enforce: 'pre',
@@ -27,6 +27,9 @@ const transportWeb = () => ({
     }
     if (/(^|\/)core\/auth\.js$/.test(source)) {
       return fileURLToPath(new URL('./resources/miniapp/core/auth-web.js', import.meta.url));
+    }
+    if (/(^|\/)core\/sppg-aktif\.js$/.test(source) || /^\.\/sppg-aktif\.js$/.test(source)) {
+      return fileURLToPath(new URL('./resources/miniapp/core/sppg-aktif-web.js', import.meta.url));
     }
     return null;
   },
