@@ -25,6 +25,7 @@ export default defineCrudModule({
   filters: { param: 'jenis', label: 'Jenis pemasok', options: [{ value: '', label: 'Semua' }, ...JENIS_PEMASOK] },
   // Tambah harga = aksi.catat_harga_pemasok (Policy catatHarga), bukan hak C modul.
   detailExtras: (rec) => hargaPanel(rec, { tambah: bolehAksi(getUser(), 'catat_harga_pemasok') }),
+  detailExtrasWeb: (rec) => hargaPanel(rec, { tambah: false }), // web baca-saja: tanpa tombol catat harga
   renderCard: (r, href) => rowCard({
     href,
     title: r.nama,
