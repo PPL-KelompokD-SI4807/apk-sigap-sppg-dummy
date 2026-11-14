@@ -92,6 +92,10 @@ class AppServiceProvider extends ServiceProvider
         // ada di MasukWebService.
         $web = fn (string $kunci, int $bawaan): int => max(1, (int) config('kredensial.web.throttle.'.$kunci, $bawaan));
 
+        // Semua rute web/auth/*: hanya per IP, tanpa pemutus global.
+        RateLimiter::for('auth-web', fn (Request $request) => Limit::perMinute($web('per_ip_per_menit', 30))
+            ->by('web:ip:'.$request->ip()));
+
         RateLimiter::for('auth-web-masuk', fn (Request $request) => [
             Limit::perMinute($web('masuk_per_ip_per_menit', 10))->by('web:masuk:ip:'.$request->ip()),
             Limit::perHour($web('masuk_per_ip_per_jam', 100))->by('web:masuk:ip-jam:'.$request->ip()),

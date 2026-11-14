@@ -57,6 +57,7 @@ class WebLoginTest extends TestCase
 
         // Batas laju dilonggarkan di tes alur; tes batas laju memakai nilai bawaan config.
         config([
+            'kredensial.web.throttle.per_ip_per_menit' => 1000,
             'kredensial.web.throttle.masuk_per_ip_per_menit' => 1000,
             'kredensial.web.throttle.masuk_per_ip_per_jam' => 1000,
             'kredensial.web.throttle.masuk_per_identitas' => 1000,
@@ -721,6 +722,21 @@ class WebLoginTest extends TestCase
 
         // 10 per menit per IP.
         $this->masuk($pra, $csrf, 'lagi.lain', self::SANDI)->assertStatus(429);
+    }
+
+    public function test_batas_laju_seluruh_web_auth_30_per_menit_per_ip_tanpa_pemutus_global(): void
+    {
+        config(['kredensial.web.throttle.per_ip_per_menit' => 30]);
+        $h = ['X-Sigap-Klien' => 'web'];
+
+        for ($i = 0; $i < 30; $i++) {
+            $this->web('GET', '/api/v1/web/auth/csrf', [], $h)->assertOk();
+        }
+        $this->web('GET', '/api/v1/web/auth/csrf', [], $h)->assertStatus(429)->assertHeader('Retry-After');
+
+        // IP lain tidak terpengaruh (tanpa pemutus arus global).
+        $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.77'])
+            ->getJson('/api/v1/web/auth/csrf', $h)->assertOk();
     }
 
     // ---------------------------------------------------------------- validasi

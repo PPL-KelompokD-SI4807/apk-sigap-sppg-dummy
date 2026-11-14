@@ -5485,7 +5485,7 @@ paths:
         dan membalas `csrf` = HMAC terikat id itu. Setiap panggilan = id baru (tantangan lama di browser ini tidak
         lagi dapat diverifikasi). Rute web/auth/* TIDAK membaca cookie sesi `__Host-sigap_sesi` dan tidak memakai
         header Authorization. Respons: `Cache-Control: no-store, private`, `Vary: Cookie`.
-        Tanpa pemutus arus global. Batas laju per rute: masuk 10/menit dan 100/jam per IP serta per identitas;
+        Batas laju seluruh web/auth/*: 30/menit per IP, tanpa pemutus arus global. Tambahan per rute: masuk 10/menit dan 100/jam per IP serta per identitas;
         kode dan kirim ulang 10/menit per IP.
       security: []
       parameters:

@@ -59,6 +59,8 @@ return [
         ],
         // Batas laju rute web/auth/* (throttle). Penguncian per akun di atas tetap berlaku.
         'throttle' => [
+            // Semua rute web/auth/*, per IP, tanpa pemutus arus global.
+            'per_ip_per_menit' => 30,
             'masuk_per_ip_per_menit' => 10,
             'masuk_per_ip_per_jam' => 100,
             // Per identitas ter-normalisasi (di-HMAC): 5 per 15 menit.
