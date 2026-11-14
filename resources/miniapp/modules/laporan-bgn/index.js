@@ -12,7 +12,8 @@ import { jenisUntuk, jenisByKey, periodeBawaan, validasiPeriode, badanPermintaan
 const SLUG = 'laporan-bgn';
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 // Laporan BGN bukan modul matriks: gerbangnya tiga aksi di peta hak server (docs/api/peta-hak.md).
-const bolehBuka = (user = getUser()) => bolehAksi(user, 'lihat_laporan_bgn') || bolehAksi(user, 'lihat_laporan_bgn_agregat');
+// Tanpa nilai bawaan: router memanggil guard(params), jadi fungsi ini tidak boleh dipakai langsung sebagai guard rute.
+const bolehBuka = (user) => bolehAksi(user, 'lihat_laporan_bgn') || bolehAksi(user, 'lihat_laporan_bgn_agregat');
 
 export async function layarEkspor(ctx) {
   const user = getUser();
@@ -151,6 +152,6 @@ export default {
   icon: '📄',
   description: 'Lampiran 30a-30d (PDF dikirim lewat bot Telegram)',
   register() {
-    route(`/${SLUG}`, layarEkspor, { title: 'Ekspor Laporan BGN', guard: bolehBuka });
+    route(`/${SLUG}`, layarEkspor, { title: 'Ekspor Laporan BGN', guard: () => bolehBuka(getUser()) });
   },
 };
