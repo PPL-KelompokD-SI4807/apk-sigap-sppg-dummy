@@ -172,6 +172,7 @@ class WebLoginTest extends TestCase
 
     public function test_csrf_menerbitkan_cookie_pra_login_host_dan_token_terikat(): void
     {
+        $sebelum = time();
         $res = $this->web('GET', '/api/v1/web/auth/csrf', [], ['X-Sigap-Klien' => 'web'])->assertOk()
             ->assertJsonStructure(['csrf', 'berlaku_sampai'])
             ->assertHeader('Cache-Control', 'no-store, private');
@@ -185,7 +186,11 @@ class WebLoginTest extends TestCase
         $this->assertSame(Cookie::SAMESITE_STRICT, $cookie->getSameSite());
         $this->assertSame('/', $cookie->getPath());
         $this->assertNull($cookie->getDomain());
-        $this->assertSame(15 * 60, $cookie->getMaxAge());
+        // Expires dibangun dari time() nyata (Symfony), bukan jam beku Carbon; getMaxAge() membaca time() lagi sehingga
+        // berubah bila detik berganti. Periksa Expires terhadap rentang time() nyata sebelum/sesudah permintaan.
+        $sesudah = time();
+        $this->assertGreaterThanOrEqual($sebelum + 15 * 60, $cookie->getExpiresTime());
+        $this->assertLessThanOrEqual($sesudah + 15 * 60, $cookie->getExpiresTime());
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/', (string) $cookie->getValue());
         $this->assertSame(SesiWeb::csrfPraLogin((string) $cookie->getValue()), $res->json('csrf'));
 
@@ -293,6 +298,7 @@ class WebLoginTest extends TestCase
         $this->assertLessThanOrEqual(64, strlen($tombol['callback_data']));
 
         $kode = $this->kodeWebTerakhir();
+        $sebelum = time();
         $res = $this->kode($pra, $csrfPra, (string) $masuk->json('tantangan.id'), $kode)->assertOk()
             ->assertJsonPath('langkah', 'selesai')
             ->assertJsonPath('jenis_sesi', 'web')
@@ -309,7 +315,11 @@ class WebLoginTest extends TestCase
         $this->assertSame(Cookie::SAMESITE_STRICT, $sesi->getSameSite());
         $this->assertSame('/', $sesi->getPath());
         $this->assertNull($sesi->getDomain());
-        $this->assertSame(12 * 3600, $sesi->getMaxAge());
+        // Expires dibangun dari time() nyata (Symfony), bukan jam beku Carbon; getMaxAge() membaca time() lagi sehingga
+        // berubah bila detik berganti. Periksa Expires terhadap rentang time() nyata sebelum/sesudah permintaan.
+        $sesudah = time();
+        $this->assertGreaterThanOrEqual($sebelum + 12 * 3600, $sesi->getExpiresTime());
+        $this->assertLessThanOrEqual($sesudah + 12 * 3600, $sesi->getExpiresTime());
 
         $nilai = (string) $sesi->getValue();
         [, $rahasia] = explode('|', $nilai, 2);
