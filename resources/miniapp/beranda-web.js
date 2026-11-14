@@ -3,6 +3,7 @@
 import { h } from './core/dom.js';
 import { roleLabel, petaValid, dashboardTersedia, agregatBoleh, multiSppg } from './core/permissions.js';
 import { getSppgAktif } from './core/sppg-aktif.js'; // build web: versi memori (sppg-aktif-web.js)
+import { api } from './core/transport.js'; // build web: cookie (transport-web.js)
 
 export const PESAN_SEGERA = 'Segera tersedia di web';
 export const PESAN_PETA_RUSAK = 'Hak akses akun Anda tidak dapat dimuat, jadi menu disembunyikan. Muat ulang halaman, atau hubungi Admin bila berulang.';
@@ -29,8 +30,16 @@ export function renderBerandaWeb(el, { user, menu }) {
     h('p', { class: 'muted small' }, [u.role_label || roleLabel(u.role), u.sppg_name].filter(Boolean).join(' • '))));
   // Investor multi-SPPG: SPPG aktif dan tautan ganti (pilihan hanya di memori; server tetap memvalidasi header).
   if (multiSppg(user)) {
-    el.append(h('div', { class: 'notice' }, getSppgAktif() ? `SPPG aktif: #${getSppgAktif()}. ` : 'Belum memilih SPPG. ',
-      h('a', { class: 'link', href: '#/ganti-sppg' }, getSppgAktif() ? 'Ganti SPPG' : 'Pilih SPPG')));
+    const id = getSppgAktif();
+    const nama = h('span', {}, id ? `SPPG aktif: #${id}. ` : 'Belum memilih SPPG. ');
+    el.append(h('div', { class: 'notice' }, nama, h('a', { class: 'link', href: '#/ganti-sppg' }, id ? 'Ganti SPPG' : 'Pilih SPPG')));
+    // Nama SPPG aktif dari GET /sppg-saya (SppgPilihan: id, kode, nama); gagal memuat = tetap menampilkan nomor.
+    if (id) {
+      api.get('/sppg-saya', undefined, { silent: true }).then((res) => {
+        const s = (res?.data ?? []).find((x) => x.id === id);
+        if (s?.nama) nama.textContent = `SPPG aktif: ${s.nama}${s.kode ? ` (${s.kode})` : ''}. `;
+      }).catch(() => {});
+    }
   }
   const adaPeta = petaValid(user);
   if (!adaPeta) el.append(h('div', { class: 'alert-danger', role: 'alert' }, PESAN_PETA_RUSAK));

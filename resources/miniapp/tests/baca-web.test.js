@@ -143,8 +143,8 @@ test('operasional: daftar tampil dengan tautan detail tanpa Tambah/Berangkat/Sus
       if (slug.startsWith('jadwal') && !userPerms(user, 'jadwal').R) continue;
       const el = await buka(`/${slug}`);
       assert.ok(tautan(el).includes(`#/${slug}/1`), `${nama} ${slug}: tautan detail (${tautan(el)})`);
-      assert.ok(!tautan(el).some((x) => /\/(baru|terakhir|ringkasan)$/.test(x)), `${nama} ${slug}: tautan tulis/terakhir ${tautan(el)}`);
-      assert.ok(!/\+ (Tambah|Berangkat|Pencairan|Pengeluaran|Bukti)/.test(teks(el)), `${nama} ${slug}: tombol tambah`);
+      assert.ok(!tautan(el).some((x) => /\/(terakhir|ringkasan)$/.test(x) || (!TULIS_WEB.has(slug) && /\/baru$/.test(x))), `${nama} ${slug}: tautan tulis/terakhir ${tautan(el)}`);
+      assert.ok(TULIS_WEB.has(slug) || !/\+ (Tambah|Berangkat|Pencairan|Pengeluaran|Bukti)/.test(teks(el)), `${nama} ${slug}: tombol tambah`);
       assert.ok(panggilan.every((p) => p.metode === 'GET' && !('Authorization' in p.headers)), `${nama} ${slug}: hanya GET tanpa Authorization`);
     }
   }
@@ -157,7 +157,8 @@ test('operasional: detail tampil tanpa tombol tulis, tanpa tautan Ubah/Catat/Per
       if (!userPerms(user, slugIzin(slug)).R) continue;
       const el = await buka(`/${slug}/1`);
       assert.ok(el.anak.length > 0, `${nama} ${slug}: kosong`);
-      assert.ok(!tautan(el).some((x) => /\/(ubah|baru|mutasi|kebutuhan)$|\/baru\?/.test(x)), `${nama} ${slug}: tautan tulis ${tautan(el)}`);
+      // Modul TULIS_WEB boleh menaut ke formulir web (log/mutu/ubah); layar kustom (kebutuhan, mutasi) tidak ada di web.
+      assert.ok(!tautan(el).some((x) => /\/(mutasi|kebutuhan)$/.test(x) || (!TULIS_WEB.has(slug) && /\/(ubah|baru)$|\/baru\?/.test(x))), `${nama} ${slug}: tautan tulis ${tautan(el)}`);
       assert.ok(!tombol(el).some((b) => /Hapus|Ubah|Simpan|Kirim ulang|Berangkat|Tiba|Setujui|Tolak|Batalkan|Mulai|Selesai/i.test(teks(b))), `${nama} ${slug}: tombol tulis`);
       assert.ok(panggilan.every((p) => p.metode === 'GET' && !('Authorization' in p.headers)), `${nama} ${slug}: hanya GET tanpa Authorization`);
     }
