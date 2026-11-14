@@ -237,9 +237,52 @@ export function defineCrudModule(def) {
     }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U && aksesRecord() });
   }
 
-  // Rute BACA untuk web (R04-8 PR4): daftar + detail saja, tanpa Tambah/Ubah/Hapus, draf AI, antrean offline, dan foto privat.
+  // ---- Formulir WEB (R04-8 PR4c) ----
+  // Tanpa draf AI, antrean offline, dan foto (PR5). Idempotency-Key dibuat SEKALI per formulir dan dipakai ulang pada setiap
+  // pengulangan manual sampai berhasil (server hanya menyimpan respons 2xx, jadi kunci yang sama aman dipakai setelah galat).
+  async function renderFormWeb(ctx, { mode, record }) {
+    const kunci = newKey();
+    clear(ctx.el);
+    const konflik = h('div', { 'aria-live': 'assertive' });
+    const tampilkanGalat = (e) => {
+      const g = ringkasGalatAksi(e);
+      // Kunci idempotensi dipakai ulang dengan isian berbeda: permintaan sebelumnya mungkin sudah tersimpan di server.
+      const kunciBentrok = e?.status === 422 && e.errors && 'Idempotency-Key' in e.errors;
+      const pesan = kunciBentrok ? 'Permintaan sebelumnya mungkin sudah tersimpan. Periksa daftar data sebelum mengirim ulang.' : g.pesan;
+      konflik.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, pesan, ' ',
+        g.muatUlang ? h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang data') : null));
+    };
+    const fv = createFormView({
+      fields: fieldsFor(mode, record).filter((f) => f.type !== 'photo'), // foto: PR5
+      values: { ...(record || {}) },
+      submitText: mode === 'create' ? 'Simpan' : 'Simpan perubahan',
+      onSubmit: async (v) => {
+        konflik.replaceChildren();
+        const body = { ...(mapPayload ? mapPayload(v, { mode }) : v) };
+        if (sertakanVersi && mode === 'update' && record?.versi != null) body.versi = Math.trunc(Number(record.versi));
+        if (beforeSave && !(await beforeSave(body, { mode }))) return;
+        let res;
+        try {
+          res = await request(mode === 'create' ? 'POST' : 'PUT', mode === 'create' ? endpoint : `${endpoint}/${record.id}`, { body, key: kunci, silent: true });
+        } catch (e) {
+          if (e?.status === 401) throw e;
+          if (e?.status === 422 && e.errors && !('Idempotency-Key' in e.errors)) throw e; // galat per kolom ditampilkan form
+          tampilkanGalat(e);
+          return;
+        }
+        toast('Data tersimpan.', 'success');
+        const saved = res && unwrap(res);
+        navigate(saved?.id ? `${base}/${saved.id}` : base, { replace: true });
+      },
+    });
+    ctx.el.append(konflik, fv.el);
+    return fv.destroy;
+  }
+
+  // Rute BACA untuk web (R04-8 PR4): daftar + detail. opsi.tulis (PR4c) menambah Tambah/Ubah/Hapus yang mengikuti hak server
+  // (peta hak / izin per record). Tanpa draf AI, antrean offline, dan foto privat.
   // Hak tetap dari peta hak server (me(...).R); modul memilih bagian tambahan lewat listTopWeb/detailExtrasWeb.
-  function registerWeb() {
+  function registerWeb({ tulis = false } = {}) {
     const redirect = (p) => (p.selfOnly ? `${base}/${getUser().id}` : (def.listRedirect ? def.listRedirect(getUser(), p) : null));
     route(base, async (ctx) => {
       const p = me(permissionSlug);
@@ -249,9 +292,11 @@ export function defineCrudModule(def) {
       if (top) ctx.el.append(top);
       ctx.el.append(createListView({
         endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder,
-        createHref: null, itemHref: (r) => `#${base}/${r.id}`,
+        createHref: tulis && bolehBuat() ? `#${base}/baru` : null, itemHref: (r) => `#${base}/${r.id}`,
       }).el);
     }, { title, guard: () => me(permissionSlug).R, alihan: () => redirect(me(permissionSlug)) });
+
+    if (tulis) route(`${base}/baru`, (ctx) => renderFormWeb(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: bolehBuat });
 
     route(`${base}/:id`, async (ctx) => {
       const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
@@ -263,9 +308,43 @@ export function defineCrudModule(def) {
         const extra = hasil && !Array.isArray(hasil) && hasil.nodes !== undefined ? hasil.nodes : hasil;
         if (ctx.isStale()) { hasil?.destroy?.(); return; }
         if (extra) ctx.el.append(...[extra].flat().filter(Boolean));
+        akhirDetail(ctx, rec);
         return hasil?.destroy;
       }
-    }, { title, guard: (params) => params.id !== 'baru' && me(permissionSlug).R && aksesRecord() }); // id 'baru' = layar tambah (belum ada di web)
+      akhirDetail(ctx, rec);
+    }, { title, guard: (params) => params.id !== 'baru' && me(permissionSlug).R && aksesRecord() }); // id 'baru' = layar tambah (belum ada di web tanpa opsi tulis)
+
+    // Tombol Ubah/Hapus menurut hak server (permsRecord: peta hak, atau izin per record bila modul berizin).
+    function akhirDetail(ctx, rec) {
+      if (!tulis) return;
+      const p = permsRecord(rec);
+      if (p.D) {
+        ctx.el.append(h('button', {
+          class: 'btn btn-danger btn-block', type: 'button',
+          onclick: async () => {
+            if (!(await showConfirm({ title: 'Hapus data', message: `Hapus "${recTitle(rec)}"? Tindakan ini tidak dapat dibatalkan.`, okText: 'Hapus', destructive: true }))) return;
+            try {
+              await request('DELETE', `${endpoint}/${rec.id}`, { silent: true });
+            } catch (e) {
+              if (e?.status === 401) throw e;
+              return toast(ringkasGalatAksi(e, 'Gagal menghapus data.').pesan, 'error');
+            }
+            toast('Data dihapus.', 'success');
+            navigate(base, { replace: true });
+          },
+        }, 'Hapus'));
+      }
+      if (p.U) setMainButton({ text: 'Ubah', onClick: () => navigate(`${base}/${rec.id}/ubah`) });
+    }
+
+    if (tulis) {
+      route(`${base}/:id/ubah`, async (ctx) => {
+        const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
+        if (ctx.isStale()) return;
+        if (!permsRecord(rec).U) return alihkanKeBeranda(PESAN_BUKAN_HAK);
+        return renderFormWeb(ctx, { mode: 'update', record: rec });
+      }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U && aksesRecord() });
+    }
   }
 
   return { slug, title, icon, description, permissionSlug, register, registerWeb, menuInfo };
