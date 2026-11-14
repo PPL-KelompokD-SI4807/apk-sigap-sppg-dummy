@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const IZIN = new Set([
-  'core/transport.js', 'core/transport-web.js',
+  'core/transport.js', 'core/transport-web.js', 'core/auth-web.js',
   'core/auth.js', 'main.js', // Mini App (login initData + Bearer)
   'web-main.js', 'modules/auth-web/layar.js', 'modules/sesi/layar.js', // khusus web (api-web langsung)
 ]);
@@ -44,5 +44,25 @@ test('transport.js dan transport-web.js mengekspor nama yang dipakai modul', asy
   for (const n of pakai) {
     assert.ok(n in tel, `transport.js tidak mengekspor ${n}`);
     assert.ok(n in web, `transport-web.js tidak mengekspor ${n}`);
+  }
+});
+
+test('auth.js dan auth-web.js mengekspor nama yang dipakai modul/komponen', async () => {
+  globalThis.sessionStorage = globalThis.sessionStorage ?? { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.localStorage = globalThis.localStorage ?? { getItem: () => null, setItem() {}, removeItem() {} };
+  const pakai = new Set();
+  for (const p of semua(ROOT)) {
+    if (relative(ROOT, p).split(sep).join('/') === 'core/auth-web.js') continue;
+    const src = readFileSync(p, 'utf8');
+    for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*core\/auth\.js'/g)) {
+      m[1].split(',').map((s) => s.trim().split(/\s+as\s+/)[0]).filter(Boolean).forEach((n) => pakai.add(n));
+    }
+  }
+  assert.ok(pakai.has('getUser') && pakai.has('logout'));
+  const tel = await import('../core/auth.js');
+  const web = await import('../core/auth-web.js');
+  for (const n of pakai) {
+    assert.ok(n in tel, `auth.js tidak mengekspor ${n}`);
+    assert.ok(n in web, `auth-web.js tidak mengekspor ${n}`);
   }
 });

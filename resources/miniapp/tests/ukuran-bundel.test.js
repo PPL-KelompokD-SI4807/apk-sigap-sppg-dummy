@@ -44,3 +44,33 @@ test('alias Vite: mode web memakai transport-web (tanpa Bearer/localStorage), mo
     assert.ok(!/X-CSRF-Token/.test(tel), 'bundel Mini App memuat klien web');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('pindai bundel web: seluruh modul (registry + beranda + komponen) tanpa jejak Telegram/Bearer/localStorage token', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sigap-pindai-'));
+  const entri = join(tmp, 'entri.js');
+  const mini = join(REPO, 'resources/miniapp').split(sep).join('/');
+  writeFileSync(entri, [
+    `import { registerAllRoutes } from '${mini}/modules/registry.js';`,
+    `import { getUser, logout, ubahPassword } from '${mini}/core/auth.js';`,
+    `import { api } from '${mini}/core/transport.js';`,
+    `import { renderHome } from '${mini}/home.js';`,
+    `import '${mini}/components/sesi-view.js';`,
+    `import '${mini}/components/password-view.js';`,
+    `window.__x = [registerAllRoutes, getUser, logout, ubahPassword, api, renderHome];`,
+  ].join('\n'));
+  try {
+    const asli = (await bangun('web')).map((b) => b.isi).join('\n'); // bundel web nyata (web.html)
+    const lebar = (await bangun('web', { rollupOptions: { input: entri } })).map((b) => b.isi).join('\n');
+    for (const [nama, kode] of [['web.html', asli], ['semua-modul', lebar]]) {
+      assert.ok(!/localStorage/.test(kode), `${nama}: memuat localStorage`);
+      // Celah yang diketahui: fetchLampiranBlob (components/photo-upload.js) masih memakai Bearer + credentials 'omit' untuk gambar privat.
+      // Diperbaiki di PR5 (foto web, T3); saat itu batas ini menjadi 0. Sampai saat itu tidak boleh bertambah dari 1.
+      const batasAuth = nama === 'web.html' ? 0 : 1;
+      assert.ok((kode.match(/Authorization/g) || []).length <= batasAuth, `${nama}: header Authorization melebihi batas ${batasAuth}`);
+      assert.ok(!/telegram-web-app/.test(kode), `${nama}: memuat telegram-web-app`);
+      assert.ok(!/sigap_device_id|sigap_token|init_data/.test(kode), `${nama}: memuat device id/token/initData`);
+    }
+    assert.ok(lebar.length > asli.length * 3, 'entri pindai tidak memuat modul kerja');
+    assert.ok(/\/auth\/me/.test(lebar) || /muatSesi/.test(lebar), 'adaptor auth web tidak terpasang');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
