@@ -9,6 +9,9 @@ import { renderSegera } from './beranda-web.js';
  * Modul dengan layar baca web yang sudah jadi (PR4a: data master). Tambah slug di sini HANYA bila modul punya registerWeb()
  * dan bagian tambahannya (listTopWeb/detailExtrasWeb) sudah aman untuk web. Hak tetap dari peta server (guard registerWeb).
  */
+/** Modul yang juga mendapat formulir web (Tambah/Ubah/Hapus, PR4c). Hak tetap dari peta/izin server. */
+export const TULIS_WEB = new Set(['sppg', 'titik-layanan', 'penerima-manfaat', 'pemasok', 'armada', 'pengemudi']);
+
 export const BACA_WEB = new Set([
   // 4a data master
   'sppg', 'titik-layanan', 'penerima-manfaat', 'pemasok', 'armada', 'pengemudi',
@@ -21,7 +24,7 @@ export const BACA_WEB = new Set([
 export function daftarkanRuteWeb(modules, getUser) {
   const dashboardWeb = modules.some((m) => m.slug === 'dashboard' && BACA_WEB.has('dashboard') && typeof m.registerWeb === 'function');
   for (const m of modules) {
-    if (BACA_WEB.has(m.slug) && typeof m.registerWeb === 'function') { m.registerWeb(); continue; }
+    if (BACA_WEB.has(m.slug) && typeof m.registerWeb === 'function') { m.registerWeb({ tulis: TULIS_WEB.has(m.slug) }); continue; }
     if (m.hidden) continue;
     const slug = m.permissionSlug ?? m.slug; // modul tanpa baris matriks (mis. Laporan BGN) memakai bolehMenu(user) dari aksi.*, sama dengan menu
     route(`/${m.slug}`, (ctx) => renderSegera(ctx.el, m.title), { title: m.title, guard: () => (typeof m.bolehMenu === 'function' ? m.bolehMenu(getUser()) === true : userPerms(getUser(), slug).R) });

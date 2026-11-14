@@ -24,7 +24,7 @@ const mem = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? nu
 globalThis.Node = Node_;
 globalThis.document = {
   createElement: buatEl, createTextNode: (t) => Object.assign(new Node_(), { teks: String(t) }),
-  getElementById: () => null, body: { classList: { add() {}, remove() {} }, append() {} }, title: '',
+  getElementById: (id) => ({ mainbar: buatEl('div'), mainbtn: buatEl('button') }[id] ?? null), body: { classList: { add() {}, remove() {} }, append() {} }, title: '',
 };
 globalThis.localStorage = mem();
 globalThis.sessionStorage = mem();
@@ -52,7 +52,7 @@ const { setPlatform } = await import('../core/platform.js');
 setPlatform('web');
 const { setUserSesi, getUser } = await import('../core/auth.js');
 const { startRouter, resolve, cekAkses } = await import('../core/router.js');
-const { daftarkanRuteWeb, BACA_WEB } = await import('../rute-web.js');
+const { daftarkanRuteWeb, BACA_WEB, TULIS_WEB } = await import('../rute-web.js');
 const { userPerms, dashboardTersedia } = await import('../core/permissions.js');
 const { PROFIL, salin } = await import('./fixtures/peta.js');
 
@@ -100,7 +100,7 @@ test('layar baca web: modul data master terdaftar dan guard mengikuti peta hak s
   }
 });
 
-test('peran kantor: daftar tampil dengan tautan detail, tanpa Tambah; hanya GET', async () => {
+test('peran kantor: daftar tampil dengan tautan detail; Tambah hanya bila peta hak server mengizinkan (C); hanya GET', async () => {
   for (const nama of ['admin', 'kepala_sppg', 'akuntan', 'investor']) {
     const user = peran(nama);
     for (const slug of ['penerima-manfaat', 'titik-layanan', 'pemasok', 'armada', 'pengemudi']) {
@@ -108,14 +108,14 @@ test('peran kantor: daftar tampil dengan tautan detail, tanpa Tambah; hanya GET'
       const el = await buka(`/${slug}`);
       const href = tautan(el);
       assert.ok(href.includes(`#/${slug}/1`), `${nama} ${slug}: tautan detail (${href})`);
-      assert.ok(!href.includes(`#/${slug}/baru`), `${nama} ${slug}: tautan Tambah`);
-      assert.ok(!/Tambah/.test(teks(el)), `${nama} ${slug}: teks Tambah`);
+      const bolehC = !!userPerms(user, slug === 'pengemudi' ? 'armada' : slug).C;
+      assert.equal(href.includes(`#/${slug}/baru`), bolehC, `${nama} ${slug}: tautan Tambah mengikuti hak C (${bolehC})`);
       assert.ok(panggilan.length > 0 && panggilan.every((p) => p.metode === 'GET'), `${nama} ${slug}: hanya GET`);
     }
   }
 });
 
-test('detail: rincian tampil; tanpa Ubah, Hapus, undangan PIC, dan tombol catat harga; hanya GET', async () => {
+test('detail: rincian tampil; Hapus hanya bila hak D; tanpa undangan PIC dan tombol catat harga; hanya GET', async () => {
   for (const nama of ['admin', 'kepala_sppg', 'akuntan', 'investor']) {
     const user = peran(nama);
     for (const slug of ['penerima-manfaat', 'titik-layanan', 'pemasok', 'armada', 'pengemudi', 'sppg']) {
@@ -123,7 +123,9 @@ test('detail: rincian tampil; tanpa Ubah, Hapus, undangan PIC, dan tombol catat 
       const el = await buka(`/${slug}/1`);
       assert.ok(el.anak.length > 0, `${nama} ${slug}: rincian kosong`);
       assert.ok(!tautan(el).some((x) => /\/(ubah|baru|mutasi)$/.test(x)), `${nama} ${slug}: tautan tulis`);
-      assert.ok(!tombol(el).some((b) => /Hapus|Ubah|Undang|Catat|Tambah|Simpan/i.test(teks(b))), `${nama} ${slug}: tombol tulis`);
+      const izin = userPerms(user, slug === 'pengemudi' ? 'armada' : slug);
+      assert.equal(tombol(el).some((b) => /^Hapus$/.test(teks(b))), !!izin.D, `${nama} ${slug}: tombol Hapus mengikuti hak D`);
+      assert.ok(!tombol(el).some((b) => /Undang|Catat|Tambah|Simpan/i.test(teks(b))), `${nama} ${slug}: tombol lain`);
       assert.ok(panggilan.every((p) => p.metode === 'GET'), `${nama} ${slug}: hanya GET`);
     }
   }
@@ -180,19 +182,20 @@ test('keuangan: ringkasan anggaran tampil tanpa tombol tambah; dashboard tampil 
   }
 });
 
-test('rute tulis tidak ada di web: /ubah tidak terdaftar; /baru ditolak penjaga', () => {
-  peran('admin');
-  for (const slug of BACA_WEB) {
-    assert.equal(cekAkses(`/${slug}/1/ubah`), 'tidak-ada', `${slug}/ubah`);
-    assert.equal(cekAkses(`/${slug}/baru`), ['keuangan', 'dashboard'].includes(slug) ? 'tidak-ada' : 'ditolak', `${slug}/baru`);
+test('rute tulis: hanya modul TULIS_WEB (PR4c) yang punya /baru dan /ubah, mengikuti hak server; modul baca-saja tidak', () => {
+  for (const nama of ['admin', 'investor']) {
+    const user = peran(nama);
+    for (const slug of BACA_WEB) {
+      const perm = slug === 'pengemudi' ? 'armada' : slug;
+      if (TULIS_WEB.has(slug)) {
+        assert.equal(cekAkses(`/${slug}/baru`), userPerms(user, perm).C ? 'boleh' : 'ditolak', `${nama} ${slug}/baru`);
+        assert.equal(cekAkses(`/${slug}/1/ubah`), userPerms(user, perm).U ? 'boleh' : 'ditolak', `${nama} ${slug}/ubah`);
+      } else {
+        assert.equal(cekAkses(`/${slug}/1/ubah`), 'tidak-ada', `${nama} ${slug}/ubah`);
+        assert.equal(cekAkses(`/${slug}/baru`), ['keuangan', 'dashboard'].includes(slug) ? 'tidak-ada' : 'ditolak', `${nama} ${slug}/baru`);
+      }
+    }
   }
-});
-
-test('modul tanpa layar baca tetap "Segera tersedia di web"; modul baca tidak', async () => {
-  peran('kepala_sppg');
-  assert.ok(teks(await buka('/bahan-baku')).includes('Segera tersedia di web'));
-  assert.ok(!teks(await buka('/penerima-manfaat')).includes('Segera tersedia di web'));
-  for (const slug of ['menu-gizi', 'bahan-baku', 'pembelian-bahan', 'persetujuan-menu']) assert.ok(teks(await buka(`/${slug}`)).includes('Segera tersedia di web'), slug);
 });
 
 test('Telegram-only tidak ada di layar baca web: draf AI, undangan, share t.me, header Authorization', async () => {
