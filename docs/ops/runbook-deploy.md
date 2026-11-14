@@ -266,7 +266,7 @@ Edit sisanya dengan `nano .env`:
 | `AI_IMAGE_TOKENS`, `LLM_VISION_MAX_BASE64_BYTES` | biarkan nilai contoh (2100 dan 4194304) kecuali penyedia/model berubah |
 | `SIGAP_AMBANG_PERSETUJUAN_PENGELUARAN` | keputusan bisnis, lihat bagian "Keputusan bisnis" |
 | `DEPLOY_IMAGE_MODE` | biarkan `local` (belum ada alur push image ke registry) |
-| `TRUSTED_PROXIES` | WAJIB diputuskan sebelum deploy, lihat Langkah 10a (topologi saat ini: **kosong**) |
+| `TRUSTED_PROXIES` | opsional; bawaan **kosong** (nginx tepi langsung). Bila kelak ada ALB/CDN di depan nginx, pulihkan IP asli lewat `real_ip` di nginx; lihat Langkah 10a |
 
 Aturan nilai: tanpa spasi di sekitar `=`, tanpa kutip di rahasia, **jangan** memakai karakter `$ # \` atau kutip dalam rahasia.
 
@@ -293,7 +293,7 @@ yang dibaca Laravel (`Request::ip()`). Nama env persis: **`TRUSTED_PROXIES`** (d
 dipakai middleware TrustProxies bawaan Laravel). Laravel memercayai `X-Forwarded-For` HANYA bila `REMOTE_ADDR`
 termasuk daftar ini.
 
-Putuskan nilainya sebelum deploy, sesuai topologi:
+Opsional. Bawaan kosong sudah benar untuk topologi saat ini; ubah hanya bila topologi berubah:
 
 | Topologi | `TRUSTED_PROXIES` | Alasan |
 |---|---|---|
