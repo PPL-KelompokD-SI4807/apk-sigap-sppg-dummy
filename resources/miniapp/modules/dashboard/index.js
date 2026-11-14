@@ -1,7 +1,7 @@
 // Dashboard Mini App (R-07). Rute: #/dashboard. Deep link: ?r=/dashboard.
 // GET /api/v1/dashboard?rentang=7|30&sppg_id=<id>; kartu dirender dari data.widgets sesuai peran.
 import { h, formatValue } from '../../core/dom.js';
-import { api } from '../../core/api.js';
+import { api } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { dashboardTersedia, multiSppg, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route } from '../../core/router.js';

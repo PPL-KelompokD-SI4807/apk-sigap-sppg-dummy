@@ -1,5 +1,5 @@
 import { h, clear } from '../core/dom.js';
-import { api } from '../core/api.js';
+import { api } from '../core/transport.js';
 import { getSppgAktif, setSppgAktif, hapusSppgAktif, tentukanSppgAktif, PESAN_TANPA_SPPG } from '../core/sppg-aktif.js';
 import { errorMessage } from '../core/errors.js';
 

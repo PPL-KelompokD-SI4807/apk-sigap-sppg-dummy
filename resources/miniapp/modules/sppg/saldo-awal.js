@@ -1,6 +1,6 @@
 // Panel saldo awal SPPG (R07-1). Hanya ditampilkan bila server memberi izin.ubah_saldo_awal; hak tetap ditegakkan server.
 import { h, formatValue } from '../../core/dom.js';
-import { request, newKey } from '../../core/api.js';
+import { request, newKey } from '../../core/transport.js';
 import { resolve } from '../../core/router.js';
 import { toast } from '../../core/ui.js';
 import { todayWIB } from '../../core/waktu.js';

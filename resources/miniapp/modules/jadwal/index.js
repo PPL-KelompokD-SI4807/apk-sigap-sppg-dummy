@@ -4,7 +4,7 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { navTabs } from '../../components/nav-tabs.js';
 import { h, formatValue } from '../../core/dom.js';
-import { api, request, newKey } from '../../core/api.js';
+import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, jadwalTabBoleh } from '../../core/permissions.js';
 import { route, resolve } from '../../core/router.js';

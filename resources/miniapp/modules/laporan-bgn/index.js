@@ -1,7 +1,7 @@
 // Ekspor Laporan BGN (R07-4): terbitkan nomor LPA (langkah 1) lalu minta PDF (langkah 2, dikirim lewat bot Telegram).
 // Hak diperiksa SERVER; layar ini hanya menyembunyikan opsi (Investor tanpa 30b dan 30d-C). Akses menu mengikuti baca keuangan.
 import { h, clear } from '../../core/dom.js';
-import { api, request, newKey } from '../../core/api.js';
+import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route } from '../../core/router.js';

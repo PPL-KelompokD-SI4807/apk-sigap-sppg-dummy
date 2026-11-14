@@ -1,6 +1,6 @@
 // Admin: kelola SPPG yang dimiliki pengguna ber-peran investor (tautkan / lepas).
 import { h, clear } from '../core/dom.js';
-import { api, fetchList } from '../core/api.js';
+import { api, fetchList } from '../core/transport.js';
 import { showConfirm, toast } from '../core/ui.js';
 import { errorMessage } from '../core/errors.js';
 import { sppgBelumDimiliki } from '../core/sppg-aktif.js';

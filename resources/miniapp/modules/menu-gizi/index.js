@@ -3,7 +3,7 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { navTabs } from '../../components/nav-tabs.js';
 import { h, clear, formatValue } from '../../core/dom.js';
-import { api } from '../../core/api.js';
+import { api } from '../../core/transport.js';
 import { toast } from '../../core/ui.js';
 import { GIZI, KELOMPOK, kelompokLabel, menuFields, menuDetailFields, mapPayload, hitungPeringatanGizi, standarFields, standarDetailFields, standarPayload, rentang } from './schema.js';
 import { komposisiField } from './komposisi.js';

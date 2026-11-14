@@ -3,7 +3,7 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
-import { api } from '../../core/api.js';
+import { api } from '../../core/transport.js';
 import { logFields, logDetailFields, logPayload, hitungCapaian, selisihText } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);

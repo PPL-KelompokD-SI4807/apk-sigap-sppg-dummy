@@ -4,7 +4,7 @@ import { roleLabel, petaValid, dashboardTersedia, agregatBoleh, multiSppg } from
 import { menuFor } from './modules/registry.js';
 import { renderDashboard } from './components/dashboard.js';
 import { countQueue } from './core/offline-queue.js';
-import { flushQueue } from './core/api.js';
+import { flushQueue } from './core/transport.js';
 import { getSppgAktif } from './core/sppg-aktif.js';
 
 const kartu = (href, ikon, judul, deskripsi) => h('a', { class: 'menu-card', href },

@@ -1,6 +1,6 @@
 // Agregat penerima manfaat untuk Investor: hanya hitungan per kelompok sasaran dan titik layanan.
 import { h } from '../core/dom.js';
-import { api } from '../core/api.js';
+import { api } from '../core/transport.js';
 import { getUser } from '../core/auth.js';
 import { multiSppg } from '../core/permissions.js';
 import { errorMessage } from '../core/errors.js';

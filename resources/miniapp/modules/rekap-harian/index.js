@@ -3,7 +3,7 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { registerWidget } from '../../components/dashboard.js';
 import { rowCard } from '../../components/row-card.js';
 import { h, clear } from '../../core/dom.js';
-import { api, request, newKey } from '../../core/api.js';
+import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, bolehAksi, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route, resolve, navigate } from '../../core/router.js';

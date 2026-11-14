@@ -1,6 +1,6 @@
 // Harga bahan per pemasok (R-06b-1): daftar + riwayat, dan form tambah (append-only; koreksi = entri baru).
 import { h, formatValue } from '../../core/dom.js';
-import { api, request, newKey, fetchList } from '../../core/api.js';
+import { api, request, newKey, fetchList } from '../../core/transport.js';
 import { toast } from '../../core/ui.js';
 import { errorMessage, mapValidationErrors } from '../../core/errors.js';
 import { todayISO } from '../../core/validators.js';

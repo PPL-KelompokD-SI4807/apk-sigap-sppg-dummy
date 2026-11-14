@@ -6,7 +6,7 @@ import { createLampiranPanel } from '../../components/lampiran-field.js';
 import { h } from '../../core/dom.js';
 import { getUser } from '../../core/auth.js';
 import { jadwalTabBoleh } from '../../core/permissions.js';
-import { api, fetchList } from '../../core/api.js';
+import { api, fetchList } from '../../core/transport.js';
 import { resolve } from '../../core/router.js';
 import { todayWIB, jamWIB, tanggalJamWIB } from '../../core/waktu.js';
 import { errorMessage } from '../../core/errors.js';

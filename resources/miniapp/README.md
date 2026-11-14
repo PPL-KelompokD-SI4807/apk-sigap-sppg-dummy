@@ -78,3 +78,6 @@ Hanya jalur `/api/v1/lampiran/{id}` yang diterima (`lampiranPath`), sehingga tok
 - `core/api.js`: `api.get/post/put/del`, `fetchList`, `submitWithQueue` (offline -> IndexedDB + Idempotency-Key, dikirim ulang saat online).
 - `core/ui.js`: `toast`, `showConfirm`, `setMainButton`/`hideMainButton` (MainButton Telegram; bilah bawah di dev).
 - `components/dashboard.js`: `registerWidget({id,title,bolehFor(user),render(el)})` (`bolehFor` membaca peta hak server; tanpa itu widget tidak tampil); `core/charts.js`: `renderChart(canvas, config)` (Chart.js lazy).
+
+## Lapisan transport (R04-8)
+Modul dan komponen mengimpor klien API HANYA dari `core/transport.js`. Build Mini App (bawaan) meneruskannya ke `api.js` (Bearer); `vite build --mode web` menggantinya dengan `core/transport-web.js` (cookie HttpOnly + CSRF, tanpa storage, tanpa antrean offline). Pengecualian terdaftar di `tests/transport-statis.test.js` (auth.js, main.js, web-main.js, auth-web, sesi/layar). Ukuran gzip dijaga `tests/ukuran-bundel.test.js` (garis dasar `tests/fixtures/ukuran-bundel.json`, batas +10%; perbarui dengan `UPDATE_UKURAN=1 node --test resources/miniapp/tests/ukuran-bundel.test.js`). Tes: `node --test resources/miniapp/tests/*.test.js`.

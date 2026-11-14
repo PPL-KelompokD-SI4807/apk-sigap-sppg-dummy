@@ -1,5 +1,5 @@
 import { h, clear, debounce, formatValue } from '../core/dom.js';
-import { fetchList } from '../core/api.js';
+import { fetchList } from '../core/transport.js';
 
 /**
  * createListView({endpoint, columns, searchable, createHref, itemHref, extraQuery, emptyText})

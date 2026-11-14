@@ -1,6 +1,6 @@
 // Bagian persetujuan pada Menu dan Gizi (R-06b-1): rincian biaya, status persetujuan, tombol "Ajukan ke Investor".
 import { h } from '../../core/dom.js';
-import { api, request, newKey } from '../../core/api.js';
+import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { resolve } from '../../core/router.js';

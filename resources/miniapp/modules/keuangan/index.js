@@ -6,7 +6,7 @@ import { navTabs } from '../../components/nav-tabs.js';
 import { createAuthImage } from '../../components/photo-upload.js';
 import { createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
-import { api, fetchList, request, newKey } from '../../core/api.js';
+import { api, fetchList, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, bolehIzin, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route, resolve, navigate } from '../../core/router.js';
