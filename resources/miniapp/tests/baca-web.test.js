@@ -203,3 +203,19 @@ test('Telegram-only tidak ada di layar baca web: draf AI, undangan, share t.me, 
     assert.ok(panggilan.every((p) => !('Authorization' in p.headers)), `${slug}: Authorization`);
   }
 });
+
+test('menu dan guard rute konsisten: semua kartu beranda web (modul + pintasan) lolos guard rutenya, tiap profil', async () => {
+  const { menuUntuk } = await import('../modules/menu.js');
+  const { pintasanWeb } = await import('../beranda-web.js');
+  for (const nama of Object.keys(PROFIL)) {
+    setUserSesi(salin(nama));
+    const user = getUser();
+    for (const m of menuUntuk(user, MODUL)) assert.equal(cekAkses(`/${m.slug}`), 'boleh', `${nama}: kartu ${m.slug} ditolak guard`);
+    for (const p of pintasanWeb(user)) assert.equal(cekAkses(p.href.slice(1)), 'boleh', `${nama}: pintasan ${p.href} ditolak guard`);
+  }
+  // Laporan BGN: tanpa baris matriks, gerbangnya aksi.* (bukan userPerms).
+  setUserSesi(salin('admin'));
+  assert.equal(cekAkses('/laporan-bgn'), 'boleh');
+  setUserSesi(salin('ahli_gizi'));
+  assert.equal(cekAkses('/laporan-bgn'), 'ditolak');
+});
