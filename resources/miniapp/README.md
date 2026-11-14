@@ -81,3 +81,5 @@ Hanya jalur `/api/v1/lampiran/{id}` yang diterima (`lampiranPath`), sehingga tok
 
 ## Lapisan transport (R04-8)
 Modul dan komponen mengimpor klien API HANYA dari `core/transport.js`. Build Mini App (bawaan) meneruskannya ke `api.js` (Bearer); `vite build --mode web` menggantinya dengan `core/transport-web.js` (cookie HttpOnly + CSRF, tanpa storage, tanpa antrean offline). Pengecualian terdaftar di `tests/transport-statis.test.js` (auth.js, main.js, web-main.js, auth-web, sesi/layar). Ukuran gzip dijaga `tests/ukuran-bundel.test.js` (garis dasar `tests/fixtures/ukuran-bundel.json`, batas +10%; perbarui dengan `UPDATE_UKURAN=1 node --test resources/miniapp/tests/ukuran-bundel.test.js`). Tes: `node --test resources/miniapp/tests/*.test.js`.
+
+Alias web kedua (PR2): `core/auth.js` diganti `core/auth-web.js` pada build web (pengguna dari `GET /auth/me`, tanpa initData, tanpa token/device id di storage). Alur masuk Telegram di adaptor ini menolak dengan pesan "tidak tersedia di versi web". Pemindaian bundel web: `tests/ukuran-bundel.test.js`.

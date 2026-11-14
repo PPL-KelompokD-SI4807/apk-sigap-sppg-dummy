@@ -17,13 +17,16 @@ const webIndeks = () => ({
   },
 });
 
-// R04-8: pada build web, `core/transport.js` (Bearer, Mini App) diganti `core/transport-web.js` (cookie + CSRF).
+// R04-8: pada build web, `core/transport.js` dan `core/auth.js` (Bearer/initData, Mini App) diganti `core/transport-web.js` dan `core/auth-web.js` (cookie + CSRF, GET /auth/me).
 const transportWeb = () => ({
   name: 'sigap-transport-web',
   enforce: 'pre',
   resolveId(source) {
     if (/(^|\/)core\/transport\.js$/.test(source) || /^\.\/transport\.js$/.test(source)) {
       return fileURLToPath(new URL('./resources/miniapp/core/transport-web.js', import.meta.url));
+    }
+    if (/(^|\/)core\/auth\.js$/.test(source)) {
+      return fileURLToPath(new URL('./resources/miniapp/core/auth-web.js', import.meta.url));
     }
     return null;
   },
