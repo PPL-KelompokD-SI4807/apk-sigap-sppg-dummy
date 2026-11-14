@@ -58,10 +58,12 @@ function displayValue(field, rec) {
  *   formTop({mode,record,form,collect,values}) -> Node di atas form; onSaved({mode,res}) setelah simpan; prefill(query) -> nilai awal form baru
  *   prefillDraf(payloadBersih) -> nilai form dari payload draf AI (default: payload apa adanya tanpa kunci berawalan "_")
  *   field.onlyIfPresent: kolom detail disembunyikan bila kuncinya tak ada di respons (mis. no_sim untuk peran R)
- * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register()}
+ *   listTopWeb() / detailExtrasWeb(rec, ctx) -> padanan listTop/detailExtras untuk layar BACA web (registerWeb). Tanpanya web tidak
+ *     menampilkan bagian itu (listTop/detailExtras Mini App memuat aksi tulis, undangan Telegram, dan tautan ke layar yang belum ada di web)
+ * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register(),registerWeb()}
  */
 export function defineCrudModule(def) {
-  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill } = def;
+  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb } = def;
   // Opsi tambahan (aditif): searchable=false, queueOffline=false (tanpa antrian offline),
   // beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
   // sertakanVersi (R-06b-2): kunci optimistik; saat ubah, body memuat `versi` = versi draf AI (dari server) atau versi record yang dimuat.
@@ -148,6 +150,20 @@ export function defineCrudModule(def) {
     return fv.destroy;
   }
 
+  // Panel rincian read-only. Web: kolom foto dilewati (gambar privat butuh jalur cookie, menyusul di PR foto web).
+  function panelDetail(rec, { web = false } = {}) {
+    const dl = h('dl', { class: 'detail' });
+    for (const f of fieldsFor('detail', rec)) {
+      if (f.onlyIfPresent && !(f.name in rec)) continue;
+      if (web && f.type === 'photo') continue;
+      const dt = h('dt', {}, f.label || f.name);
+      const v = rec[f.name];
+      const dd = f.type === 'photo' && v ? h('dd', {}, createAuthImage(v, { alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
+      dl.append(dt, dd);
+    }
+    return h('div', { class: 'panel' }, dl);
+  }
+
   function register() {
     // Daftar
     route(base, async (ctx) => {
@@ -179,15 +195,7 @@ export function defineCrudModule(def) {
       const rec = unwrap(res);
       const p = permsRecord(rec);
       ctx.setTitle(recTitle(rec));
-      const dl = h('dl', { class: 'detail' });
-      for (const f of fieldsFor('detail', rec)) {
-        if (f.onlyIfPresent && !(f.name in rec)) continue;
-        const dt = h('dt', {}, f.label || f.name);
-        const v = rec[f.name];
-        const dd = f.type === 'photo' && v ? h('dd', {}, createAuthImage(v, { alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
-        dl.append(dt, dd);
-      }
-      ctx.el.append(h('div', { class: 'panel' }, dl));
+      ctx.el.append(panelDetail(rec));
       if (detailExtras) {
         const extra = await detailExtras(rec, p, ctx);
         if (ctx.isStale()) return;
@@ -229,5 +237,34 @@ export function defineCrudModule(def) {
     }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U && aksesRecord() });
   }
 
-  return { slug, title, icon, description, permissionSlug, register, menuInfo };
+  // Rute BACA untuk web (R04-8 PR4): daftar + detail saja, tanpa Tambah/Ubah/Hapus, draf AI, antrean offline, dan foto privat.
+  // Hak tetap dari peta hak server (me(...).R); modul memilih bagian tambahan lewat listTopWeb/detailExtrasWeb.
+  function registerWeb() {
+    const redirect = (p) => (p.selfOnly ? `${base}/${getUser().id}` : (def.listRedirect ? def.listRedirect(getUser(), p) : null));
+    route(base, async (ctx) => {
+      const p = me(permissionSlug);
+      const tujuan = redirect(p);
+      if (tujuan) return navigate(tujuan, { replace: true });
+      const top = listTopWeb ? listTopWeb() : null;
+      if (top) ctx.el.append(top);
+      ctx.el.append(createListView({
+        endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder,
+        createHref: null, itemHref: (r) => `#${base}/${r.id}`,
+      }).el);
+    }, { title, guard: () => me(permissionSlug).R, alihan: () => redirect(me(permissionSlug)) });
+
+    route(`${base}/:id`, async (ctx) => {
+      const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
+      if (ctx.isStale()) return;
+      ctx.setTitle(recTitle(rec));
+      ctx.el.append(panelDetail(rec, { web: true }));
+      if (detailExtrasWeb) {
+        const extra = await detailExtrasWeb(rec, ctx);
+        if (ctx.isStale()) return;
+        if (extra) ctx.el.append(...[extra].flat().filter(Boolean));
+      }
+    }, { title, guard: (params) => params.id !== 'baru' && me(permissionSlug).R && aksesRecord() }); // id 'baru' = layar tambah (belum ada di web)
+  }
+
+  return { slug, title, icon, description, permissionSlug, register, registerWeb, menuInfo };
 }

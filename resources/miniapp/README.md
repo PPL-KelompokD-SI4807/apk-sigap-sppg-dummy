@@ -85,3 +85,5 @@ Modul dan komponen mengimpor klien API HANYA dari `core/transport.js`. Build Min
 Alias web kedua (PR2): `core/auth.js` diganti `core/auth-web.js` pada build web (pengguna dari `GET /auth/me`, tanpa initData, tanpa token/device id di storage). Alur masuk Telegram di adaptor ini menolak dengan pesan "tidak tersedia di versi web". Pemindaian bundel web: `tests/ukuran-bundel.test.js`.
 
 Beranda web (PR3): `beranda-web.js` (kartu menu dari `menuFor(user)` = peta hak server, tanpa matriks di klien) dan `rute-web.js` (layar sementara "Segera tersedia di web" per modul menurut peta). Dimuat lazy dari `web-main.js` bersama `modules/registry.js`; build web memakai `modulePreload: false`. Ukuran: `web` di fixture = aset awal, `web_total` = semua berkas.
+
+Layar baca web (PR4a): `defineCrudModule` menyediakan `registerWeb()` (daftar + detail saja, tanpa Tambah/Ubah/Hapus, draf AI, foto privat); bagian tambahan lewat `listTopWeb`/`detailExtrasWeb`. Modul didaftarkan di `BACA_WEB` (`rute-web.js`): sppg, titik-layanan, penerima-manfaat, pemasok, armada, pengemudi. Modul lain tetap "Segera tersedia di web". Tes: `tests/baca-web.test.js`.

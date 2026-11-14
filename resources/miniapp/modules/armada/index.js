@@ -27,6 +27,7 @@ export default defineCrudModule({
   searchPlaceholder: 'Cari plat atau jenis kendaraan...',
   filters: { param: 'status', label: 'Status armada', options: [{ value: '', label: 'Semua' }, ...STATUS_ARMADA] },
   listTop: () => armadaTabs('armada'),
+  listTopWeb: () => armadaTabs('armada'),
   renderCard: (r, href) => rowCard({
     href,
     title: r.plat_nomor,

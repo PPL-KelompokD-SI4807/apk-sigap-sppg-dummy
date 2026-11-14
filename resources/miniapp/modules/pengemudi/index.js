@@ -21,6 +21,7 @@ const pengemudiModule = defineCrudModule({
   searchPlaceholder: 'Cari nama pengemudi...',
   filters: { param: 'is_active', label: 'Status pengemudi', options: [{ value: '', label: 'Semua' }, { value: '1', label: 'Aktif' }, { value: '0', label: 'Nonaktif' }] },
   listTop: () => armadaTabs('pengemudi'),
+  listTopWeb: () => armadaTabs('pengemudi'),
   renderCard: (r, href) => rowCard({
     href,
     title: r.nama,
