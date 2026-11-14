@@ -59,7 +59,6 @@ class WebBrowserTepercayaTest extends TestCase
         $this->fakeTelegram();
 
         config([
-            'kredensial.web.throttle.per_ip_per_menit' => 1000,
             'kredensial.web.throttle.masuk_per_ip_per_menit' => 1000,
             'kredensial.web.throttle.masuk_per_ip_per_jam' => 1000,
             'kredensial.web.throttle.masuk_per_identitas' => 1000,

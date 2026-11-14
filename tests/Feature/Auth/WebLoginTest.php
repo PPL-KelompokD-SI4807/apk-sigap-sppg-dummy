@@ -57,7 +57,6 @@ class WebLoginTest extends TestCase
 
         // Batas laju dilonggarkan di tes alur; tes batas laju memakai nilai bawaan config.
         config([
-            'kredensial.web.throttle.per_ip_per_menit' => 1000,
             'kredensial.web.throttle.masuk_per_ip_per_menit' => 1000,
             'kredensial.web.throttle.masuk_per_ip_per_jam' => 1000,
             'kredensial.web.throttle.masuk_per_identitas' => 1000,
