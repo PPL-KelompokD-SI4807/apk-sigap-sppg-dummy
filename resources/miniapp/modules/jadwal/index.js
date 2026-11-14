@@ -220,11 +220,21 @@ const produksiBase = defineCrudModule({
   listQuery: produksiQuery,
   listTop: listTopProduksi,
   listTopWeb: listTopProduksi,
-  detailExtrasWeb: (rec) => [
-    menuBelumDisetujui(rec) && rec.status !== 'selesai' && rec.status !== 'dibatalkan'
-      ? h('div', { class: 'alert-danger', role: 'alert' }, `Menu jadwal ini belum disetujui investor (status menu: ${statusMenuLabel(rec.menu?.status_persetujuan)}).`) : null,
-    rec.status_mutu === 'tidak_layak' ? h('div', { class: 'alert-danger' }, 'Hasil mutu terbaru TIDAK LAYAK: distribusi ditahan sampai pemeriksaan ulang Layak.') : null,
-  ].filter(Boolean),
+  formTopWeb: produksiFormTop,
+  detailExtrasWeb: (rec, ctx, p) => {
+    const aktif = rec.status !== 'dibatalkan';
+    const links = [];
+    // Tautan ke formulir web yang sudah ada (log-produksi, mutu); hak dari peta server. Kebutuhan bahan dan distribusi menyusul.
+    if (aktif && userPerms(getUser(), 'log-produksi').C) links.push(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
+    if (aktif && userPerms(getUser(), 'mutu').C) links.push(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
+    return [
+      menuBelumDisetujui(rec) && rec.status !== 'selesai' && rec.status !== 'dibatalkan'
+        ? h('div', { class: 'alert-danger', role: 'alert' }, `Menu jadwal ini belum disetujui investor (status menu: ${statusMenuLabel(rec.menu?.status_persetujuan)}).`) : null,
+      rec.status_mutu === 'tidak_layak' ? h('div', { class: 'alert-danger' }, 'Hasil mutu terbaru TIDAK LAYAK: distribusi ditahan sampai pemeriksaan ulang Layak.') : null,
+      aksiStatus('produksi', rec, '/jadwal', p), // PATCH /jadwal/{id} {status}; hanya bila izin U dari server
+      links.length ? h('div', { class: 'row-actions' }, links) : null,
+    ].filter(Boolean);
+  },
   formTop: produksiFormTop,
   onSaved: ({ mode, res }) => {
     const kurang = res?.data?.kekurangan_bahan;

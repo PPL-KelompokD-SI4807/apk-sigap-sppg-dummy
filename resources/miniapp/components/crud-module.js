@@ -58,12 +58,13 @@ function displayValue(field, rec) {
  *   formTop({mode,record,form,collect,values}) -> Node di atas form; onSaved({mode,res}) setelah simpan; prefill(query) -> nilai awal form baru
  *   prefillDraf(payloadBersih) -> nilai form dari payload draf AI (default: payload apa adanya tanpa kunci berawalan "_")
  *   field.onlyIfPresent: kolom detail disembunyikan bila kuncinya tak ada di respons (mis. no_sim untuk peran R)
- *   listTopWeb() / detailExtrasWeb(rec, ctx) -> padanan listTop/detailExtras untuk layar BACA web (registerWeb). Tanpanya web tidak
+ *   formTopWeb({mode,record,form,collect,values}) -> Node info di atas formulir web (hanya baca; tanpa aksi tulis)
+ *   listTopWeb() / detailExtrasWeb(rec, ctx, perms) -> padanan listTop/detailExtras untuk layar BACA web (registerWeb). Tanpanya web tidak
  *     menampilkan bagian itu (listTop/detailExtras Mini App memuat aksi tulis, undangan Telegram, dan tautan ke layar yang belum ada di web)
  * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register(),registerWeb()}
  */
 export function defineCrudModule(def) {
-  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb } = def;
+  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb, formTopWeb } = def;
   // Opsi tambahan (aditif): searchable=false, queueOffline=false (tanpa antrian offline),
   // beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
   // sertakanVersi (R-06b-2): kunci optimistik; saat ubah, body memuat `versi` = versi draf AI (dari server) atau versi record yang dimuat.
@@ -242,6 +243,7 @@ export function defineCrudModule(def) {
   // pengulangan manual sampai berhasil (server hanya menyimpan respons 2xx, jadi kunci yang sama aman dipakai setelah galat).
   async function renderFormWeb(ctx, { mode, record }) {
     const kunci = newKey();
+    const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}) }; // prefill dari query (mis. ?jadwal=)
     clear(ctx.el);
     const konflik = h('div', { 'aria-live': 'assertive' });
     const tampilkanGalat = (e) => {
@@ -253,8 +255,8 @@ export function defineCrudModule(def) {
         g.muatUlang ? h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang data') : null));
     };
     const fv = createFormView({
-      fields: fieldsFor(mode, record).filter((f) => f.type !== 'photo'), // foto: PR5
-      values: { ...(record || {}) },
+      fields: fieldsFor(mode, record).filter((f) => f.type !== 'photo' && !f.lampiran), // foto dan lampiran: PR5
+      values,
       submitText: mode === 'create' ? 'Simpan' : 'Simpan perubahan',
       onSubmit: async (v) => {
         konflik.replaceChildren();
@@ -276,6 +278,9 @@ export function defineCrudModule(def) {
       },
     });
     ctx.el.append(konflik, fv.el);
+    // formTopWeb: info baca-saja (mis. sisa kapasitas); hanya GET.
+    const top = formTopWeb ? formTopWeb({ mode, record, form: fv.el, collect: fv.collect, values }) : null;
+    if (top) ctx.el.insertBefore(top, fv.el);
     return fv.destroy;
   }
 
@@ -303,8 +308,9 @@ export function defineCrudModule(def) {
       if (ctx.isStale()) return;
       ctx.setTitle(recTitle(rec));
       ctx.el.append(panelDetail(rec, { web: true }));
+      const perms = tulis ? permsRecord(rec) : { C: false, U: false, D: false, selfOnly: false }; // aksi tulis hanya bila hak server mengizinkan
       if (detailExtrasWeb) {
-        const hasil = await detailExtrasWeb(rec, ctx); // Node(s) atau { nodes, destroy } (destroy = pembersih grafik)
+        const hasil = await detailExtrasWeb(rec, ctx, perms); // Node(s) atau { nodes, destroy } (destroy = pembersih grafik)
         const extra = hasil && !Array.isArray(hasil) && hasil.nodes !== undefined ? hasil.nodes : hasil;
         if (ctx.isStale()) { hasil?.destroy?.(); return; }
         if (extra) ctx.el.append(...[extra].flat().filter(Boolean));
