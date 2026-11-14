@@ -296,7 +296,7 @@
                 data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
-      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
 /laporan-bgn/harian/pdf:
   post:
@@ -332,7 +332,7 @@
                 data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
-      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
 /laporan-bgn/dua-mingguan/pdf:
   post:
@@ -369,7 +369,7 @@
                 data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
-      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
 /laporan-bgn/bulanan/ringkasan/pdf:
   post:
@@ -405,7 +405,7 @@
                 data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
-      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
 /laporan-bgn/bulanan/anggaran/pdf:
   post:
@@ -441,7 +441,7 @@
                 data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
-      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
 /laporan-bgn/bulanan/penerima-manfaat/pdf:
   post:
@@ -477,6 +477,6 @@
                 data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
-      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
       '429': { $ref: '#/components/responses/TooManyRequests' }
 # 30a dan 30d-C tidak bernomor menurut juknis: tidak ada rute POST nomor (404).

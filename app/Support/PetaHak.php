@@ -2,9 +2,11 @@
 
 namespace App\Support;
 
+use App\Enums\JenisLaporanBgn;
 use App\Models\BahanBaku;
 use App\Models\FeedbackKeluhan;
 use App\Models\JadwalProduksi;
+use App\Models\LaporanBgn;
 use App\Models\Menu;
 use App\Models\NotifikasiPerjalanan;
 use App\Models\Pemasok;
@@ -41,6 +43,9 @@ final class PetaHak
         'catat_harga_pemasok',
         'lihat_ringkasan_jadwal_produksi',
         'lihat_mutasi_stok',
+        'lihat_laporan_bgn',
+        'lihat_laporan_bgn_agregat',
+        'terbitkan_nomor_laporan_bgn',
     ];
 
     /**
@@ -95,6 +100,13 @@ final class PetaHak
         $hasil['catat_harga_pemasok'] = $gate->allows('catatHarga', $probe(Pemasok::class));
         $hasil['lihat_ringkasan_jadwal_produksi'] = $gate->allows('viewRingkas', JadwalProduksi::class);
         $hasil['lihat_mutasi_stok'] = $gate->allows('lihatMutasi', $probe(BahanBaku::class));
+
+        // Laporan BGN (R07): LaporanBgnPolicy bergerbang per jenis + SPPG. Probe: 30b (non-agregat, bernomor) untuk hak penuh,
+        // 30a (agregat) untuk hak agregat (investor), SPPG aktif pengguna; sama dengan LaporanBgnRequest::authorize.
+        $sppgLaporan = (int) ($user->sppgAktifId() ?? 0);
+        $hasil['lihat_laporan_bgn'] = $gate->allows('lihat', [LaporanBgn::class, JenisLaporanBgn::Harian, $sppgLaporan]);
+        $hasil['lihat_laporan_bgn_agregat'] = $gate->allows('lihat', [LaporanBgn::class, JenisLaporanBgn::Porsi, $sppgLaporan]);
+        $hasil['terbitkan_nomor_laporan_bgn'] = $gate->allows('terbitkanNomor', [LaporanBgn::class, JenisLaporanBgn::Harian, $sppgLaporan]);
 
         $tersedia = RingkasanDashboard::tersediaUntuk($user);
         $hasil['dashboard'] = ['tersedia' => $tersedia, 'profil' => $tersedia ? DashboardService::profilDari($user) : null];

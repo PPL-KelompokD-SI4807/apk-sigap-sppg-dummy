@@ -792,6 +792,9 @@ paths:
                         catat_harga_pemasok: false
                         lihat_ringkasan_jadwal_produksi: true
                         lihat_mutasi_stok: false
+                        lihat_laporan_bgn: false
+                        lihat_laporan_bgn_agregat: false
+                        terbitkan_nomor_laporan_bgn: false
                         dashboard: { tersedia: true, profil: relawan_dapur }
                     expires_at: '2027-02-07T09:12:00+07:00'
                     batas_absolut_at: '2027-04-24T07:30:00+07:00'
@@ -823,6 +826,9 @@ paths:
                         catat_harga_pemasok: false
                         lihat_ringkasan_jadwal_produksi: true
                         lihat_mutasi_stok: true
+                        lihat_laporan_bgn: true
+                        lihat_laporan_bgn_agregat: true
+                        terbitkan_nomor_laporan_bgn: true
                         dashboard: { tersedia: true, profil: kepala_sppg }
                     expires_at: '2027-02-07T09:12:00+07:00'
                     batas_absolut_at: '2027-04-24T07:30:00+07:00'
@@ -2785,7 +2791,7 @@ paths:
                   data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /laporan-bgn/harian/pdf:
     post:
@@ -2821,7 +2827,7 @@ paths:
                   data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /laporan-bgn/dua-mingguan/pdf:
     post:
@@ -2858,7 +2864,7 @@ paths:
                   data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /laporan-bgn/bulanan/ringkasan/pdf:
     post:
@@ -2894,7 +2900,7 @@ paths:
                   data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /laporan-bgn/bulanan/anggaran/pdf:
     post:
@@ -2930,7 +2936,7 @@ paths:
                   data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /laporan-bgn/bulanan/penerima-manfaat/pdf:
     post:
@@ -2966,7 +2972,7 @@ paths:
                   data: { $ref: '#/components/schemas/PermintaanPdfLaporanBgn' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '422': { $ref: '#/components/responses/LaporanBgnPdfUnprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   # 30a dan 30d-C tidak bernomor menurut juknis: tidak ada rute POST nomor (404).
   /log-produksi:
@@ -6048,7 +6054,7 @@ components:
         aksi: { $ref: '#/components/schemas/AksiHak' }
     AksiHak:
       type: object
-      required: [undang_pengguna, reset_password_pengguna, kelola_kepemilikan_sppg, undang_pic, ajukan_menu, lihat_rincian_biaya, picu_perjalanan, susun_rekap, kirim_ulang_rekap, tindak_lanjut_keluhan, catat_mutasi_stok, catat_harga_pemasok, lihat_ringkasan_jadwal_produksi, lihat_mutasi_stok, dashboard]
+      required: [undang_pengguna, reset_password_pengguna, kelola_kepemilikan_sppg, undang_pic, ajukan_menu, lihat_rincian_biaya, picu_perjalanan, susun_rekap, kirim_ulang_rekap, tindak_lanjut_keluhan, catat_mutasi_stok, catat_harga_pemasok, lihat_ringkasan_jadwal_produksi, lihat_mutasi_stok, lihat_laporan_bgn, lihat_laporan_bgn_agregat, terbitkan_nomor_laporan_bgn, dashboard]
       description: |
         Peta hak aksi di luar CRUD (docs/api/peta-hak.md). Setiap nilai = hasil Rbac/Policy yang SAMA dengan endpoint
         terkait (tidak ada aturan baru). true = endpoint tidak akan menolak dengan 403 (tetap bisa 422/409 karena data);
@@ -6069,6 +6075,9 @@ components:
         catat_harga_pemasok: { type: boolean, description: 'POST /pemasok/{id}/harga (PemasokPolicy::catatHarga).' }
         lihat_ringkasan_jadwal_produksi: { type: boolean, description: 'GET /jadwal/produksi-ringkas (JadwalProduksiPolicy::viewRingkas): dropdown jadwal produksi di form distribusi/keluhan.' }
         lihat_mutasi_stok: { type: boolean, description: 'GET /bahan-baku/{id}/mutasi (BahanBakuPolicy::lihatMutasi): true untuk admin, kepala_sppg, staf_gudang, akuntan (R bahan-baku + SPPG sama); false untuk ahli_gizi, investor, relawan. Daftar/detail bahan baku tetap mengikuti R.' }
+        lihat_laporan_bgn: { type: boolean, description: 'GET /laporan-bgn/* jenis non-agregat (30b harian, 30d-C) dan PDF-nya (LaporanBgnPolicy::lihat, aksi `lihat-laporan-bgn` + R keuangan + SPPG aktif): admin, kepala_sppg, akuntan. Investor, ahli_gizi, staf_gudang, relawan = false (403).' }
+        lihat_laporan_bgn_agregat: { type: boolean, description: 'GET /laporan-bgn/* jenis agregat (30a porsi, 30c dua-mingguan, 30d-A, 30d-B) dan PDF-nya (aksi `lihat-laporan-bgn-agregat`): admin, kepala_sppg, akuntan, dan investor (SPPG miliknya; satu-satunya aksi true bagi investor, hanya baca). ahli_gizi, staf_gudang, relawan = false.' }
+        terbitkan_nomor_laporan_bgn: { type: boolean, description: 'POST /laporan-bgn/{harian|dua-mingguan|bulanan}/nomor (LaporanBgnPolicy::terbitkanNomor): admin, kepala_sppg, akuntan. Investor hanya membaca nomor yang sudah terbit (false).' }
         dashboard:
           type: object
           required: [tersedia, profil]
@@ -7648,9 +7657,15 @@ components:
       properties:
         id: { type: integer }
         nama: { type: string }
+    PdfLaporanBgnTelegramBelumTerhubung:
+      type: object
+      required: [message, code]
+      properties:
+        message: { type: string }
+        code: { type: string, enum: [telegram_belum_terhubung] }
     LaporanBgnPenandatangan:
       type: object
-      description: Pihak Pertama = ketua yayasan; Pihak Kedua = akuntan SPPG; Mengetahui = kepala SPPG. Nama null bila tidak ada atau lebih dari satu (pilih lewat parameter).
+      description: Daftar pilihan penandatangan sudah tersedia di respons laporan ini lewat `pihak_kedua.kandidat` (akuntan aktif SPPG) dan `mengetahui.kandidat` (kepala SPPG aktif), diurut nama; tidak ada endpoint terpisah. Pilihan dikirim balik lewat `akuntan_id`/`kepala_sppg_id`. Pihak Pertama = ketua yayasan; Pihak Kedua = akuntan SPPG; Mengetahui = kepala SPPG. Nama null bila tidak ada atau lebih dari satu (pilih lewat parameter).
       properties:
         kota: { type: [string, 'null'] }
         tanggal: { type: string, format: date }
@@ -9256,6 +9271,24 @@ components:
             message: Data yang dikirim tidak valid.
             errors:
               berkas: ['Hanya gambar JPEG, PNG, atau WebP yang diizinkan.']
+    LaporanBgnPdfUnprocessable:
+      description: |
+        Permintaan PDF tidak dapat diproses. Dua bentuk: (1) validasi gagal (`message` + `errors`, mis. tanggal atau
+        `akuntan_id`/`kepala_sppg_id` bukan penandatangan aktif SPPG itu); (2) akun pemohon belum terhubung ke Telegram
+        sehingga PDF tidak bisa dikirim lewat bot: `code` = `telegram_belum_terhubung`, tanpa `errors`. Klien membedakan
+        keduanya lewat `code` dan sebaiknya mengarahkan pengguna menautkan akun Telegram.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/ValidationError'
+              - $ref: '#/components/schemas/PdfLaporanBgnTelegramBelumTerhubung'
+          examples:
+            telegram_belum_terhubung:
+              summary: Akun belum terhubung ke Telegram
+              value:
+                message: Akun belum terhubung ke Telegram; PDF dikirim lewat bot sehingga tidak dapat dibuat.
+                code: telegram_belum_terhubung
     KonflikVersi:
       description: |
         Konflik versi/status. Body berisi `alasan`: `versi_tidak_cocok` (+ `versi_server`), `status_tidak_valid`

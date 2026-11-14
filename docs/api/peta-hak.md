@@ -41,6 +41,9 @@ Kunci `aksi` (semua boolean) dan endpoint yang dilindunginya:
 | `catat_harga_pemasok` | `POST /pemasok/{id}/harga` | `PemasokPolicy::catatHarga` |
 | `lihat_ringkasan_jadwal_produksi` | `GET /jadwal/produksi-ringkas` | `JadwalProduksiPolicy::viewRingkas` |
 | `lihat_mutasi_stok` | `GET /bahan-baku/{id}/mutasi`; juga memangkas kolom `mutasi_stok_id`, `jumlah_awal`, `pemasok_id` pada `GET /bahan-baku/{id}/batch` (tanpa hak kunci itu tidak ada; `sisa`, `tanggal_masuk`, `tanggal_kedaluwarsa`, `sisa_hari` tetap) | `BahanBakuPolicy::lihatMutasi` (peran di `config('rbac.aksi_peran.lihat-mutasi-stok')`: admin, kepala_sppg, staf_gudang, akuntan; plus R `bahan-baku` + SPPG sama). ahli_gizi, investor, relawan = false (403) walau ahli_gizi/investor tetap boleh R daftar/detail bahan baku |
+| `lihat_laporan_bgn` | `GET /laporan-bgn/harian` (30b), `/bulanan/penerima-manfaat` (30d-C), PDF-nya | `LaporanBgnPolicy::lihat` jenis non-agregat (aksi `lihat-laporan-bgn` + R `keuangan` + SPPG aktif). admin, kepala_sppg, akuntan; investor = false (Q-4) |
+| `lihat_laporan_bgn_agregat` | `GET /laporan-bgn/porsi` (30a), `/dua-mingguan` (30c), `/bulanan/ringkasan`, `/bulanan/anggaran`, PDF-nya | `LaporanBgnPolicy::lihat` jenis agregat (aksi `lihat-laporan-bgn-agregat`). admin, kepala_sppg, akuntan, investor (SPPG miliknya; baca saja) |
+| `terbitkan_nomor_laporan_bgn` | `POST /laporan-bgn/{harian,dua-mingguan,bulanan}/nomor` | `LaporanBgnPolicy::terbitkanNomor`. admin, kepala_sppg, akuntan; investor = false |
 
 Aksi yang bergantung pada record dievaluasi pada record "probe" di SPPG pengguna (hasil sama dengan Policy untuk record
 SPPG sendiri; aturan per-record yang lebih halus tetap lewat `izin` di bawah). Hak "putuskan" tetap di `keputusan`
@@ -66,13 +69,18 @@ Contoh (relawan dapur, ringkas):
 }
 ```
 
-Investor (`baca_saja: true`): semua `aksi.* = false`, tanpa huruf C/U/D di `permissions`. Ringkasan per profil
+Investor (`baca_saja: true`): semua `aksi.* = false` KECUALI `lihat_laporan_bgn_agregat` (baca agregat laporan BGN), tanpa huruf C/U/D di `permissions`. Ringkasan per profil
 (true): admin = `undang_pengguna`, `reset_password_pengguna`, `kelola_kepemilikan_sppg`, `undang_pic`, `lihat_rincian_biaya`,
-`tindak_lanjut_keluhan`, `catat_mutasi_stok`, `catat_harga_pemasok`, `lihat_ringkasan_jadwal_produksi`, `lihat_mutasi_stok`; kepala_sppg = `undang_pic`,
-`lihat_rincian_biaya`, `picu_perjalanan`, `susun_rekap`, `kirim_ulang_rekap`, `tindak_lanjut_keluhan`, `lihat_ringkasan_jadwal_produksi`, `lihat_mutasi_stok`;
+`tindak_lanjut_keluhan`, `catat_mutasi_stok`, `catat_harga_pemasok`, `lihat_ringkasan_jadwal_produksi`, `lihat_mutasi_stok`, tiga aksi laporan BGN; kepala_sppg = `undang_pic`,
+`lihat_rincian_biaya`, `picu_perjalanan`, `susun_rekap`, `kirim_ulang_rekap`, `tindak_lanjut_keluhan`, `lihat_ringkasan_jadwal_produksi`, `lihat_mutasi_stok`, tiga aksi laporan BGN;
 ahli_gizi = `ajukan_menu`, `lihat_rincian_biaya`, `tindak_lanjut_keluhan`, `lihat_ringkasan_jadwal_produksi`; staf_gudang = `lihat_rincian_biaya`,
-`catat_mutasi_stok`, `catat_harga_pemasok`, `lihat_ringkasan_jadwal_produksi`, `lihat_mutasi_stok`; akuntan = `lihat_mutasi_stok`; relawan tanpa unit = tidak ada;
+`catat_mutasi_stok`, `catat_harga_pemasok`, `lihat_ringkasan_jadwal_produksi`, `lihat_mutasi_stok`; akuntan = `lihat_mutasi_stok`, tiga aksi laporan BGN; relawan tanpa unit = tidak ada;
 relawan dapur = `lihat_ringkasan_jadwal_produksi`; relawan distribusi = `picu_perjalanan`, `lihat_ringkasan_jadwal_produksi`.
+
+Laporan BGN bukan modul matriks Tabel 5 (tidak ada di `modules`): gerbangnya per jenis laporan lewat tiga aksi di atas
+(tanpa aturan baru; sama dengan `LaporanBgnRequest::authorize`). Pilihan penandatangan PDF/laporan TIDAK punya endpoint
+sendiri: GET laporan sudah memuat `data.penandatangan.pihak_kedua.kandidat` dan `mengetahui.kandidat` (`[{id, nama}]`,
+pengguna aktif SPPG itu), dikirim balik lewat `akuntan_id` / `kepala_sppg_id`.
 
 ## `izin` per record
 

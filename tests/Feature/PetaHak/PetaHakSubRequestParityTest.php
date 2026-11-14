@@ -55,6 +55,10 @@ class PetaHakSubRequestParityTest extends PetaHakTestCase
             'catat_harga_pemasok' => fn () => $this->postJson("/api/v1/pemasok/{$this->pemasokA->id}/harga", []),
             'lihat_ringkasan_jadwal_produksi' => fn () => $this->getJson('/api/v1/jadwal/produksi-ringkas'),
             'lihat_mutasi_stok' => fn () => $this->getJson("/api/v1/bahan-baku/{$this->berasA->id}/mutasi"),
+            // Admin tanpa sppg_id: otorisasi lolos (true) lalu 422 validasi; peran tanpa hak 403 sebelum validasi.
+            'lihat_laporan_bgn' => fn () => $this->getJson('/api/v1/laporan-bgn/harian'),
+            'lihat_laporan_bgn_agregat' => fn () => $this->getJson('/api/v1/laporan-bgn/porsi'),
+            'terbitkan_nomor_laporan_bgn' => fn () => $this->postJson('/api/v1/laporan-bgn/harian/nomor', []),
         ];
     }
 
@@ -93,7 +97,7 @@ class PetaHakSubRequestParityTest extends PetaHakTestCase
             }
         }
 
-        $this->assertSame(9 * 14, $diperiksa);
+        $this->assertSame(9 * 17, $diperiksa);
     }
 
     private function panggilResetPassword(User $user): TestResponse

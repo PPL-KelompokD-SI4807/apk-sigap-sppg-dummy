@@ -75,7 +75,7 @@ schemas:
       aksi: { $ref: '#/components/schemas/AksiHak' }
   AksiHak:
     type: object
-    required: [undang_pengguna, reset_password_pengguna, kelola_kepemilikan_sppg, undang_pic, ajukan_menu, lihat_rincian_biaya, picu_perjalanan, susun_rekap, kirim_ulang_rekap, tindak_lanjut_keluhan, catat_mutasi_stok, catat_harga_pemasok, lihat_ringkasan_jadwal_produksi, lihat_mutasi_stok, dashboard]
+    required: [undang_pengguna, reset_password_pengguna, kelola_kepemilikan_sppg, undang_pic, ajukan_menu, lihat_rincian_biaya, picu_perjalanan, susun_rekap, kirim_ulang_rekap, tindak_lanjut_keluhan, catat_mutasi_stok, catat_harga_pemasok, lihat_ringkasan_jadwal_produksi, lihat_mutasi_stok, lihat_laporan_bgn, lihat_laporan_bgn_agregat, terbitkan_nomor_laporan_bgn, dashboard]
     description: |
       Peta hak aksi di luar CRUD (docs/api/peta-hak.md). Setiap nilai = hasil Rbac/Policy yang SAMA dengan endpoint
       terkait (tidak ada aturan baru). true = endpoint tidak akan menolak dengan 403 (tetap bisa 422/409 karena data);
@@ -96,6 +96,9 @@ schemas:
       catat_harga_pemasok: { type: boolean, description: 'POST /pemasok/{id}/harga (PemasokPolicy::catatHarga).' }
       lihat_ringkasan_jadwal_produksi: { type: boolean, description: 'GET /jadwal/produksi-ringkas (JadwalProduksiPolicy::viewRingkas): dropdown jadwal produksi di form distribusi/keluhan.' }
       lihat_mutasi_stok: { type: boolean, description: 'GET /bahan-baku/{id}/mutasi (BahanBakuPolicy::lihatMutasi): true untuk admin, kepala_sppg, staf_gudang, akuntan (R bahan-baku + SPPG sama); false untuk ahli_gizi, investor, relawan. Daftar/detail bahan baku tetap mengikuti R.' }
+      lihat_laporan_bgn: { type: boolean, description: 'GET /laporan-bgn/* jenis non-agregat (30b harian, 30d-C) dan PDF-nya (LaporanBgnPolicy::lihat, aksi `lihat-laporan-bgn` + R keuangan + SPPG aktif): admin, kepala_sppg, akuntan. Investor, ahli_gizi, staf_gudang, relawan = false (403).' }
+      lihat_laporan_bgn_agregat: { type: boolean, description: 'GET /laporan-bgn/* jenis agregat (30a porsi, 30c dua-mingguan, 30d-A, 30d-B) dan PDF-nya (aksi `lihat-laporan-bgn-agregat`): admin, kepala_sppg, akuntan, dan investor (SPPG miliknya; satu-satunya aksi true bagi investor, hanya baca). ahli_gizi, staf_gudang, relawan = false.' }
+      terbitkan_nomor_laporan_bgn: { type: boolean, description: 'POST /laporan-bgn/{harian|dua-mingguan|bulanan}/nomor (LaporanBgnPolicy::terbitkanNomor): admin, kepala_sppg, akuntan. Investor hanya membaca nomor yang sudah terbit (false).' }
       dashboard:
         type: object
         required: [tersedia, profil]
