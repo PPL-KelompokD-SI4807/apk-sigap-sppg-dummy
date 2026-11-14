@@ -16,6 +16,9 @@ info:
     Tidak ada CORS untuk origin lain. Login web (R04-2): GET /web/auth/csrf -> POST /web/auth/masuk
     (identitas + sandi, respons seragam) -> POST /web/auth/kode (kode 6 digit dari bot) -> Set-Cookie
     `__Host-sigap_sesi`; rute web/auth/* memakai CSRF pra-login (cookie `__Host-sigap_pra`), bukan cookie sesi.
+    Batas laju jalur cookie (R04-4): SEBELUM CSRF dan autentikasi, per IP klien (REMOTE_ADDR; X-Forwarded-For
+    hanya dari proxy tepercaya): 300 permintaan/menit dan 30 kegagalan (401 atau 403 `csrf_ditolak`)/menit ->
+    429 seragam + `Retry-After` (bentuk sama untuk cookie sah, palsu, atau tanpa cookie). Jalur Bearer tidak dihitung.
     Otorisasi mengikuti matriks CRUD Tabel 5 (config/rbac.php) dan dibatasi SPPG pengguna
     (kecuali Admin). Galat selalu berbentuk `{message, errors?}`.
     SPPG aktif (R-06a): header opsional `X-SPPG-Id` divalidasi di setiap rute login penuh.

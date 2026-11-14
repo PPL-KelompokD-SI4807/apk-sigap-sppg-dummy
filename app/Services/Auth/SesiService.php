@@ -824,6 +824,45 @@ class SesiService
         })->values();
     }
 
+    // ------------------------------------------------------------------ rotasi token web (R04-4, #82)
+
+    /**
+     * Rotasi rahasia token sesi web INI di baris yang sama (id, masa berlaku, browser tepercaya, dan kuota tetap).
+     * CSRF sesi = HMAC(nilai cookie), sehingga CSRF ikut berganti; nilai cookie dan CSRF lama langsung tidak sah.
+     * Klaim atomik atas hash lama (rotasi paralel: hanya satu yang menang). Nilai cookie baru diserahkan ke
+     * SesiWebCookie lewat atribut request (tidak pernah masuk badan JSON/log). Token Mini App (Bearer) -> null.
+     *
+     * @return array{csrf: string, expires_at: Carbon}|null
+     */
+    public function rotasiWeb(PersonalAccessToken $token): ?array
+    {
+        $user = $token->tokenable;
+
+        // Token web selalu ber-expires_at (terbitkanWeb); tanpa itu cookie baru tidak dapat diterbitkan -> tidak dirotasi.
+        if (! $user instanceof User || ! $token->exists || ! self::tokenWeb($token) || ! self::jenisKonsisten($token) || $token->expires_at === null) {
+            return null;
+        }
+
+        $rahasia = $user->generateTokenString();
+        $hashLama = (string) $token->getRawOriginal('token');
+
+        $diubah = PersonalAccessToken::query()->whereKey($token->getKey())->where('token', $hashLama)
+            ->update(['token' => hash('sha256', $rahasia)]);
+
+        if ($diubah !== 1) {
+            return null;
+        }
+
+        $nilai = $token->getKey().'|'.$rahasia;
+        $sampai = (PersonalAccessToken::query()->find($token->getKey())?->expires_at ?? $token->expires_at)->copy();
+        $token->forceFill(['token' => hash('sha256', $rahasia)])->syncOriginal();
+
+        request()->attributes->set(SesiWeb::ATRIBUT_COOKIE_ROTASI, $nilai);
+        request()->attributes->set(SesiWeb::ATRIBUT_SAMPAI, $sampai->copy());
+
+        return ['csrf' => SesiWeb::csrfSesi($nilai), 'expires_at' => $sampai];
+    }
+
     // ------------------------------------------------------------------ pencabutan
 
     /**

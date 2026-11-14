@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApiSecurityHeaders;
+use App\Http\Middleware\BatasLajuSesiWeb;
 use App\Http\Middleware\EnsureTokenAbility;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\PastikanJalurSesi;
@@ -36,6 +37,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(EnsureTokenAbility::class, EnsureUserIsActive::class);
         // R-04: cookie `__Host-sigap_sesi` -> token + CSRF jalur cookie WAJIB sebelum auth:sanctum.
         $middleware->prependToPriorityList(AuthenticatesRequests::class, SesiWebCookie::class);
+        // R04-4 (#81): batas laju jalur cookie per IP SEBELUM SesiWebCookie (CSRF) dan auth:sanctum.
+        $middleware->prependToPriorityList(SesiWebCookie::class, BatasLajuSesiWeb::class);
         // R-04: pemeriksaan kedua penolakan silang cookie/Bearer tepat sesudah auth:sanctum (fail closed).
         $middleware->appendToPriorityList(AuthenticatesRequests::class, PastikanJalurSesi::class);
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');

@@ -26,7 +26,8 @@ use Symfony\Component\HttpFoundation\Response;
  *   permintaan palsu tidak memperpanjang sesi.
  * - Respons jalur cookie: selalu `Cache-Control: no-store, private` + `Vary: Cookie`. 401 -> cookie dihapus;
  *   masa sesi bergeser (SesiService::catatPemakaian menulis) -> cookie diterbitkan ulang dengan Max-Age baru;
- *   sesi ini dicabut oleh permintaan pengubah (logout, keluar semua, cabut sesi ini) -> cookie dihapus.
+ *   sesi ini dicabut oleh permintaan pengubah (logout, keluar semua, cabut sesi ini) -> cookie dihapus; token sesi
+ *   ini dirotasi (R04-4, ubah password) -> cookie diterbitkan dengan nilai baru (SesiWeb::ATRIBUT_COOKIE_ROTASI).
  * - Penolakan silang (token Mini App lewat cookie, token web lewat Bearer) diperiksa dua kali: di
  *   SesiService::validasiToken (saat guard memvalidasi) dan, fail closed, di PastikanJalurSesi sesudah
  *   auth:sanctum sebelum controller berjalan.
@@ -74,9 +75,13 @@ class SesiWebCookie
             return self::denganCookie($response, SesiWeb::lupakanCookieSesi());
         }
 
+        // R04-4 (#82): token sesi ini dirotasi (ubah password jalur web) -> cookie baru, bukan nilai lama.
+        $rotasi = $request->attributes->get(SesiWeb::ATRIBUT_COOKIE_ROTASI);
         $sampai = $request->attributes->get(SesiWeb::ATRIBUT_SAMPAI);
 
-        return $sampai instanceof Carbon ? self::denganCookie($response, SesiWeb::cookieSesi($nilai, $sampai)) : $response;
+        return $sampai instanceof Carbon
+            ? self::denganCookie($response, SesiWeb::cookieSesi(is_string($rotasi) ? $rotasi : $nilai, $sampai))
+            : $response;
     }
 
     /**

@@ -47,7 +47,15 @@ class MasukWebService
 
     private const POLA_BUKAN_SAYA = '/^w1\.([0-9A-Za-z]{26})\.([A-Za-z0-9_-]{8})$/D';
 
+    /** R04-4 (#88) prefiks tombol "Bukan saya" pada notifikasi login web sukses: `w2.<ulid token>.<mac>`. */
+    public const PREFIKS_BUKAN_SAYA_LOGIN = 'w2';
+
+    private const POLA_BUKAN_SAYA_LOGIN = '/^w2\.([0-9A-Za-z]{26})\.([A-Za-z0-9_-]{8})$/D';
+
     public const BUKAN_SAYA_DIBATALKAN = 'dibatalkan';
+
+    /** Kode sudah dipakai (w1) atau notifikasi login sukses (w2): semua sesi web + browser tepercaya dicabut. */
+    public const BUKAN_SAYA_SESI_DICABUT = 'sesi_dicabut';
 
     public const BUKAN_SAYA_SUDAH_DIPAKAI = 'sudah_dipakai';
 
@@ -405,9 +413,13 @@ class MasukWebService
     }
 
     /**
-     * Tombol "Bukan saya" ditekan di chat pribadi $telegramId. MAC mengikat id tantangan ke telegram_id; tantangan
-     * wajib login web milik akun dengan telegram_id itu. Tantangan terbuka -> hangus + audit. Tidak mengunci akun
-     * (tidak dapat dipakai sebagai alat DoS). Null = data tidak sah/bukan milik pengirim (dijawab seragam).
+     * Tombol "Bukan saya" pada pesan kode ditekan di chat pribadi $telegramId. MAC mengikat id tantangan ke
+     * telegram_id; tantangan wajib login web milik akun dengan telegram_id itu. Tidak mengunci akun (tidak dapat
+     * dipakai sebagai alat DoS). Null = data tidak sah/bukan milik pengirim (dijawab seragam).
+     *
+     * R04-4 (#88): tantangan terbuka -> hangus; tantangan yang SUDAH dipakai dalam bukan_saya_jam terakhir -> ditandai
+     * (hangus_pada, sekali saja). Pada kedua kasus semua sesi web + browser tepercaya akun dicabut (cabutAksesWeb).
+     * Tombol lama (di luar jendela atau sudah ditekan) tidak mencabut apa pun.
      */
     public function bukanSaya(mixed $data, int $telegramId): ?string
     {
@@ -432,23 +444,121 @@ class MasukWebService
             ->whereNull('dipakai_pada')->whereNull('hangus_pada')
             ->update(['hangus_pada' => now(), 'payload' => null, 'updated_at' => now()]);
 
+        $dicabut = $dibatalkan === 0 && $tantangan->dipakai_pada !== null && TantanganToken::query()->whereKey($tantangan->getKey())
+            ->whereNotNull('dipakai_pada')->whereNull('hangus_pada')
+            ->where('dipakai_pada', '>=', now()->subHours(self::jamBukanSaya()))
+            ->update(['hangus_pada' => now(), 'updated_at' => now()]) === 1;
+
         $status = match (true) {
             $dibatalkan === 1 => self::BUKAN_SAYA_DIBATALKAN,
+            $dicabut => self::BUKAN_SAYA_SESI_DICABUT,
             $tantangan->dipakai_pada !== null => self::BUKAN_SAYA_SUDAH_DIPAKAI,
             default => self::BUKAN_SAYA_TIDAK_BERLAKU,
         };
 
-        AuditAuth::catat($user, AuditAuth::WEB_BUKAN_SAYA, ['status' => $status, 'tantangan' => substr($id, 0, 10)]);
+        $konteks = ['status' => $status, 'jalur' => 'kode', 'tantangan' => substr($id, 0, 10)];
+
+        if ($dibatalkan === 1 || $dicabut) {
+            $konteks += $this->cabutAksesWeb($user);
+        }
+
+        AuditAuth::catat($user, AuditAuth::WEB_BUKAN_SAYA, $konteks);
 
         return $status;
     }
 
+    public static function cocokPrefiksBukanSayaLogin(mixed $data): bool
+    {
+        return is_string($data) && str_starts_with($data, self::PREFIKS_BUKAN_SAYA_LOGIN.'.');
+    }
+
+    public static function dataBukanSayaLogin(string $tokenId, int $telegramId): string
+    {
+        return self::PREFIKS_BUKAN_SAYA_LOGIN.'.'.$tokenId.'.'.self::mac('bukan-saya-login|v1', $tokenId, $telegramId);
+    }
+
+    /**
+     * R04-4 (#88): tombol "Bukan saya" pada notifikasi login web sukses. MAC mengikat id token ke telegram_id pengirim
+     * (domain HMAC terpisah dari w1); token wajib milik akun dengan telegram_id itu, tujuan bukan_saya_web, belum
+     * dipakai/hangus, dan belum kedaluwarsa. Konsumsi atomik (sekali pakai) di dalam transaksi bersama pencabutan:
+     * semua sesi web + browser tepercaya + tantangan login web terbuka akun dicabut; sesi Mini App tetap.
+     * Null untuk SEMUA kegagalan (data palsu, akun lain, sudah dipakai, kedaluwarsa) tanpa efek dan tanpa audit,
+     * sehingga dijawab seragam oleh BotCallbackHandler.
+     */
+    public function bukanSayaLogin(mixed $data, int $telegramId): ?string
+    {
+        if (! is_string($data) || strlen($data) > 64 || preg_match(self::POLA_BUKAN_SAYA_LOGIN, $data, $m) !== 1) {
+            return null;
+        }
+
+        $id = strtolower($m[1]);
+
+        if (! hash_equals(self::mac('bukan-saya-login|v1', $id, $telegramId), $m[2])) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($id, $telegramId): ?string {
+            $token = TantanganToken::query()->whereKey($id)->where('tujuan', TantanganToken::TUJUAN_BUKAN_SAYA_WEB)->lockForUpdate()->first();
+            $user = $token === null ? null : User::query()->withoutGlobalScopes()->withTrashed()->find($token->user_id);
+
+            if ($token === null || $user === null || $user->telegram_id === null || (int) $user->telegram_id !== $telegramId) {
+                return null;
+            }
+
+            $klaim = TantanganToken::query()->whereKey($token->getKey())
+                ->whereNull('dipakai_pada')->whereNull('hangus_pada')->where('kedaluwarsa_pada', '>', now())
+                ->update(['dipakai_pada' => now(), 'updated_at' => now()]);
+
+            if ($klaim !== 1) {
+                return null;
+            }
+
+            AuditAuth::catat($user, AuditAuth::WEB_BUKAN_SAYA, [
+                'status' => self::BUKAN_SAYA_SESI_DICABUT,
+                'jalur' => 'notifikasi',
+                'token' => substr($id, 0, 10),
+            ] + $this->cabutAksesWeb($user));
+
+            return self::BUKAN_SAYA_SESI_DICABUT;
+        });
+    }
+
+    /**
+     * Cabut semua akses web akun (R04-4, #88): browser tepercaya (beserta sesi turunannya), semua sesi web lain, dan
+     * tantangan login web terbuka. Sesi/perangkat Mini App dan token "Bukan saya" lain tidak tersentuh.
+     *
+     * @return array{sesi_web_dicabut: int, browser_dicabut: int}
+     */
+    private function cabutAksesWeb(User $user): array
+    {
+        $sesiTurunan = (int) $user->tokens()->where('name', 'like', SesiService::PREFIX_WEB.'%')->whereNotNull('browser_tepercaya_id')->count();
+        $browser = $this->browser->cabutSemua($user, BrowserTepercayaService::ALASAN_BUKAN_SAYA);
+        $sesi = $sesiTurunan + (int) $user->tokens()->where('name', 'like', SesiService::PREFIX_WEB.'%')->delete();
+
+        $user->tantanganToken()->terbuka()->where('tujuan', TantanganToken::TUJUAN_MASUK_WEB)
+            ->update(['hangus_pada' => now(), 'payload' => null, 'updated_at' => now()]);
+
+        return ['sesi_web_dicabut' => $sesi, 'browser_dicabut' => $browser];
+    }
+
     private static function macBukanSaya(string $tantanganId, int $telegramId): string
     {
-        $kunci = hash_hmac('sha256', 'bukan-saya-web|v1', (string) config('app.key'), true);
-        $mac = substr(hash_hmac('sha256', strtolower($tantanganId).'|'.$telegramId, $kunci, true), 0, 6);
+        return self::mac('bukan-saya-web|v1', $tantanganId, $telegramId);
+    }
+
+    /** MAC 6 byte (8 karakter base64url) atas id + telegram_id dengan kunci turunan app.key per domain. */
+    private static function mac(string $domain, string $id, int $telegramId): string
+    {
+        $kunci = hash_hmac('sha256', $domain, (string) config('app.key'), true);
+        $mac = substr(hash_hmac('sha256', strtolower($id).'|'.$telegramId, $kunci, true), 0, 6);
 
         return rtrim(strtr(base64_encode($mac), '+/', '-_'), '=');
+    }
+
+    /** Masa berlaku tombol "Bukan saya" (jam), 1..72. */
+    public static function jamBukanSaya(): int
+    {
+        return min(72, max(1, (int) config('kredensial.web.bukan_saya_jam', 24)));
     }
 
     // ------------------------------------------------------------------ penguncian kanal web
@@ -672,20 +782,51 @@ class MasukWebService
         }
 
         $chatId = (int) $user->telegram_id;
+        $jam = self::jamBukanSaya();
         $teks = ($browserTepercaya ? 'Login web SiGAP SPPG dari browser tepercaya (tanpa kode) berhasil: ' : 'Login web SiGAP SPPG berhasil dari ')
             .self::label($label).' pada '.self::waktuWib().".\n\n"
-            .'Bukan Anda? Segera ubah password lewat Mini App SiGAP (semua sesi lain ikut keluar) dan hubungi Admin.';
+            ."Bukan Anda? Tekan \"Bukan saya\" (berlaku {$jam} jam) untuk mengeluarkan SEMUA sesi web akun Anda dan mencabut "
+            .'browser tepercaya, lalu segera ganti password lewat Mini App SiGAP dan hubungi Admin.';
 
         defer(function () use ($user, $chatId, $teks): void {
+            // R04-4 (#88): token tombol sekali pakai + kedaluwarsa (baris tantangan_tokens, tanpa kode).
+            $token = $this->buatTokenBukanSaya($user);
+
             try {
-                $this->bot->sendText($chatId, $teks);
+                $this->bot->sendMessage($chatId, $teks, [
+                    'reply_markup' => ['inline_keyboard' => [[
+                        ['text' => 'Bukan saya', 'callback_data' => self::dataBukanSayaLogin($token->id, $chatId)],
+                    ]]],
+                ]);
             } catch (Throwable $e) {
+                TantanganToken::query()->whereKey($token->id)->update(['hangus_pada' => now()]);
                 Log::warning('auth.web: gagal mengirim notifikasi login web.', [
                     'user_id' => $user->getKey(),
                     'kode_galat' => $e instanceof TelegramApiException ? $e->errorCode : null,
                 ]);
             }
         });
+    }
+
+    private function buatTokenBukanSaya(User $user): TantanganToken
+    {
+        $token = new TantanganToken;
+        $token->forceFill([
+            'id' => $token->newUniqueId(),
+            'user_id' => $user->getKey(),
+            'personal_access_token_id' => null,
+            'tujuan' => TantanganToken::TUJUAN_BUKAN_SAYA_WEB,
+            // Tidak ada kode/perangkat: hash acak agar kolom wajib terisi tanpa nilai yang dapat dicocokkan.
+            'device_hash' => hash('sha256', random_bytes(32)),
+            'kode_hash' => hash('sha256', random_bytes(32)),
+            'percobaan' => 0,
+            'kirim_ulang' => 0,
+            'terkirim_pada' => now(),
+            'kedaluwarsa_pada' => now()->addHours(self::jamBukanSaya()),
+            'payload' => null,
+        ])->save();
+
+        return $token;
     }
 
     private function teksKode(string $kode, ?string $label): string
@@ -697,7 +838,7 @@ class MasukWebService
             .'Ada permintaan masuk ke SiGAP lewat browser ('.self::label($label).') pada '.self::waktuWib().".\n"
             ."Masukkan kode ini HANYA di {$domain}. Berlaku {$menit} menit dan hanya sekali pakai.\n"
             ."Jangan berikan kode ini kepada siapa pun, termasuk Admin.\n\n"
-            .'Bukan Anda yang mencoba masuk? Tekan "Bukan saya", lalu segera ubah password lewat Mini App SiGAP dan hubungi Admin.';
+            .'Bukan Anda yang mencoba masuk? Tekan "Bukan saya" (semua sesi web akun Anda ikut dikeluarkan), lalu segera ubah password lewat Mini App SiGAP dan hubungi Admin.';
     }
 
     private static function label(?string $label): string

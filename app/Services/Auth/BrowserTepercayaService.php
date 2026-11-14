@@ -40,6 +40,9 @@ class BrowserTepercayaService
 
     public const ALASAN_SESI_DICABUT = 'semua_sesi_dicabut';
 
+    /** R04-4 (#88): pemilik akun menekan "Bukan saya" di bot. */
+    public const ALASAN_BUKAN_SAYA = 'bukan_saya';
+
     private const POLA_COOKIE = '/^([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/D';
 
     public function maks(): int

@@ -110,6 +110,14 @@ class BotCallbackHandler
             return;
         }
 
+        // Tombol "Bukan saya" pada notifikasi login web sukses (R04-4, `w2`): token sekali pakai milik akun Telegram
+        // pengirim (MAC ke from.id); mencabut semua sesi web + browser tepercaya. Tidak memerlukan sesi penuh.
+        if (MasukWebService::cocokPrefiksBukanSayaLogin($query['data'] ?? null)) {
+            $this->bukanSayaLogin($id, $query['data'], $fromId, $chatId, $messageId);
+
+            return;
+        }
+
         // Percabangan token: n1 = navigasi baca (dapat dipakai ulang, tanpa baris DB); selain itu b1.
         if (BotNavCodec::cocokPrefiks($query['data'] ?? null)) {
             $this->navigasiBaca($id, $query['data'], $fromId, $chatId, $messageId);
@@ -388,15 +396,18 @@ class BotCallbackHandler
     /**
      * Ganti pesan asal (yang mungkin berisi data lama) dengan teks netral TANPA keyboard dan tanpa data. Bila edit
      * gagal (pesan terlalu lama/dihapus) tidak ada pesan data baru yang dikirim; hanya galat dicatat (kode saja).
+     * $markup (R04-4) = keyboard pengganti tanpa data (mis. tombol web_app ganti password); null = keyboard dihapus.
+     *
+     * @param  array<string, mixed>|null  $markup
      */
-    private function netralkan(int $chatId, ?int $messageId, string $teks): void
+    private function netralkan(int $chatId, ?int $messageId, string $teks, ?array $markup = null): void
     {
         if ($messageId === null) {
             return;
         }
 
         try {
-            $this->bot->editMessageText($chatId, $messageId, $teks);
+            $this->bot->editMessageText($chatId, $messageId, $teks, array_filter(['reply_markup' => $markup]));
         } catch (TelegramApiException $e) {
             Log::info('bot.netralkan_gagal', ['kode' => $e->errorCode]);
         }
@@ -404,7 +415,10 @@ class BotCallbackHandler
 
     // ------------------------------------------------------------------ login web "Bukan saya" (R04-2)
 
-    public const BUKAN_SAYA_DIBATALKAN = 'Permintaan MASUK WEB dibatalkan. Kode di pesan ini tidak berlaku lagi. Karena sandi Anda dipakai orang lain, segera ubah password lewat Mini App SiGAP dan hubungi Admin.';
+    public const BUKAN_SAYA_DIBATALKAN = 'Permintaan MASUK WEB dibatalkan. Kode di pesan ini tidak berlaku lagi dan semua sesi web akun Anda telah dikeluarkan. Karena sandi Anda dipakai orang lain, segera ganti password lewat Mini App SiGAP dan hubungi Admin.';
+
+    /** R04-4 (#88): kode sudah dipakai (w1) atau notifikasi login sukses (w2) -> semua akses web dicabut. */
+    public const BUKAN_SAYA_SESI_DICABUT = 'Semua sesi web akun Anda telah dikeluarkan dan browser tepercaya dicabut. Sesi Mini App Anda tetap. Sandi Anda kemungkinan diketahui orang lain: SEGERA ganti password lewat Mini App SiGAP (tombol di bawah) dan hubungi Admin.';
 
     public const BUKAN_SAYA_SUDAH_DIPAKAI = 'Kode ini SUDAH dipakai untuk masuk web. Bila itu bukan Anda, segera ubah password lewat Mini App SiGAP (semua sesi ikut keluar) dan hubungi Admin.';
 
@@ -424,12 +438,45 @@ class BotCallbackHandler
 
         $teks = match ($status) {
             MasukWebService::BUKAN_SAYA_DIBATALKAN => self::BUKAN_SAYA_DIBATALKAN,
+            MasukWebService::BUKAN_SAYA_SESI_DICABUT => self::BUKAN_SAYA_SESI_DICABUT,
             MasukWebService::BUKAN_SAYA_SUDAH_DIPAKAI => self::BUKAN_SAYA_SUDAH_DIPAKAI,
             default => self::BUKAN_SAYA_TIDAK_BERLAKU,
         };
 
-        $this->jawab($id, $status === MasukWebService::BUKAN_SAYA_DIBATALKAN ? 'Permintaan masuk web dibatalkan.' : null);
-        $this->netralkan($chatId, $messageId, $teks);
+        $this->jawab($id, match ($status) {
+            MasukWebService::BUKAN_SAYA_DIBATALKAN => 'Permintaan masuk web dibatalkan.',
+            MasukWebService::BUKAN_SAYA_SESI_DICABUT => 'Semua sesi web dikeluarkan.',
+            default => null,
+        });
+        $this->netralkan($chatId, $messageId, $teks, in_array($status, [MasukWebService::BUKAN_SAYA_DIBATALKAN, MasukWebService::BUKAN_SAYA_SESI_DICABUT], true) ? $this->tombolGantiSandi() : null);
+    }
+
+    /**
+     * R04-4 (#88): notifikasi login web sukses. Semua kegagalan (data palsu, akun Telegram lain, sudah dipakai,
+     * kedaluwarsa) dijawab seragam TIDAK_BERLAKU tanpa mengubah pesan; sukses -> pesan diganti teks netral + tombol
+     * web_app ke layar ganti password Mini App.
+     */
+    private function bukanSayaLogin(?string $id, string $data, int $fromId, int $chatId, ?int $messageId): void
+    {
+        $status = $chatId === $fromId ? $this->masukWeb->bukanSayaLogin($data, $fromId) : null;
+
+        if ($status === null) {
+            RateLimiter::hit('tg:cbgagal:'.$fromId, 60);
+            $this->jawab($id, self::TIDAK_BERLAKU);
+
+            return;
+        }
+
+        $this->jawab($id, 'Semua sesi web dikeluarkan.');
+        $this->netralkan($chatId, $messageId, self::BUKAN_SAYA_SESI_DICABUT, $this->tombolGantiSandi());
+    }
+
+    /** @return array<string, mixed>|null tombol web_app "Ganti password di Mini App" (null bila URL Mini App bukan HTTPS) */
+    private function tombolGantiSandi(): ?array
+    {
+        return TelegramBotService::inlineKeyboard([
+            TelegramBotService::webAppButton('Ganti password di Mini App', $this->bot->miniAppUrl(['r' => '/password'], '/password')),
+        ]);
     }
 
     // ------------------------------------------------------------------ aksi tulis (R-02 PR-3)

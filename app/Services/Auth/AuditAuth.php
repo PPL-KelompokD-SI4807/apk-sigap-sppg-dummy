@@ -104,6 +104,9 @@ final class AuditAuth
     /** Tombol bot "Bukan saya" ditekan pemilik akun Telegram. */
     public const WEB_BUKAN_SAYA = 'auth.web.bukan_saya';
 
+    /** R04-4 (#82): token sesi web ini dirotasi (cookie + CSRF baru), `pemicu`: password_diubah. */
+    public const WEB_SESI_DIROTASI = 'auth.web.sesi_dirotasi';
+
     // ---- Browser tepercaya R04-3 (ADR Keputusan 6): hanya id browser, tanggal, dan pemicu; tanpa selektor,
     // validator, atau nilai cookie.
 
