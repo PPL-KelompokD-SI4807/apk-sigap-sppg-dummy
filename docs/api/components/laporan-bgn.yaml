@@ -73,9 +73,15 @@ schemas:
     properties:
       id: { type: integer }
       nama: { type: string }
+  PdfLaporanBgnTelegramBelumTerhubung:
+    type: object
+    required: [message, code]
+    properties:
+      message: { type: string }
+      code: { type: string, enum: [telegram_belum_terhubung] }
   LaporanBgnPenandatangan:
     type: object
-    description: Pihak Pertama = ketua yayasan; Pihak Kedua = akuntan SPPG; Mengetahui = kepala SPPG. Nama null bila tidak ada atau lebih dari satu (pilih lewat parameter).
+    description: Daftar pilihan penandatangan sudah tersedia di respons laporan ini lewat `pihak_kedua.kandidat` (akuntan aktif SPPG) dan `mengetahui.kandidat` (kepala SPPG aktif), diurut nama; tidak ada endpoint terpisah. Pilihan dikirim balik lewat `akuntan_id`/`kepala_sppg_id`. Pihak Pertama = ketua yayasan; Pihak Kedua = akuntan SPPG; Mengetahui = kepala SPPG. Nama null bila tidak ada atau lebih dari satu (pilih lewat parameter).
     properties:
       kota: { type: [string, 'null'] }
       tanggal: { type: string, format: date }
@@ -415,3 +421,22 @@ schemas:
       tujuan: { type: string, enum: [telegram] }
       nomor: { type: string, nullable: true, description: Nomor LPA bila sudah terbit (30a dan 30d-C tidak bernomor), selain itu null. }
       nomor_terbit: { type: boolean }
+responses:
+  LaporanBgnPdfUnprocessable:
+    description: |
+      Permintaan PDF tidak dapat diproses. Dua bentuk: (1) validasi gagal (`message` + `errors`, mis. tanggal atau
+      `akuntan_id`/`kepala_sppg_id` bukan penandatangan aktif SPPG itu); (2) akun pemohon belum terhubung ke Telegram
+      sehingga PDF tidak bisa dikirim lewat bot: `code` = `telegram_belum_terhubung`, tanpa `errors`. Klien membedakan
+      keduanya lewat `code` dan sebaiknya mengarahkan pengguna menautkan akun Telegram.
+    content:
+      application/json:
+        schema:
+          oneOf:
+            - $ref: '#/components/schemas/ValidationError'
+            - $ref: '#/components/schemas/PdfLaporanBgnTelegramBelumTerhubung'
+        examples:
+          telegram_belum_terhubung:
+            summary: Akun belum terhubung ke Telegram
+            value:
+              message: Akun belum terhubung ke Telegram; PDF dikirim lewat bot sehingga tidak dapat dibuat.
+              code: telegram_belum_terhubung
