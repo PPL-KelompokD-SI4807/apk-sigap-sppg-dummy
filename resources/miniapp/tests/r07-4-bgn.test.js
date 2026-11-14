@@ -7,7 +7,7 @@ import { validasiJenjang, validasiJenisSatuan, mapPayload as payloadPenerima, pe
 import { sppgFields, mapPayload as payloadSppg, bolehUbahSaldoAwal, parseSaldo, validasiSaldo, validasiTanggalSaldo, payloadSaldoAwal } from '../modules/sppg/schema.js';
 import { pengeluaranFields, pengeluaranPayload, kategoriBerSub, SUB_KATEGORI, KATEGORI } from '../modules/keuangan/schema.js';
 import { logPayload, logFields } from '../modules/log-produksi/schema.js';
-import { JENIS, jenisUntuk, periodeBawaan, validasiPeriode, badanPermintaan, ringkasGalatEkspor, telegramBelumTerhubung } from '../modules/laporan-bgn/logika.js';
+import { JENIS, jenisUntuk, periodeBawaan, validasiPeriode, badanPermintaan, ringkasGalatEkspor, telegramBelumTerhubung, kandidatDari, bolehTerbitkanNomor } from '../modules/laporan-bgn/logika.js';
 
 const profil = (nama) => salin(nama);
 
@@ -114,4 +114,45 @@ test('ekspor BGN: pemetaan galat 403, 422 telegram, 429', () => {
   assert.match(ringkasGalatEkspor(t, 'pdf').pesan, /Telegram/);
   const v = ringkasGalatEkspor({ status: 422, errors: { tanggal_akhir: ['Rentang lebih dari 16 hari.'] } }, 'pdf');
   assert.equal(v.fields.tanggal_akhir, 'Rentang lebih dari 16 hari.');
+});
+
+test('ekspor BGN: opsi jenis dan penerbitan nomor mengikuti aksi.* dari peta hak server (bukan peran/keuangan)', () => {
+  const kunci = (n) => jenisUntuk(profil(n)).map((j) => j.key);
+  for (const n of ['admin', 'kepala_sppg', 'akuntan']) {
+    assert.equal(jenisUntuk(profil(n)).length, JENIS.length, n);
+    assert.equal(bolehTerbitkanNomor(profil(n)), true, n);
+  }
+  assert.deepEqual(kunci('investor'), ['30a', '30c', '30d-A', '30d-B']);
+  assert.equal(bolehTerbitkanNomor(profil('investor')), false);
+  for (const n of ['ahli_gizi', 'staf_gudang', 'relawan_dapur', 'relawan_distribusi', 'relawan_tanpa_unit']) {
+    assert.deepEqual(kunci(n), [], n);
+    assert.equal(bolehTerbitkanNomor(profil(n)), false, n);
+  }
+  // Tidak memakai hak keuangan: akun dengan baca keuangan tetapi aksi laporan BGN false tidak mendapat opsi.
+  const u = profil('investor');
+  u.aksi.lihat_laporan_bgn_agregat = false;
+  assert.deepEqual(jenisUntuk(u), []);
+  // Peta rusak/tanpa aksi: gagal tertutup.
+  assert.deepEqual(jenisUntuk({ id: 1, role: 'admin' }), []);
+});
+
+test('ekspor BGN: kandidat penandatangan dari GET laporan dan badan permintaan akuntan_id/kepala_sppg_id', () => {
+  const res = { data: { penandatangan: { pihak_kedua: { nama: null, kandidat: [{ id: 5, nama: 'Ani' }, { id: 6, nama: 'Budi' }] }, mengetahui: { nama: 'Cici', kandidat: [{ id: 2, nama: 'Cici' }, { id: 'x', nama: 'rusak' }] } } } };
+  assert.deepEqual(kandidatDari(res), { akuntan: [{ id: 5, nama: 'Ani' }, { id: 6, nama: 'Budi' }], kepala: [{ id: 2, nama: 'Cici' }] });
+  assert.deepEqual(kandidatDari({ data: {} }), { akuntan: [], kepala: [] });
+  assert.deepEqual(kandidatDari(null), { akuntan: [], kepala: [] });
+  const j = JENIS.find((x) => x.key === '30b');
+  assert.deepEqual(badanPermintaan(j, { tanggal: '2026-11-12' }, null, { akuntan_id: '5', kepala_sppg_id: '2' }), { tanggal: '2026-11-12', akuntan_id: 5, kepala_sppg_id: 2 });
+  assert.deepEqual(badanPermintaan(j, { tanggal: '2026-11-12' }, null, {}), { tanggal: '2026-11-12' });
+  for (const x of JENIS) assert.match(x.get, /^\/laporan-bgn\//);
+});
+
+test('ekspor BGN: 422 telegram_belum_terhubung dikenali lewat `code` tanpa errors; 422 validasi tetap per kolom', () => {
+  const t = { status: 422, data: { message: 'Akun belum terhubung ke Telegram', code: 'telegram_belum_terhubung' }, errors: null };
+  assert.equal(telegramBelumTerhubung(t), true);
+  const g = ringkasGalatEkspor(t, 'pdf');
+  assert.match(g.pesan, /Telegram/);
+  assert.deepEqual(g.fields, {});
+  assert.equal(telegramBelumTerhubung({ status: 422, data: { code: 'lain' }, errors: { akuntan_id: ['Bukan akuntan aktif.'] } }), false);
+  assert.equal(ringkasGalatEkspor({ status: 422, errors: { akuntan_id: ['Bukan akuntan aktif.'] } }, 'pdf').fields.akuntan_id, 'Bukan akuntan aktif.');
 });

@@ -22,7 +22,7 @@ export const KUNCI_AKSI = [
   'undang_pengguna', 'reset_password_pengguna', 'kelola_kepemilikan_sppg', 'undang_pic', 'ajukan_menu',
   'lihat_rincian_biaya', 'picu_perjalanan', 'susun_rekap', 'kirim_ulang_rekap', 'tindak_lanjut_keluhan',
   'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi',
-  'lihat_mutasi_stok',
+  'lihat_mutasi_stok', 'lihat_laporan_bgn', 'lihat_laporan_bgn_agregat', 'terbitkan_nomor_laporan_bgn',
 ];
 
 const NONE = Object.freeze({ C: false, R: false, U: false, D: false, selfOnly: false });
