@@ -23,8 +23,8 @@ export function daftarkanRuteWeb(modules, getUser) {
   for (const m of modules) {
     if (BACA_WEB.has(m.slug) && typeof m.registerWeb === 'function') { m.registerWeb(); continue; }
     if (m.hidden) continue;
-    const slug = m.permissionSlug ?? m.slug;
-    route(`/${m.slug}`, (ctx) => renderSegera(ctx.el, m.title), { title: m.title, guard: () => userPerms(getUser(), slug).R });
+    const slug = m.permissionSlug ?? m.slug; // modul tanpa baris matriks (mis. Laporan BGN) memakai bolehMenu(user) dari aksi.*, sama dengan menu
+    route(`/${m.slug}`, (ctx) => renderSegera(ctx.el, m.title), { title: m.title, guard: () => (typeof m.bolehMenu === 'function' ? m.bolehMenu(getUser()) === true : userPerms(getUser(), slug).R) });
   }
   if (!dashboardWeb) route('/dashboard', (ctx) => renderSegera(ctx.el, 'Dashboard'), { title: 'Dashboard', guard: () => dashboardTersedia(getUser()) });
   route('/penerima-manfaat-agregat', (ctx) => renderSegera(ctx.el, 'Ringkasan Penerima Manfaat'),
