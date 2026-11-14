@@ -1,6 +1,6 @@
 // Titik masuk WEB (R04-6/7/9). Tanpa Telegram.WebApp, tanpa Bearer, tanpa storage untuk token:
 // sesi = cookie HttpOnly (tak terlihat JS), CSRF hanya di memori (core/api-web.js).
-// Layar kerja CRUD/dasbor menyusul di R04-8; saat ini cangkang: beranda, Sesi & Browser, Keluar.
+// R04-8 PR3: beranda + menu per peran dari /auth/me; layar modul masih "Segera tersedia di web" (PR berikutnya).
 import '../css/miniapp.css';
 import { setPlatform } from './core/platform.js';
 import { h, clear } from './core/dom.js';
@@ -22,23 +22,22 @@ function ulangiDariAwal(berakhir = false) {
   location.reload();
 }
 
-function berandaWeb(ctx) {
-  const user = klienWeb.getUser() || {};
-  ctx.el.append(h('section', { class: 'panel stack' },
-    h('h2', { class: 'panel-title' }, user.name ? `Halo, ${user.name}` : 'Halo'),
-    h('p', { class: 'muted small' }, [user.role_label, user.sppg_name].filter(Boolean).join(' - ')),
-    h('p', { class: 'notice' }, 'Versi web sedang disiapkan: menu kerja menyusul. Untuk saat ini Anda dapat mengelola sesi dan browser tepercaya.'),
-    h('a', { class: 'btn btn-block', href: '#/sesi' }, 'Sesi aktif dan browser tepercaya'),
-    h('p', { class: 'muted small' }, CATATAN_IDLE)));
-}
-
-route('/', berandaWeb, { title: 'SiGAP SPPG' });
+// Beranda, menu, dan rute modul (registry = seluruh kode modul) dimuat lazy setelah login agar aset awal web tetap kecil.
+route('/', async (ctx) => {
+  const [{ menuFor }, { renderBerandaWeb }] = await Promise.all([import('./modules/registry.js'), import('./beranda-web.js')]);
+  renderBerandaWeb(ctx.el, { user: klienWeb.getUser(), menu: menuFor(klienWeb.getUser()) });
+  ctx.el.append(h('p', { class: 'muted small' }, CATATAN_IDLE));
+}, { title: 'SiGAP SPPG' });
 route('/sesi', (ctx) => renderSesiWeb(ctx, { onKeluar: () => ulangiDariAwal() }), { title: 'Sesi dan Browser' });
 
 let dimulai = false;
-function masukAplikasi() {
+async function masukAplikasi() {
   if (dimulai) return;
   dimulai = true;
+  try {
+    const [{ getModules }, { daftarkanRuteWeb }] = await Promise.all([import('./modules/registry.js'), import('./rute-web.js')]);
+    daftarkanRuteWeb(getModules(), () => klienWeb.getUser());
+  } catch { /* menu kosong; beranda tetap tampil */ }
   history.replaceState(null, '', location.pathname + location.hash); // buang ?sesi=berakhir
   clear(view);
   startRouter(view);

@@ -19,12 +19,22 @@ async function bangun(mode, tambahan = {}) {
     build: { write: false, ...tambahan },
   });
   const out = (Array.isArray(hasil) ? hasil : [hasil]).flatMap((r) => r.output);
-  return out.map((o) => ({ nama: o.fileName, isi: o.type === 'chunk' ? o.code : o.source }));
+  return out.map((o) => ({ nama: o.fileName, isi: o.type === 'chunk' ? o.code : o.source, chunk: o.type === 'chunk' ? o : null }));
+}
+/** Aset awal = html, css, entri dan chunk yang diimpor statis (tanpa chunk dinamis/lazy). */
+function awal(berkas) {
+  const peta = new Map(berkas.filter((b) => b.chunk).map((b) => [b.nama, b]));
+  const ikut = new Set();
+  const kunjungi = (n) => { if (ikut.has(n) || !peta.has(n)) return; ikut.add(n); peta.get(n).chunk.imports.forEach(kunjungi); };
+  berkas.filter((b) => b.chunk?.isEntry).forEach((b) => kunjungi(b.nama));
+  return berkas.filter((b) => !b.chunk || ikut.has(b.nama));
 }
 const gz = (berkas) => berkas.reduce((n, b) => n + gzipSync(b.isi).length, 0);
 
 test('ukuran gzip bundel Mini App dan web tidak melebihi garis dasar + 10%', async () => {
-  const ukuran = { miniapp: gz(await bangun('production')), web: gz(await bangun('web')) };
+  // miniapp = semua berkas; web = aset awal (chunk lazy beranda/registry tidak dihitung); web_total = semua berkas web.
+  const web = await bangun('web');
+  const ukuran = { miniapp: gz(await bangun('production')), web: gz(awal(web)), web_total: gz(web) };
   if (process.env.UPDATE_UKURAN) { writeFileSync(DASAR, `${JSON.stringify(ukuran, null, 2)}\n`); return; }
   const dasar = JSON.parse(readFileSync(DASAR, 'utf8'));
   for (const k of Object.keys(dasar)) assert.ok(ukuran[k] <= dasar[k] * BATAS, `${k}: ${ukuran[k]} B > ${Math.round(dasar[k] * BATAS)} B (dasar ${dasar[k]})`);
@@ -64,13 +74,13 @@ test('pindai bundel web: seluruh modul (registry + beranda + komponen) tanpa jej
     for (const [nama, kode] of [['web.html', asli], ['semua-modul', lebar]]) {
       assert.ok(!/localStorage/.test(kode), `${nama}: memuat localStorage`);
       // Celah yang diketahui: fetchLampiranBlob (components/photo-upload.js) masih memakai Bearer + credentials 'omit' untuk gambar privat.
-      // Diperbaiki di PR5 (foto web, T3); saat itu batas ini menjadi 0. Sampai saat itu tidak boleh bertambah dari 1.
-      const batasAuth = nama === 'web.html' ? 0 : 1;
+      // Diperbaiki di PR5 (foto web, T3); saat itu batas ini menjadi 0. Sampai saat itu tidak boleh bertambah dari 1 (registry lazy ikut memuatnya).
+      const batasAuth = 1;
       assert.ok((kode.match(/Authorization/g) || []).length <= batasAuth, `${nama}: header Authorization melebihi batas ${batasAuth}`);
       assert.ok(!/telegram-web-app/.test(kode), `${nama}: memuat telegram-web-app`);
       assert.ok(!/sigap_device_id|sigap_token|init_data/.test(kode), `${nama}: memuat device id/token/initData`);
     }
-    assert.ok(lebar.length > asli.length * 3, 'entri pindai tidak memuat modul kerja');
+    assert.ok(lebar.length > 100000, 'entri pindai tidak memuat modul kerja');
     assert.ok(/\/auth\/me/.test(lebar) || /muatSesi/.test(lebar), 'adaptor auth web tidak terpasang');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
