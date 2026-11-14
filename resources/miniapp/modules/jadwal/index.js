@@ -169,6 +169,8 @@ const distribusiModule = defineCrudModule({
   // Form hanya dapat diselesaikan bila dropdown wajib terbaca; selain itu tombol Tambah disembunyikan.
   bolehTambah: (u) => jadwalTabBoleh(u, 'distribusi') && distribusiBisaDibuat(u),
   listTop: () => jadwalTabs('distribusi'),
+  listTopWeb: () => jadwalTabs('distribusi'),
+  detailExtrasWeb: (rec) => (rec.status === 'siap' && rec.layak_distribusi === false ? [h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.')] : []),
   prefill: (q) => (q.get('jadwal') ? { jadwal_produksi_id: q.get('jadwal') } : {}),
   formTop: distribusiFormTop,
   renderCard: (r, href) => rowCard({
@@ -217,6 +219,12 @@ const produksiBase = defineCrudModule({
   bolehTambah: (u) => jadwalTabBoleh(u, 'produksi'),
   listQuery: produksiQuery,
   listTop: listTopProduksi,
+  listTopWeb: listTopProduksi,
+  detailExtrasWeb: (rec) => [
+    menuBelumDisetujui(rec) && rec.status !== 'selesai' && rec.status !== 'dibatalkan'
+      ? h('div', { class: 'alert-danger', role: 'alert' }, `Menu jadwal ini belum disetujui investor (status menu: ${statusMenuLabel(rec.menu?.status_persetujuan)}).`) : null,
+    rec.status_mutu === 'tidak_layak' ? h('div', { class: 'alert-danger' }, 'Hasil mutu terbaru TIDAK LAYAK: distribusi ditahan sampai pemeriksaan ulang Layak.') : null,
+  ].filter(Boolean),
   formTop: produksiFormTop,
   onSaved: ({ mode, res }) => {
     const kurang = res?.data?.kekurangan_bahan;

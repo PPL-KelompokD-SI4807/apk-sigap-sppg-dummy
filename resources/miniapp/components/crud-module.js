@@ -259,9 +259,11 @@ export function defineCrudModule(def) {
       ctx.setTitle(recTitle(rec));
       ctx.el.append(panelDetail(rec, { web: true }));
       if (detailExtrasWeb) {
-        const extra = await detailExtrasWeb(rec, ctx);
-        if (ctx.isStale()) return;
+        const hasil = await detailExtrasWeb(rec, ctx); // Node(s) atau { nodes, destroy } (destroy = pembersih grafik)
+        const extra = hasil && !Array.isArray(hasil) && hasil.nodes !== undefined ? hasil.nodes : hasil;
+        if (ctx.isStale()) { hasil?.destroy?.(); return; }
         if (extra) ctx.el.append(...[extra].flat().filter(Boolean));
+        return hasil?.destroy;
       }
     }, { title, guard: (params) => params.id !== 'baru' && me(permissionSlug).R && aksesRecord() }); // id 'baru' = layar tambah (belum ada di web)
   }

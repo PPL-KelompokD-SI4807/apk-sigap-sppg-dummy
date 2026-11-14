@@ -30,6 +30,7 @@ export default defineCrudModule({
     badge: { text: r.hasil_label || hasilLabel(r.hasil), cls: hasilBadge(r.hasil) },
   }),
   rowPerms: rowPermsMutu,
+  detailExtrasWeb: (rec) => (rec.hasil === 'tidak_layak' ? [h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.')] : []),
   detailExtras: (rec, p) => {
     const nodes = [];
     if (rec.hasil === 'tidak_layak') nodes.push(h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.'));

@@ -11,6 +11,7 @@ import { getUser } from '../../core/auth.js';
 import { userPerms, bolehIzin, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route, resolve, navigate } from '../../core/router.js';
 import { setMainButton, toast, showConfirm } from '../../core/ui.js';
+import { isWeb } from '../../core/platform.js';
 import { renderChart } from '../../core/charts.js';
 import { errorMessage, ringkasGalatAksi } from '../../core/errors.js';
 import { rupiahField, periodeField } from './fields.js';
@@ -70,6 +71,10 @@ const pencairanModule = defineCrudModule({
   searchPlaceholder: 'Cari sumber dana atau referensi...',
   listQuery: pencairanQuery,
   listTop: () => {
+    if (!pencairanInit) { pencairanQuery.periode = periodeSekarang(); pencairanInit = true; }
+    return h('div', { class: 'stack' }, keuanganTabs('pencairan'), periodeInput(pencairanQuery), pencairanQuery.periode ? null : h('p', { class: 'muted small' }, 'Menampilkan semua periode.'));
+  },
+  listTopWeb: () => {
     if (!pencairanInit) { pencairanQuery.periode = periodeSekarang(); pencairanInit = true; }
     return h('div', { class: 'stack' }, keuanganTabs('pencairan'), periodeInput(pencairanQuery), pencairanQuery.periode ? null : h('p', { class: 'muted small' }, 'Menampilkan semua periode.'));
   },
@@ -235,6 +240,16 @@ const pengeluaranModule = defineCrudModule({
   searchPlaceholder: 'Cari uraian pengeluaran...',
   listQuery: pengeluaranQuery,
   listTop: listTopPengeluaran,
+  listTopWeb: listTopPengeluaran,
+  detailExtrasWeb: (rec) => {
+    const st = statusPengeluaran(rec);
+    const nodes = [];
+    if (st === 'diajukan') nodes.push(h('div', { class: 'notice' }, 'Menunggu persetujuan investor. Belum dihitung ke anggaran.'));
+    if (st === 'ditolak') nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, h('strong', {}, 'Ditolak investor. '), terakhirCatatan(rec) ?? '-'));
+    nodes.push(riwayatPanel(rec)); // tanpa panel keputusan, foto nota, dan lampiran
+    if (rec.melebihi_anggaran) nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, 'Pengeluaran ini melebihi sisa anggaran periode saat dicatat.'));
+    return nodes;
+  },
   formTop: formTopPengeluaran,
   onSaved: ({ res }) => {
     ringkasanCache.clear();
@@ -355,7 +370,7 @@ async function ringkasanScreen(ctx) {
     if (e?.status === 401) throw e;
     terbaru.append(h('p', { class: 'muted center pad' }, errorMessage(e, 'Transaksi gagal dimuat.')));
   }
-  if (me().C) {
+  if (me().C && !isWeb()) { // web baca-saja: tanpa tombol tambah
     ctx.el.append(h('a', { class: 'btn btn-block', href: '#/keuangan/pencairan/baru' }, '+ Pencairan dana'));
     setMainButton({ text: '+ Tambah Pengeluaran', onClick: () => navigate('/keuangan/pengeluaran/baru') });
   }
@@ -369,6 +384,9 @@ const ringkasanModule = {
   description: 'Anggaran, pencairan dan pengeluaran',
   permissionSlug: SLUG,
   register() {
+    route('/keuangan', ringkasanScreen, { title: 'Keuangan', guard: () => me().R });
+  },
+  registerWeb() {
     route('/keuangan', ringkasanScreen, { title: 'Keuangan', guard: () => me().R });
   },
 };

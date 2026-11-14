@@ -133,7 +133,7 @@ async function terakhirScreen(ctx) {
   if (me().C && bolehPicu()) setMainButton({ text: 'Berangkat & Kirim Notifikasi', onClick: () => { location.hash = `#/${SLUG}/baru`; } });
 }
 
-function listTop() {
+function listTop({ web = false } = {}) {
   const tanggal = h('input', { type: 'date', id: 'f-tanggal', value: listQuery.tanggal, max: todayWIB(), 'aria-label': 'Tanggal berangkat' });
   tanggal.addEventListener('change', () => { listQuery.tanggal = tanggal.value || todayWIB(); resolve(); });
   const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Status perjalanan' },
@@ -143,7 +143,7 @@ function listTop() {
     }, o.label)));
   return h('div', { class: 'stack' },
     h('div', { class: 'panel stack-tight' }, h('label', { class: 'label', for: 'f-tanggal' }, 'Tanggal berangkat'), tanggal,
-      h('a', { class: 'btn btn-block', href: `#/${SLUG}/terakhir` }, 'Status perjalanan terakhir')),
+      web ? null : h('a', { class: 'btn btn-block', href: `#/${SLUG}/terakhir` }, 'Status perjalanan terakhir')),
     seg);
 }
 
@@ -164,6 +164,8 @@ const base = defineCrudModule({
   queueOffline: false,
   listQuery,
   listTop,
+  listTopWeb: () => listTop({ web: true }),
+  detailExtrasWeb: (rec) => [...banner(rec), ringkasKartu(rec)].filter(Boolean), // tanpa tombol ubah status
   prefill: (q) => (q.get('jadwal') ? { jadwal_distribusi_id: q.get('jadwal') } : {}),
   formTop,
   beforeSave: () => showConfirm({ title: 'Berangkat & kirim notifikasi', message: 'Perjalanan dimulai dan pesan dikirim ke PIC titik layanan. Lanjutkan?', okText: 'Berangkat' }),

@@ -78,13 +78,13 @@ async function ringkasanScreen(ctx) {
 }
 
 // ---- Daftar riwayat ----
-function listTop() {
+function listTop({ web = false } = {}) {
   const dari = h('input', { type: 'date', id: 'f-from', value: listQuery.from, 'aria-label': 'Dari tanggal' });
   const sampai = h('input', { type: 'date', id: 'f-to', value: listQuery.to, 'aria-label': 'Sampai tanggal' });
   dari.addEventListener('change', () => { listQuery.from = dari.value; resolve(); });
   sampai.addEventListener('change', () => { listQuery.to = sampai.value; resolve(); });
   return h('div', { class: 'stack' },
-    isAdmin() ? null : h('a', { class: 'btn btn-primary btn-block', href: `#/${SLUG}/ringkasan` }, 'Ringkasan hari ini'),
+    isAdmin() || web ? null : h('a', { class: 'btn btn-primary btn-block', href: `#/${SLUG}/ringkasan` }, 'Ringkasan hari ini'),
     h('div', { class: 'filter-row' }, dari, sampai));
 }
 
@@ -158,6 +158,11 @@ const base = defineCrudModule({
   itemTitle: (r) => `Rekap ${labelTanggalPendek(r.tanggal)}`,
   listQuery,
   listTop,
+  listTopWeb: () => listTop({ web: true }),
+  detailExtrasWeb: (rec) => {
+    const charts = chartsBlock(rec.ringkasan, [], { tren: false });
+    return { nodes: [rec.catatan ? h('div', { class: 'panel' }, h('strong', {}, 'Catatan'), h('p', {}, rec.catatan)) : null, kpiGrid(rec.ringkasan), charts.el].filter(Boolean), destroy: charts.destroy };
+  },
   prefill: (q) => (q.get('tanggal') ? { tanggal: q.get('tanggal') } : {}),
   rowPerms: (rec, p) => ({ ...p, U: false, D: false }), // catatan diubah lewat PATCH di detail; rekap tidak dihapus
   renderCard: (r, href) => {
