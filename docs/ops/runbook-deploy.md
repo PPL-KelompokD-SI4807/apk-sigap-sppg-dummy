@@ -266,6 +266,7 @@ Edit sisanya dengan `nano .env`:
 | `AI_IMAGE_TOKENS`, `LLM_VISION_MAX_BASE64_BYTES` | biarkan nilai contoh (2100 dan 4194304) kecuali penyedia/model berubah |
 | `SIGAP_AMBANG_PERSETUJUAN_PENGELUARAN` | keputusan bisnis, lihat bagian "Keputusan bisnis" |
 | `DEPLOY_IMAGE_MODE` | biarkan `local` (belum ada alur push image ke registry) |
+| `TRUSTED_PROXIES` | WAJIB diputuskan sebelum deploy, lihat Langkah 10a (topologi saat ini: **kosong**) |
 
 Aturan nilai: tanpa spasi di sekitar `=`, tanpa kutip di rahasia, **jangan** memakai karakter `$ # \` atau kutip dalam rahasia.
 
@@ -284,6 +285,48 @@ stat -c '%a %U' .env .env.mysql   # keduanya: 600 deploy
 Hasil yang diharapkan: pesan "tidak ada placeholder tersisa", `0`, dan `600 deploy` untuk kedua berkas. Saat go-live set `DEPLOY_GO_LIVE=true` agar deploy menolak berjalan tanpa tujuan cadangan.
 
 Bila gagal: `deploy.sh` nanti akan berhenti dengan pesan variabel mana yang salah (preflight). Perbaiki lalu ulang.
+
+### Langkah 10a. IP klien dan `TRUSTED_PROXIES`
+
+Batas laju per IP (login web, jalur cookie web R04-4, login Mini App) dan kolom `ip` di audit memakai IP klien
+yang dibaca Laravel (`Request::ip()`). Nama env persis: **`TRUSTED_PROXIES`** (dibaca `config/trustedproxy.php`,
+dipakai middleware TrustProxies bawaan Laravel). Laravel memercayai `X-Forwarded-For` HANYA bila `REMOTE_ADDR`
+termasuk daftar ini.
+
+Putuskan nilainya sebelum deploy, sesuai topologi:
+
+| Topologi | `TRUSTED_PROXIES` | Alasan |
+|---|---|---|
+| **Saat ini**: nginx kontainer `nginx` adalah tepi langsung (port 80/443 dari internet), PHP-FPM lewat FastCGI | **kosong** (`TRUSTED_PROXIES=`) | nginx meneruskan `$remote_addr` (IP asli) sebagai `REMOTE_ADDR` dan mengosongkan `X-Forwarded-*` dari klien (`docker/nginx/snippets/sigap-php.conf`) |
+| CDN/ALB di depan nginx | tetap **kosong**; pulihkan IP asli di nginx (`set_real_ip_from <CIDR proxy>; real_ip_header X-Forwarded-For; real_ip_recursive on;` di `docker/nginx/templates/00-http.conf.template`) | Laravel tetap menerima IP asli lewat `REMOTE_ADDR` |
+| PHP menerima HTTP langsung dari proxy lain (bukan topologi repo ini) | IP/CIDR proxy itu, dipisah koma (mis. `10.0.0.9,10.0.1.0/24`) | hanya proxy itu yang boleh menetapkan `X-Forwarded-For` |
+
+Akibat bila salah:
+- **Diisi `*`/`**`**: ditolak kode (diperlakukan kosong), justru agar header palsu tidak terbaca.
+- **Diisi IP/CIDR yang juga mencakup klien internet, atau proxy yang meneruskan `X-Forwarded-For` klien apa adanya**:
+  header palsu terbaca. Penyerang mengganti `X-Forwarded-For` di tiap permintaan untuk mendapat bucket batas laju
+  baru (lolos throttle login/jalur cookie) dan memalsukan IP di audit.
+- **Ada proxy/CDN di depan tetapi IP asli tidak dipulihkan (nginx real_ip tidak diatur dan `TRUSTED_PROXIES` kosong)**:
+  semua klien tampak satu IP (IP proxy). Batas per IP berlaku untuk semua pengguna sekaligus: satu pengguna yang
+  salah sandi atau sekelompok pengguna di balik satu proxy dapat membuat semua orang kena 429.
+
+Perubahan nilai baru berlaku setelah kontainer `app` dibuat ulang (konfigurasi di-cache saat start): jalankan deploy
+biasa, atau `dcp up -d --force-recreate app queue scheduler`.
+
+**Cek IP klien yang terbaca** (setelah Langkah 15: masuk Mini App atau web dari laptop Anda lebih dulu, karena
+login menulis audit beserta IP):
+
+```bash
+dcp exec app php artisan tinker --execute='$a = App\Models\AuditLog::query()->withoutGlobalScopes()->latest("id")->first(); echo $a?->event, " ip=", $a?->ip, " ", $a?->created_at, PHP_EOL; echo "proxies=", var_export(config("trustedproxy.proxies"), true), PHP_EOL;'
+```
+
+Hasil yang diharapkan: `ip=` sama dengan IP publik laptop Anda (sama dengan kolom pertama baris log terbaru di
+`dcp logs --tail=5 nginx`), BUKAN IP jaringan Docker (`172.x`), dan `proxies=NULL` untuk topologi saat ini.
+Uji header palsu: ulangi login dengan `X-Forwarded-For` palsu (mis. dari ekstensi browser atau
+`curl -H 'X-Forwarded-For: 203.0.113.99' ...`); `ip=` harus tetap IP laptop, bukan `203.0.113.99`.
+
+Bila gagal: `ip=` berisi `172.x` -> ada proxy di depan PHP yang tidak terdaftar (periksa topologi); `ip=` berisi
+nilai palsu -> `TRUSTED_PROXIES` terlalu luas, kosongkan lalu buat ulang kontainer.
 
 ---
 
