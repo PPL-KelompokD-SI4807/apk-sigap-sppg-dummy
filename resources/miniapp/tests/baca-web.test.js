@@ -86,15 +86,15 @@ const izinBaca = (user, slug) => userPerms(user, slug === 'pengemudi' ? 'armada'
 test('layar baca web: modul data master terdaftar dan guard mengikuti peta hak server per profil', () => {
   assert.deepEqual([...BACA_WEB].sort(), [
     'armada', 'bukti-distribusi', 'dashboard', 'jadwal', 'jadwal/distribusi', 'keluhan', 'keuangan', 'keuangan/pencairan', 'keuangan/pengeluaran',
-    'log-produksi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'penerima-manfaat', 'pengemudi', 'rekap-harian', 'sppg', 'titik-layanan',
+    'laporan-bgn', 'log-produksi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'penerima-manfaat', 'pengemudi', 'rekap-harian', 'sppg', 'titik-layanan',
   ]);
   for (const nama of Object.keys(PROFIL)) {
     setUserSesi(salin(nama));
     for (const m of MODUL.filter((x) => BACA_WEB.has(x.slug) && x.slug !== 'dashboard')) {
-      const harap = userPerms(getUser(), m.permissionSlug ?? m.slug).R ? 'boleh' : 'ditolak';
+      const harap = (typeof m.bolehMenu === 'function' ? m.bolehMenu(getUser()) === true : userPerms(getUser(), m.permissionSlug ?? m.slug).R) ? 'boleh' : 'ditolak';
       assert.equal(cekAkses(`/${m.slug}`), harap, `${nama} ${m.slug}`);
       // Sub-jenis jadwal juga bergantung unit_scope (akses(user)); detailnya diuji lewat render di bawah.
-      if (m.slug !== 'keuangan' && !m.slug.startsWith('jadwal')) assert.equal(cekAkses(`/${m.slug}/1`), harap, `${nama} ${m.slug}/1`);
+      if (m.slug !== 'keuangan' && m.slug !== 'laporan-bgn' && !m.slug.startsWith('jadwal')) assert.equal(cekAkses(`/${m.slug}/1`), harap, `${nama} ${m.slug}/1`);
     }
     assert.equal(cekAkses('/dashboard'), dashboardTersedia(getUser()) ? 'boleh' : 'ditolak', `${nama} dashboard`);
   }
@@ -187,6 +187,7 @@ test('rute tulis: hanya modul TULIS_WEB (PR4c) yang punya /baru dan /ubah, mengi
     const user = peran(nama);
     for (const slug of BACA_WEB) {
       const perm = slug === 'pengemudi' ? 'armada' : slug;
+      if (slug === 'laporan-bgn') { assert.equal(cekAkses('/laporan-bgn/baru'), 'tidak-ada'); continue; }
       if (TULIS_WEB.has(slug)) {
         assert.equal(cekAkses(`/${slug}/baru`), userPerms(user, perm).C ? 'boleh' : 'ditolak', `${nama} ${slug}/baru`);
         assert.equal(cekAkses(`/${slug}/1/ubah`), userPerms(user, perm).U ? 'boleh' : 'ditolak', `${nama} ${slug}/ubah`);
