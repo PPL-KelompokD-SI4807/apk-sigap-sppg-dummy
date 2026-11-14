@@ -41,4 +41,4 @@ export const getToken = () => null;
 export const onAuthRequired = (fn) => klienWeb.onSesiHabis(fn);
 export const onSesiBerakhir = (fn) => klienWeb.onSesiHabis(fn);
 export const onPerluLoginUlang = () => {};
-export const onSppgDiperlukan = () => {}; // dipasang di PR7 (multi-SPPG)
+export const onSppgDiperlukan = (fn) => klienWeb.onSppgDiperlukan(fn);

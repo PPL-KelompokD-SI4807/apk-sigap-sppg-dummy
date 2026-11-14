@@ -5,7 +5,7 @@ import '../css/miniapp.css';
 import { setPlatform } from './core/platform.js';
 import { h, clear } from './core/dom.js';
 import { initTheme } from './core/theme.js';
-import { route, startRouter } from './core/router.js';
+import { route, startRouter, navigate } from './core/router.js';
 import { klienWeb } from './core/api-web.js';
 import { tampilkanMasukWeb } from './modules/auth-web/layar.js';
 import { renderSesiWeb } from './modules/sesi/layar.js';
@@ -15,6 +15,8 @@ setPlatform('web');
 
 const view = document.getElementById('view');
 const PARAM = 'sesi';
+// Sama dengan multiSppg() di core/permissions.js (peta server: user.multi_sppg); diulang kecil agar permissions.js tetap di chunk lazy.
+const multiSppg = (u) => u != null && typeof u === 'object' && u.multi_sppg === true;
 
 // Muat ulang ke halaman bersih: membuang semua state (CSRF, user) dari memori. `berakhir` -> pesan di layar Masuk.
 function ulangiDariAwal(berakhir = false) {
@@ -39,6 +41,14 @@ async function masukAplikasi() {
     daftarkanRuteWeb(getModules(), () => klienWeb.getUser());
   } catch { /* menu kosong; beranda tetap tampil */ }
   history.replaceState(null, '', location.pathname + location.hash); // buang ?sesi=berakhir
+  // Investor multi-SPPG: tentukan SPPG aktif lebih dulu (GET /sppg-saya); bila harus memilih, buka pemilih.
+  if (multiSppg(klienWeb.getUser())) {
+    try {
+      const { muatSppgSaya } = await import('./components/sppg-picker.js');
+      if ((await muatSppgSaya()).langkah !== 'siap') location.hash = '#/ganti-sppg';
+    } catch { /* beranda menampilkan tautan Pilih SPPG */ }
+  }
+  klienWeb.onSppgDiperlukan(() => { if (multiSppg(klienWeb.getUser())) navigate('/ganti-sppg', { replace: true }); });
   clear(view);
   startRouter(view);
 }

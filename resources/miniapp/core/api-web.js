@@ -9,6 +9,7 @@
 // - 403 csrf_ditolak: muat ulang CSRF lalu ulangi SATU kali. 401: sesi habis (tanpa login senyap: tak ada initData).
 // - 429: tidak diulang otomatis; ApiError.retryAfter (detik) memuat Retry-After.
 import { statusMessage } from './errors.js';
+import { terapkanHeaderSppg, hapusSppgAktif, perluPilihUlangSppg, PESAN_PILIH_ULANG } from './sppg-aktif-web.js';
 
 const BASE = '/api/v1';
 export const HEADER_KLIEN = 'X-Sigap-Klien';
@@ -18,6 +19,7 @@ const MAKS_KIRIM_ULANG = 3;
 const PESAN_SESI_HABIS = 'Sesi Anda telah berakhir. Silakan masuk kembali.';
 const PESAN_CSRF = 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.';
 const PESAN_OFFLINE = 'Tidak ada koneksi internet.';
+const PESAN_SPPG_DITOLAK = 'Pilihan SPPG tidak berlaku. Pilih SPPG yang ingin dilihat.'; // tetap: pesan server tidak ditampilkan
 
 export class ApiError extends Error {
   constructor(status, message, errors = null, data = null) {
@@ -69,7 +71,7 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
   let muatCsrfJalan = null; // dedup: satu GET /web/auth/csrf sekaligus (tiap panggilan membatalkan yang lama di server)
   const bus = new EventTarget();
 
-  const lupakan = () => { mode = 'kosong'; csrf = null; csrfBerlakuSampai = null; user = null; };
+  const lupakan = () => { mode = 'kosong'; csrf = null; csrfBerlakuSampai = null; user = null; hapusSppgAktif(); };
   const sesiHabis = () => { lupakan(); bus.dispatchEvent(new Event('sesi-habis')); };
 
   async function kirim(method, path, { query, body, key, csrfPakai } = {}) {
@@ -84,6 +86,7 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
     const mengubah = method !== 'GET' && method !== 'HEAD';
     if (mengubah && csrfPakai) headers['X-CSRF-Token'] = csrfPakai;
     if (key) headers['Idempotency-Key'] = key;
+    if (!path.startsWith('/web/auth/')) terapkanHeaderSppg(headers); // SPPG aktif (investor multi-SPPG); hanya jalur cookie ini, dari memori
     let payload;
     let verb = method;
     if (body != null) {
@@ -108,7 +111,7 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
 
   function galat(res, data) {
     const status = res.status;
-    const pesan = status === 401 ? PESAN_SESI_HABIS : status === 403 && data?.alasan === 'csrf_ditolak' ? PESAN_CSRF : statusMessage(status, data?.message);
+    const pesan = perluPilihUlangSppg(status, data) ? (status === 409 ? PESAN_PILIH_ULANG : PESAN_SPPG_DITOLAK) : status === 401 ? PESAN_SESI_HABIS : status === 403 && data?.alasan === 'csrf_ditolak' ? PESAN_CSRF : statusMessage(status, data?.message);
     const e = new ApiError(status, pesan, data?.errors ?? null, data);
     e.retryAfter = bacaRetryAfter(res);
     return e;
@@ -185,6 +188,11 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
       return data;
     }
     if (res.status === 401 && !jalurPra) sesiHabis();
+    if (perluPilihUlangSppg(res.status, data)) {
+      // 409 belum dipilih / 403 ditolak: buang pilihan lokal dan minta pemilih SPPG ditampilkan.
+      hapusSppgAktif();
+      bus.dispatchEvent(new Event('sppg-diperlukan'));
+    }
     throw galat(res, data);
   }
 
@@ -246,6 +254,8 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
     getCsrf: () => csrf,
     /** Event 'sesi-habis': 401 pada rute login penuh; pemakai mengarahkan ke layar Masuk. */
     onSesiHabis: (fn) => bus.addEventListener('sesi-habis', fn),
+    /** Event 'sppg-diperlukan': 409 sppg_aktif_belum_dipilih atau 403 sppg_aktif_ditolak; pemakai menampilkan pemilih SPPG. */
+    onSppgDiperlukan: (fn) => bus.addEventListener('sppg-diperlukan', fn),
     reset: lupakan,
   };
 }
