@@ -56,6 +56,7 @@ export default defineCrudModule({
     badge: r.peringatan ? { text: 'Beda target', cls: 'badge-warn' } : null,
   }),
   izin: true, // Ubah/Hapus mengikuti izin per record dari server
+  detailExtrasWeb: (rec) => (rec.peringatan ? [h('div', { class: 'notice' }, `⚠ ${rec.peringatan}`)] : []), // tanpa panel foto (menyusul PR foto web)
   detailExtras: (rec, p) => {
     const nodes = rec.peringatan ? [h('div', { class: 'notice' }, `⚠ ${rec.peringatan}`)] : [];
     if ((rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ modul: 'log-produksi', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto produksi' }));

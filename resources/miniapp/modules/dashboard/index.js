@@ -103,4 +103,8 @@ export default {
   register() {
     route(`/${SLUG}`, dashboardScreen, { title: 'Dashboard', guard: () => dashboardTersedia(getUser()) });
   },
+  // Web: layar yang sama (baca-saja; Chart.js lazy lewat core/charts.js). Pilihan SPPG investor memakai parameter sppg_id, bukan header.
+  registerWeb() {
+    route(`/${SLUG}`, dashboardScreen, { title: 'Dashboard', guard: () => dashboardTersedia(getUser()) });
+  },
 };

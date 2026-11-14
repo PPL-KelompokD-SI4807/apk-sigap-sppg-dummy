@@ -160,6 +160,11 @@ export default defineCrudModule({
   searchPlaceholder: 'Cari penerima atau titik layanan...',
   listQuery,
   listTop,
+  listTopWeb: listTop,
+  detailExtrasWeb: (rec) => [
+    rec.terlambat ? h('div', { class: 'alert-danger', role: 'alert' }, `${terlambatLabel(rec)} dari acuan ${rec.acuan_tiba ? jamWIB(rec.acuan_tiba) : '-'}.`) : null,
+    rec.selisih_porsi ? h('div', { class: 'notice' }, `Selisih porsi: ${selisihLabel(rec)}.${rec.catatan_selisih ? ` Catatan: ${rec.catatan_selisih}` : ''}`) : null,
+  ].filter(Boolean), // tanpa foto (menyusul PR foto web)
   prefill: (q) => (q.get('jadwal') ? { jadwal_distribusi_id: q.get('jadwal') } : {}),
   renderCard: (r, href) => rowCard({
     href,

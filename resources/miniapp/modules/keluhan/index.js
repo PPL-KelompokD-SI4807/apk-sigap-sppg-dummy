@@ -121,6 +121,8 @@ export default defineCrudModule({
   searchPlaceholder: 'Cari deskripsi keluhan...',
   listQuery,
   listTop,
+  listTopWeb: listTop,
+  detailExtrasWeb: (rec) => (rec.prioritas === 'kritis' ? [h('div', { class: 'alert-danger' }, 'Keluhan KRITIS', rec.dieskalasi_pada ? ` · dieskalasi ${tanggalJamWIB(rec.dieskalasi_pada)}` : '', rec.jadwal_produksi_id ? '' : ' · batch tidak diketahui')] : []),
   formTop,
   rowPerms: (rec, p) => rowPermsKeluhan(getUser(), rec, p),
   renderCard: (r, href) => rowCard({
