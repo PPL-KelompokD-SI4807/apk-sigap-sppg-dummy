@@ -14,7 +14,7 @@ const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data :
 // Laporan BGN bukan modul matriks: gerbangnya tiga aksi di peta hak server (docs/api/peta-hak.md).
 const bolehBuka = (user = getUser()) => bolehAksi(user, 'lihat_laporan_bgn') || bolehAksi(user, 'lihat_laporan_bgn_agregat');
 
-async function layarEkspor(ctx) {
+export async function layarEkspor(ctx) {
   const user = getUser();
   const opsi = jenisUntuk(user);
   const today = todayWIB();
@@ -100,11 +100,12 @@ async function layarEkspor(ctx) {
     if (sppgBox && !sppgId) { galat.textContent = 'Pilih SPPG terlebih dahulu.'; return; }
     const salah = validasiPeriode(jenis, nilai, today);
     if (Object.keys(salah).length) { tandaiGalat(salah); galat.textContent = Object.values(salah)[0]; return; }
-    sibuk = true;
-    setMainButton({ text: 'Memproses...', loading: true });
+    // Semua pemeriksaan masukan SEBELUM sibuk/loading: kembali di sini tidak boleh meninggalkan tombol macet.
     for (const [k, label] of [['akuntan_id', 'Pihak Kedua (Akuntan)'], ['kepala_sppg_id', 'Mengetahui (Kepala SPPG)']]) {
       if (wajibPilih.has(k) && !pilihan[k]) { galat.textContent = `Pilih ${label} terlebih dahulu.`; return; }
     }
+    sibuk = true;
+    setMainButton({ text: 'Memproses...', loading: true });
     const body = badanPermintaan(jenis, nilai, sppgId, pilihan);
     let langkah = 'nomor';
     try {
