@@ -1,6 +1,6 @@
 // Logika murni layar Ekspor Laporan BGN (R07-4): jenis, periode, badan permintaan, galat. Tanpa DOM.
 // Kontrak: docs/api/openapi.yaml (/laporan-bgn/.../nomor dan /laporan-bgn/.../pdf). Hak ditegakkan SERVER; di sini hanya opsi UI.
-import { bacaSaja } from '../../core/permissions.js';
+import { bolehAksi } from '../../core/permissions.js';
 import { addDays } from '../../core/waktu.js';
 
 export const MAKS_HARI_RENTANG = 16;
@@ -11,17 +11,37 @@ export const MAKS_HARI_RENTANG = 16;
  * investor: false = server menolak Investor (403), opsi disembunyikan.
  */
 export const JENIS = [
-  { key: '30a', label: 'Lampiran 30a - Rekapitulasi Perhitungan Porsi', periode: 'rentang', pdf: '/laporan-bgn/porsi/pdf', nomor: null, investor: true },
-  { key: '30b', label: 'Lampiran 30b - Laporan Harian Penggunaan Dana', periode: 'tanggal', pdf: '/laporan-bgn/harian/pdf', nomor: '/laporan-bgn/harian/nomor', investor: false },
-  { key: '30c', label: 'Lampiran 30c - Laporan 2 Mingguan Penggunaan Dana', periode: 'rentang', pdf: '/laporan-bgn/dua-mingguan/pdf', nomor: '/laporan-bgn/dua-mingguan/nomor', investor: true },
-  { key: '30d-A', label: 'Lampiran 30d-A - Laporan Bulanan (Summary)', periode: 'bulan', pdf: '/laporan-bgn/bulanan/ringkasan/pdf', nomor: '/laporan-bgn/bulanan/nomor', investor: true },
-  { key: '30d-B', label: 'Lampiran 30d-B - Laporan Bulanan (Anggaran)', periode: 'bulan', pdf: '/laporan-bgn/bulanan/anggaran/pdf', nomor: '/laporan-bgn/bulanan/nomor', investor: true },
-  { key: '30d-C', label: 'Lampiran 30d-C - Laporan Bulanan (Penerima Manfaat)', periode: 'bulan', pdf: '/laporan-bgn/bulanan/penerima-manfaat/pdf', nomor: null, investor: false },
+  { key: '30a', get: '/laporan-bgn/porsi', label: 'Lampiran 30a - Rekapitulasi Perhitungan Porsi', periode: 'rentang', pdf: '/laporan-bgn/porsi/pdf', nomor: null, investor: true },
+  { key: '30b', get: '/laporan-bgn/harian', label: 'Lampiran 30b - Laporan Harian Penggunaan Dana', periode: 'tanggal', pdf: '/laporan-bgn/harian/pdf', nomor: '/laporan-bgn/harian/nomor', investor: false },
+  { key: '30c', get: '/laporan-bgn/dua-mingguan', label: 'Lampiran 30c - Laporan 2 Mingguan Penggunaan Dana', periode: 'rentang', pdf: '/laporan-bgn/dua-mingguan/pdf', nomor: '/laporan-bgn/dua-mingguan/nomor', investor: true },
+  { key: '30d-A', get: '/laporan-bgn/bulanan/ringkasan', label: 'Lampiran 30d-A - Laporan Bulanan (Summary)', periode: 'bulan', pdf: '/laporan-bgn/bulanan/ringkasan/pdf', nomor: '/laporan-bgn/bulanan/nomor', investor: true },
+  { key: '30d-B', get: '/laporan-bgn/bulanan/anggaran', label: 'Lampiran 30d-B - Laporan Bulanan (Anggaran)', periode: 'bulan', pdf: '/laporan-bgn/bulanan/anggaran/pdf', nomor: '/laporan-bgn/bulanan/nomor', investor: true },
+  { key: '30d-C', get: '/laporan-bgn/bulanan/penerima-manfaat', label: 'Lampiran 30d-C - Laporan Bulanan (Penerima Manfaat)', periode: 'bulan', pdf: '/laporan-bgn/bulanan/penerima-manfaat/pdf', nomor: null, investor: false },
 ];
 
 export const jenisByKey = (key) => JENIS.find((j) => j.key === key) ?? null;
-/** Investor (baca saja menurut peta hak server) tidak diberi opsi 30b dan 30d-C. Server tetap memeriksa (403). */
-export const jenisUntuk = (user) => (bacaSaja(user) ? JENIS.filter((j) => j.investor) : JENIS);
+/**
+ * Opsi jenis menurut peta hak server: aksi.lihat_laporan_bgn = semua; hanya aksi.lihat_laporan_bgn_agregat = jenis agregat
+ * (tanpa 30b dan 30d-C); tanpa keduanya = kosong. Server tetap memeriksa (403).
+ */
+export function jenisUntuk(user) {
+  if (bolehAksi(user, 'lihat_laporan_bgn')) return JENIS;
+  if (bolehAksi(user, 'lihat_laporan_bgn_agregat')) return JENIS.filter((j) => j.investor);
+  return [];
+}
+
+/** Boleh menerbitkan nomor LPA (aksi.terbitkan_nomor_laporan_bgn). Tanpa hak: langkah nomor dilewati, PDF memuat "(belum diterbitkan)". */
+export const bolehTerbitkanNomor = (user) => bolehAksi(user, 'terbitkan_nomor_laporan_bgn');
+
+const idValid = (k) => k && Number.isInteger(k.id) && k.id > 0 && typeof k.nama === 'string';
+/** Kandidat penandatangan dari respons GET laporan: data.penandatangan.pihak_kedua.kandidat (akuntan) dan mengetahui.kandidat (kepala). */
+export function kandidatDari(res) {
+  const p = (res?.data ?? res)?.penandatangan;
+  return {
+    akuntan: (Array.isArray(p?.pihak_kedua?.kandidat) ? p.pihak_kedua.kandidat : []).filter(idValid),
+    kepala: (Array.isArray(p?.mengetahui?.kandidat) ? p.mengetahui.kandidat : []).filter(idValid),
+  };
+}
 
 const BULAN_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const TGL_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -66,12 +86,14 @@ export function validasiPeriode(jenis, v, today) {
   return e;
 }
 
-/** Badan permintaan (nomor dan pdf memakai kunci periode yang sama). sppg_id hanya bila admin memilih SPPG. */
-export function badanPermintaan(jenis, v, sppgId = null) {
+/** Badan permintaan (nomor dan pdf memakai kunci periode yang sama). sppg_id hanya bila admin memilih SPPG; akuntan_id/kepala_sppg_id hanya bila dipilih. */
+export function badanPermintaan(jenis, v, sppgId = null, pilihan = {}) {
   const body = jenis.periode === 'tanggal' ? { tanggal: v.tanggal }
     : jenis.periode === 'bulan' ? { bulan: v.bulan }
       : { tanggal_awal: v.tanggal_awal, tanggal_akhir: v.tanggal_akhir };
   if (sppgId != null && sppgId !== '') body.sppg_id = Number(sppgId);
+  if (pilihan.akuntan_id) body.akuntan_id = Number(pilihan.akuntan_id);
+  if (pilihan.kepala_sppg_id) body.kepala_sppg_id = Number(pilihan.kepala_sppg_id);
   return body;
 }
 
@@ -80,7 +102,7 @@ export const PESAN_TIDAK_BERHAK = 'Peran Anda tidak berhak mengekspor laporan in
 
 export function telegramBelumTerhubung(e) {
   if (e?.status !== 422) return false;
-  if (e.data?.alasan === 'telegram_belum_terhubung') return true;
+  if (e.data?.code === 'telegram_belum_terhubung' || e.data?.alasan === 'telegram_belum_terhubung') return true;
   return Object.keys(e.errors ?? {}).some((k) => /telegram/i.test(k));
 }
 

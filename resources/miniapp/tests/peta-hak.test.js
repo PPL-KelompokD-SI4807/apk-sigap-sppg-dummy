@@ -241,21 +241,22 @@ test('investor tanpa satu pun rute tulis (baru/ubah/mutasi/undangan)', () => {
     const p = userPerms(PROFIL.investor, m.permissionSlug ?? m.slug);
     assert.deepEqual([p.C, p.U, p.D], [false, false, false], m.slug);
   }
-  for (const k of KUNCI_AKSI) assert.equal(bolehAksi(PROFIL.investor, k), false, k);
+  // Investor hanya boleh membaca agregat laporan BGN; tanpa lihat_laporan_bgn (30b, 30d-C) dan tanpa penerbitan nomor.
+  for (const k of KUNCI_AKSI) assert.equal(bolehAksi(PROFIL.investor, k), k === 'lihat_laporan_bgn_agregat', k);
 });
 
 // ---------------------------------------------------------------------------------------------
 test('aksi di luar CRUD mengikuti aksi.* server per profil', () => {
   const harap = {
-    admin: ['undang_pengguna', 'reset_password_pengguna', 'kelola_kepemilikan_sppg', 'undang_pic', 'lihat_rincian_biaya', 'tindak_lanjut_keluhan', 'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi', 'lihat_mutasi_stok'],
-    kepala_sppg: ['lihat_mutasi_stok', 'undang_pic', 'lihat_rincian_biaya', 'picu_perjalanan', 'susun_rekap', 'kirim_ulang_rekap', 'tindak_lanjut_keluhan', 'lihat_ringkasan_jadwal_produksi'],
+    admin: ['undang_pengguna', 'reset_password_pengguna', 'kelola_kepemilikan_sppg', 'undang_pic', 'lihat_rincian_biaya', 'tindak_lanjut_keluhan', 'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi', 'lihat_mutasi_stok', 'lihat_laporan_bgn', 'lihat_laporan_bgn_agregat', 'terbitkan_nomor_laporan_bgn'],
+    kepala_sppg: ['lihat_mutasi_stok', 'undang_pic', 'lihat_rincian_biaya', 'picu_perjalanan', 'susun_rekap', 'kirim_ulang_rekap', 'tindak_lanjut_keluhan', 'lihat_ringkasan_jadwal_produksi', 'lihat_laporan_bgn', 'lihat_laporan_bgn_agregat', 'terbitkan_nomor_laporan_bgn'],
     ahli_gizi: ['ajukan_menu', 'lihat_rincian_biaya', 'tindak_lanjut_keluhan', 'lihat_ringkasan_jadwal_produksi'],
-    akuntan: ['lihat_mutasi_stok'],
+    akuntan: ['lihat_mutasi_stok', 'lihat_laporan_bgn', 'lihat_laporan_bgn_agregat', 'terbitkan_nomor_laporan_bgn'],
     staf_gudang: ['lihat_mutasi_stok', 'lihat_rincian_biaya', 'catat_mutasi_stok', 'catat_harga_pemasok', 'lihat_ringkasan_jadwal_produksi'],
     relawan_dapur: ['lihat_ringkasan_jadwal_produksi'],
     relawan_distribusi: ['picu_perjalanan', 'lihat_ringkasan_jadwal_produksi'],
     relawan_tanpa_unit: [],
-    investor: [],
+    investor: ['lihat_laporan_bgn_agregat'],
   };
   for (const nama of SEMUA) {
     const aktif = KUNCI_AKSI.filter((k) => bolehAksi(PROFIL[nama], k));
