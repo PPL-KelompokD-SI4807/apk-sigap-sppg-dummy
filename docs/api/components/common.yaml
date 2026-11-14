@@ -242,7 +242,7 @@ responses:
       application/json:
         schema: { $ref: '#/components/schemas/ValidationError' }
   TooManyRequests:
-    description: Batas laju terlampaui (API 60/menit per pengguna; login 10/menit per IP).
+    description: Batas laju terlampaui (API 60/menit per pengguna; login 10/menit per IP; jalur cookie web 300/menit dan 30 kegagalan/menit per IP sebelum autentikasi).
     headers:
       Retry-After:
         schema: { type: integer }

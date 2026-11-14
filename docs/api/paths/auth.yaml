@@ -628,6 +628,10 @@
       dan harus berbeda dari password lama. Sesi perangkat ini dipertahankan; semua sesi, perangkat
       tepercaya, browser web tepercaya (R04-3, termasuk browser sesi ini; sesi ini tetap sebagai sesi web biasa
       yang terkena idle 12 jam), dan tantangan token lain dicabut. Throttle 10/menit per akun.
+      Jalur cookie web (R04-4, #82): token sesi ini DIROTASI (baris/id sesi sama) -> `Set-Cookie: __Host-sigap_sesi`
+      bernilai baru dan respons memuat `csrf` baru; cookie dan CSRF lama langsung tidak sah. Klien web wajib
+      mengganti CSRF di memori dengan nilai ini (atau memuat ulang lewat GET /auth/me setelah 403 `csrf_ditolak`).
+      Respons jalur Bearer (Mini App) tidak berubah (tanpa `csrf`, tanpa Set-Cookie).
     requestBody:
       required: true
       content:
@@ -651,7 +655,10 @@
               properties:
                 message: { type: string }
                 jumlah_sesi_dicabut: { type: integer }
-            example: { message: 'Password diubah. Sesi di perangkat lain telah dicabut.', jumlah_sesi_dicabut: 1 }
+                csrf: { type: string, description: 'HANYA jalur cookie web: token CSRF sesi baru setelah rotasi (simpan di memori).' }
+            examples:
+              bearer: { value: { message: 'Password diubah. Sesi di perangkat lain telah dicabut.', jumlah_sesi_dicabut: 1 } }
+              web: { value: { message: 'Password diubah. Sesi di perangkat lain telah dicabut.', jumlah_sesi_dicabut: 1, csrf: '3f9c...64 hex' } }
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/AuthForbidden' }
       '422':

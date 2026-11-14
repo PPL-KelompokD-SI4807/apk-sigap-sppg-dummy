@@ -48,6 +48,12 @@ final class SesiWeb
     /** Atribut request: expires_at baru token web setelah catatPemakaian menulis (cookie diperbarui). */
     public const ATRIBUT_SAMPAI = 'sigap.sesi_web_sampai';
 
+    /**
+     * Atribut request (R04-4, #82): nilai cookie sesi BARU setelah token sesi ini dirotasi (SesiService::rotasiWeb).
+     * SesiWebCookie menerbitkan cookie dengan nilai ini (bukan nilai lama dari permintaan).
+     */
+    public const ATRIBUT_COOKIE_ROTASI = 'sigap.cookie_sesi_rotasi';
+
     /** Panjang wajar maksimum nilai cookie/Bearer (`id|secret` Sanctum + prefiks). */
     private const PANJANG_MAKS = 255;
 

@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\TantanganToken;
 use App\Models\User;
 use App\Services\Auth\AuditAuth;
+use App\Services\Auth\BrowserTepercayaService;
 use App\Services\Auth\MasukWebService;
 use App\Services\Auth\SesiService;
 use App\Services\Auth\SesiWeb;
@@ -794,15 +795,171 @@ class WebLoginTest extends TestCase
         $this->kode($pra, $csrf, $id, $this->kodeWebTerakhir())->assertOk();
     }
 
-    public function test_bukan_saya_setelah_kode_dipakai_memberi_peringatan(): void
+    // ---------------------------------------------------------------- R04-4 (#88) "Bukan saya" mencabut akses web
+
+    private function nilaiCookieSesi(TestResponse $res): string
     {
-        $this->loginWeb()->assertOk();
+        return (string) $this->cookie($res, SesiWeb::namaCookieSesi())?->getValue();
+    }
+
+    private function sesiAda(string $nilai): bool
+    {
+        return PersonalAccessToken::findToken($nilai) !== null;
+    }
+
+    /** @return list<HttpRequest> notifikasi login web sukses ke chat */
+    private function pesanLoginSukses(int $chat = self::CHAT): array
+    {
+        return $this->messagesTo($chat)->filter(fn (HttpRequest $r) => str_contains((string) $r['text'], 'Login web SiGAP SPPG'))->values()->all();
+    }
+
+    private function dataTombolLoginSukses(): string
+    {
+        $pesan = $this->pesanLoginSukses();
+        $this->assertNotEmpty($pesan, 'Notifikasi login web sukses tidak terkirim.');
+
+        return (string) $this->markupOf(end($pesan))['inline_keyboard'][0][0]['callback_data'];
+    }
+
+    public function test_bukan_saya_setelah_kode_dipakai_mencabut_semua_sesi_web_sekali_saja(): void
+    {
+        $sesiA = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+        $miniApp = $this->beriSesiPenuh($this->siti);
         $data = $this->markupOf($this->pesanKode()[0])['inline_keyboard'][0][0]['callback_data'];
 
         $this->webhook($this->klik($data))->assertOk();
 
+        $edit = $this->telegramCalls('editMessageText')->last();
+        $this->assertSame(BotCallbackHandler::BUKAN_SAYA_SESI_DICABUT, $edit['text']);
+        $this->assertStringContainsString('/password', (string) json_encode($this->markupOf($edit)));
+        $this->assertFalse($this->sesiAda($sesiA));
+        $this->assertTrue($this->sesiAda($miniApp), 'Sesi Mini App tidak boleh ikut dicabut.');
+        $audit = AuditLog::query()->where('event', AuditAuth::WEB_BUKAN_SAYA)->sole();
+        $this->assertSame('sesi_dicabut', $audit->new_values['status']);
+        $this->assertSame(1, $audit->new_values['sesi_web_dicabut']);
+
+        // Tombol yang sama ditekan lagi setelah login baru: tidak mencabut lagi (sekali pakai).
+        $sesiB = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+        $this->webhook($this->klik($data))->assertOk();
+
         $this->assertSame(BotCallbackHandler::BUKAN_SAYA_SUDAH_DIPAKAI, $this->telegramCalls('editMessageText')->last()['text']);
-        $this->assertSame('sudah_dipakai', AuditLog::query()->where('event', AuditAuth::WEB_BUKAN_SAYA)->first()->new_values['status']);
+        $this->assertTrue($this->sesiAda($sesiB));
+    }
+
+    public function test_bukan_saya_pesan_kode_lewat_jendela_tidak_mencabut_sesi(): void
+    {
+        $this->loginWeb()->assertOk();
+        $data = $this->markupOf($this->pesanKode()[0])['inline_keyboard'][0][0]['callback_data'];
+        $this->travel(MasukWebService::jamBukanSaya() + 1)->hours();
+        $miniApp = $this->beriSesiPenuh($this->siti);
+        $baru = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+
+        $this->webhook($this->klik($data))->assertOk();
+
+        $this->assertSame(BotCallbackHandler::BUKAN_SAYA_SUDAH_DIPAKAI, $this->telegramCalls('editMessageText')->last()['text']);
+        $this->assertTrue($this->sesiAda($baru));
+        $this->assertTrue($this->sesiAda($miniApp));
+    }
+
+    public function test_notifikasi_login_sukses_memuat_label_waktu_dan_tombol_bukan_saya_berumur_terbatas(): void
+    {
+        $this->loginWeb()->assertOk();
+
+        $pesan = $this->pesanLoginSukses();
+        $this->assertCount(1, $pesan);
+        $this->assertStringContainsString('Firefox · Linux', (string) $pesan[0]['text']);
+        $this->assertStringContainsString('13-11-2026 08.00 WIB', (string) $pesan[0]['text']);
+        $this->assertStringStartsWith(MasukWebService::PREFIKS_BUKAN_SAYA_LOGIN.'.', $this->dataTombolLoginSukses());
+        $this->assertLessThanOrEqual(64, strlen($this->dataTombolLoginSukses()));
+
+        $token = TantanganToken::query()->where('tujuan', TantanganToken::TUJUAN_BUKAN_SAYA_WEB)->sole();
+        $this->assertSame($this->siti->id, (int) $token->user_id);
+        $this->assertTrue($token->kedaluwarsa_pada->equalTo(now()->addHours(MasukWebService::jamBukanSaya())));
+        $this->assertNull($token->dipakai_pada);
+    }
+
+    public function test_bukan_saya_notifikasi_mencabut_semua_sesi_web_dan_browser_tepercaya_tetapi_mini_app_tetap(): void
+    {
+        $sesiA = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+        $data = $this->dataTombolLoginSukses();
+        $sesiB = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+        $browser = app(BrowserTepercayaService::class)->buat($this->siti, 'Chrome · Windows')['browser'];
+        $miniApp = $this->beriSesiPenuh($this->siti);
+
+        $this->webhook($this->klik($data))->assertOk();
+
+        $this->assertFalse($this->sesiAda($sesiA));
+        $this->assertFalse($this->sesiAda($sesiB));
+        $this->assertSame(0, SesiService::hanyaSesiLogin($this->siti->tokens())->where('name', 'like', SesiService::PREFIX_WEB.'%')->count());
+        $this->assertSame(BrowserTepercayaService::ALASAN_BUKAN_SAYA, $browser->fresh()->alasan_cabut);
+        $this->assertTrue($this->sesiAda($miniApp), 'Sesi Mini App tidak boleh ikut dicabut.');
+
+        $edit = $this->telegramCalls('editMessageText')->last();
+        $this->assertSame(BotCallbackHandler::BUKAN_SAYA_SESI_DICABUT, $edit['text']);
+        $this->assertSame('https://sigap.test/miniapp/?r=%2Fpassword#/password', $this->markupOf($edit)['inline_keyboard'][0][0]['web_app']['url']);
+
+        $audit = AuditLog::query()->where('event', AuditAuth::WEB_BUKAN_SAYA)->sole();
+        $this->assertSame(['sesi_dicabut', 'notifikasi', 2, 1], [
+            $audit->new_values['status'], $audit->new_values['jalur'], $audit->new_values['sesi_web_dicabut'], $audit->new_values['browser_dicabut'],
+        ]);
+        $this->assertNull($this->siti->fresh()->web_terkunci_sampai, 'Tombol tidak boleh mengunci akun.');
+    }
+
+    public function test_bukan_saya_notifikasi_gagal_dijawab_seragam_tanpa_efek(): void
+    {
+        $sesi = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+        $data = $this->dataTombolLoginSukses();
+        $id = explode('.', $data)[1];
+        $lain = User::factory()->role(Role::AhliGizi)->denganKredensial('budi.gizi')->create(['sppg_id' => $this->siti->sppg_id, 'telegram_id' => 7000000009]);
+
+        // Diteruskan akun Telegram lain, dibuat untuk akun lain, MAC palsu, prefiks w1 dengan id token w2.
+        $this->webhook($this->klik($data, (int) $lain->telegram_id))->assertOk();
+        $this->webhook($this->klik(MasukWebService::dataBukanSayaLogin($id, (int) $lain->telegram_id), (int) $lain->telegram_id))->assertOk();
+        $this->webhook($this->klik('w2.'.$id.'.AAAAAAAA'))->assertOk();
+        $this->webhook($this->klik(MasukWebService::dataBukanSaya($id, self::CHAT)))->assertOk();
+
+        $this->assertTrue($this->sesiAda($sesi));
+        $this->assertNull(TantanganToken::query()->find($id)->dipakai_pada);
+
+        // Kedaluwarsa: tanpa efek, jawaban sama.
+        $this->travel(MasukWebService::jamBukanSaya() * 60 + 1)->minutes();
+        $this->webhook($this->klik($data))->assertOk();
+        $this->assertNull(TantanganToken::query()->find($id)->dipakai_pada);
+
+        $this->assertSame(0, AuditLog::query()->where('event', AuditAuth::WEB_BUKAN_SAYA)->count());
+        $this->assertSame(0, $this->telegramCalls('editMessageText')->count());
+        $jawaban = $this->telegramCalls('answerCallbackQuery');
+        $this->assertCount(5, $jawaban);
+        $this->assertTrue($jawaban->every(fn (HttpRequest $r) => $r['text'] === BotCallbackHandler::TIDAK_BERLAKU));
+    }
+
+    public function test_bukan_saya_notifikasi_sekali_pakai(): void
+    {
+        $this->loginWeb()->assertOk();
+        $data = $this->dataTombolLoginSukses();
+
+        $this->webhook($this->klik($data))->assertOk();
+        $sesiBaru = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+        $this->webhook($this->klik($data))->assertOk();
+
+        $this->assertTrue($this->sesiAda($sesiBaru), 'Tombol yang sudah dipakai tidak boleh mencabut sesi baru.');
+        $this->assertSame(1, AuditLog::query()->where('event', AuditAuth::WEB_BUKAN_SAYA)->count());
+        $this->assertSame(BotCallbackHandler::TIDAK_BERLAKU, $this->telegramCalls('answerCallbackQuery')->last()['text']);
+    }
+
+    public function test_penyerang_mengganti_sandi_lewat_sesi_web_tidak_mematikan_tombol_bukan_saya(): void
+    {
+        $curian = $this->nilaiCookieSesi($this->loginWeb()->assertOk());
+        $data = $this->dataTombolLoginSukses();
+
+        $this->web('PUT', '/api/v1/auth/password', [SesiWeb::namaCookieSesi() => $curian], $this->header(SesiWeb::csrfSesi($curian)), [
+            'password_lama' => self::SANDI, 'password' => 'SandiBaru456y', 'password_confirmation' => 'SandiBaru456y',
+        ])->assertOk();
+
+        $this->webhook($this->klik($data))->assertOk();
+
+        $this->assertSame(BotCallbackHandler::BUKAN_SAYA_SESI_DICABUT, $this->telegramCalls('editMessageText')->last()['text']);
+        $this->assertSame(0, $this->siti->tokens()->where('name', 'like', SesiService::PREFIX_WEB.'%')->count());
     }
 
     // ---------------------------------------------------------------- lain-lain

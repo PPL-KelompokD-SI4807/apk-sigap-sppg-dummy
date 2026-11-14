@@ -44,6 +44,14 @@ class TantanganToken extends Model
      */
     public const TUJUAN_MASUK_WEB = 'masuk_web';
 
+    /**
+     * R04-4 (#88): token tombol "Bukan saya" pada notifikasi login web sukses (MasukWebService). Bukan kode: tidak ada
+     * kode yang dikirim; kode_hash/device_hash berisi hash acak. Sekali pakai (dipakai_pada) dan kedaluwarsa. TIDAK
+     * ikut dihanguskan User::cabutSemuaSesi, agar penyerang yang mengganti sandi lewat sesi web curian tidak dapat
+     * mematikan tombol milik pemilik akun.
+     */
+    public const TUJUAN_BUKAN_SAYA_WEB = 'bukan_saya_web';
+
     protected $table = 'tantangan_tokens';
 
     protected $guarded = ['*'];

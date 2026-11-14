@@ -7,6 +7,7 @@ use App\Services\Auth\AuditAuth;
 use App\Services\Auth\BrowserTepercayaService;
 use App\Services\Auth\KredensialService;
 use App\Services\Auth\SesiService;
+use App\Services\Auth\SesiWeb;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -103,8 +104,12 @@ class SesiController extends ApiController
         ]);
     }
 
-    /** PUT /api/v1/auth/password — ubah password; sesi ini tetap, sesi lain dicabut. */
-    public function ubahPassword(UbahPasswordRequest $request, KredensialService $kredensial): JsonResponse
+    /**
+     * PUT /api/v1/auth/password — ubah password; sesi ini tetap, sesi lain dicabut. Jalur cookie web (R04-4, #82):
+     * token sesi ini dirotasi (cookie baru lewat Set-Cookie) dan respons memuat `csrf` baru; CSRF lama tidak sah.
+     * Respons jalur Bearer (Mini App) tidak berubah.
+     */
+    public function ubahPassword(UbahPasswordRequest $request, KredensialService $kredensial, SesiService $sesi): JsonResponse
     {
         $token = $request->user()->currentAccessToken();
 
@@ -119,10 +124,17 @@ class SesiController extends ApiController
             $token,
         );
 
-        return response()->json([
+        $body = [
             'message' => 'Password diubah. Sesi di perangkat lain telah dicabut.',
             'jumlah_sesi_dicabut' => $jumlah,
-        ]);
+        ];
+
+        if (SesiWeb::jalurCookie($request) && ($rotasi = $sesi->rotasiWeb($token)) !== null) {
+            AuditAuth::catat($request->user(), AuditAuth::WEB_SESI_DIROTASI, ['sesi_id' => (int) $token->getKey(), 'pemicu' => 'password_diubah']);
+            $body['csrf'] = $rotasi['csrf'];
+        }
+
+        return response()->json($body);
     }
 
     private function idTokenIni(Request $request): ?int

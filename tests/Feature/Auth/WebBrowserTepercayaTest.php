@@ -282,6 +282,32 @@ class WebBrowserTepercayaTest extends TestCase
         $this->assertTrue($this->sesiAda($awal['sesi']));
     }
 
+    public function test_notifikasi_login_tanpa_kode_memuat_tombol_bukan_saya_yang_mencabut_browser_ini(): void
+    {
+        $awal = $this->ingat();
+        $baris = BrowserTepercaya::query()->sole();
+        $sesi = (string) $this->cookieSesi($this->masuk('siti.dapur', self::SANDI, $awal['tb'])->assertOk()->assertJsonPath('langkah', 'selesai'))?->getValue();
+
+        $notif = $this->messagesTo(self::CHAT)->last(fn (HttpRequest $r) => str_contains((string) $r['text'], 'dari browser tepercaya (tanpa kode)'));
+        $this->assertNotNull($notif);
+        $data = (string) $this->markupOf($notif)['inline_keyboard'][0][0]['callback_data'];
+
+        $this->webhook([
+            'update_id' => 4242,
+            'callback_query' => [
+                'id' => 'cb-r044',
+                'from' => ['id' => self::CHAT, 'is_bot' => false, 'first_name' => 'Siti'],
+                'message' => ['message_id' => 91, 'chat' => ['id' => self::CHAT, 'type' => 'private'], 'date' => time()],
+                'data' => $data,
+            ],
+        ])->assertOk();
+
+        $this->assertFalse($this->sesiAda($sesi));
+        $this->assertFalse($this->sesiAda($awal['sesi']));
+        $this->assertSame(BrowserTepercayaService::ALASAN_BUKAN_SAYA, $baris->fresh()->alasan_cabut);
+        $this->api('GET', '/api/v1/auth/me', $sesi)->assertUnauthorized();
+    }
+
     public function test_sandi_salah_pada_browser_tepercaya_422_dan_dihitung_gagal(): void
     {
         $awal = $this->ingat();
@@ -550,19 +576,24 @@ class WebBrowserTepercayaTest extends TestCase
         $this->travel(1)->minutes();
         $ini = $this->ingat();
 
-        $this->api('PUT', '/api/v1/auth/password', $ini['sesi'], ['password_lama' => self::SANDI, 'password' => 'SandiBaru456y', 'password_confirmation' => 'SandiBaru456y'])->assertOk();
+        $idSesi = (int) PersonalAccessToken::findToken($ini['sesi'])->getKey();
+        $res = $this->api('PUT', '/api/v1/auth/password', $ini['sesi'], ['password_lama' => self::SANDI, 'password' => 'SandiBaru456y', 'password_confirmation' => 'SandiBaru456y'])->assertOk();
 
         $this->assertSame(0, BrowserTepercaya::query()->aktif()->count());
         $this->assertSame(['password_diubah'], BrowserTepercaya::query()->pluck('alasan_cabut')->unique()->values()->all());
         $this->assertFalse($this->sesiAda($lain['sesi']));
 
-        // Sesi yang mengubah sandi tetap, tetapi tidak lagi turunan browser tepercaya (kembali terkena idle 12 jam).
-        $token = PersonalAccessToken::findToken($ini['sesi']);
+        // Sesi yang mengubah sandi tetap (baris sama; cookie dirotasi R04-4), tetapi tidak lagi turunan browser
+        // tepercaya (kembali terkena idle 12 jam).
+        $baru = (string) $this->cookieSesi($res)?->getValue();
+        $this->assertFalse($this->sesiAda($ini['sesi']));
+        $token = PersonalAccessToken::findToken($baru);
         $this->assertNotNull($token);
+        $this->assertSame($idSesi, (int) $token->getKey());
         $this->assertNull($token->browser_tepercaya_id);
-        $this->api('GET', '/api/v1/auth/me', $ini['sesi'])->assertOk();
+        $this->api('GET', '/api/v1/auth/me', $baru)->assertOk();
         $this->travel(13)->hours();
-        $this->api('GET', '/api/v1/auth/me', $ini['sesi'])->assertUnauthorized();
+        $this->api('GET', '/api/v1/auth/me', $baru)->assertUnauthorized();
     }
 
     public function test_keluar_semua_mencabut_browser_tepercaya(): void

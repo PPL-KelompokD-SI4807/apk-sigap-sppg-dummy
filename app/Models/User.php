@@ -187,7 +187,9 @@ class User extends Authenticatable
             ->when($kecualiPerangkatId !== null, fn ($q) => $q->whereKeyNot($kecualiPerangkatId))
             ->update(['dicabut_at' => now()]);
 
-        $this->tantanganToken()->terbuka()->update(['hangus_pada' => now(), 'payload' => null]);
+        // Token "Bukan saya" (R04-4) tetap hidup: pemilik akun harus tetap bisa mencabut sesi web setelah pencabutan ini.
+        $this->tantanganToken()->terbuka()->where('tujuan', '!=', TantanganToken::TUJUAN_BUKAN_SAYA_WEB)
+            ->update(['hangus_pada' => now(), 'payload' => null]);
 
         return $jumlah;
     }

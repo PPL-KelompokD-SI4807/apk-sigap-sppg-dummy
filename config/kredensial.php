@@ -67,7 +67,16 @@ return [
             'masuk_per_identitas' => 5,
             'masuk_per_identitas_menit' => 15,
             'kode_per_ip_per_menit' => 10,
+            // R04-4 (#81): grup login penuh jalur cookie, SEBELUM CSRF/autentikasi (BatasLajuSesiWeb). Hanya per
+            // IP (IP dari REMOTE_ADDR atau X-Forwarded-For proxy tepercaya, lihat config/trustedproxy.php); tanpa
+            // pemutus arus global (itu tuas DoS). Bearer Mini App tidak dihitung.
+            'sesi_per_ip_per_menit' => 300,
+            // Kegagalan jalur cookie (401, 403 csrf_ditolak) per IP per menit.
+            'sesi_gagal_per_ip_per_menit' => 30,
         ],
+        // R04-4 (#88): tombol "Bukan saya" pada notifikasi login web sukses (dan pesan kode yang sudah dipakai)
+        // berlaku sekian jam; ditekan -> semua sesi web + browser tepercaya akun dicabut (sekali pakai).
+        'bukan_saya_jam' => 24,
     ],
 
     // Umur token pra-login (menit). Hanya untuk rute login/aktivasi/reset/token.
