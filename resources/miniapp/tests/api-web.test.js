@@ -245,3 +245,36 @@ test('berkas klien web tidak menyentuh storage/cookie, Authorization, atau api.j
   for (const [re, nama] of dilarang) assert.doesNotMatch(src, re, nama);
   assert.match(src, /credentials: 'same-origin'/);
 });
+
+test('rotasi CSRF (R04-4): PUT /auth/password berhasil mengganti CSRF di memori; permintaan berikut memakai nilai baru', async () => {
+  const { calls, klien } = pasang({
+    'GET /auth/me': [me(HEX1)],
+    'PUT /auth/password': [resp(200, { message: 'Password diubah.', jumlah_sesi_dicabut: 1, csrf: HEX2 })],
+    'POST /bahan-baku': [resp(201, { data: {} })],
+  });
+  await klien.muatSesi();
+  const r = await klien.request('PUT', '/auth/password', { body: { password_lama: 'a', password: 'b' } });
+  assert.equal(r.csrf, HEX2);
+  assert.equal(klien.getCsrf(), HEX2);
+  await klien.request('POST', '/bahan-baku', { body: { nama: 'x' } });
+  assert.equal(calls[1].headers['X-CSRF-Token'], HEX1, 'ubah password memakai CSRF lama');
+  assert.equal(calls[2].headers['X-CSRF-Token'], HEX2, 'permintaan sesudahnya memakai CSRF baru');
+});
+
+test('rotasi CSRF: gagal (422) atau respons tanpa csrf tidak mengubah CSRF di memori', async () => {
+  const gagal = pasang({ 'GET /auth/me': [me(HEX1)], 'PUT /auth/password': [resp(422, { message: 'Salah', errors: {}, csrf: HEX2 })] });
+  await gagal.klien.muatSesi();
+  await assert.rejects(gagal.klien.request('PUT', '/auth/password', { body: {} }), (e) => e instanceof ApiError && e.status === 422);
+  assert.equal(gagal.klien.getCsrf(), HEX1);
+  const tanpa = pasang({ 'GET /auth/me': [me(HEX1)], 'PUT /auth/password': [resp(200, { message: 'ok' })] });
+  await tanpa.klien.muatSesi();
+  await tanpa.klien.request('PUT', '/auth/password', { body: {} });
+  assert.equal(tanpa.klien.getCsrf(), HEX1);
+});
+
+test('rotasi CSRF: tidak berlaku untuk rute lain meski respons memuat csrf', async () => {
+  const { klien } = pasang({ 'GET /auth/me': [me(HEX1)], 'PUT /pengguna/5': [resp(200, { data: {}, csrf: HEX2 })] });
+  await klien.muatSesi();
+  await klien.request('PUT', '/pengguna/5', { body: {} });
+  assert.equal(klien.getCsrf(), HEX1);
+});
