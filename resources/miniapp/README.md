@@ -68,7 +68,7 @@ Dua jalur, sesuai kontrak `docs/api/paths/lampiran.yaml`:
    `Idempotency-Key` yang sama). Simpan diblokir bila ada foto yang belum selesai/gagal; id terunggah dikirim sebagai `lampiran_ids` oleh
    `mapPayload` (`lampiranIdsPayload`). Jenis (JPEG/PNG/WebP), maks 5 MB, dan maks 5 foto dicek di klien (`core/lampiran-uploader.js`) dan
    tetap ditegakkan server. Bukti distribusi memakai jalur 1 (foto bagian dari payload) + panel lampiran jalur 2 untuk lampiran tambahan.
-Menampilkan gambar privat: `createAuthImage(berkas, {alt})` (fetch + `Authorization` -> blob -> objectURL, dilepas saat pindah layar).
+Menampilkan gambar privat: `createAuthImage(berkas, {alt})` (fetch dengan kredensial dari transport, `kredensialBerkas`: Bearer di Mini App, cookie sesi same-origin di web -> blob -> objectURL, dilepas saat pindah layar atau render ulang).
 Hanya jalur `/api/v1/lampiran/{id}` yang diterima (`lampiranPath`), sehingga token tidak terkirim ke domain lain. Jangan memakai `<img src>` langsung.
 
 ## Draf AI

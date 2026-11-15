@@ -1,6 +1,7 @@
 import { h, clear } from './dom.js';
 import { getTg, isNative } from './telegram.js';
 import { hideMainButton, toast } from './ui.js';
+import { bersihkanUrlTerlacak } from './url-objek.js';
 
 const routes = [];
 let outlet = null;
@@ -139,6 +140,7 @@ export async function resolve() {
   const { path, query } = parseHash();
   current = { path, query };
   if (cleanup) { try { cleanup(); } catch { /* abaikan */ } cleanup = null; }
+  bersihkanUrlTerlacak(); // object URL pratinjau/gambar privat render sebelumnya (rute lain atau rute yang sama)
   hideMainButton();
   syncBack(path);
   window.scrollTo(0, 0);

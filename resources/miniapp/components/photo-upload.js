@@ -2,7 +2,8 @@
 // batas jumlah, dan tampilan gambar privat lewat fetch berkredensial transport (blob -> objectURL).
 // Bagian murni (tanpa DOM) diekspor agar dapat diuji dengan node --test.
 import { h } from '../core/dom.js';
-import { kredensialBerkas, newKey } from '../core/transport.js';
+import { kredensialBerkas, newKey, sesiBerkasHabis } from '../core/transport.js';
+import { trackUrl, lepasUrl } from '../core/url-objek.js';
 import { terapkanHeaderSppg, getSppgAktif } from '../core/sppg-aktif.js';
 
 export const MAX_SIDE = 1600;
@@ -106,25 +107,16 @@ export async function compressImage(file) {
   return (await compressImageDetail(file)).file;
 }
 
-// ---- URL objek: dilepas saat berpindah layar agar memori tidak bocor ----
-const tracked = new Set();
-let hookInstalled = false;
-function trackUrl(url) {
-  tracked.add(url);
-  if (!hookInstalled && typeof window !== 'undefined') {
-    hookInstalled = true;
-    window.addEventListener('hashchange', () => { tracked.forEach((u) => URL.revokeObjectURL(u)); tracked.clear(); });
-  }
-  return url;
-}
-const release = (url) => { if (url && tracked.delete(url)) URL.revokeObjectURL(url); };
+// ---- URL objek: dilacak di core/url-objek.js; router mencabut semuanya di awal tiap render rute (juga rute yang sama) ----
+export { lepasUrl };
+const release = lepasUrl;
 
 /**
  * Ambil gambar privat -> Blob. Kredensial dari lapisan transport (kredensialBerkas): Mini App = Bearer + credentials 'omit';
  * web = cookie sesi HttpOnly (same-origin) + X-Sigap-Klien: web. Tanpa token di URL. `token`/`kredensial` hanya untuk tes.
  * Galat memuat pesan Indonesia.
  */
-export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token, kredensial = null, sppgId = getSppgAktif() } = {}) {
+export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token, kredensial = null, sppgId = getSppgAktif(), onSesiHabis = sesiBerkasHabis } = {}) {
   if (!lampiranPath(path)) throw new Error('Alamat berkas tidak valid.');
   const k = kredensial ?? kredensialBerkas(token);
   let res;
@@ -132,7 +124,11 @@ export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a),
     res = await fetchFn(path, { headers: terapkanHeaderSppg({ Accept: 'image/*', ...k.headers }, sppgId), credentials: k.credentials, cache: 'no-store' });
   } catch { throw new Error('Tidak ada koneksi internet.'); }
   if (!res.ok) {
-    if (res.status === 401) throw new Error('Sesi Anda telah berakhir. Silakan masuk kembali.');
+    if (res.status === 401) {
+      // Web: memicu alur sesi-habis yang sama dengan permintaan API lain; Mini App: tanpa efek (perilaku tetap). Pesan per gambar tetap.
+      try { onSesiHabis?.(); } catch { /* jangan menutupi pesan per gambar */ }
+      throw Object.assign(new Error('Sesi Anda telah berakhir. Silakan masuk kembali.'), { status: 401 });
+    }
     // 403 lampiran_disembunyikan (Investor) bukan galat SPPG aktif: pilihan SPPG tidak dihapus.
     if (res.status === 403) {
       let alasan = null;

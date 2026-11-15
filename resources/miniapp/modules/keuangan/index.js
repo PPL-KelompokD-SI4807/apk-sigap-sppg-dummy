@@ -180,8 +180,9 @@ function riwayatPanel(rec) {
 
 /**
  * Panel keputusan investor: catatan (wajib bila tolak) + Setujui/Tolak. 409 -> pesan jelas lalu muat ulang.
- * Dipakai Mini App dan web (R04-8 PR5); tampil hanya bila izin.putuskan dari server. Idempotency-Key dipakai ulang selama isian
- * keputusan sama (pengulangan setelah jaringan putus tidak membuat keputusan ganda), diganti bila keputusan/catatan berubah.
+ * Dipakai Mini App dan web (R04-8 PR5); tampil hanya bila izin.putuskan dari server. Perlindungan dari keputusan ganda berasal dari
+ * `versi` di body (server menolak versi usang dengan 409), BUKAN dari idempotensi: rute ini tidak memakai middleware idempotensi.
+ * Idempotency-Key tetap dikirim dan dipakai ulang selama isian sama (tidak berbahaya, diabaikan server), diganti bila keputusan/catatan berubah.
  */
 function keputusanPanel(rec) {
   const catatan = h('textarea', { class: 'input', id: 'catatan-keputusan', rows: '3', maxlength: String(MAKS_CATATAN), placeholder: `Wajib diisi bila menolak (min. ${MIN_CATATAN} karakter)` });

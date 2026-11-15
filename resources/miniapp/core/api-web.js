@@ -289,6 +289,8 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), xhrFactory = xhr
   return {
     request, api, masuk, kirimKode, kirimUlangKode, muatCsrf: muatCsrfPra, muatSesi, logout, daftarSesi, cabutSesi, daftarBrowserTepercaya, cabutBrowserTepercaya, keluarSemua,
     getUser: () => user,
+    /** 401 dari pemuat berkas privat (fetch langsung, di luar request()): perlakuan sama dengan 401 rute sesi. */
+    sesiHabisDariBerkas: () => { if (mode === 'sesi') sesiHabis(); },
     adaSesi: () => mode === 'sesi',
     /** Hanya untuk tes/diagnostik: nilai CSRF di memori. */
     getCsrf: () => csrf,
