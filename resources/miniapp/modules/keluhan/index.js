@@ -125,9 +125,11 @@ export default defineCrudModule({
   formTopWeb: formTop,
   detailExtrasWeb: (rec, ctx, p) => [
     rec.prioritas === 'kritis' ? h('div', { class: 'alert-danger' }, 'Keluhan KRITIS', rec.dieskalasi_pada ? ` · dieskalasi ${tanggalJamWIB(rec.dieskalasi_pada)}` : '', rec.jadwal_produksi_id ? '' : ' · batch tidak diketahui') : null,
-    // Tindak lanjut hanya bila hak U (setelah rowPerms) dan aksi tindak_lanjut_keluhan dari peta server; foto keluhan: PR5.
+    // Tindak lanjut hanya bila hak U (setelah rowPerms) dan aksi tindak_lanjut_keluhan dari peta server.
     p.U && transisiValid(rec.status).length && !suntingPenuh(getUser()) && bolehAksi(getUser(), 'tindak_lanjut_keluhan')
       ? h('a', { class: 'btn btn-primary btn-block', href: `#/keluhan/${rec.id}/ubah` }, rec.status === 'baru' ? 'Proses keluhan' : 'Selesaikan / tolak dengan catatan') : null,
+    // Foto keluhan lewat cookie sesi (R04-8 PR5); investor: disembunyikan (server juga 403 lampiran_disembunyikan).
+    panelFotoKeluhan(rec, p),
   ].filter(Boolean),
   formTop,
   rowPerms: (rec, p) => rowPermsKeluhan(getUser(), rec, p),
@@ -144,7 +146,14 @@ export default defineCrudModule({
     if (p.U && transisiValid(rec.status).length && !suntingPenuh(getUser()) && bolehAksi(getUser(), 'tindak_lanjut_keluhan')) {
       nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/keluhan/${rec.id}/ubah` }, rec.status === 'baru' ? 'Proses keluhan' : 'Selesaikan / tolak dengan catatan'));
     }
-    if (lampiranDisembunyikan(getUser(), rec) || (rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ disembunyikan: lampiranDisembunyikan(getUser(), rec), modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto keluhan' }));
+    const foto = panelFotoKeluhan(rec, p);
+    if (foto) nodes.push(foto);
     return nodes;
   },
 });
+
+function panelFotoKeluhan(rec, p) {
+  const sembunyi = lampiranDisembunyikan(getUser(), rec);
+  if (!sembunyi && !(rec.lampiran || []).length && !p?.U) return null;
+  return createLampiranPanel({ disembunyikan: sembunyi, modul: 'keluhan', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p?.U, title: 'Foto keluhan' });
+}

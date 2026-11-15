@@ -216,7 +216,6 @@ test('hak per profil: formulir tambah hanya terbuka bila peta hak server memberi
       if (slug === 'notifikasi-perjalanan') tambah = tambah && bolehAksi(getUser(), 'picu_perjalanan') && jadwalTabBoleh(getUser(), 'distribusi');
       if (slug === 'keuangan/pencairan' || slug === 'keuangan/pengeluaran') tambah = userPerms(getUser(), 'keuangan').C; // akuntan saja (rbac.php: admin/kepala/investor R)
       if (slug === 'rekap-harian') tambah = tambah && bolehAksi(getUser(), 'susun_rekap'); // kepala_sppg saja (CRU)
-      if (slug === 'bukti-distribusi') tambah = false; // foto wajib di server: Tambah web menunggu PR5 (tambahWeb: false)
       assert.equal(cekAkses(`/${slug}/baru`), tambah ? 'boleh' : 'ditolak', `${nama} ${slug}`);
     }
   }

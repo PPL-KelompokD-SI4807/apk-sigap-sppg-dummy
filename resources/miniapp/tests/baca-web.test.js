@@ -150,7 +150,7 @@ test('operasional: daftar tampil dengan tautan detail tanpa Tambah/Berangkat/Sus
   }
 });
 
-test('operasional: detail tampil tanpa tombol tulis, tanpa tautan Ubah/Catat/Periksa, tanpa foto privat', async () => {
+test('operasional: detail tampil tanpa tombol tulis, tanpa tautan Ubah/Catat/Periksa, foto privat tanpa Authorization', async () => {
   for (const nama of ['admin', 'kepala_sppg', 'akuntan', 'investor']) {
     const user = peran(nama);
     for (const slug of OPERASIONAL) {

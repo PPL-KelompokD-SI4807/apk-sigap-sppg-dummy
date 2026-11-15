@@ -58,7 +58,7 @@ function displayValue(field, rec) {
  *   formTop({mode,record,form,collect,values}) -> Node di atas form; onSaved({mode,res}) setelah simpan; prefill(query) -> nilai awal form baru
  *   prefillDraf(payloadBersih) -> nilai form dari payload draf AI (default: payload apa adanya tanpa kunci berawalan "_")
  *   field.onlyIfPresent: kolom detail disembunyikan bila kuncinya tak ada di respons (mis. no_sim untuk peran R)
- *   tambahWeb:false -> web TIDAK menyediakan Tambah (mis. bukti distribusi: foto wajib di server, menunggu PR5); Ubah/Hapus tetap
+ *   tambahWeb:false -> web TIDAK menyediakan Tambah (layar tambah belum layak di web); Ubah/Hapus tetap
  *   formTopWeb({mode,record,form,collect,values}) -> Node info di atas formulir web (hanya baca; tanpa aksi tulis)
  *   listTopWeb() / detailExtrasWeb(rec, ctx, perms) -> padanan listTop/detailExtras untuk layar BACA web (registerWeb). Tanpanya web tidak
  *     menampilkan bagian itu (listTop/detailExtras Mini App memuat aksi tulis, undangan Telegram, dan tautan ke layar yang belum ada di web)
@@ -152,12 +152,11 @@ export function defineCrudModule(def) {
     return fv.destroy;
   }
 
-  // Panel rincian read-only. Web: kolom foto dilewati (gambar privat butuh jalur cookie, menyusul di PR foto web).
-  function panelDetail(rec, { web = false } = {}) {
+  // Panel rincian read-only. Foto privat dimuat lewat kredensial transport (Mini App: Bearer; web: cookie sesi, R04-8 PR5).
+  function panelDetail(rec) {
     const dl = h('dl', { class: 'detail' });
     for (const f of fieldsFor('detail', rec)) {
       if (f.onlyIfPresent && !(f.name in rec)) continue;
-      if (web && f.type === 'photo') continue;
       const dt = h('dt', {}, f.label || f.name);
       const v = rec[f.name];
       const dd = f.type === 'photo' && v ? h('dd', {}, createAuthImage(v, { alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
@@ -239,9 +238,11 @@ export function defineCrudModule(def) {
     }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U && aksesRecord() });
   }
 
-  // ---- Formulir WEB (R04-8 PR4c) ----
-  // Tanpa draf AI, antrean offline, dan foto (PR5). Idempotency-Key dibuat SEKALI per formulir dan dipakai ulang pada setiap
+  // ---- Formulir WEB (R04-8 PR4c, foto PR5) ----
+  // Tanpa draf AI dan antrean offline. Idempotency-Key dibuat SEKALI per formulir dan dipakai ulang pada setiap
   // pengulangan manual sampai berhasil (server hanya menyimpan respons 2xx, jadi kunci yang sama aman dipakai setelah galat).
+  // Foto (type 'photo') ikut payload multipart lewat klien cookie (CSRF + X-SPPG-Id); kolom lampiran (lampiranField) mengunggah
+  // tiap foto ke POST /lampiran dan Simpan menunggu semua foto selesai. Jenis/ukuran di klien hanya kenyamanan: server memutuskan.
   async function renderFormWeb(ctx, { mode, record }) {
     const kunci = newKey();
     const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}) }; // prefill dari query (mis. ?jadwal=)
@@ -256,7 +257,7 @@ export function defineCrudModule(def) {
         g.muatUlang ? h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang data') : null));
     };
     const fv = createFormView({
-      fields: fieldsFor(mode, record).filter((f) => f.type !== 'photo' && !f.lampiran), // foto dan lampiran: PR5
+      fields: fieldsFor(mode, record),
       values,
       submitText: mode === 'create' ? 'Simpan' : 'Simpan perubahan',
       onSubmit: async (v) => {
@@ -286,7 +287,7 @@ export function defineCrudModule(def) {
   }
 
   // Rute BACA untuk web (R04-8 PR4): daftar + detail. opsi.tulis (PR4c) menambah Tambah/Ubah/Hapus yang mengikuti hak server
-  // (peta hak / izin per record). Tanpa draf AI, antrean offline, dan foto privat.
+  // (peta hak / izin per record). Tanpa draf AI dan antrean offline; foto privat lewat cookie sesi (PR5).
   // Hak tetap dari peta hak server (me(...).R); modul memilih bagian tambahan lewat listTopWeb/detailExtrasWeb.
   function registerWeb({ tulis = false } = {}) {
     const redirect = (p) => (p.selfOnly ? `${base}/${getUser().id}` : (def.listRedirect ? def.listRedirect(getUser(), p) : null));
@@ -308,7 +309,7 @@ export function defineCrudModule(def) {
       const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
       if (ctx.isStale()) return;
       ctx.setTitle(recTitle(rec));
-      ctx.el.append(panelDetail(rec, { web: true }));
+      ctx.el.append(panelDetail(rec));
       const perms = tulis ? permsRecord(rec) : { C: false, U: false, D: false, selfOnly: false }; // aksi tulis hanya bila hak server mengizinkan
       if (detailExtrasWeb) {
         const hasil = await detailExtrasWeb(rec, ctx, perms); // Node(s) atau { nodes, destroy } (destroy = pembersih grafik)

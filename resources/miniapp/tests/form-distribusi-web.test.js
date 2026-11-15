@@ -1,5 +1,5 @@
-// R04-8 PR4e: formulir web distribusi (jadwal distribusi, notifikasi perjalanan, bukti distribusi tanpa foto/Tambah).
-// Idempotency-Key sekali per formulir; aksi status hanya bila izin server; bukti: Tambah disembunyikan (foto wajib di server, PR5).
+// R04-8 PR4e: formulir web distribusi (jadwal distribusi, notifikasi perjalanan, bukti distribusi).
+// Idempotency-Key sekali per formulir; aksi status hanya bila izin server; bukti: Tambah + foto sejak PR5 (multipart jalur cookie).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -178,16 +178,33 @@ test('detail perjalanan: tombol status hanya bila izin.ubah_status', async () =>
   assert.ok(!tombol(el).some((b) => /Tiba|Batalkan/i.test(teks(b))));
 });
 
-test('bukti distribusi: tanpa Tambah dan tanpa rute /baru di web; Ubah tanpa foto (PUT) mengikuti izin server', async () => {
+test('bukti distribusi (PR5): Tambah web aktif bila peta hak memberi C; foto serah terima wajib (tanpa foto tidak dikirim)', async () => {
   setUserSesi(salin('relawan_distribusi'));
+  const { userPerms } = await import('../core/permissions.js');
+  assert.equal(userPerms(getUser(), 'bukti-distribusi').C, true, 'fixture: relawan distribusi berhak C');
   let el = await buka('/bukti-distribusi');
-  assert.ok(!tautan(el).includes('#/bukti-distribusi/baru'), 'tidak ada tautan Tambah');
-  assert.ok(!/\+ Bukti/.test(teks(el)));
+  assert.ok(tautan(el).includes('#/bukti-distribusi/baru'), 'tautan Tambah ada');
   el = await buka('/bukti-distribusi/baru');
-  assert.ok(!cari(el, 'f-porsi_diterima'), 'rute /baru tidak menampilkan formulir');
-  el = await buka('/bukti-distribusi/9/ubah');
-  assert.equal(cari(el, 'f-foto'), null);
-  assert.equal(cari(el, 'f-berita_acara'), null);
+  assert.ok(cari(el, 'f-porsi_diterima'), 'formulir tambah tampil');
+  const foto = cari(el, 'f-foto');
+  assert.ok(foto, 'kolom foto serah terima ada');
+  assert.equal(foto.attrs?.capture ?? foto.capture, 'environment');
+  assert.ok(cari(el, 'f-berita_acara'), 'kolom berita acara ada');
+  await new Promise((r) => setTimeout(r, 20));
+  isi(el, { jadwal_distribusi_id: '5', porsi_diterima: '80', nama_pic: 'Ibu Fiktif' });
+  await kirim();
+  assert.equal(tulis().length, 0, 'tanpa foto: validasi klien menahan kiriman');
+  assert.match(teks(el), /Foto serah terima wajib diisi/);
+  setUserSesi(salin('kepala_sppg'));
+  el = await buka('/bukti-distribusi');
+  // Tambah murni dari peta hak server: profil tanpa C pada bukti-distribusi tidak mendapat tautan.
+  assert.equal(tautan(el).includes('#/bukti-distribusi/baru'), userPerms(getUser(), 'bukti-distribusi').C);
+});
+
+test('bukti distribusi: Ubah tanpa foto baru (PUT JSON) mengikuti izin server; foto lama tidak dikirim ulang', async () => {
+  setUserSesi(salin('relawan_distribusi'));
+  const el = await buka('/bukti-distribusi/9/ubah');
+  assert.ok(cari(el, 'f-foto'), 'kolom ganti foto tersedia');
   isi(el, { porsi_diterima: '80', nama_pic: 'Ibu Fiktif' });
   skrip = [resp(200, { data: { id: 9 } })];
   await kirim();

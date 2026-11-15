@@ -1,5 +1,6 @@
 // R04-8 PR4f: formulir web keuangan (pencairan, pengeluaran), keluhan, rekap harian.
-// Hak tombol hanya dari peta/izin server; Idempotency-Key sekali per formulir; tanpa foto/lampiran (PR5).
+// Hak tombol hanya dari peta/izin server; Idempotency-Key sekali per formulir. PR5: kolom foto/lampiran, foto nota lewat cookie,
+// dan panel keputusan investor (izin.putuskan).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -47,8 +48,9 @@ const rekapRec = { id: 41, tanggal: hariIni, status_kirim: 'terkirim', catatan: 
 const lst = (x) => resp(200, { data: x, meta: { current_page: 1, last_page: 1, total: x.length } });
 globalThis.fetch = async (url, init) => {
   const path = new URL(url, 'http://x').pathname.replace('/api/v1', '');
-  panggilan.push({ metode: init.method, path, headers: init.headers, body: init.body ? JSON.parse(init.body) : null });
-  if (init.method === 'GET') {
+  panggilan.push({ metode: init.method ?? 'GET', path, headers: init.headers, credentials: init.credentials, body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body ?? null });
+  if (/^\/lampiran\/\d+$/.test(path)) return { ok: true, status: 200, blob: async () => new Blob(['x'], { type: 'image/jpeg' }) };
+  if (!init.method || init.method === 'GET') {
     if (path === '/keuangan/pengeluaran/11') return resp(200, { data: pengRec });
     if (path === '/keuangan/pengeluaran') return lst([pengRec]);
     if (path === '/keuangan/pencairan/21') return resp(200, { data: pencRec });
@@ -104,10 +106,10 @@ test('TULIS_WEB memuat keuangan/pencairan, keuangan/pengeluaran, keluhan, rekap-
   for (const m of ['keuangan/pencairan', 'keuangan/pengeluaran', 'keluhan', 'rekap-harian']) assert.ok(TULIS_WEB.has(m), m);
 });
 
-test('pencairan baru (akuntan): POST dengan Idempotency-Key tetap pada pengulangan, tanpa bukti/foto', async () => {
+test('pencairan baru (akuntan): POST dengan Idempotency-Key tetap pada pengulangan; bukti transfer opsional tidak dikirim bila kosong', async () => {
   sebagai('akuntan');
   const el = await buka('/keuangan/pencairan/baru');
-  assert.equal(cari(el, 'f-bukti'), null);
+  assert.ok(cari(el, 'f-bukti'), 'kolom bukti transfer (PR5)');
   isi(el, { periode, sumber_dana: 'Dana Fiktif', nominal: '1000000', tanggal_cair: hariIni });
   skrip = [resp(503, { message: 'x' }), resp(201, { data: { id: 21 } })];
   await kirim(); await kirim();
@@ -121,10 +123,10 @@ test('pencairan baru (akuntan): POST dengan Idempotency-Key tetap pada pengulang
   assert.equal(location.hash, '#/keuangan/pencairan/21');
 });
 
-test('pengeluaran baru (akuntan): POST tanpa nota; ubah mengirim versi dari record (PUT)', async () => {
+test('pengeluaran baru (akuntan): kolom foto nota ada; POST tanpa nota (JSON); ubah mengirim versi dari record (PUT)', async () => {
   sebagai('akuntan');
   let el = await buka('/keuangan/pengeluaran/baru');
-  assert.equal(cari(el, 'f-nota'), null);
+  assert.ok(cari(el, 'f-nota'), 'kolom foto nota (PR5)');
   isi(el, { tanggal: hariIni, kategori: 'bahan_baku', uraian: 'Beli beras fiktif', nominal: '500000' });
   skrip = [resp(201, { data: { id: 11 } })];
   await kirim();
@@ -144,17 +146,84 @@ test('pengeluaran baru (akuntan): POST tanpa nota; ubah mengirim versi dari reco
   assert.equal(t[0].body.versi, 3);
 });
 
-test('detail pengeluaran: Hapus mengikuti izin record; tanpa panel keputusan; pembelian terkunci', async () => {
+test('detail pengeluaran: Hapus mengikuti izin record; Setujui/Tolak hanya bila izin.putuskan; pembelian terkunci', async () => {
   sebagai('akuntan');
   let el = await buka('/keuangan/pengeluaran/11');
   assert.ok(tombol(el).some((b) => /^Hapus$/.test(teks(b))));
+  assert.ok(!tombol(el).some((b) => /^(Setujui|Tolak)$/.test(teks(b))), 'izin.putuskan false -> tanpa panel keputusan');
+  assert.ok(teks(el).includes('Foto nota'));
   const asli = pengRec;
-  pengRec = { ...pengRec, izin: { ubah: false, hapus: false, lampirkan: false, putuskan: true }, pembelian_bahan_id: 5 };
+  pengRec = { ...pengRec, izin: { ubah: false, hapus: false, lampirkan: false, putuskan: false }, pembelian_bahan_id: 5 };
   el = await buka('/keuangan/pengeluaran/11');
-  assert.ok(!tombol(el).some((b) => /Hapus|Setujui|Tolak/.test(teks(b))), 'tanpa Hapus dan tanpa aksi keputusan di web');
+  assert.ok(!tombol(el).some((b) => /Hapus|Setujui|Tolak/.test(teks(b))));
   assert.ok(teks(el).includes('pembelian bahan'));
+  assert.ok(!tombol(el).some((b) => /Ambil foto|galeri/i.test(teks(b))), 'pembelian: unggah lampiran terkunci');
   el = await buka('/keuangan/pengeluaran/11/ubah');
   assert.equal(cari(el, 'f-uraian'), null, 'ubah ditolak tanpa izin.ubah');
+  pengRec = asli;
+});
+
+test('foto nota di web: GET /lampiran/{id} lewat kredensial transport, tanpa token di URL', async () => {
+  sebagai('investor');
+  const asli = pengRec;
+  pengRec = { ...pengRec, nota: { lampiran_id: 77, url: '/api/v1/lampiran/77' }, izin: { putuskan: false } };
+  await buka('/keuangan/pengeluaran/11');
+  await new Promise((r) => setTimeout(r, 10));
+  const g = panggilan.find((p) => p.path === '/lampiran/77');
+  assert.ok(g, 'foto nota dimuat');
+  assert.ok(!/token|bearer/i.test(g.path));
+  pengRec = asli;
+});
+
+test('keputusan investor (web): Tolak wajib catatan; POST /keputusan dengan versi; kunci sama saat diulang setelah galat', async () => {
+  sebagai('investor');
+  const asli = pengRec;
+  pengRec = { ...pengRec, izin: { ubah: false, hapus: false, lampirkan: false, putuskan: true } };
+  const el = await buka('/keuangan/pengeluaran/11');
+  const tolak = tombol(el).find((b) => teks(b) === 'Tolak');
+  const setujui = tombol(el).find((b) => teks(b) === 'Setujui');
+  assert.ok(tolak && setujui, 'panel keputusan tampil bila izin.putuskan');
+  assert.ok(!tombol(el).some((b) => /^Hapus$/.test(teks(b))), 'investor tanpa Hapus');
+  await tolak.listeners.click();
+  assert.equal(tulis().length, 0, 'tolak tanpa catatan ditahan klien');
+  assert.match(teks(el), /Catatan penolakan wajib diisi/);
+  cari(el, 'catatan-keputusan').value = 'Nota tidak jelas';
+  const kliks = async (b) => {
+    overlays.length = 0;
+    const k = b.listeners.click();
+    await new Promise((r) => setTimeout(r, 5));
+    tombol(overlays[0]).find((x) => /Ya, kirim/.test(teks(x))).listeners.click();
+    await k;
+    await new Promise((r) => setTimeout(r, 15));
+  };
+  skrip = [resp(503, { message: 'x' }), resp(200, { data: { ...pengRec, status_persetujuan: 'ditolak' } })];
+  await kliks(tolak);
+  tolak.disabled = false;
+  await kliks(tolak);
+  const t = tulis().filter((p) => p.path === '/keuangan/pengeluaran/11/keputusan');
+  assert.equal(t.length, 2);
+  assert.deepEqual(t[0].body, { keputusan: 'ditolak', versi: 3, catatan: 'Nota tidak jelas' });
+  assert.match(t[0].headers['Idempotency-Key'], UUID);
+  assert.equal(t[0].headers['Idempotency-Key'], t[1].headers['Idempotency-Key'], 'isian sama -> kunci sama');
+  pengRec = asli;
+});
+
+test('keputusan investor (web): 409 versi -> pesan Indonesia dan muat ulang', async () => {
+  sebagai('investor');
+  const asli = pengRec;
+  pengRec = { ...pengRec, izin: { putuskan: true } };
+  const el = await buka('/keuangan/pengeluaran/11');
+  overlays.length = 0;
+  skrip = [resp(409, { message: 'conflict', alasan: 'versi_berubah' })];
+  const k = tombol(el).find((b) => teks(b) === 'Setujui').listeners.click();
+  await new Promise((r) => setTimeout(r, 5));
+  tombol(overlays[0]).find((x) => /Ya, kirim/.test(teks(x))).listeners.click();
+  await k;
+  await new Promise((r) => setTimeout(r, 15));
+  const t = tulis().filter((p) => p.path === '/keuangan/pengeluaran/11/keputusan');
+  assert.equal(t.length, 1);
+  assert.equal(t[0].body.keputusan, 'disetujui');
+  assert.ok(!/conflict/.test(teks(tetap.toasts)), 'pesan server berbahasa Inggris tidak ditampilkan mentah');
   pengRec = asli;
 });
 
@@ -187,10 +256,11 @@ test('keuangan: admin, kepala, investor baca saja; tautan Tambah di ringkasan ha
   assert.ok(tautan(el).includes('#/keuangan/pengeluaran/baru'));
 });
 
-test('keluhan baru (relawan): POST tanpa foto/lampiran_ids', async () => {
+test('keluhan baru (relawan): kolom Foto keluhan tampil (PR5); tanpa foto -> POST tanpa lampiran_ids', async () => {
   sebagai('relawan_dapur');
   const el = await buka('/keluhan/baru');
-  assert.equal(cari(el, 'f-lampiran_ids'), null);
+  assert.ok(teks(el).includes('Foto keluhan'), 'kolom foto keluhan');
+  assert.ok(cari(el, 'f-lampiran-keluhan'), 'input kamera foto keluhan');
   isi(el, { sumber: 'orang_tua', kategori: 'rasa', deskripsi: 'Nasi kurang hangat' });
   skrip = [resp(201, { data: { id: 31 } })];
   await kirim();
