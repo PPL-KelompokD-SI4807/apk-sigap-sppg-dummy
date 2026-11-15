@@ -15,6 +15,7 @@ export const TULIS_WEB = new Set([
   'sppg', 'titik-layanan', 'penerima-manfaat', 'pemasok', 'armada', 'pengemudi', // PR4c data master
   'jadwal', 'log-produksi', 'mutu', // PR4d produksi
   'jadwal/distribusi', 'notifikasi-perjalanan', 'bukti-distribusi', // PR4e distribusi (bukti tanpa Tambah/foto sampai PR5)
+  'keuangan/pencairan', 'keuangan/pengeluaran', 'keluhan', 'rekap-harian', // PR4f keuangan, keluhan, rekap (foto/lampiran: PR5)
 ]);
 
 export const BACA_WEB = new Set([

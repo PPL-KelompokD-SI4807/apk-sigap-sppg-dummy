@@ -159,7 +159,8 @@ test('operasional: detail tampil tanpa tombol tulis, tanpa tautan Ubah/Catat/Per
       assert.ok(el.anak.length > 0, `${nama} ${slug}: kosong`);
       // Modul TULIS_WEB boleh menaut ke formulir web (log/mutu/ubah); layar kustom (kebutuhan, mutasi) tidak ada di web.
       assert.ok(!tautan(el).some((x) => /\/(mutasi|kebutuhan)$/.test(x) || (!TULIS_WEB.has(slug) && /\/(ubah|baru)$|\/baru\?/.test(x))), `${nama} ${slug}: tautan tulis ${tautan(el)}`);
-      assert.ok(!tombol(el).some((b) => /Hapus|Ubah|Simpan|Kirim ulang|Berangkat|Tiba|Setujui|Tolak|Batalkan|Mulai|Selesai/i.test(teks(b))), `${nama} ${slug}: tombol tulis`);
+      // Modul TULIS_WEB: tombol Hapus/aksi status muncul menurut hak server (diuji di form-*-web.test.js); modul baca-saja tanpa tombol tulis.
+      assert.ok(TULIS_WEB.has(slug) || !tombol(el).some((b) => /Hapus|Ubah|Simpan|Kirim ulang|Berangkat|Tiba|Setujui|Tolak|Batalkan|Mulai|Selesai/i.test(teks(b))), `${nama} ${slug}: tombol tulis`);
       assert.ok(panggilan.every((p) => p.metode === 'GET' && !('Authorization' in p.headers)), `${nama} ${slug}: hanya GET tanpa Authorization`);
     }
   }
@@ -171,8 +172,8 @@ test('keuangan: ringkasan anggaran tampil tanpa tombol tambah; dashboard tampil 
     if (userPerms(user, 'keuangan').R) {
       const el = await buka('/keuangan?periode=2026-11&sppg_id=1');
       location.hash = '#/keuangan';
-      const t = teks(await buka('/keuangan'));
-      assert.ok(!/\+ (Pencairan|Tambah)/.test(t) && !tautan(el).includes('#/keuangan/pencairan/baru'), `${nama}: tombol tambah keuangan`);
+      // Tautan Tambah (PR4f) hanya bila peta hak server memberi C keuangan (akuntan).
+      assert.equal(tautan(await buka('/keuangan')).includes('#/keuangan/pencairan/baru'), userPerms(user, 'keuangan').C === true, `${nama}: tombol tambah keuangan`);
       assert.ok(panggilan.every((p) => p.metode === 'GET'), `${nama}: keuangan hanya GET`);
     }
     if (dashboardTersedia(user)) {

@@ -161,7 +161,18 @@ const base = defineCrudModule({
   listTopWeb: () => listTop({ web: true }),
   detailExtrasWeb: (rec) => {
     const charts = chartsBlock(rec.ringkasan, [], { tren: false });
-    return { nodes: [rec.catatan ? h('div', { class: 'panel' }, h('strong', {}, 'Catatan'), h('p', {}, rec.catatan)) : null, kpiGrid(rec.ringkasan), charts.el].filter(Boolean), destroy: charts.destroy };
+    // Aksi tulis hanya bila aksi.* dari peta server (kirim_ulang_rekap = PATCH catatan + kirim ulang; susun_rekap = susun ulang).
+    const ubah = bolehAksi(getUser(), 'kirim_ulang_rekap');
+    return {
+      nodes: [
+        rec.catatan && !ubah ? h('div', { class: 'panel' }, h('strong', {}, 'Catatan'), h('p', {}, rec.catatan)) : null,
+        kpiGrid(rec.ringkasan), charts.el,
+        ubah ? catatanEditor(rec) : null,
+        ubah ? kirimUlang(rec) : null,
+        bolehAksi(getUser(), 'susun_rekap') ? h('a', { class: 'btn btn-block', href: `#/${SLUG}/baru?tanggal=${String(rec.tanggal).slice(0, 10)}` }, 'Susun ulang rekap') : null,
+      ].filter(Boolean),
+      destroy: charts.destroy,
+    };
   },
   prefill: (q) => (q.get('tanggal') ? { tanggal: q.get('tanggal') } : {}),
   rowPerms: (rec, p) => ({ ...p, U: false, D: false }), // catatan diubah lewat PATCH di detail; rekap tidak dihapus
