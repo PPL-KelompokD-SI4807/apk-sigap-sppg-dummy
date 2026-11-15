@@ -174,7 +174,10 @@ const distribusiModule = defineCrudModule({
   detailExtrasWeb: (rec, ctx, p) => [
     rec.status === 'siap' && rec.layak_distribusi === false ? h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.') : null,
     aksiStatus('distribusi', rec, '/jadwal/distribusi', p), // PATCH /jadwal/distribusi/{id} {status}; hanya bila izin U dari server
-  ].filter(Boolean), // tautan Catat bukti tidak ada di web (foto wajib, PR5)
+    // Formulir bukti web (foto + lampiran, PR5) ada; tampil bila flag server DAN peta hak bukti-distribusi mengizinkan Tambah.
+    rec.izin?.catat_bukti === true && userPerms(getUser(), 'bukti-distribusi').C
+      ? h('a', { class: 'btn btn-block', href: `#/bukti-distribusi/baru?jadwal=${rec.id}` }, 'Catat bukti') : null,
+  ].filter(Boolean),
   prefill: (q) => (q.get('jadwal') ? { jadwal_produksi_id: q.get('jadwal') } : {}),
   formTop: distribusiFormTop,
   renderCard: (r, href) => rowCard({
@@ -228,7 +231,8 @@ const produksiBase = defineCrudModule({
   detailExtrasWeb: (rec, ctx, p) => {
     const aktif = rec.status !== 'dibatalkan';
     const links = [];
-    // Tautan ke formulir web yang sudah ada (log-produksi, mutu); hak dari peta server. Kebutuhan bahan dan distribusi menyusul.
+    // Tautan ke layar/formulir web (kebutuhan bahan, log-produksi, mutu); hak dari peta server. Distribusi menyusul.
+    if (jadwalTabBoleh(getUser(), 'produksi')) links.push(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
     if (aktif && userPerms(getUser(), 'log-produksi').C) links.push(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
     if (aktif && userPerms(getUser(), 'mutu').C) links.push(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
     return [
@@ -279,6 +283,11 @@ const produksiModule = {
   register() {
     route('/jadwal/:id/kebutuhan', kebutuhanScreen, { title: 'Kebutuhan Bahan', guard: () => jadwalTabBoleh(getUser(), 'produksi') });
     produksiBase.register();
+  },
+  registerWeb(opsi) {
+    // Rute ekstra lebih dulu agar tidak tertangkap /jadwal/:id. Layar kebutuhan hanya GET (aman di web).
+    route('/jadwal/:id/kebutuhan', kebutuhanScreen, { title: 'Kebutuhan Bahan', guard: () => jadwalTabBoleh(getUser(), 'produksi') });
+    produksiBase.registerWeb(opsi);
   },
 };
 

@@ -143,7 +143,7 @@ function listTop({ web = false } = {}) {
     }, o.label)));
   return h('div', { class: 'stack' },
     h('div', { class: 'panel stack-tight' }, h('label', { class: 'label', for: 'f-tanggal' }, 'Tanggal berangkat'), tanggal,
-      web ? null : h('a', { class: 'btn btn-block', href: `#/${SLUG}/terakhir` }, 'Status perjalanan terakhir')),
+      h('a', { class: 'btn btn-block', href: `#/${SLUG}/terakhir` }, 'Status perjalanan terakhir')),
     seg);
 }
 
@@ -184,5 +184,9 @@ export default {
   register() {
     route(`/${SLUG}/terakhir`, terakhirScreen, { title: 'Perjalanan Terakhir', guard: () => me().R });
     base.register();
+  },
+  registerWeb(opsi) {
+    route(`/${SLUG}/terakhir`, terakhirScreen, { title: 'Perjalanan Terakhir', guard: () => me().R });
+    base.registerWeb(opsi);
   },
 };

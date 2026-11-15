@@ -58,6 +58,7 @@ globalThis.fetch = async (url, init) => {
 const { setPlatform } = await import('../core/platform.js');
 setPlatform('web');
 const { setUserSesi, getUser } = await import('../core/auth.js');
+const { jadwalTabBoleh } = await import('../core/permissions.js');
 const { startRouter, resolve } = await import('../core/router.js');
 const { daftarkanRuteWeb } = await import('../rute-web.js');
 const { setSppgAktif } = await import('../core/sppg-aktif.js');
@@ -129,7 +130,7 @@ test('detail jadwal produksi: Ubah status (PATCH /jadwal/1 dengan kunci) hanya b
   assert.ok(mulai, 'tombol Mulai masak untuk status direncanakan');
   assert.ok(tautan(el).includes('#/log-produksi/baru?jadwal=1'), 'relawan dapur punya hak C log-produksi');
   assert.ok(!tautan(el).includes('#/mutu/baru?jadwal=1'), 'mutu hanya R untuk relawan dapur');
-  assert.ok(!tautan(el).some((x) => /kebutuhan$/.test(x)), 'layar kebutuhan bahan belum ada di web');
+  assert.ok(tautan(el).some((x) => /kebutuhan$/.test(x)) === jadwalTabBoleh(getUser(), 'produksi'), 'tautan kebutuhan bahan mengikuti hak jadwal produksi');
   overlays.length = 0;
   skrip = [resp(200, { data: { id: 1 } })];
   const klik = mulai.listeners.click();
