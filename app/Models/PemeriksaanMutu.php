@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\HasilMutu;
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
+use App\Models\Concerns\Berversi;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PemeriksaanMutu extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, Berversi, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'pemeriksaan_mutus';
 

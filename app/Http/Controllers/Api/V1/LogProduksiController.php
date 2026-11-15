@@ -88,7 +88,7 @@ class LogProduksiController extends ApiController
         $data = $request->validated();
 
         $log = DB::transaction(function () use ($request, $logProduksi, $data): LogProduksi {
-            $log = $this->service->perbarui($logProduksi, $data);
+            $log = $this->service->perbarui($logProduksi, $data, $this->versi($data));
             $this->lampiran->ikat($data['lampiran_ids'] ?? [], $log, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $log->id);
 

@@ -96,6 +96,7 @@
       Hak U (ahli_gizi). Bila pemeriksaan sudah memengaruhi distribusi (`memengaruhi_distribusi=true`)
       `catatan_koreksi` WAJIB; perubahan dicatat di audit_logs beserta pelaku/waktu koreksi.
       Perubahan hasil menjadi `tidak_layak` memancarkan `MutuTidakLayak`. `jadwal_produksi_id` tidak dapat diubah.
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -113,10 +114,13 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   patch:
     tags: [Mutu]
     summary: Ubah sebagian / koreksi pemeriksaan mutu
+    description: |
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -134,6 +138,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
     parameters:

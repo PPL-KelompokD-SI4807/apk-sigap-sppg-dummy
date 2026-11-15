@@ -41,6 +41,7 @@ schemas:
       dikoreksi_pada: { type: [string, 'null'], format: date-time }
       dikoreksi_oleh: { type: [integer, 'null'] }
       memengaruhi_distribusi: { type: boolean, description: 'Ada di daftar (GET /mutu), detail, dan simpan dengan nilai identik (aturan sama: PemeriksaanMutuService; daftar dihitung dengan satu query agregat per halaman). true = tidak dapat dihapus, hanya dikoreksi' }
+      versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   PemeriksaanMutuInput:
@@ -63,4 +64,5 @@ schemas:
       tindakan_korektif: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila hasil=tidak_layak' }
       lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
       catatan_koreksi: { type: [string, 'null'], maxLength: 2000, description: 'Wajib saat mengubah pemeriksaan yang memengaruhi distribusi' }
+      versi: { type: integer, minimum: 1, description: 'Hanya PUT/PATCH (opsional): versi record yang dimuat klien; beda -> 409 `versi_tidak_cocok`.' }
       ai_draft_id: { type: [string, 'null'], format: uuid }

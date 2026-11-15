@@ -97,7 +97,7 @@ class JadwalDistribusiController extends ApiController
         $data = $request->validated();
 
         $diubah = DB::transaction(function () use ($request, $jadwalDistribusi, $data): JadwalDistribusi {
-            $diubah = $this->distribusi->perbarui($jadwalDistribusi, $data);
+            $diubah = $this->distribusi->perbarui($jadwalDistribusi, $data, $this->versi($data));
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id, resource: 'distribusi');
 
             return $diubah;

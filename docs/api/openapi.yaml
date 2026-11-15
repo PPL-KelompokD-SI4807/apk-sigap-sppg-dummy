@@ -1735,6 +1735,7 @@ paths:
       description: |
         Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
         mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -1752,6 +1753,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     patch:
       tags: [Jadwal]
@@ -1759,6 +1761,7 @@ paths:
       description: |
         Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
         mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -1776,6 +1779,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
       parameters:
@@ -1815,6 +1819,7 @@ paths:
         mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
         R-06b-2 (S2): `status=dimasak` ditolak 422 (field `status`) bila menu jadwal saat ini bukan `disetujui`
         ("Menu jadwal ini belum disetujui investor; ajukan ulang menu sebelum memasak."). `selesai` dan `dibatalkan` tetap diizinkan.
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -1832,6 +1837,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     patch:
       tags: [Jadwal]
@@ -1839,6 +1845,7 @@ paths:
       description: |
         Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
         mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -1856,6 +1863,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
       parameters:
@@ -3056,7 +3064,9 @@ paths:
     put:
       tags: [Log Produksi]
       summary: Ubah log produksi
-      description: Hak U (kepala_sppg; relawan dapur hanya log buatannya sendiri pada hari yang sama). `jadwal_produksi_id` tidak dapat diubah.
+      description: |
+        Hak U (kepala_sppg; relawan dapur hanya log buatannya sendiri pada hari yang sama). `jadwal_produksi_id` tidak dapat diubah.
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -3074,10 +3084,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     patch:
       tags: [Log Produksi]
       summary: Ubah sebagian log produksi
+      description: |
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -3095,6 +3108,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
       parameters:
@@ -3543,6 +3557,7 @@ paths:
         Hak U (ahli_gizi). Bila pemeriksaan sudah memengaruhi distribusi (`memengaruhi_distribusi=true`)
         `catatan_koreksi` WAJIB; perubahan dicatat di audit_logs beserta pelaku/waktu koreksi.
         Perubahan hasil menjadi `tidak_layak` memancarkan `MutuTidakLayak`. `jadwal_produksi_id` tidak dapat diubah.
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -3560,10 +3575,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     patch:
       tags: [Mutu]
       summary: Ubah sebagian / koreksi pemeriksaan mutu
+      description: |
+        Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
         content:
@@ -3581,6 +3599,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/KonflikVersi' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
       parameters:
@@ -7216,6 +7235,7 @@ components:
         status_mutu: { type: [string, 'null'], enum: [layak, tidak_layak, null], description: 'Hasil pemeriksaan mutu terbaru; null = belum diperiksa' }
         layak_distribusi: { type: boolean, description: 'true bila pemeriksaan mutu terbaru Layak' }
         izin: { $ref: '#/components/schemas/IzinUbahHapus' }
+        versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     JadwalProduksiRingkas:
@@ -7240,6 +7260,7 @@ components:
         target_porsi: { type: integer, minimum: 1 }
         status: { $ref: '#/components/schemas/StatusJadwalProduksi' }
         catatan: { type: [string, 'null'], maxLength: 2000 }
+        versi: { type: integer, minimum: 1, description: 'Hanya PUT/PATCH (opsional): versi record yang dimuat klien; beda -> 409 `versi_tidak_cocok`.' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     JadwalDistribusi:
       type: object
@@ -7265,6 +7286,7 @@ components:
         layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
         catatan: { type: [string, 'null'] }
         izin: { $ref: '#/components/schemas/IzinJadwalDistribusi' }
+        versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     JadwalDistribusiInput:
@@ -7282,6 +7304,7 @@ components:
         jumlah_porsi: { type: integer, minimum: 1 }
         status: { $ref: '#/components/schemas/StatusJadwalDistribusi' }
         catatan: { type: [string, 'null'], maxLength: 2000 }
+        versi: { type: integer, minimum: 1, description: 'Hanya PUT/PATCH (opsional): versi record yang dimuat klien; beda -> 409 `versi_tidak_cocok`.' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     KebutuhanBahanItem:
       type: object
@@ -8038,6 +8061,7 @@ components:
         dicatat_oleh: { type: [integer, 'null'] }
         pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
         izin: { $ref: '#/components/schemas/IzinUbahHapus' }
+        versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     LogProduksiInput:
@@ -8053,6 +8077,7 @@ components:
         jam_selesai: { type: [string, 'null'], examples: ['08:20'], description: 'HH:MM; harus setelah waktu_mulai' }
         kendala: { type: [string, 'null'], maxLength: 2000 }
         lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
+        versi: { type: integer, minimum: 1, description: 'Hanya PUT/PATCH (opsional): versi record yang dimuat klien; beda -> 409 `versi_tidak_cocok`.' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     KelompokSasaran:
       type: string
@@ -8242,6 +8267,7 @@ components:
         dikoreksi_pada: { type: [string, 'null'], format: date-time }
         dikoreksi_oleh: { type: [integer, 'null'] }
         memengaruhi_distribusi: { type: boolean, description: 'Ada di daftar (GET /mutu), detail, dan simpan dengan nilai identik (aturan sama: PemeriksaanMutuService; daftar dihitung dengan satu query agregat per halaman). true = tidak dapat dihapus, hanya dikoreksi' }
+        versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     PemeriksaanMutuInput:
@@ -8264,6 +8290,7 @@ components:
         tindakan_korektif: { type: [string, 'null'], maxLength: 2000, description: 'Wajib bila hasil=tidak_layak' }
         lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
         catatan_koreksi: { type: [string, 'null'], maxLength: 2000, description: 'Wajib saat mengubah pemeriksaan yang memengaruhi distribusi' }
+        versi: { type: integer, minimum: 1, description: 'Hanya PUT/PATCH (opsional): versi record yang dimuat klien; beda -> 409 `versi_tidak_cocok`.' }
         ai_draft_id: { type: [string, 'null'], format: uuid }
     StatusPerjalanan:
       type: string

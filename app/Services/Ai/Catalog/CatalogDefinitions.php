@@ -227,6 +227,7 @@ final class CatalogDefinitions
                 date: 'tanggal_produksi', order: [['tanggal_produksi', 'desc'], ['id', 'desc']],
                 store: StoreJadwalProduksiRequest::class, update: UpdateJadwalProduksiRequest::class, routeParameter: 'jadwal',
                 jenis: 'produksi',
+                exclude: ['versi'], berversi: true,
             ),
             new ResourceSpec(
                 key: 'jadwal_distribusi', module: 'jadwal', label: 'jadwal distribusi', model: JadwalDistribusi::class,
@@ -238,6 +239,7 @@ final class CatalogDefinitions
                 store: StoreJadwalDistribusiRequest::class, update: UpdateJadwalDistribusiRequest::class, routeParameter: 'jadwal_distribusi',
                 marker: 'distribusi', jenis: 'distribusi',
                 initials: ['pengemudi'],
+                exclude: ['versi'], berversi: true,
             ),
 
             // 10. Data Log Produksi Harian.
@@ -249,6 +251,7 @@ final class CatalogDefinitions
                 date: 'created_at',
                 store: StoreLogProduksiRequest::class, update: UpdateLogProduksiRequest::class, routeParameter: 'log_produksi',
                 rute: 'api.v1.log-produksi',
+                exclude: ['versi'], berversi: true,
             ),
 
             // 11. Data Pemeriksaan Mutu dan Keamanan Pangan.
@@ -259,6 +262,7 @@ final class CatalogDefinitions
                 filters: ['hasil' => ['type' => 'string', 'enum' => self::values(HasilMutu::class)]],
                 date: 'waktu_pemeriksaan',
                 store: StorePemeriksaanMutuRequest::class, update: UpdatePemeriksaanMutuRequest::class, routeParameter: 'pemeriksaan_mutu',
+                exclude: ['versi'], berversi: true,
             ),
 
             // 12. Data Armada dan Pengemudi: nomor SIM dan HP pengemudi tidak disajikan/ditawarkan.

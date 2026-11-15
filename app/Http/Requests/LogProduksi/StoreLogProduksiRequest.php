@@ -44,6 +44,6 @@ class StoreLogProduksiRequest extends FormRequest
             'jam_selesai' => array_merge(['nullable', 'date_format:H:i'], $this->filled('waktu_mulai') ? ['after:waktu_mulai'] : []),
             'kendala' => ['nullable', 'string', 'max:2000'],
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
-        ] + AturanLampiranIds::untuk('log-produksi');
+        ] + ($log === null ? [] : ['versi' => ['sometimes', 'integer', 'min:1']]) + AturanLampiranIds::untuk('log-produksi');
     }
 }

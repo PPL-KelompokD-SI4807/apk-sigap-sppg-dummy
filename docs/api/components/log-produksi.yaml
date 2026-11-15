@@ -32,6 +32,7 @@ schemas:
       dicatat_oleh: { type: [integer, 'null'] }
       pencatat: { type: [string, 'null'], description: 'Nama pencatat' }
       izin: { $ref: '#/components/schemas/IzinUbahHapus' }
+      versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   LogProduksiInput:
@@ -47,4 +48,5 @@ schemas:
       jam_selesai: { type: [string, 'null'], examples: ['08:20'], description: 'HH:MM; harus setelah waktu_mulai' }
       kendala: { type: [string, 'null'], maxLength: 2000 }
       lampiran_ids: { $ref: '#/components/schemas/LampiranIds' }
+      versi: { type: integer, minimum: 1, description: 'Hanya PUT/PATCH (opsional): versi record yang dimuat klien; beda -> 409 `versi_tidak_cocok`.' }
       ai_draft_id: { type: [string, 'null'], format: uuid }

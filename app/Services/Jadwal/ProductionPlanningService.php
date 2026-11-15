@@ -12,6 +12,7 @@ use App\Models\Scopes\SppgScope;
 use App\Models\Sppg;
 use App\Models\User;
 use App\Services\Stock\StockService;
+use App\Support\KunciVersi;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
@@ -60,12 +61,14 @@ class ProductionPlanningService
 
     /**
      * @param  array<string, mixed>  $data  subset: menu_id, tanggal_produksi, jam_mulai_masak, target_porsi, status, catatan
+     * @param  int|null  $versi  kunci optimistik (409 bila tidak cocok); null = klien lama tanpa pemeriksaan
      */
-    public function perbarui(JadwalProduksi $jadwal, array $data): JadwalProduksi
+    public function perbarui(JadwalProduksi $jadwal, array $data, ?int $versi = null): JadwalProduksi
     {
-        return DB::transaction(function () use ($jadwal, $data): JadwalProduksi {
+        return DB::transaction(function () use ($jadwal, $data, $versi): JadwalProduksi {
             $sppg = $this->kunciSppg((int) $jadwal->sppg_id);
             $jadwal = JadwalProduksi::withoutGlobalScope(SppgScope::class)->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
+            KunciVersi::periksa($jadwal, $versi, 'Jadwal produksi');
             $berubah = $this->kolomBerubah($jadwal, $data);
 
             if ($jadwal->status !== StatusJadwalProduksi::Direncanakan && $berubah !== []) {
