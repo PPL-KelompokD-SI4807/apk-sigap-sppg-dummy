@@ -28,10 +28,12 @@ export function validasiBerkasUnggah(file, { tipe = TIPE_UNGGAH, maks = MAKS_BYT
 export function pesanGalatUnggah(e) {
   const s = e?.status;
   if (s === 0) return 'Tidak ada koneksi internet. Foto belum terunggah; coba lagi saat online.';
+  if (s === 401) return 'Sesi Anda telah berakhir. Silakan masuk kembali.';
   if (s === 413) return PESAN_413;
   if (s === 429) return PESAN_429;
   if (s === 409) return PESAN_409;
   if (s === 422) return firstError(e.errors) || 'Berkas ditolak. Gunakan foto JPEG, PNG, atau WebP maksimal 5 MB.';
+  if (s === 403 && e?.data?.alasan === 'csrf_ditolak') return 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.';
   if (s === 403) return 'Anda tidak punya hak mengunggah foto untuk data ini.';
   if (s === 404) return 'Data induk tidak ditemukan atau sudah dihapus.';
   if (s >= 500) return 'Terjadi gangguan pada server. Coba lagi nanti.';

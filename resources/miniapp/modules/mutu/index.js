@@ -34,13 +34,21 @@ export default defineCrudModule({
     rec.hasil === 'tidak_layak' ? h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.') : null,
     rec.memengaruhi_distribusi ? h('div', { class: 'notice' }, 'Tombol Hapus tidak tersedia: pemeriksaan ini adalah yang terbaru untuk jadwal yang distribusinya masih aktif (atau sudah berangkat).') : null,
     p?.C && rec.jadwal_produksi_id ? h('a', { class: 'btn btn-block', href: `#/mutu/baru?jadwal=${rec.jadwal_produksi_id}` }, 'Periksa ulang jadwal ini') : null,
+    panelFotoMutu(rec, p), // foto lewat cookie sesi (R04-8 PR5)
   ].filter(Boolean),
   detailExtras: (rec, p) => {
     const nodes = [];
     if (rec.hasil === 'tidak_layak') nodes.push(h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.'));
     if (rec.memengaruhi_distribusi) nodes.push(h('div', { class: 'notice' }, 'Tombol Hapus tidak tersedia: pemeriksaan ini adalah yang terbaru untuk jadwal yang distribusinya masih aktif (atau sudah berangkat), sehingga menjadi gerbang distribusi. Gunakan Ubah dengan catatan koreksi, atau buat pemeriksaan ulang.'));
     if (p.C && rec.jadwal_produksi_id) nodes.push(h('a', { class: 'btn btn-block', href: `#/mutu/baru?jadwal=${rec.jadwal_produksi_id}` }, 'Periksa ulang jadwal ini'));
-    if (lampiranDisembunyikan(getUser(), rec) || (rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ disembunyikan: lampiranDisembunyikan(getUser(), rec), modul: 'mutu', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto pemeriksaan' }));
+    const foto = panelFotoMutu(rec, p);
+    if (foto) nodes.push(foto);
     return nodes;
   },
 });
+
+function panelFotoMutu(rec, p) {
+  const sembunyi = lampiranDisembunyikan(getUser(), rec);
+  if (!sembunyi && !(rec.lampiran || []).length && !p?.U) return null;
+  return createLampiranPanel({ disembunyikan: sembunyi, modul: 'mutu', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p?.U, title: 'Foto pemeriksaan' });
+}

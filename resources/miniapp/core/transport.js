@@ -4,3 +4,5 @@
 // Aturan: hanya transport*.js, auth.js, main.js (Mini App) dan berkas khusus web (web-main, auth-web, sesi/layar) yang boleh
 // mengimpor api.js/api-web.js (dijaga tests/transport-statis.test.js).
 export * from './api.js';
+// Antrean offline (IndexedDB) hanya di Mini App; transport-web.js mengekspor padanan yang selalu false (web tanpa antrean).
+export { enqueue as antreOffline } from './offline-queue.js';

@@ -1,5 +1,5 @@
 // R04-8 PR4d: formulir web kelompok produksi (jadwal produksi, log-produksi, mutu) + nama SPPG aktif di beranda web.
-// Idempotency-Key sekali per formulir; tanpa bidang lampiran/foto; aksi status jadwal hanya bila izin server; GET info kapasitas.
+// Idempotency-Key sekali per formulir; bidang lampiran/foto sejak PR5; aksi status jadwal hanya bila izin server; GET info kapasitas.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -147,11 +147,11 @@ test('detail jadwal produksi: Ubah status (PATCH /jadwal/1 dengan kunci) hanya b
   assert.ok(!tombol(el).some((b) => /Mulai masak|Hapus/.test(teks(b))));
 });
 
-test('log-produksi: tanpa bidang foto/lampiran; kirim POST tanpa lampiran_ids; info target (GET jadwal)', async () => {
+test('log-produksi: kolom Foto produksi (PR5); tanpa foto -> POST tanpa lampiran_ids; info target (GET jadwal)', async () => {
   setUserSesi(salin('relawan_dapur'));
   const el = await buka('/log-produksi/baru');
-  assert.equal(cari(el, 'f-lampiran_ids'), null);
-  assert.ok(!/Foto produksi/.test(teks(el)), 'tidak ada bidang foto di web');
+  assert.ok(/Foto produksi/.test(teks(el)), 'kolom foto produksi di web');
+  assert.ok(cari(el, 'f-lampiran-log-produksi'), 'input kamera');
   isi(el, { jadwal_produksi_id: '1', realisasi_porsi: '90' });
   skrip = [resp(201, { data: { id: 21 } })];
   await kirim();
@@ -163,10 +163,10 @@ test('log-produksi: tanpa bidang foto/lampiran; kirim POST tanpa lampiran_ids; i
   assert.equal(t[0].body.realisasi_porsi, 90);
 });
 
-test('mutu: tanpa bidang foto; 409 pesan tetap + muat ulang; tautan Periksa ulang di detail hanya bila hak C', async () => {
+test('mutu: kolom foto pemeriksaan (PR5); 409 pesan tetap + muat ulang; tautan Periksa ulang di detail hanya bila hak C', async () => {
   setUserSesi(salin('ahli_gizi'));
   let el = await buka('/mutu/baru?jadwal=1');
-  assert.equal(cari(el, 'f-lampiran_ids'), null);
+  assert.ok(/Foto pemeriksaan/.test(teks(el)), 'kolom foto pemeriksaan di web');
   assert.equal(cari(el, 'f-jadwal_produksi_id').value, '1', 'prefill dari ?jadwal=');
   setUserSesi(salin('relawan_dapur'));
   el = await buka('/log-produksi/1/ubah');

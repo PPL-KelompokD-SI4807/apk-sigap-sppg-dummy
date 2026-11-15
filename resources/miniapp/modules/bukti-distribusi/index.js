@@ -161,11 +161,9 @@ export default defineCrudModule({
   listQuery,
   listTop,
   listTopWeb: listTop,
-  tambahWeb: false, // foto serah terima wajib di server (foto = PR5): web belum bisa Tambah; Ubah/Hapus tanpa foto tetap tersedia
-  detailExtrasWeb: (rec) => [
-    rec.terlambat ? h('div', { class: 'alert-danger', role: 'alert' }, `${terlambatLabel(rec)} dari acuan ${rec.acuan_tiba ? jamWIB(rec.acuan_tiba) : '-'}.`) : null,
-    rec.selisih_porsi ? h('div', { class: 'notice' }, `Selisih porsi: ${selisihLabel(rec)}.${rec.catatan_selisih ? ` Catatan: ${rec.catatan_selisih}` : ''}`) : null,
-  ].filter(Boolean), // tanpa foto (menyusul PR foto web)
+  // Web (R04-8 PR5): Tambah aktif (foto serah terima lewat multipart jalur cookie); foto + lampiran lain tampil lewat cookie sesi.
+  // Hak unggah lampiran = izin.ubah record dari server (perms dari registerWeb).
+  detailExtrasWeb: (rec, ctx, p) => detailBukti(rec, p),
   prefill: (q) => (q.get('jadwal') ? { jadwal_distribusi_id: q.get('jadwal') } : {}),
   renderCard: (r, href) => rowCard({
     href,
@@ -176,17 +174,20 @@ export default defineCrudModule({
       ...(r.selisih_porsi ? [{ text: selisihLabel(r), cls: 'badge-warn' }] : []),
     ],
   }),
-  detailExtras: (rec, p) => {
-    const nodes = [];
-    if (rec.terlambat) nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, `${terlambatLabel(rec)} dari acuan ${rec.acuan_tiba ? jamWIB(rec.acuan_tiba) : '-'}.`));
-    if (rec.selisih_porsi) nodes.push(h('div', { class: 'notice' }, `Selisih porsi: ${selisihLabel(rec)}.${rec.catatan_selisih ? ` Catatan: ${rec.catatan_selisih}` : ''}`));
-    const gambar = h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Foto serah terima'),
-      rec.foto ? createAuthImage(rec.foto, { alt: 'Foto serah terima' }) : h('p', { class: 'muted small' }, 'Tidak ada foto.'));
-    if (rec.berita_acara) gambar.append(h('h2', { class: 'panel-title' }, 'Berita acara'), createAuthImage(rec.berita_acara, { alt: 'Foto berita acara' }));
-    nodes.push(gambar);
-    const utama = new Set([rec.foto?.lampiran_id, rec.berita_acara?.lampiran_id].filter((x) => x != null));
-    const lain = (rec.lampiran || []).filter((l) => !utama.has(l.id));
-    if (lain.length || p.U) nodes.push(createLampiranPanel({ modul: 'bukti-distribusi', recordId: rec.id, kategori: 'foto', lampiran: lain, canAdd: !!p.U, title: 'Lampiran lain' }));
-    return nodes;
-  },
+  detailExtras: (rec, p) => detailBukti(rec, p),
 });
+
+/** Bagian detail bersama Mini App dan web: peringatan terlambat/selisih, foto serah terima + berita acara, lampiran lain. */
+function detailBukti(rec, p) {
+  const nodes = [];
+  if (rec.terlambat) nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, `${terlambatLabel(rec)} dari acuan ${rec.acuan_tiba ? jamWIB(rec.acuan_tiba) : '-'}.`));
+  if (rec.selisih_porsi) nodes.push(h('div', { class: 'notice' }, `Selisih porsi: ${selisihLabel(rec)}.${rec.catatan_selisih ? ` Catatan: ${rec.catatan_selisih}` : ''}`));
+  const gambar = h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Foto serah terima'),
+    rec.foto ? createAuthImage(rec.foto, { alt: 'Foto serah terima' }) : h('p', { class: 'muted small' }, 'Tidak ada foto.'));
+  if (rec.berita_acara) gambar.append(h('h2', { class: 'panel-title' }, 'Berita acara'), createAuthImage(rec.berita_acara, { alt: 'Foto berita acara' }));
+  nodes.push(gambar);
+  const utama = new Set([rec.foto?.lampiran_id, rec.berita_acara?.lampiran_id].filter((x) => x != null));
+  const lain = (rec.lampiran || []).filter((l) => !utama.has(l.id));
+  if (lain.length || p?.U) nodes.push(createLampiranPanel({ modul: 'bukti-distribusi', recordId: rec.id, kategori: 'foto', lampiran: lain, canAdd: !!p?.U, title: 'Lampiran lain' }));
+  return nodes;
+}
