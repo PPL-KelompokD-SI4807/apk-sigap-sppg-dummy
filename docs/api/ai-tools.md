@@ -60,6 +60,7 @@ Aturan tool baca:
 - Pakai query Eloquent biasa (SppgScope aktif karena agen berjalan di `ActingUser::run()`); **jangan** `withoutGlobalScopes()`. Untuk detail record cek `$this->allows($user, 'view', $record)`.
 - `handle()` dijalankan di transaksi yang **selalu di-rollback**: tool baca tidak bisa menyimpan apa pun.
 - Kembalikan data minimal (tanpa telepon, NIK, chat id, token). Batasi jumlah hasil (maks 20).
+- Argumen yang lolos skema tetapi ditolak aturan Form Request: lempar `ArgumenTidakValid` (pesan disusun server, tanpa nilai masukan mentah) -> hasil `invalid`. Penolakan hak: `AuthorizationException` -> `ditolak`.
 
 ### Tool tulis (draf)
 
@@ -143,6 +144,22 @@ Tool 16 modul (73 tool) dibangun otomatis dari `app/Services/Ai/Catalog/CatalogD
 | rekap-harian | `cari_`, `buat_`, `ubah_rekap_harian` |
 | dashboard (R-07, lintas modul) | `ringkas_dashboard_saya` (BACA SAJA, `app/Services/Ai/Tools/Dashboard`). Tersedia bagi admin, investor, kepala SPPG, ahli gizi, akuntan, staf gudang, relawan beruntuk unit (bukan relawan tanpa unit/nonaktif). Memakai `DashboardService` untuk PENGGUNA YANG BERTINDAK (tanpa `user_id`/`sppg_id`); satu-satunya argumen `sppg` (nama/kode) hanya untuk investor dan dicocokkan dengan SPPG miliknya (pivot), selain itu ditolak. Keluaran 5-8 baris `{kunci, label, nilai}` + cakupan (mode, jumlah SPPG, kode+nama SPPG terbersihkan); hanya hitungan/persen/nominal/label baku, tanpa nama orang atau teks bebas, sehingga tidak ada nilai DB yang dapat berperan sebagai instruksi. Bukan modul RBAC (`module()` = `dashboard`): hak baca tiap widget disaring `DashboardService`. Format sama dengan layar Bot `db` (`RingkasanDashboard`) |
 | pembelian-bahan (R-06b-2) | `cari_pembelian_bahan` (admin, kepala, akuntan, staf gudang), `buat_`/`ubah_pembelian_bahan` (HANYA staf gudang; draf). Tanpa `hapus_`. **Tidak ada tool verifikasi pembelian maupun keputusan pengeluaran**: itu hanya di Mini App (akuntan / investor); investor tidak pernah mendapat tool tulis |
+| keuangan: sub-kategori laporan BGN (R07-5) | `lihat_sub_kategori_laporan_bgn` dan `ubah_sub_kategori_pengeluaran`, kelas di `Tools/LaporanBgn` (lihat bagian "Tool sub-kategori laporan BGN") |
+
+### Tool sub-kategori laporan BGN (R07-5)
+
+| Tool | Peran | Isi / aksi |
+|---|---|---|
+| `lihat_sub_kategori_laporan_bgn` (baca) | admin, kepala SPPG, akuntan, investor (R `keuangan` + aksi `lihat-laporan-bgn-agregat`) | 17 baris Biaya Operasional BGN per sub-kategori (hanya baris berisi), total, dan kelengkapan isian `sub_kategori` (`SubKategoriOperasionalService`, angka sama dengan `RingkasanKeuanganService`/laporan). `bulan` (YYYY-MM, bawaan bulan ini) = 30d-B; `tanggal` (YYYY-MM-DD) = 30b harian. Daftar `belum_diisi` (maks 10: id, tanggal, kategori, nominal, status, baris laporan, uraian tersamar 80 karakter) hanya untuk `lihat-laporan-bgn` (admin, kepala, akuntan) |
+| `ubah_sub_kategori_pengeluaran` (tulis, draf) | akuntan saja (U `keuangan` + Policy update + `lihat-laporan-bgn`) | Draf modul `keuangan`, `_resource` `pengeluaran`, aksi update, payload `{sub_kategori, versi}` (versi dari server). Disimpan di Mini App (layar ubah pengeluaran) lewat `PATCH /keuangan/pengeluaran/{id}` + `ai_draft_id`; tidak ada eksekusi dari chat (tombol "Periksa & Simpan") |
+
+Keamanan:
+- Hak baca = peta hak laporan BGN yang sama dengan REST: argumen periode + SPPG divalidasi dry-run dengan `LaporanBgnRequest` (route `jenis` diisi server: `harian` atau `bulanan_anggaran`), sehingga `LaporanBgnPolicy::lihat` dijalankan SEBELUM validasi. Investor: `tanggal` (30b) ditolak; `bulan` (30d-B) hanya angka agregat tanpa daftar per transaksi.
+- Scope SPPG: `sppg_id` dari LLM selalu dibuang. Peran satu-SPPG = SPPG aktifnya; investor = SPPG aktif tervalidasi atau satu SPPG MILIKNYA (pivot) yang disebut di `sppg` (kode/nama persis, dijalankan di dalam `SppgAktif::untuk`); admin = SPPG baca-saja Bot atau `sppg` (kode/nama persis; penimpa baca-saja hanya mempersempit). Tidak cocok/bukan milik = penolakan yang sama.
+- Tulis: skema hanya `target_id` + `sub_kategori` (enum 17) + `keyakinan`; kolom lain menolak seluruh panggilan. Target dicari `SppgBound` + SppgScope + Policy update (SPPG lain = "tidak ditemukan"); bahan baku, insentif fasilitas, pengeluaran hasil pembelian, dan nilai yang sama ditolak tanpa draf. Dry-run `UpdatePengeluaranRequest` (aturan REST yang sama). Payload tanpa teks bebas; ringkasan konfirmasi dibangun server tanpa uraian.
+- Data tak tepercaya: uraian disamarkan (`RecordPresenter::redactPersonal`, nama -> inisial, angka panjang/kontak -> `[disamarkan]`) dan diratakan; kode/nama SPPG diratakan; hasil membawa `RecordPresenter::NOTE` dan dibungkus `<hasil_tool_{nonce}>`. Tool baca tidak membuat draf dan tidak memanggil tool lain. Tanpa NIK.
+- Efek simpan: `BudgetService::ubahPengeluaran` mengajukan ulang pengeluaran (versi naik, `status_persetujuan` = `diajukan` lalu disetujui otomatis bila di bawah ambang `SIGAP_AMBANG_PERSETUJUAN_PENGELUARAN`, bawaan 0 = semua perlu persetujuan investor). Ringkasan draf menampilkan peringatan ini; selama menunggu persetujuan, pengeluaran tidak masuk laporan BGN.
+- Tes: `tests/Feature/LaporanBgn/SubKategoriToolAiTest.php`.
 
 R-06b-2: `total`, `status`, `satuan`, `versi`, `lampiran_ids`, `status_persetujuan` tidak ada di skema tool (argumen di luar skema ditolak). Untuk draf **ubah** pada record berversi (`ubah_pembelian_bahan`, `ubah_pengeluaran`) `versi` disisipkan SERVER dari record target saat draf dibuat (`ResourceSpec::$berversi` -> `WriteDraftTool::sisipkanDariServer`); mengonfirmasi draf yang basi (record berubah setelah draf) -> 409 `versi_tidak_cocok` dan draf tetap pending. Dry-run `POST pembelian-bahan` dari draf TIDAK menuntut `lampiran_ids` (foto Telegram tidak disimpan), tetapi endpoint nyata tetap mewajibkan minimal satu nota: Mini App memaksa unggah nota saat konfirmasi. Foto nota di bot memakai vision dua tahap yang ada (tahap 1 tanpa tool = data tak tepercaya; tahap 2 hanya dapat memanggil tool draf). Pengeluaran yang dikonfirmasi dari draf akuntan menjadi `diajukan` ke investor (alur normal). `cari_pengeluaran` punya filter `status_persetujuan`.
 
@@ -216,6 +233,7 @@ Alur: `GET /ai-drafts/{uuid}`, lalu layar `?draft=<uuid>`. Simpan hanya lewat en
 | `buat/ubah_jadwal_distribusi` | `distribusi` | C/U | `/jadwal/distribusi/baru`, `/:id/ubah` | `POST/PUT /jadwal/distribusi` | `distribusi` |
 | `buat/ubah_pengemudi` | `pengemudi` | C/U | `/pengemudi/baru`, `/:id/ubah` | `POST/PUT /pengemudi` | `pengemudi` |
 | `buat/ubah_pengeluaran` | `pengeluaran` | C/U | `/keuangan/pengeluaran/baru`, `/:id/ubah` | `POST/PUT /keuangan/pengeluaran` | `pengeluaran` |
+| `ubah_sub_kategori_pengeluaran` (R07-5; payload `{sub_kategori, versi}`) | `pengeluaran` | U | `/keuangan/pengeluaran/:id/ubah` | `PUT/PATCH /keuangan/pengeluaran/{id}` | `pengeluaran` |
 | `buat/ubah_pencairan_dana` | (tanpa marker) | C/U | `/keuangan/pencairan/baru`, `/:id/ubah` | `POST/PUT /keuangan/pencairan` | null |
 | `buat/ubah_standar_gizi` | `standar_gizi` | C/U | `/menu-gizi/standar-gizi/baru`, `/:id/ubah` | `POST/PUT /menu-gizi/standar-gizi` | belum dipanggil (celah backend, lihat catatan) |
 | `buat_undangan_pengguna` | `undangan` | C | `/pengguna/undangan/baru` | `POST /pengguna/undangan` tanpa `ai_draft_id`; Mini App membuang draf lewat `DELETE /ai-drafts/{uuid}` | - |

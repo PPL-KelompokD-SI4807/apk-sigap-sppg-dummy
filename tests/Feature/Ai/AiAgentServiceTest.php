@@ -187,7 +187,10 @@ class AiAgentServiceTest extends MasterApiTestCase
         $this->llm->push(LlmResponse::text('ok'));
         $this->agent()->handle($this->admin, AiInput::text('halo'));
         $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
-        $tulis = array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_') && ! in_array($n, ['daftar_pengajuan_menu', 'ringkas_dashboard_saya'], true)));
+        $tulis = array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_') && ! in_array($n, ['daftar_pengajuan_menu', 'ringkas_dashboard_saya', 'lihat_sub_kategori_laporan_bgn'], true)));
+        // R07-5: Admin tetap ditawari tool BACA sub-kategori laporan BGN (peta hak laporan BGN), bukan tool tulisnya.
+        $this->assertContains('lihat_sub_kategori_laporan_bgn', $this->llm->offeredTools(0));
+        $this->assertNotContains('ubah_sub_kategori_pengeluaran', $this->llm->offeredTools(0));
         $this->assertEqualsCanonicalizing(['buat_undangan_pengguna', 'cabut_undangan', 'ubah_peran_pengguna', 'nonaktifkan_pengguna', 'aktifkan_pengguna', 'hapus_pengguna'], $tulis);
         $registry = app(ToolRegistry::class);
         foreach ($tulis as $nama) {
