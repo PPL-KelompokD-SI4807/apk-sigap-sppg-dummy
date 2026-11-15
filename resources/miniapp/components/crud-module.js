@@ -58,13 +58,14 @@ function displayValue(field, rec) {
  *   formTop({mode,record,form,collect,values}) -> Node di atas form; onSaved({mode,res}) setelah simpan; prefill(query) -> nilai awal form baru
  *   prefillDraf(payloadBersih) -> nilai form dari payload draf AI (default: payload apa adanya tanpa kunci berawalan "_")
  *   field.onlyIfPresent: kolom detail disembunyikan bila kuncinya tak ada di respons (mis. no_sim untuk peran R)
+ *   tambahWeb:false -> web TIDAK menyediakan Tambah (mis. bukti distribusi: foto wajib di server, menunggu PR5); Ubah/Hapus tetap
  *   formTopWeb({mode,record,form,collect,values}) -> Node info di atas formulir web (hanya baca; tanpa aksi tulis)
  *   listTopWeb() / detailExtrasWeb(rec, ctx, perms) -> padanan listTop/detailExtras untuk layar BACA web (registerWeb). Tanpanya web tidak
  *     menampilkan bagian itu (listTop/detailExtras Mini App memuat aksi tulis, undangan Telegram, dan tautan ke layar yang belum ada di web)
  * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register(),registerWeb()}
  */
 export function defineCrudModule(def) {
-  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb, formTopWeb } = def;
+  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb, formTopWeb, tambahWeb = true } = def;
   // Opsi tambahan (aditif): searchable=false, queueOffline=false (tanpa antrian offline),
   // beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
   // sertakanVersi (R-06b-2): kunci optimistik; saat ubah, body memuat `versi` = versi draf AI (dari server) atau versi record yang dimuat.
@@ -297,11 +298,11 @@ export function defineCrudModule(def) {
       if (top) ctx.el.append(top);
       ctx.el.append(createListView({
         endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder,
-        createHref: tulis && bolehBuat() ? `#${base}/baru` : null, itemHref: (r) => `#${base}/${r.id}`,
+        createHref: tulis && tambahWeb && bolehBuat() ? `#${base}/baru` : null, itemHref: (r) => `#${base}/${r.id}`,
       }).el);
     }, { title, guard: () => me(permissionSlug).R, alihan: () => redirect(me(permissionSlug)) });
 
-    if (tulis) route(`${base}/baru`, (ctx) => renderFormWeb(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: bolehBuat });
+    if (tulis && tambahWeb) route(`${base}/baru`, (ctx) => renderFormWeb(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: bolehBuat });
 
     route(`${base}/:id`, async (ctx) => {
       const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));

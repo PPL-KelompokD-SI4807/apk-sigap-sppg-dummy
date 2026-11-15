@@ -161,6 +161,7 @@ export default defineCrudModule({
   listQuery,
   listTop,
   listTopWeb: listTop,
+  tambahWeb: false, // foto serah terima wajib di server (foto = PR5): web belum bisa Tambah; Ubah/Hapus tanpa foto tetap tersedia
   detailExtrasWeb: (rec) => [
     rec.terlambat ? h('div', { class: 'alert-danger', role: 'alert' }, `${terlambatLabel(rec)} dari acuan ${rec.acuan_tiba ? jamWIB(rec.acuan_tiba) : '-'}.`) : null,
     rec.selisih_porsi ? h('div', { class: 'notice' }, `Selisih porsi: ${selisihLabel(rec)}.${rec.catatan_selisih ? ` Catatan: ${rec.catatan_selisih}` : ''}`) : null,

@@ -51,7 +51,8 @@ setPlatform('web');
 const { setUserSesi, getUser } = await import('../core/auth.js');
 const { startRouter, resolve } = await import('../core/router.js');
 const { daftarkanRuteWeb, TULIS_WEB } = await import('../rute-web.js');
-const { userPerms, jadwalTabBoleh } = await import('../core/permissions.js');
+const { userPerms, jadwalTabBoleh, bolehAksi } = await import('../core/permissions.js');
+const { distribusiBisaDibuat } = await import('../modules/jadwal/schema.js');
 const { PROFIL, salin } = await import('./fixtures/peta.js');
 
 const dir = fileURLToPath(new URL('../modules/', import.meta.url));
@@ -209,8 +210,11 @@ test('hak per profil: formulir tambah hanya terbuka bila peta hak server memberi
   for (const nama of Object.keys(PROFIL)) {
     setUserSesi(salin(nama));
     for (const slug of TULIS_WEB) {
-      const perm = slug === 'pengemudi' ? 'armada' : slug;
-      const tambah = userPerms(getUser(), perm).C && (slug !== 'jadwal' || jadwalTabBoleh(getUser(), 'produksi')); // jadwal: tab produksi menurut unit_scope server
+      const perm = slug === 'pengemudi' ? 'armada' : slug === 'jadwal/distribusi' ? 'jadwal' : slug;
+      let tambah = userPerms(getUser(), perm).C && (slug !== 'jadwal' || jadwalTabBoleh(getUser(), 'produksi')); // jadwal: tab produksi menurut unit_scope server
+      if (slug === 'jadwal/distribusi') tambah = tambah && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser());
+      if (slug === 'notifikasi-perjalanan') tambah = tambah && bolehAksi(getUser(), 'picu_perjalanan') && jadwalTabBoleh(getUser(), 'distribusi');
+      if (slug === 'bukti-distribusi') tambah = false; // foto wajib di server: Tambah web menunggu PR5 (tambahWeb: false)
       assert.equal(cekAkses(`/${slug}/baru`), tambah ? 'boleh' : 'ditolak', `${nama} ${slug}`);
     }
   }
