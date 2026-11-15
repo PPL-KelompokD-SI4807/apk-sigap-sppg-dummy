@@ -2,8 +2,9 @@
 // Dipakai di detailExtras modul (bukti distribusi, keuangan, nanti keluhan/mutu/log produksi).
 // Foto yang menjadi bagian payload formulir (foto/nota/bukti) cukup memakai kolom {type:'photo'} di form-view.
 import { h } from '../core/dom.js';
-import { request, newKey, uploadMultipart } from '../core/transport.js';
-import { enqueue } from '../core/offline-queue.js';
+// Web (R04-8 PR5): transport-web memberi uploadMultipart/request jalur cookie + CSRF dan antreOffline yang selalu false
+// (tanpa antrean: jaringan putus = baris "Gagal" + Coba lagi dengan Idempotency-Key yang sama; foto tidak disimpan lokal).
+import { request, newKey, uploadMultipart, antreOffline } from '../core/transport.js';
 import { firstError, PESAN_413, PESAN_429, PESAN_409 } from '../core/errors.js';
 import { createPhotoUpload, createAuthImage, formatUkuran } from './photo-upload.js';
 import { createUploadState, bodyUnggahTertunda, validasiBerkasUnggah, MAKS_LAMPIRAN } from '../core/lampiran-uploader.js';
@@ -11,14 +12,16 @@ import { createUploadState, bodyUnggahTertunda, validasiBerkasUnggah, MAKS_LAMPI
 export const MODUL_LAMPIRAN = ['bukti-distribusi', 'keuangan-pencairan', 'keuangan-pengeluaran', 'keluhan', 'mutu', 'log-produksi'];
 export const STATUS_UNGGAH = { mengunggah: 'Mengunggah...', terunggah: 'Terunggah', menunggu: 'Menunggu jaringan: dikirim otomatis saat online', gagal: 'Gagal' };
 
-/** Pesan galat unggah (413/422/429/409/403/404/offline) berbahasa Indonesia. Murni. */
+/** Pesan galat unggah (413/422/429/409/403/404/401/offline) berbahasa Indonesia. Murni. */
 export function pesanUnggah(e) {
   const s = e?.status;
-  if (s === 0) return 'Tidak ada koneksi internet.';
+  if (s === 0) return 'Tidak ada koneksi internet. Foto belum terunggah; tekan Coba lagi saat online.';
+  if (s === 401) return 'Sesi Anda telah berakhir. Silakan masuk kembali.';
   if (s === 413) return PESAN_413;
   if (s === 429) return PESAN_429;
   if (s === 409) return PESAN_409;
   if (s === 422) return firstError(e.errors) || 'Berkas ditolak. Gunakan foto JPEG, PNG, atau WebP maksimal 5 MB.';
+  if (s === 403 && e?.data?.alasan === 'csrf_ditolak') return 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.';
   if (s === 403) return 'Anda tidak punya hak mengunggah lampiran pada data ini.';
   if (s === 404) return 'Data induk tidak ditemukan atau sudah dihapus.';
   if (s >= 500) return 'Terjadi gangguan pada server. Coba lagi nanti.';
@@ -33,7 +36,7 @@ export function pesanUnggah(e) {
  */
 export async function kirimDenganAntrean({ method = 'POST', path, body, key, label = 'Lampiran' }, deps = {}) {
   const send = deps.request || request;
-  const queue = deps.enqueue || enqueue;
+  const queue = deps.enqueue || antreOffline;
   try {
     const data = await send(method, path, { body, key, silent: true });
     return { status: 'terunggah', data };
@@ -126,7 +129,7 @@ export function lampiranField({ name = 'lampiran_ids', modul, label = 'Foto', ka
   let state = null;
 
   return {
-    name, label, type: 'custom', help, lampiran: true, // lampiran: false di web sampai PR foto (PR5)
+    name, label, type: 'custom', help, lampiran: true, // penanda kolom lampiran (unggahan tertunda); aktif di Mini App dan web
     build() {
       state = createUploadState({
         modul, kategori, max, tersimpan: existing.length, sppgId,

@@ -33,6 +33,12 @@ export class ApiError extends Error {
   get alasan() { return this.data?.alasan ?? null; }
 }
 
+/**
+ * Kredensial GET berkas privat (/api/v1/lampiran/{id}) di web (R04-8 PR5): cookie sesi HttpOnly (same-origin) + X-Sigap-Klien: web.
+ * Tanpa header otorisasi dan tanpa token di URL. Argumen diabaikan (bentuk sama dengan versi Mini App di api.js).
+ */
+export const kredensialBerkas = () => ({ headers: { [HEADER_KLIEN]: NILAI_KLIEN }, credentials: 'same-origin' });
+
 const hasBlob = (obj) => Object.values(obj || {}).some((v) => typeof Blob !== 'undefined' && v instanceof Blob);
 
 function toFormData(obj) {
@@ -60,10 +66,40 @@ export function statusKirimUlang({ terkirimSebanyak = 0, terakhirMs, sekarangMs 
 }
 
 /**
- * Buat klien web. `fetchFn` dan `base` hanya untuk tes; produksi memakai instans bawaan di bawah.
+ * Kirim multipart lewat XMLHttpRequest agar progres unggah terbaca (fetch belum punya progres unggah). Satu origin: cookie
+ * sesi HttpOnly ikut terkirim tanpa `withCredentials` (setara credentials 'same-origin'); header (X-Sigap-Klien, X-CSRF-Token,
+ * Idempotency-Key, X-SPPG-Id) sama persis dengan jalur fetch. Mengembalikan objek mirip Response (status, ok, headers.get, json);
+ * galat jaringan/batal/timeout dilempar agar pemanggil memetakannya ke status 0.
+ */
+export function kirimXhr(xhrFactory, url, { method, headers, body, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const xhr = xhrFactory();
+    xhr.open(method, url);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total > 0) onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100))); };
+    }
+    const gagal = () => reject(new Error('jaringan'));
+    xhr.onerror = gagal;
+    xhr.ontimeout = gagal;
+    xhr.onabort = gagal;
+    xhr.onload = () => resolve({
+      status: xhr.status,
+      ok: xhr.status >= 200 && xhr.status < 300,
+      headers: { get: (n) => xhr.getResponseHeader?.(n) ?? null },
+      json: async () => JSON.parse(xhr.responseText),
+    });
+    xhr.send(body);
+  });
+}
+
+const xhrBawaan = () => (typeof XMLHttpRequest === 'undefined' ? null : new XMLHttpRequest());
+
+/**
+ * Buat klien web. `fetchFn`, `xhrFactory`, dan `base` hanya untuk tes; produksi memakai instans bawaan di bawah.
  * Status: 'kosong' (belum ada CSRF) | 'pra' (CSRF pra-login) | 'sesi' (login penuh; CSRF terikat sesi).
  */
-export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sekarang = () => Date.now() } = {}) {
+export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), xhrFactory = xhrBawaan, base = BASE, sekarang = () => Date.now() } = {}) {
   let mode = 'kosong';
   let csrf = null;
   let csrfBerlakuSampai = null; // ms epoch; hanya untuk CSRF pra-login
@@ -74,7 +110,7 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
   const lupakan = () => { mode = 'kosong'; csrf = null; csrfBerlakuSampai = null; user = null; hapusSppgAktif(); };
   const sesiHabis = () => { lupakan(); bus.dispatchEvent(new Event('sesi-habis')); };
 
-  async function kirim(method, path, { query, body, key, csrfPakai } = {}) {
+  async function kirim(method, path, { query, body, key, csrfPakai, onProgress } = {}) {
     let url = base + path;
     if (query) {
       const qs = new URLSearchParams();
@@ -100,7 +136,11 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), base = BASE, sek
     }
     let res;
     try {
-      res = await fetchFn(url, { method: verb, headers, body: payload, credentials: 'same-origin', cache: 'no-store' });
+      // Multipart dengan pemantau progres -> XHR (header & cookie sama); selain itu fetch.
+      const lewatXhr = onProgress && typeof FormData !== 'undefined' && payload instanceof FormData && xhrFactory?.();
+      res = lewatXhr
+        ? await kirimXhr(() => lewatXhr, url, { method: verb, headers, body: payload, onProgress })
+        : await fetchFn(url, { method: verb, headers, body: payload, credentials: 'same-origin', cache: 'no-store' });
     } catch {
       throw new ApiError(0, PESAN_OFFLINE);
     }

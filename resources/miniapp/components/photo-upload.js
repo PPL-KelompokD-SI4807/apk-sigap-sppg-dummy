@@ -1,8 +1,8 @@
 // Komponen unggah foto aman: kamera/galeri, kompres canvas (maks 1600 px, JPEG 0,8), pratinjau, hapus,
-// batas jumlah, dan tampilan gambar privat lewat fetch + Authorization (blob -> objectURL).
+// batas jumlah, dan tampilan gambar privat lewat fetch berkredensial transport (blob -> objectURL).
 // Bagian murni (tanpa DOM) diekspor agar dapat diuji dengan node --test.
 import { h } from '../core/dom.js';
-import { getToken, newKey } from '../core/transport.js';
+import { kredensialBerkas, newKey } from '../core/transport.js';
 import { terapkanHeaderSppg, getSppgAktif } from '../core/sppg-aktif.js';
 
 export const MAX_SIDE = 1600;
@@ -119,14 +119,20 @@ function trackUrl(url) {
 }
 const release = (url) => { if (url && tracked.delete(url)) URL.revokeObjectURL(url); };
 
-/** Ambil gambar privat: fetch + Authorization -> Blob. Galat memuat pesan Indonesia. */
-export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token = getToken(), sppgId = getSppgAktif() } = {}) {
+/**
+ * Ambil gambar privat -> Blob. Kredensial dari lapisan transport (kredensialBerkas): Mini App = Bearer + credentials 'omit';
+ * web = cookie sesi HttpOnly (same-origin) + X-Sigap-Klien: web. Tanpa token di URL. `token`/`kredensial` hanya untuk tes.
+ * Galat memuat pesan Indonesia.
+ */
+export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token, kredensial = null, sppgId = getSppgAktif() } = {}) {
   if (!lampiranPath(path)) throw new Error('Alamat berkas tidak valid.');
+  const k = kredensial ?? kredensialBerkas(token);
   let res;
   try {
-    res = await fetchFn(path, { headers: terapkanHeaderSppg({ Accept: 'image/*', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, sppgId), credentials: 'omit' });
+    res = await fetchFn(path, { headers: terapkanHeaderSppg({ Accept: 'image/*', ...k.headers }, sppgId), credentials: k.credentials, cache: 'no-store' });
   } catch { throw new Error('Tidak ada koneksi internet.'); }
   if (!res.ok) {
+    if (res.status === 401) throw new Error('Sesi Anda telah berakhir. Silakan masuk kembali.');
     // 403 lampiran_disembunyikan (Investor) bukan galat SPPG aktif: pilihan SPPG tidak dihapus.
     if (res.status === 403) {
       let alasan = null;

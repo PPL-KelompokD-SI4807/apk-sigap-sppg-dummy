@@ -68,6 +68,11 @@ export function setToken(t, jenis = 'pra_login') {
   }
 }
 export const getToken = () => token;
+/**
+ * Kredensial GET berkas privat (/api/v1/lampiran/{id}) di Mini App: Bearer + credentials 'omit' (cookie web tidak ikut).
+ * `t` hanya untuk tes; bawaan = token aktif. Padanan web (transport-web.js) memakai cookie sesi.
+ */
+export const kredensialBerkas = (t = token) => ({ headers: t ? { Authorization: `Bearer ${t}` } : {}, credentials: 'omit' });
 /** 'penuh' | 'pra_login' | null. */
 export const getJenisToken = () => jenisToken;
 

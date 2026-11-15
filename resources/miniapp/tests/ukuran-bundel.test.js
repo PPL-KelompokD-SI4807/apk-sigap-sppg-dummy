@@ -75,10 +75,12 @@ test('pindai bundel web: seluruh modul (registry + beranda + komponen) tanpa jej
     for (const [nama, kode] of [['web.html', asli], ['semua-modul', lebar]]) {
       assert.ok(!/localStorage|sessionStorage/.test(kode), `${nama}: memuat localStorage/sessionStorage`);
       assert.ok(kode.includes('X-SPPG-Id'), `${nama}: header SPPG aktif (memori) tidak terpasang`);
-      // Celah yang diketahui: fetchLampiranBlob (components/photo-upload.js) masih memakai Bearer + credentials 'omit' untuk gambar privat.
-      // Diperbaiki di PR5 (foto web, T3); saat itu batas ini menjadi 0. Sampai saat itu tidak boleh bertambah dari 1 (registry lazy ikut memuatnya).
-      const batasAuth = 1;
-      assert.ok((kode.match(/Authorization/g) || []).length <= batasAuth, `${nama}: header Authorization melebihi batas ${batasAuth}`);
+      // PR5: fetchLampiranBlob memakai kredensialBerkas dari transport (web = cookie sesi), jadi bundel web bebas Authorization.
+      assert.equal((kode.match(/Authorization/g) || []).length, 0, `${nama}: memuat header Authorization`);
+      assert.ok(!/Bearer /.test(kode), `${nama}: memuat Bearer`);
+      // Web tanpa antrean offline: lampiran-field memakai antreOffline dari transport (web = selalu false). Hanya bundel web nyata;
+      // entri pindai sengaja ikut memuat home.js Mini App (penghitung antrean).
+      if (nama === 'web.html') assert.ok(!/indexedDB|sigap-miniapp/.test(kode), `${nama}: memuat antrean offline (IndexedDB)`);
       assert.ok(!/telegram-web-app/.test(kode), `${nama}: memuat telegram-web-app`);
       assert.ok(!/sigap_device_id|sigap_token|init_data/.test(kode), `${nama}: memuat device id/token/initData`);
     }
