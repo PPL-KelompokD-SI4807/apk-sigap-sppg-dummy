@@ -51,7 +51,7 @@ setPlatform('web');
 const { setUserSesi, getUser } = await import('../core/auth.js');
 const { startRouter, resolve } = await import('../core/router.js');
 const { daftarkanRuteWeb, TULIS_WEB } = await import('../rute-web.js');
-const { userPerms } = await import('../core/permissions.js');
+const { userPerms, jadwalTabBoleh } = await import('../core/permissions.js');
 const { PROFIL, salin } = await import('./fixtures/peta.js');
 
 const dir = fileURLToPath(new URL('../modules/', import.meta.url));
@@ -210,7 +210,8 @@ test('hak per profil: formulir tambah hanya terbuka bila peta hak server memberi
     setUserSesi(salin(nama));
     for (const slug of TULIS_WEB) {
       const perm = slug === 'pengemudi' ? 'armada' : slug;
-      assert.equal(cekAkses(`/${slug}/baru`), userPerms(getUser(), perm).C ? 'boleh' : 'ditolak', `${nama} ${slug}`);
+      const tambah = userPerms(getUser(), perm).C && (slug !== 'jadwal' || jadwalTabBoleh(getUser(), 'produksi')); // jadwal: tab produksi menurut unit_scope server
+      assert.equal(cekAkses(`/${slug}/baru`), tambah ? 'boleh' : 'ditolak', `${nama} ${slug}`);
     }
   }
 });

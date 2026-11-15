@@ -30,7 +30,11 @@ export default defineCrudModule({
     badge: { text: r.hasil_label || hasilLabel(r.hasil), cls: hasilBadge(r.hasil) },
   }),
   rowPerms: rowPermsMutu,
-  detailExtrasWeb: (rec) => (rec.hasil === 'tidak_layak' ? [h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.')] : []),
+  detailExtrasWeb: (rec, ctx, p) => [
+    rec.hasil === 'tidak_layak' ? h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.') : null,
+    rec.memengaruhi_distribusi ? h('div', { class: 'notice' }, 'Tombol Hapus tidak tersedia: pemeriksaan ini adalah yang terbaru untuk jadwal yang distribusinya masih aktif (atau sudah berangkat).') : null,
+    p?.C && rec.jadwal_produksi_id ? h('a', { class: 'btn btn-block', href: `#/mutu/baru?jadwal=${rec.jadwal_produksi_id}` }, 'Periksa ulang jadwal ini') : null,
+  ].filter(Boolean),
   detailExtras: (rec, p) => {
     const nodes = [];
     if (rec.hasil === 'tidak_layak') nodes.push(h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.'));

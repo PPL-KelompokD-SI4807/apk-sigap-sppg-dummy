@@ -47,6 +47,7 @@ export default defineCrudModule({
   searchPlaceholder: 'Cari kode batch atau kendala...',
   prefill: (q) => (q.get('jadwal') ? { jadwal_produksi_id: q.get('jadwal') } : {}),
   formTop,
+  formTopWeb: formTop,
   renderCard: (r, href) => rowCard({
     href,
     title: r.jadwal?.menu?.nama_menu ?? r.kode_batch ?? `Log #${r.id}`,

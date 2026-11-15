@@ -126,7 +126,7 @@ export function lampiranField({ name = 'lampiran_ids', modul, label = 'Foto', ka
   let state = null;
 
   return {
-    name, label, type: 'custom', help,
+    name, label, type: 'custom', help, lampiran: true, // lampiran: false di web sampai PR foto (PR5)
     build() {
       state = createUploadState({
         modul, kategori, max, tersimpan: existing.length, sppgId,

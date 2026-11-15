@@ -11,7 +11,10 @@ import { multiSppg } from './core/permissions.js';
  * dan bagian tambahannya (listTopWeb/detailExtrasWeb) sudah aman untuk web. Hak tetap dari peta server (guard registerWeb).
  */
 /** Modul yang juga mendapat formulir web (Tambah/Ubah/Hapus, PR4c). Hak tetap dari peta/izin server. */
-export const TULIS_WEB = new Set(['sppg', 'titik-layanan', 'penerima-manfaat', 'pemasok', 'armada', 'pengemudi']);
+export const TULIS_WEB = new Set([
+  'sppg', 'titik-layanan', 'penerima-manfaat', 'pemasok', 'armada', 'pengemudi', // PR4c data master
+  'jadwal', 'log-produksi', 'mutu', // PR4d produksi (jadwal/distribusi menyusul di 4e)
+]);
 
 export const BACA_WEB = new Set([
   // 4a data master
