@@ -278,6 +278,28 @@ class ArmadaTest extends MasterApiTestCase
         }
     }
 
+    public function test_no_hp_hanya_untuk_peran_pengelola_armada(): void
+    {
+        $p = $this->pengemudi($this->sppgA, ['nama' => 'Pak Rahmat', 'no_hp' => '081299990001']);
+
+        foreach ([$this->akuntanA, $this->relawanA] as $reader) {
+            $this->as($reader);
+            $this->getJson("/api/v1/pengemudi/{$p->id}")->assertOk()
+                ->assertJsonMissingPath('data.no_hp')
+                ->assertJsonPath('data.nama', 'Pak Rahmat');
+            $this->getJson('/api/v1/pengemudi')->assertOk()->assertJsonMissingPath('data.0.no_hp');
+            $this->assertStringNotContainsString('081299990001', (string) $this->getJson('/api/v1/pengemudi')->getContent());
+            // Pencarian tidak boleh menjadi oracle nomor HP bagi peran yang tidak melihatnya.
+            $this->getJson('/api/v1/pengemudi?q=081299990001')->assertOk()->assertJsonCount(0, 'data');
+            $this->getJson('/api/v1/pengemudi?q=Rahmat')->assertOk()->assertJsonCount(1, 'data');
+        }
+
+        foreach ([$this->kepalaA, $this->admin] as $writer) {
+            $this->as($writer)->getJson("/api/v1/pengemudi/{$p->id}")->assertOk()->assertJsonPath('data.no_hp', '081299990001');
+            $this->getJson('/api/v1/pengemudi?q=081299990001')->assertOk()->assertJsonCount(1, 'data');
+        }
+    }
+
     public function test_pengemudi_lintas_sppg_dan_filter(): void
     {
         $this->pengemudi($this->sppgA, ['nama' => 'Aktif A']);

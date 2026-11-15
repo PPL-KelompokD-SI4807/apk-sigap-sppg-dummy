@@ -26,7 +26,7 @@ schemas:
       id: { type: integer }
       sppg_id: { type: integer }
       nama: { type: string }
-      no_hp: { type: [string, 'null'] }
+      no_hp: { type: [string, 'null'], description: 'Bersyarat, sama seperti no_sim: hanya untuk peran yang boleh mengubah (Admin, Kepala SPPG); kunci tidak ada di respons peran lain (Akuntan, Relawan).' }
       no_sim: { type: [string, 'null'], description: 'Hanya untuk peran yang boleh mengubah (Admin, Kepala SPPG); tidak ada di respons peran lain.' }
       sim_berlaku_hingga: { type: [string, 'null'], format: date, description: 'Sama seperti no_sim: disembunyikan dari peran R.' }
       sim_status: { type: [string, 'null'], enum: [berlaku, segera_berakhir, kedaluwarsa, null], description: 'segera_berakhir = <= 30 hari; null bila SIM tidak dicatat.' }

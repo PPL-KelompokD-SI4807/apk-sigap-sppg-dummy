@@ -8,6 +8,7 @@ use App\Http\Requests\Armada\UpdatePengemudiRequest;
 use App\Http\Resources\Armada\PengemudiResource;
 use App\Models\Pengemudi;
 use App\Services\Ai\AiDraftConfirmer;
+use App\Support\Rbac;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -27,7 +28,9 @@ class PengemudiController extends ApiController
     {
         $this->authorize('viewAny', Pengemudi::class);
 
-        $query = Pengemudi::query()->search($request->query('q'))->orderBy('nama')->orderBy('id');
+        // Peran tanpa hak ubah tidak melihat no_hp, jadi pencarian tidak boleh mencocokkannya (menghindari penebakan nomor).
+        $kolomCari = Rbac::can($request->user(), 'armada', 'U') ? null : ['nama'];
+        $query = Pengemudi::query()->search($request->query('q'), $kolomCari)->orderBy('nama')->orderBy('id');
         $this->filterSppg($query, $request);
 
         if (($active = $this->boolQuery($request, 'is_active')) !== null) {
