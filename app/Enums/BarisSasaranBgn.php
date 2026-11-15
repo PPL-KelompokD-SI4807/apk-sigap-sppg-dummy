@@ -39,6 +39,12 @@ enum BarisSasaranBgn: string
         };
     }
 
+    /** Label baris 30b (Sasaran Penerima Manfaat): juknis menulis "Balita" saja; keterangan usia hanya pada kolom 30d-C. */
+    public function labelHarian(): string
+    {
+        return $this === self::Balita ? 'Balita' : $this->label();
+    }
+
     public function pesertaDidik(): bool
     {
         return ! in_array($this, [self::IbuHamil, self::IbuMenyusui, self::Balita], true);

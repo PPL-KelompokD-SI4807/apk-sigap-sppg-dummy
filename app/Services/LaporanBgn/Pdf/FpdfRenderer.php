@@ -77,7 +77,7 @@ final class FpdfRenderer implements PdfRenderer
                 $lebar[] = $wPorsi;
                 $lebar[] = $wBiaya;
                 array_push($rata, 'R', 'R');
-                $baris1[] = ['t' => Teks::tetap($h['hari'].' '.Teks::tanggalPendek($h['tanggal'])), 'span' => 2];
+                $baris1[] = ['t' => Teks::tetap(Teks::tanggalPanjang($h['tanggal'])), 'span' => 2];
                 array_push($baris2, ['t' => 'JUMLAH PORSI'], ['t' => 'BIAYA PER HARI']);
             }
 
@@ -140,7 +140,7 @@ final class FpdfRenderer implements PdfRenderer
     private function harian(): void
     {
         $sppg = (array) $this->d['sppg'];
-        $this->kop('LAPORAN HARIAN PENGGUNAAN DANA', null, 12);
+        $this->kop('LAPORAN HARIAN PENGGUNAAN DANA PROGRAM MBG TA '.substr((string) $this->d['tanggal'], 0, 4), null, 12);
         $this->kv('Nomor', $this->nomor(), 0, 30);
         $this->kv('Nama SPPG', Teks::bersih($sppg['nama'] ?? '', 100), 0, 30);
         $this->kv('Kecamatan', Teks::bersih($sppg['kecamatan'] ?? '', 100), 0, 30);
@@ -201,7 +201,7 @@ final class FpdfRenderer implements PdfRenderer
         $this->subJudul('C. Biaya Insentif Fasilitas SPPG');
         $ins = (array) $r['insentif_fasilitas'];
         $tabel = new TabelPdf($this->pdf, [78.0, 40.0, 68.0], ['L', 'R', 'L']);
-        $tabel->kepala([[['t' => 'Uraian'], ['t' => 'Jumlah (Rp)'], ['t' => 'Keterangan']]]);
+        $tabel->kepala([[['t' => 'Uraian'], ['t' => 'Jumlah'], ['t' => 'Keterangan']]]);
         $tabel->baris([Teks::tetap('Biaya Insentif Fasilitas SPPG'), Teks::angka($ins['jumlah']), Teks::bersih($ins['keterangan'] ?? '', 100)]);
         $this->pdf->Ln(1);
         $this->pdf->teksBaris(Teks::tetap('Total belanja hari ini: '.Teks::rupiah($r['total_belanja']).'.'), 4.2, 'B', 8);
@@ -549,6 +549,12 @@ final class FpdfRenderer implements PdfRenderer
         return $n === null || $n === '' ? '(belum diterbitkan)' : Teks::bersih($n, 60);
     }
 
+    /** Jabatan sudah memuat kata "SPPG" ("Kepala SPPG ..."); awalan "SPPG" pada nama tidak diulang. */
+    private function namaSppgUntukJabatan(mixed $nama): string
+    {
+        return trim((string) preg_replace('/^SPPG\s+/i', '', Teks::bersih($nama, 60)));
+    }
+
     private function atau(mixed $nilai, string $cadangan): string
     {
         $s = Teks::bersih($nilai, 120);
@@ -583,7 +589,8 @@ final class FpdfRenderer implements PdfRenderer
     {
         $p = (array) $this->d['penandatangan'];
         $sppg = (array) $this->d['sppg'];
-        $this->pdf->butuhRuang(66);
+        // Tinggi blok: tanggal + Pihak Pertama/Kedua + ruang tanda tangan + Mengetahui + ruang tanda tangan (~90 mm).
+        $this->pdf->butuhRuang(92);
         $m = $this->pdf->margin;
         $lebar = $this->pdf->lebarIsi();
         $kolom = $lebar / 2;
@@ -610,7 +617,7 @@ final class FpdfRenderer implements PdfRenderer
         $a = $baris($m, $y, $kolom, 'Pihak Pertama', 'B');
         $a = $baris($m, $a, $kolom, $this->atau($kiri['yayasan'] ?? null, '(Nama Yayasan)'));
         $b = $baris($m + $kolom, $y, $kolom, 'Pihak Kedua', 'B');
-        $b = $baris($m + $kolom, $b, $kolom, Teks::tetap((string) ($kanan['jabatan'] ?? '')).' '.Teks::bersih($sppg['nama'] ?? '', 60));
+        $b = $baris($m + $kolom, $b, $kolom, Teks::tetap((string) ($kanan['jabatan'] ?? '')).' '.$this->namaSppgUntukJabatan($sppg['nama'] ?? ''));
         $yNama = max($a, $b) + 20;
         $a = $baris($m, $yNama, $kolom, $nama($kiri['nama'] ?? null), 'B');
         $baris($m, $a, $kolom, Teks::tetap((string) ($kiri['jabatan'] ?? '')));
@@ -618,7 +625,7 @@ final class FpdfRenderer implements PdfRenderer
 
         $yTengah = max($a, $b) + 8;
         $c = $baris($m + $kolom / 2, $yTengah, $kolom, 'Mengetahui', 'B');
-        $c = $baris($m + $kolom / 2, $c, $kolom, Teks::tetap((string) ($tengah['jabatan'] ?? '')).' '.Teks::bersih($sppg['nama'] ?? '', 60));
+        $c = $baris($m + $kolom / 2, $c, $kolom, Teks::tetap((string) ($tengah['jabatan'] ?? '')).' '.$this->namaSppgUntukJabatan($sppg['nama'] ?? ''));
         $c = $baris($m + $kolom / 2, $c + 20, $kolom, $nama($tengah['nama'] ?? null), 'B');
         $this->pdf->SetY($c + 2);
     }

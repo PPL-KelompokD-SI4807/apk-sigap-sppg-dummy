@@ -323,7 +323,7 @@ class LaporanBgnService
 
             $blok[$baris->pesertaDidik() ? 'peserta_didik' : 'non_peserta_didik'][] = [
                 'baris' => $baris->value,
-                'label' => $baris->label(),
+                'label' => $baris->labelHarian(),
                 'rincian' => array_map(fn (array $t) => $t + ['jumlah' => $t['laki_laki'] + $t['perempuan'] + $t['tanpa_jenis_kelamin']], $titik),
                 'laki_laki' => $laki,
                 'perempuan' => $perempuan,
