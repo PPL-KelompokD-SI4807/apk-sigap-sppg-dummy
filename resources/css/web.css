@@ -1,0 +1,48 @@
+/* Penyempurnaan WEB saja (R04-8 PR6). Dimuat hanya oleh web-main.js dan semua aturan di bawah body.web,
+   jadi Mini App tidak terpengaruh. Mobile-first: dasar 360, lalu 768 dan 1024. Warna tetap dari variabel tema. */
+
+/* Fokus keyboard terlihat (kontras mengikuti --accent per tema). */
+body.web :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+body.web .field :is(input, select, textarea):focus-visible, body.web .search:focus-visible { outline-offset: 0; border-color: var(--accent); }
+
+/* Area sentuh >= 44px untuk kontrol yang lebih kecil di Mini App. */
+body.web .btn-sm, body.web .pager .btn, body.web .upload-row .btn, body.web .seg-btn { min-height: 44px; }
+body.web .appbar-back { min-width: 44px; min-height: 44px; }
+body.web .link { min-height: 44px; display: inline-flex; align-items: center; }
+body.web .check-row { min-height: 44px; align-items: center; }
+
+/* Tabel/daftar tidak meluber di 360. */
+body.web .view, body.web .view > * { min-width: 0; }
+body.web .panel, body.web .card, body.web .row-card { overflow-wrap: anywhere; }
+body.web .tbl { overflow-x: auto; }
+body.web .seg { max-width: 100%; }
+body.web .modal { max-width: min(420px, 100%); max-height: 90vh; overflow-y: auto; }
+body.web .appbar-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.web .mainbar .btn { max-width: 100%; }
+
+@media (min-width: 768px) {
+  body.web .appbar { padding: 12px max(24px, calc((100% - 1100px) / 2)); }
+  body.web .view { max-width: 1100px; padding: 24px; gap: 16px; }
+  body.web .menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  body.web .mainbar { padding-left: 24px; padding-right: 24px; }
+  body.web .mainbar .btn { max-width: 1052px; }
+  body.web .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  body.web .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  body.web .toasts { left: auto; right: 24px; align-items: flex-end; }
+  /* Formulir dua kolom; bidang panjang dan elemen non-bidang melebar penuh. */
+  body.web .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  body.web .form > :not(.field),
+  body.web .form > .field:has(textarea, .photo-upload, .photo-list, .komposisi-row, .upload-row, fieldset, .check-row, .readonly-text) { grid-column: 1 / -1; }
+  body.web .detail { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+  body.web .login { max-width: 460px; margin-left: auto; margin-right: auto; width: 100%; }
+}
+
+@media (min-width: 1024px) {
+  body.web .view { max-width: 1200px; padding: 28px 32px; }
+  body.web .appbar { padding-left: max(32px, calc((100% - 1200px) / 2 + 32px)); padding-right: max(32px, calc((100% - 1200px) / 2 + 32px)); }
+  body.web .menu-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  body.web .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body.web .mainbar .btn { max-width: 1136px; }
+  body.web .detail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
