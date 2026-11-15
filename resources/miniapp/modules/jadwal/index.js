@@ -170,7 +170,11 @@ const distribusiModule = defineCrudModule({
   bolehTambah: (u) => jadwalTabBoleh(u, 'distribusi') && distribusiBisaDibuat(u),
   listTop: () => jadwalTabs('distribusi'),
   listTopWeb: () => jadwalTabs('distribusi'),
-  detailExtrasWeb: (rec) => (rec.status === 'siap' && rec.layak_distribusi === false ? [h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.')] : []),
+  formTopWeb: distribusiFormTop,
+  detailExtrasWeb: (rec, ctx, p) => [
+    rec.status === 'siap' && rec.layak_distribusi === false ? h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.') : null,
+    aksiStatus('distribusi', rec, '/jadwal/distribusi', p), // PATCH /jadwal/distribusi/{id} {status}; hanya bila izin U dari server
+  ].filter(Boolean), // tautan Catat bukti tidak ada di web (foto wajib, PR5)
   prefill: (q) => (q.get('jadwal') ? { jadwal_produksi_id: q.get('jadwal') } : {}),
   formTop: distribusiFormTop,
   renderCard: (r, href) => rowCard({

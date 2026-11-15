@@ -165,7 +165,8 @@ const base = defineCrudModule({
   listQuery,
   listTop,
   listTopWeb: () => listTop({ web: true }),
-  detailExtrasWeb: (rec) => [...banner(rec), ringkasKartu(rec)].filter(Boolean), // tanpa tombol ubah status
+  formTopWeb: formTop, // pratinjau estimasi (POST /pratinjau, tanpa efek samping)
+  detailExtrasWeb: (rec) => [...banner(rec), ringkasKartu(rec), aksiPerjalanan(rec)].filter(Boolean), // aksiPerjalanan hanya bila izin.ubah_status dari server
   prefill: (q) => (q.get('jadwal') ? { jadwal_distribusi_id: q.get('jadwal') } : {}),
   formTop,
   beforeSave: () => showConfirm({ title: 'Berangkat & kirim notifikasi', message: 'Perjalanan dimulai dan pesan dikirim ke PIC titik layanan. Lanjutkan?', okText: 'Berangkat' }),
