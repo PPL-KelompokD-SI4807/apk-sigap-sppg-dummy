@@ -44,6 +44,9 @@ export const antreOffline = async () => false;
 /** GET berkas privat lewat cookie sesi (lihat api-web.js). */
 export { kredensialBerkas };
 
+/** 401 saat memuat berkas privat (GET /lampiran/{id}) memicu event 'sesi-habis' yang sama dengan permintaan API lain. */
+export const sesiBerkasHabis = () => klienWeb.sesiHabisDariBerkas();
+
 /** Web tidak punya token yang terlihat JS (cookie HttpOnly). Pemanggil harus memakai cookie, bukan header. */
 export const getToken = () => null;
 

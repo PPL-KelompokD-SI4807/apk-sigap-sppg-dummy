@@ -175,7 +175,7 @@ test('foto nota di web: GET /lampiran/{id} lewat kredensial transport, tanpa tok
   pengRec = asli;
 });
 
-test('keputusan investor (web): Tolak wajib catatan; POST /keputusan dengan versi; kunci sama saat diulang setelah galat', async () => {
+test('keputusan investor (web): Tolak wajib catatan; POST /keputusan dengan versi; body memuat versi (pencegah keputusan ganda: 409 dari server); kunci klien sama saat diulang', async () => {
   sebagai('investor');
   const asli = pengRec;
   pengRec = { ...pengRec, izin: { ubah: false, hapus: false, lampirkan: false, putuskan: true } };
@@ -204,7 +204,9 @@ test('keputusan investor (web): Tolak wajib catatan; POST /keputusan dengan vers
   assert.equal(t.length, 2);
   assert.deepEqual(t[0].body, { keputusan: 'ditolak', versi: 3, catatan: 'Nota tidak jelas' });
   assert.match(t[0].headers['Idempotency-Key'], UUID);
-  assert.equal(t[0].headers['Idempotency-Key'], t[1].headers['Idempotency-Key'], 'isian sama -> kunci sama');
+  // Kunci hanya kebiasaan klien: rute keputusan tidak memakai middleware idempotensi; yang mencegah ganda adalah `versi` (409).
+  assert.equal(t[0].headers['Idempotency-Key'], t[1].headers['Idempotency-Key'], 'isian sama -> kunci klien sama');
+  assert.equal(t[1].body.versi, 3, 'versi dikirim pada setiap percobaan');
   pengRec = asli;
 });
 

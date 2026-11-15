@@ -6,3 +6,5 @@
 export * from './api.js';
 // Antrean offline (IndexedDB) hanya di Mini App; transport-web.js mengekspor padanan yang selalu false (web tanpa antrean).
 export { enqueue as antreOffline } from './offline-queue.js';
+// 401 saat memuat berkas privat: Mini App sudah punya alur pemulihan sesi lewat request(); pemuat berkas tidak memicu apa pun (perilaku tetap).
+export const sesiBerkasHabis = () => {};

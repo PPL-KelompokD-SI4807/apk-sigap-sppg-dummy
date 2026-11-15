@@ -6,7 +6,7 @@ import { h } from '../core/dom.js';
 // (tanpa antrean: jaringan putus = baris "Gagal" + Coba lagi dengan Idempotency-Key yang sama; foto tidak disimpan lokal).
 import { request, newKey, uploadMultipart, antreOffline } from '../core/transport.js';
 import { firstError, PESAN_413, PESAN_429, PESAN_409 } from '../core/errors.js';
-import { createPhotoUpload, createAuthImage, formatUkuran } from './photo-upload.js';
+import { createPhotoUpload, createAuthImage, formatUkuran, lepasUrl } from './photo-upload.js';
 import { createUploadState, bodyUnggahTertunda, validasiBerkasUnggah, MAKS_LAMPIRAN } from '../core/lampiran-uploader.js';
 
 export const MODUL_LAMPIRAN = ['bukti-distribusi', 'keuangan-pencairan', 'keuangan-pengeluaran', 'keluhan', 'mutu', 'log-produksi'];
@@ -102,7 +102,7 @@ export function createLampiranPanel({ modul, recordId, kategori = 'foto', lampir
         row.msg ? h('span', { class: 'field-error', role: 'alert' }, row.msg) : null,
         h('span', { class: 'muted small' }, formatUkuran(row.file.size))),
       row.status === 'gagal' ? h('button', { class: 'btn', type: 'button', onclick: () => send(row, url) }, 'Coba lagi') : null,
-      row.status === 'gagal' ? h('button', { class: 'btn btn-danger', type: 'button', onclick: () => { row.el.remove(); rows.splice(rows.indexOf(row), 1); limitInfo.textContent = `${total()} dari ${max} lampiran.`; } }, 'Hapus') : null);
+      row.status === 'gagal' ? h('button', { class: 'btn btn-danger', type: 'button', onclick: () => { lepasUrl(url); row.el.remove(); rows.splice(rows.indexOf(row), 1); limitInfo.textContent = `${total()} dari ${max} lampiran.`; } }, 'Hapus') : null);
   }
   async function send(row, url) {
     row.status = 'mengunggah'; row.msg = ''; paint(row, url);
@@ -159,7 +159,7 @@ export function lampiranField({ name = 'lampiran_ids', modul, label = 'Foto', ka
             h('span', { class: 'muted small' }, formatUkuran(it.file.size))),
           h('div', { class: 'stack-tight' },
             it.status === 'gagal' ? h('button', { class: 'btn', type: 'button', onclick: () => state.retry(it.key) }, 'Coba lagi') : null,
-            it.status !== 'mengunggah' ? h('button', { class: 'btn btn-danger', type: 'button', onclick: () => { state.remove(it.key); } }, 'Hapus') : null))));
+            it.status !== 'mengunggah' ? h('button', { class: 'btn btn-danger', type: 'button', onclick: () => { const gone = state.remove(it.key); lepasUrl(gone?.url ?? it.url); } }, 'Hapus') : null))));
         info.textContent = `${existing.length + state.items.filter((i) => i.status !== 'gagal').length} dari ${max} foto.`;
       }
       state.subscribe(paint);
