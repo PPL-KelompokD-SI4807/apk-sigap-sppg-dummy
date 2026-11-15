@@ -122,7 +122,13 @@ export default defineCrudModule({
   listQuery,
   listTop,
   listTopWeb: listTop,
-  detailExtrasWeb: (rec) => (rec.prioritas === 'kritis' ? [h('div', { class: 'alert-danger' }, 'Keluhan KRITIS', rec.dieskalasi_pada ? ` · dieskalasi ${tanggalJamWIB(rec.dieskalasi_pada)}` : '', rec.jadwal_produksi_id ? '' : ' · batch tidak diketahui')] : []),
+  formTopWeb: formTop,
+  detailExtrasWeb: (rec, ctx, p) => [
+    rec.prioritas === 'kritis' ? h('div', { class: 'alert-danger' }, 'Keluhan KRITIS', rec.dieskalasi_pada ? ` · dieskalasi ${tanggalJamWIB(rec.dieskalasi_pada)}` : '', rec.jadwal_produksi_id ? '' : ' · batch tidak diketahui') : null,
+    // Tindak lanjut hanya bila hak U (setelah rowPerms) dan aksi tindak_lanjut_keluhan dari peta server; foto keluhan: PR5.
+    p.U && transisiValid(rec.status).length && !suntingPenuh(getUser()) && bolehAksi(getUser(), 'tindak_lanjut_keluhan')
+      ? h('a', { class: 'btn btn-primary btn-block', href: `#/keluhan/${rec.id}/ubah` }, rec.status === 'baru' ? 'Proses keluhan' : 'Selesaikan / tolak dengan catatan') : null,
+  ].filter(Boolean),
   formTop,
   rowPerms: (rec, p) => rowPermsKeluhan(getUser(), rec, p),
   renderCard: (r, href) => rowCard({

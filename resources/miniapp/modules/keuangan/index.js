@@ -241,9 +241,11 @@ const pengeluaranModule = defineCrudModule({
   listQuery: pengeluaranQuery,
   listTop: listTopPengeluaran,
   listTopWeb: listTopPengeluaran,
+  formTopWeb: formTopPengeluaran, // sisa anggaran periode (GET /keuangan/ringkasan); hanya baca
   detailExtrasWeb: (rec) => {
     const st = statusPengeluaran(rec);
     const nodes = [];
+    if (dariPembelian(rec)) nodes.push(h('div', { class: 'notice' }, 'Pengeluaran ini berasal dari pembelian bahan terverifikasi sehingga tidak dapat diubah atau dihapus.'));
     if (st === 'diajukan') nodes.push(h('div', { class: 'notice' }, 'Menunggu persetujuan investor. Belum dihitung ke anggaran.'));
     if (st === 'ditolak') nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, h('strong', {}, 'Ditolak investor. '), terakhirCatatan(rec) ?? '-'));
     nodes.push(riwayatPanel(rec)); // tanpa panel keputusan, foto nota, dan lampiran
@@ -370,9 +372,10 @@ async function ringkasanScreen(ctx) {
     if (e?.status === 401) throw e;
     terbaru.append(h('p', { class: 'muted center pad' }, errorMessage(e, 'Transaksi gagal dimuat.')));
   }
-  if (me().C && !isWeb()) { // web baca-saja: tanpa tombol tambah
+  if (me().C) { // hak C dari peta server; web memakai tautan (formulir web: R04-8 PR4f), Telegram memakai MainButton
     ctx.el.append(h('a', { class: 'btn btn-block', href: '#/keuangan/pencairan/baru' }, '+ Pencairan dana'));
-    setMainButton({ text: '+ Tambah Pengeluaran', onClick: () => navigate('/keuangan/pengeluaran/baru') });
+    if (isWeb()) ctx.el.append(h('a', { class: 'btn btn-primary btn-block', href: '#/keuangan/pengeluaran/baru' }, '+ Pengeluaran'));
+    else setMainButton({ text: '+ Tambah Pengeluaran', onClick: () => navigate('/keuangan/pengeluaran/baru') });
   }
   return kat.destroy;
 }
