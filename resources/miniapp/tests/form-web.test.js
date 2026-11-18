@@ -151,7 +151,7 @@ test('409 konflik versi: pesan Indonesia + tombol muat ulang; 409 tanpa alasan =
   let el = await buka('/armada/1/ubah');
   skrip = [resp(409, { message: 'conflict', alasan: 'versi_tidak_cocok' })];
   await kirim();
-  assert.ok(teks(el).includes('Data sudah berubah sejak Anda membukanya.'));
+  assert.ok(teks(el).includes('Data sudah berubah. Muat ulang lalu ubah kembali.'));
   assert.ok(tombol(el).some((b) => /Muat ulang/.test(teks(b))));
   el = await buka('/armada/baru');
   isi(el, ISIAN);

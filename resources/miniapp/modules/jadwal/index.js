@@ -9,7 +9,7 @@ import { getUser } from '../../core/auth.js';
 import { userPerms, jadwalTabBoleh } from '../../core/permissions.js';
 import { route, resolve } from '../../core/router.js';
 import { showConfirm, toast } from '../../core/ui.js';
-import { errorMessage } from '../../core/errors.js';
+import { errorMessage, ringkasGalatAksi } from '../../core/errors.js';
 import {
   STATUS_PRODUKSI, STATUS_DISTRIBUSI, statusProduksiLabel, statusDistribusiLabel, statusBadge, transisiValid, aksiLabel,
   distribusiBisaDibuat, hitungKapasitas, sisaPorsiDistribusi,
@@ -37,6 +37,7 @@ function aksiStatus(kind, rec, base, p) {
   if (!p.U || !next.length) return null;
   const box = h('div', { class: 'stack-tight' }, h('h2', { class: 'panel-title' }, 'Ubah status'));
   const row = h('div', { class: 'row-actions' });
+  const peringatan = h('div', { 'aria-live': 'assertive' });
   for (const to of next) {
     const gagal = to === 'dibatalkan';
     const ditahan = (kind === 'distribusi' && to === 'berangkat' && rec.layak_distribusi === false) || masakDitahanMenu(kind, rec, to);
@@ -46,20 +47,26 @@ function aksiStatus(kind, rec, base, p) {
       if (!(await showConfirm({ title: aksiLabel(kind, to), message: `Ubah status jadwal menjadi "${nama}"?`, okText: 'Ya, ubah', destructive: gagal }))) return;
       btn.disabled = true;
       try {
-        await request('PATCH', `${base}/${rec.id}`, { body: { status: to }, key: newKey(), silent: true });
+        await request('PATCH', `${base}/${rec.id}`, { body: { status: to, ...(rec.versi != null ? { versi: Math.trunc(Number(rec.versi)) } : {}) }, key: newKey(), silent: true });
         toast(`Status menjadi ${nama}.`, 'success');
         resolve();
       } catch (e) {
         if (e?.status === 401) throw e;
         // 422 pada `status` (mis. menu belum disetujui): tampilkan pesan server lalu muat ulang agar penanda terbaru terlihat.
         toast(pesanGagalStatus(e) || errorMessage(e, 'Status gagal diubah.'), 'error', 7000);
+        if (e?.status === 409 && e?.data?.alasan === 'versi_tidak_cocok') {
+          // Data basi: jangan menimpa diam-diam. Tampilkan pesan dan biarkan pengguna memuat ulang sendiri.
+          peringatan.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, ringkasGalatAksi(e).pesan, ' ',
+            h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang')));
+          return;
+        }
         if (e?.status === 422 || e?.status === 409) { resolve(); return; }
         btn.disabled = false;
       }
     });
     row.append(btn);
   }
-  box.append(row);
+  box.append(row, peringatan);
   if (next.some((to) => masakDitahanMenu(kind, rec, to))) {
     box.append(h('div', { class: 'alert-danger' }, 'Mulai masak ditahan: menu belum disetujui investor. Ajukan ulang menu terlebih dahulu.'));
   }
@@ -157,6 +164,7 @@ const distribusiModule = defineCrudModule({
   icon: '🚚',
   description: 'Pengantaran ke titik layanan',
   endpoint: '/jadwal/distribusi',
+  sertakanVersi: true,
   columns: [{ key: 'titik_layanan', primary: true, format: (r) => r.titik_layanan?.nama ?? `#${r.id}` }],
   fields: ({ mode, record, user }) => (mode === 'detail' ? distribusiDetailFields : distribusiFields({ mode, record, user })),
   mapPayload: (v, { mode }) => { const o = distribusiPayload(v); if (mode === 'update') delete o.jadwal_produksi_id; return o; },
@@ -214,6 +222,7 @@ const produksiBase = defineCrudModule({
   icon: '📅',
   description: 'Produksi dan distribusi harian',
   endpoint: '/jadwal',
+  sertakanVersi: true,
   columns: [{ key: 'menu', primary: true, format: (r) => r.menu?.nama_menu ?? `#${r.id}` }],
   fields: ({ mode, record }) => (mode === 'detail' ? produksiDetailFields : produksiFields({ mode, record })),
   mapPayload: produksiPayload,

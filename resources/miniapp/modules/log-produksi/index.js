@@ -37,6 +37,7 @@ export default defineCrudModule({
   icon: '👨‍🍳',
   description: 'Realisasi porsi, sisa makanan, dan kendala harian',
   endpoint: '/log-produksi',
+  sertakanVersi: true,
   columns: [{ key: 'kode_batch', primary: true }],
   fields: ({ mode, record }) => (mode === 'detail' ? logDetailFields : [...logFields({ mode, record }), lampiranField({
     modul: 'log-produksi', label: 'Foto produksi', existing: record?.lampiran || [],

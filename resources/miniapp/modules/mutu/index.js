@@ -13,6 +13,7 @@ export default defineCrudModule({
   icon: '🧪',
   description: 'Pemeriksaan suhu, kebersihan, dan organoleptik',
   endpoint: '/mutu',
+  sertakanVersi: true,
   columns: [{ key: 'jadwal', primary: true, format: (r) => r.jadwal?.menu?.nama_menu ?? `#${r.id}` }],
   fields: ({ mode, record }) => (mode === 'detail' ? mutuDetailFields : [...mutuFields({ mode, record }), lampiranField({
     modul: 'mutu', label: 'Foto pemeriksaan', existing: record?.lampiran || [],

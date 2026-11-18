@@ -173,7 +173,7 @@ test('mutu: kolom foto pemeriksaan (PR5); 409 pesan tetap + muat ulang; tautan P
   el = await buka('/log-produksi/1/ubah');
   skrip = [resp(409, { message: 'x', alasan: 'versi_tidak_cocok' })];
   await kirim();
-  assert.ok(teks(el).includes('Data sudah berubah sejak Anda membukanya.'));
+  assert.ok(teks(el).includes('Data sudah berubah. Muat ulang lalu ubah kembali.'));
   assert.ok(tombol(el).some((b) => /Muat ulang/.test(teks(b))));
   setUserSesi(salin('ahli_gizi'));
   el = await buka('/mutu/1');
