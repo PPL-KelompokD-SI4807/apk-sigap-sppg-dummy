@@ -49,6 +49,7 @@ class JadwalProduksiResource extends JsonResource
             'status_mutu' => $mutu?->hasil?->value,
             'layak_distribusi' => $mutu?->hasil === HasilMutu::Layak,
             'izin' => $this->izin($request, $j),
+            'versi' => (int) $j->versi,
             'created_at' => $j->created_at?->toIso8601String(),
             'updated_at' => $j->updated_at?->toIso8601String(),
         ];

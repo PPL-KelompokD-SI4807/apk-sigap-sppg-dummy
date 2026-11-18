@@ -55,6 +55,6 @@ class StorePemeriksaanMutuRequest extends FormRequest
             'tindakan_korektif' => ['nullable', 'string', 'max:2000'],
             'catatan_koreksi' => ['nullable', 'string', 'max:2000'],
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
-        ] + AturanLampiranIds::untuk('mutu');
+        ] + ($p === null ? [] : ['versi' => ['sometimes', 'integer', 'min:1']]) + AturanLampiranIds::untuk('mutu');
     }
 }

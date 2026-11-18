@@ -97,6 +97,16 @@ abstract class ApiController extends Controller
     }
 
     /**
+     * `versi` kunci optimistik dari body ubah (tervalidasi integer); null = klien lama yang belum mengirimnya.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function versi(array $data): ?int
+    {
+        return isset($data['versi']) ? (int) $data['versi'] : null;
+    }
+
+    /**
      * Jalankan penghapusan $hapus (guard bisnis + soft delete) lalu tandai draf hapus AI (query `ai_draft_id`,
      * opsional) terpakai dalam SATU transaksi. Draf tidak sah = 422 `ai_draft_id` dan penghapusan batal.
      * Panggil setelah $this->authorize('delete', ...).

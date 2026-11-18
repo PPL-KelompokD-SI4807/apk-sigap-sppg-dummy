@@ -11,6 +11,7 @@ use App\Models\JadwalProduksi;
 use App\Models\PemeriksaanMutu;
 use App\Models\Scopes\SppgScope;
 use App\Models\User;
+use App\Support\KunciVersi;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
@@ -78,12 +79,13 @@ class PemeriksaanMutuService
      *
      * @param  array<string, mixed>  $data
      */
-    public function perbarui(PemeriksaanMutu $pemeriksaan, User $pengguna, array $data): PemeriksaanMutu
+    public function perbarui(PemeriksaanMutu $pemeriksaan, User $pengguna, array $data, ?int $versi = null): PemeriksaanMutu
     {
         $hasilLama = $pemeriksaan->hasil;
 
-        $diubah = DB::transaction(function () use ($pemeriksaan, $pengguna, $data): PemeriksaanMutu {
+        $diubah = DB::transaction(function () use ($pemeriksaan, $pengguna, $data, $versi): PemeriksaanMutu {
             $terkunci = PemeriksaanMutu::withoutGlobalScope(SppgScope::class)->whereKey($pemeriksaan->getKey())->lockForUpdate()->firstOrFail();
+            KunciVersi::periksa($terkunci, $versi, 'Pemeriksaan mutu');
             $atribut = $this->normalisasiOrganoleptik(array_intersect_key($data, array_flip(self::KOLOM)), $terkunci);
 
             $final = array_merge($terkunci->only(self::KOLOM), $atribut);

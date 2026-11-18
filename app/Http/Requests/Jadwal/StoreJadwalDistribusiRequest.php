@@ -54,7 +54,7 @@ class StoreJadwalDistribusiRequest extends FormRequest
             'status' => $buat ? ['sometimes', Rule::in([StatusJadwalDistribusi::Menunggu->value])] : ['sometimes', Rule::enum(StatusJadwalDistribusi::class)],
             'catatan' => ['nullable', 'string', 'max:2000'],
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
-        ];
+        ] + ($buat ? [] : ['versi' => ['sometimes', 'integer', 'min:1']]);
     }
 
     /** @return array<string, string> */

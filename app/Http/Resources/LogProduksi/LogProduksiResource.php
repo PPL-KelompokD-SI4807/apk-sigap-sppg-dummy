@@ -53,6 +53,7 @@ class LogProduksiResource extends JsonResource
             'dicatat_oleh' => $l->dicatat_oleh,
             'pencatat' => $this->whenLoaded('pencatat', fn () => $l->pencatat?->name),
             'izin' => PetaHak::izin($request->user(), $l, ['ubah' => 'update', 'hapus' => 'delete']),
+            'versi' => (int) $l->versi,
             'created_at' => $l->created_at?->toIso8601String(),
             'updated_at' => $l->updated_at?->toIso8601String(),
         ];

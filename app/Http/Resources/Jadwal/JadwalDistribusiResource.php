@@ -61,6 +61,7 @@ class JadwalDistribusiResource extends JsonResource
             }),
             'catatan' => $d->catatan,
             'izin' => $this->izin($request, $d),
+            'versi' => (int) $d->versi,
             'created_at' => $d->created_at?->toIso8601String(),
             'updated_at' => $d->updated_at?->toIso8601String(),
         ];

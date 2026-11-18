@@ -91,7 +91,7 @@ class PemeriksaanMutuController extends ApiController
         $data = $request->validated();
 
         $diubah = DB::transaction(function () use ($request, $pemeriksaanMutu, $data): PemeriksaanMutu {
-            $diubah = $this->service->perbarui($pemeriksaanMutu, $request->user(), $data);
+            $diubah = $this->service->perbarui($pemeriksaanMutu, $request->user(), $data, $this->versi($data));
             $this->lampiran->ikat($data['lampiran_ids'] ?? [], $diubah, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id);
 

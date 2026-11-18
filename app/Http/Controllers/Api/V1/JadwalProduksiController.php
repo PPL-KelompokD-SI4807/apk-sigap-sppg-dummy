@@ -152,7 +152,7 @@ class JadwalProduksiController extends ApiController
         $data = $request->validated();
 
         $diubah = DB::transaction(function () use ($request, $jadwal, $data): JadwalProduksi {
-            $diubah = $this->perencanaan->perbarui($jadwal, $data);
+            $diubah = $this->perencanaan->perbarui($jadwal, $data, $this->versi($data));
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id);
 
             return $diubah;

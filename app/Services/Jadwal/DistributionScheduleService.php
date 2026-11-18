@@ -13,6 +13,7 @@ use App\Models\Pengemudi;
 use App\Models\Scopes\SppgScope;
 use App\Models\TitikLayanan;
 use App\Models\User;
+use App\Support\KunciVersi;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -74,11 +75,12 @@ class DistributionScheduleService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function perbarui(JadwalDistribusi $jadwal, array $data): JadwalDistribusi
+    public function perbarui(JadwalDistribusi $jadwal, array $data, ?int $versi = null): JadwalDistribusi
     {
-        return DB::transaction(function () use ($jadwal, $data): JadwalDistribusi {
+        return DB::transaction(function () use ($jadwal, $data, $versi): JadwalDistribusi {
             $produksi = $this->kunciProduksi((int) $jadwal->jadwal_produksi_id, (int) $jadwal->sppg_id);
             $jadwal = JadwalDistribusi::withoutGlobalScope(SppgScope::class)->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
+            KunciVersi::periksa($jadwal, $versi, 'Jadwal distribusi');
 
             $final = [
                 'titik_layanan_id' => (int) ($data['titik_layanan_id'] ?? $jadwal->titik_layanan_id),

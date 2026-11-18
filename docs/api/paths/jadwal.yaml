@@ -191,6 +191,7 @@
     description: |
       Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
       mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -208,6 +209,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   patch:
     tags: [Jadwal]
@@ -215,6 +217,7 @@
     description: |
       Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
       mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -232,6 +235,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
     parameters:
@@ -271,6 +275,7 @@
       mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
       R-06b-2 (S2): `status=dimasak` ditolak 422 (field `status`) bila menu jadwal saat ini bukan `disetujui`
       ("Menu jadwal ini belum disetujui investor; ajukan ulang menu sebelum memasak."). `selesai` dan `dibatalkan` tetap diizinkan.
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -288,6 +293,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   patch:
     tags: [Jadwal]
@@ -295,6 +301,7 @@
     description: |
       Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
       mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -312,6 +319,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
     parameters:

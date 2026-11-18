@@ -79,7 +79,9 @@
   put:
     tags: [Log Produksi]
     summary: Ubah log produksi
-    description: Hak U (kepala_sppg; relawan dapur hanya log buatannya sendiri pada hari yang sama). `jadwal_produksi_id` tidak dapat diubah.
+    description: |
+      Hak U (kepala_sppg; relawan dapur hanya log buatannya sendiri pada hari yang sama). `jadwal_produksi_id` tidak dapat diubah.
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -97,10 +99,13 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   patch:
     tags: [Log Produksi]
     summary: Ubah sebagian log produksi
+    description: |
+      Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
       content:
@@ -118,6 +123,7 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '409': { $ref: '#/components/responses/KonflikVersi' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
     parameters:

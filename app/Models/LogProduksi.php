@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
+use App\Models\Concerns\Berversi;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\Auth;
 
 class LogProduksi extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, Berversi, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'log_produksis';
 

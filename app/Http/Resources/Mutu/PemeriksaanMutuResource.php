@@ -57,6 +57,7 @@ class PemeriksaanMutuResource extends JsonResource
                 array_key_exists('memengaruhi_distribusi', $m->getAttributes()),
                 fn () => (bool) $m->getAttribute('memengaruhi_distribusi'),
             ),
+            'versi' => (int) $m->versi,
             'created_at' => $m->created_at?->toIso8601String(),
             'updated_at' => $m->updated_at?->toIso8601String(),
         ];
