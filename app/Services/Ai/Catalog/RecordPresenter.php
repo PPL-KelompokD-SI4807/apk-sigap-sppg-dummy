@@ -49,8 +49,16 @@ final class RecordPresenter
         'supaya', 'harap', 'segera', 'perlu', 'bisa', 'dapat', 'mau', 'akan', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu',
         'minggu', 'januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november',
         'desember', 'sd', 'sdn', 'smp', 'smpn', 'sma', 'sman', 'smk', 'smkn', 'mi', 'min', 'mts', 'mtsn', 'ma', 'man', 'tk', 'paud',
-        'kb', 'posyandu', 'puskesmas', 'uks', 'mbg', 'sppg', 'bgn', 'rt', 'rw', 'ok', 'wib',
+        'kb', 'posyandu', 'puskesmas', 'uks', 'mbg', 'sppg', 'bgn', 'rt', 'rw', 'ok', 'wib', 'rp', 'no',
     ];
+
+    /**
+     * Nominal rupiah berformat ribuan yang tetap utuh pada teks bebas, mis. "Rp 1.500.000" atau "Rp150.000": awalan
+     * "Rp", digit pertama bukan 0, lalu 1-2 kelompok ".ddd" (maksimal 9 digit, < Rp 1 miliar), dan tidak disambung
+     * digit lain. Batasnya sengaja sempit: NIK (16 digit) dan nomor HP berawalan 0/+62 tidak pernah cocok; nominal
+     * >= Rp 1 miliar ikut disamarkan (false positive yang aman).
+     */
+    private const RUPIAH = '(?i:\bRp\.?)\s?[1-9]\d{0,2}(?:[.\x{FF0E}]\d{3}){1,2}(?![\s.\x{FF0E}\p{Pd}]?\d)';
 
     /** @param array<int|string, string> $columns */
     public static function assertSafe(array $columns): void
@@ -163,6 +171,29 @@ final class RecordPresenter
     public static function redactPersonal(string $value): string
     {
         // Fail-closed: bila satu langkah PCRE gagal (null), seluruh teks diganti REDACTED, bukan diteruskan utuh.
+        $teks = self::redactContactOrNull($value);
+        $teks = $teks === null ? null : preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
+            $kata = $m[0];
+
+            return in_array(mb_strtolower($kata), self::KATA_UMUM, true) ? $kata : mb_substr($kata, 0, 1).'.';
+        }, $teks);
+
+        return $teks ?? self::REDACTED;
+    }
+
+    /**
+     * Seperti redactPersonal() tetapi TANPA mengubah kata berhuruf kapital menjadi inisial: hanya email, URL, dan
+     * deret angka panjang (NIK/telepon) yang disamarkan. Untuk teks bebas yang memang berupa nama lembaga/tempat
+     * (mis. nama dan alamat titik layanan) sehingga harus tetap terbaca, tetapi dapat disisipi kontak/NIK.
+     */
+    public static function redactContact(string $value): string
+    {
+        return self::redactContactOrNull($value) ?? self::REDACTED;
+    }
+
+    /** Langkah penyamaran kontak/angka bersama; null bila PCRE gagal (pemanggil wajib fail-closed). */
+    private static function redactContactOrNull(string $value): ?string
+    {
         $teks = self::normalizeInvisible($value);
         // Semua deret spasi putih (termasuk baris baru) dirapatkan menjadi satu spasi agar "0812 \n 3456"
         // (mis. NBSP + baris baru) tidak lolos pola yang hanya mengizinkan satu pemisah.
@@ -172,18 +203,14 @@ final class RecordPresenter
         // \d dengan /u (UCP) juga mencocokkan digit fullwidth dan Arab-Indik. Pola 1: >= 6 digit dengan satu
         // pemisah rapat (spasi/titik/tanda hubung apa pun). Pola 2: >= 10 digit (nomor HP/NIK) dengan pemisah
         // berspasi seperti "0812 - 3456 - 7890"; ambang 10 menjaga rentang jam "07.30 - 08.00" tetap utuh.
-        // False positive yang diketahui (dapat diterima untuk teks keluhan, cenderung aman): rentang nominal
-        // "50.000 - 75.000" dan "Rp 15.000 – 20.000" (pola 2) serta rentang jam tanpa spasi "07.30–08.00"
+        // Pada kedua pola, nominal RUPIAH ("Rp 1.500.000") dicocokkan lebih dulu dan dibiarkan utuh.
+        // False positive yang diketahui (dapat diterima, cenderung aman): rentang nominal tanpa "Rp"
+        // "50.000 - 75.000" (pola 2), nominal >= Rp 1 miliar, serta rentang jam tanpa spasi "07.30–08.00"
         // (pola 1) ikut disamarkan.
-        $teks = $teks === null ? null : preg_replace('/[+\x{FF0B}]?\d(?:[\s.\x{FF0E}\p{Pd}]?\d){5,}/u', self::REDACTED, $teks);
-        $teks = $teks === null ? null : preg_replace('/[+\x{FF0B}]?\d(?:\s?[.\x{FF0E}\p{Pd}]?\s?\d){9,}/u', self::REDACTED, $teks);
-        $teks = $teks === null ? null : preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
-            $kata = $m[0];
+        $samarkan = fn (array $m): string => ($m['rp'] ?? '') !== '' ? $m[0] : self::REDACTED;
+        $teks = $teks === null ? null : preg_replace_callback('/(?<rp>'.self::RUPIAH.')|[+\x{FF0B}]?\d(?:[\s.\x{FF0E}\p{Pd}]?\d){5,}/u', $samarkan, $teks);
 
-            return in_array(mb_strtolower($kata), self::KATA_UMUM, true) ? $kata : mb_substr($kata, 0, 1).'.';
-        }, $teks);
-
-        return $teks ?? self::REDACTED;
+        return $teks === null ? null : preg_replace_callback('/(?<rp>'.self::RUPIAH.')|[+\x{FF0B}]?\d(?:\s?[.\x{FF0E}\p{Pd}]?\s?\d){9,}/u', $samarkan, $teks);
     }
 
     /** Teks aman: tanpa karakter kontrol/tak terlihat & penanda blok data palsu, spasi dirapikan, dipotong. */

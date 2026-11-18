@@ -6,6 +6,7 @@ use App\Enums\Role;
 use App\Enums\TipeUndangan;
 use App\Models\Invitation;
 use App\Models\User;
+use App\Services\Ai\Catalog\RecordPresenter;
 use App\Services\Ai\Tools\MenerimaArgumenTerlindungi;
 use App\Services\Ai\Tools\ReadTool;
 use Illuminate\Support\Facades\Gate;
@@ -50,13 +51,14 @@ class CariUndanganPenggunaTool extends ReadTool implements MenerimaArgumenTerlin
             ->when(Role::tryFrom((string) ($arguments['role'] ?? '')) !== null, fn ($q) => $q->where('role', $arguments['role']))
             ->orderByDesc('id')->limit(20)->get();
 
+        // Kode/nama SPPG adalah teks DB (DATA tak tepercaya): dibersihkan RecordPresenter::text() + catatan NOTE.
         return ['hasil' => $baris->map(fn (Invitation $i) => [
             'id' => $i->id,
             'role' => $i->role,
-            'unit' => $i->unit,
-            'sppg' => $i->sppg === null ? null : $i->sppg->kode.' '.$i->sppg->nama,
+            'unit' => is_string($i->unit) ? RecordPresenter::text($i->unit, 20) : $i->unit,
+            'sppg' => $i->sppg === null ? null : RecordPresenter::text($i->sppg->kode.' '.$i->sppg->nama),
             'berlaku_sampai' => $i->expires_at->toIso8601String(),
-        ])->all()];
+        ])->all(), 'catatan' => RecordPresenter::NOTE];
     }
 
     private function allowsClass(User $user): bool

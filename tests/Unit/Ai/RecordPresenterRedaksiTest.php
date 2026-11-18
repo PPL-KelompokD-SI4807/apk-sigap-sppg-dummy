@@ -193,4 +193,63 @@ class RecordPresenterRedaksiTest extends TestCase
     {
         $this->assertSame('Nasi basi', RecordPresenter::text("Nasi\x07\u{0085} basi\x1B"));
     }
+
+    // ------------------------------------------------------------------ S3 tinjauan #144: Rp dan No.
+
+    public function test_nominal_rupiah_tetap_utuh(): void
+    {
+        foreach ([
+            'Rp 1.500.000',
+            'biaya Rp 1.500.000 terlalu mahal',
+            'Rp150.000 per hari',
+            'RP 6.000 per porsi',
+            'Rp. 999.999.999',
+            'antara Rp 15.000 - 20.000 per porsi',
+            'total Rp 1.500.000,00 disetujui',
+        ] as $teks) {
+            $this->assertSame($teks, RecordPresenter::redactPersonal($teks), $teks);
+            $this->assertSame($teks, RecordPresenter::redactContact($teks), $teks);
+        }
+
+        $this->assertNotSame('R. [disamarkan]', RecordPresenter::redactPersonal('Rp 1.500.000'));
+    }
+
+    public function test_singkatan_no_tidak_menjadi_n_titik_ganda(): void
+    {
+        $this->assertSame('di M. No. 12 RT 03/RW 05', RecordPresenter::redactPersonal('di Melati No. 12 RT 03/RW 05'));
+        $this->assertStringNotContainsString('N..', RecordPresenter::redactPersonal('No. 7 dan NO. 8'));
+    }
+
+    public function test_nik_dan_hp_di_dekat_rp_dan_no_tetap_disamarkan(): void
+    {
+        foreach ([
+            'Rp 3201012345678901',
+            'Rp 3.201.012.345.678.901',
+            'Rp 3201 0123 4567 8901',
+            'Rp 081234567890',
+            'Rp 0.812.345.678',
+            'Rp +62 812 3456 7890',
+            "Rp 3201\u{200B}0123\u{FEFF}4567\u{2060}8901",
+            'No. 3201012345678901',
+            'No. HP 0812-3456-7890',
+            'Rp 1.500.000 0812345678',
+            'Rp 1.500.000.000',
+        ] as $teks) {
+            $hasil = RecordPresenter::redactPersonal($teks);
+
+            $this->assertStringContainsString(RecordPresenter::REDACTED, $hasil, $teks);
+            $this->assertDoesNotMatchRegularExpression('/\d{4}/', str_replace('1.500.000', '', $hasil), "{$teks} -> {$hasil}");
+            $this->assertSame(1, preg_match('/^(Rp|No)\b/', $hasil), "kata Rp/No tetap utuh: {$hasil}");
+        }
+
+        $this->assertSame('Rp [disamarkan]', RecordPresenter::redactPersonal('Rp 3201012345678901'));
+        $this->assertSame('No. [disamarkan]', RecordPresenter::redactPersonal('No. 3201012345678901'));
+    }
+
+    public function test_redact_contact_tidak_mengubah_nama_lembaga_menjadi_inisial(): void
+    {
+        $this->assertSame('SD Negeri Sukamaju 2', RecordPresenter::redactContact('SD Negeri Sukamaju 2'));
+        $this->assertSame('Posyandu Melati hp [disamarkan]', RecordPresenter::redactContact("Posyandu Melati hp 0812\u{200B}3456\u{00A0}7890"));
+        $this->assertSame('NIK [disamarkan] [disamarkan]', RecordPresenter::redactContact('NIK 3201-0123-4567-8901 kepala@contoh.id'));
+    }
 }
