@@ -130,6 +130,65 @@ class RecordPresenterRedaksiTest extends TestCase
         $this->assertSame('Nasi basi', $hasil);
     }
 
+    /** @return array<string, array{0: string}> bukti temuan BLOKIR B1 tinjauan PR #144 */
+    public static function pemisahLolos(): array
+    {
+        return [
+            'NBSP + baris baru' => ["hp 0812\u{00A0}\n\u{00A0}3456\u{00A0}\n\u{00A0}7890"],
+            'baris baru murni berderet' => ["hp 0812\n\n\n3456\n\n\n7890"],
+            'spasi + baris baru + spasi' => ["hp 0812 \n 3456 \n 7890"],
+            'CRLF berderet' => ["hp 0812\r\n\r\n3456\r\n\r\n7890"],
+            'spasi + U+0301' => ["NIK 3201 \u{0301}0123 \u{0301}4567 \u{0301}8901"],
+            'titik + U+0301' => ["NIK 3201.\u{0301}0123.\u{0301}4567.\u{0301}8901"],
+            'spasi + variation selector suplemen U+E0100' => ["hp 0812 \u{E0100}3456 \u{E0100}7890"],
+            'spasi + U+20E3 keycap' => ["hp 0812 \u{20E3}3456 \u{20E3}7890"],
+            'deret tanda kombinasi setelah spasi' => ["hp 0812 \u{0301}\u{0302}\u{20E3}3456 \u{0301}\u{0302}7890"],
+        ];
+    }
+
+    #[DataProvider('pemisahLolos')]
+    public function test_spasi_putih_berderet_dan_tanda_kombinasi_lepas_tidak_meloloskan_nomor(string $masukan): void
+    {
+        $redaksi = RecordPresenter::redactPersonal($masukan);
+        $hasil = RecordPresenter::text($redaksi, RecordPresenter::MAX_TEXT_PERSONAL);
+
+        $this->assertStringContainsString(RecordPresenter::REDACTED, $redaksi);
+        $this->assertDoesNotMatchRegularExpression('/\d{3}/', $redaksi, "digit lolos: {$redaksi}");
+        $this->assertDoesNotMatchRegularExpression('/[\r\n]/', $redaksi, 'baris baru harus dirapatkan');
+        $this->assertSame(0, preg_match('/\p{M}/u', $redaksi), 'tanda kombinasi lepas harus dibuang');
+        $this->assertDoesNotMatchRegularExpression('/\d{3}/', $hasil);
+    }
+
+    public function test_tanda_kombinasi_lepas_di_tanda_baca_dan_awal_teks_dibuang(): void
+    {
+        $this->assertSame('.', RecordPresenter::text(".\u{0301}"));
+        $this->assertSame('', RecordPresenter::text(" \u{E0100}"));
+        $this->assertSame('', RecordPresenter::text(" \u{20E3}"));
+        $this->assertSame('basi', RecordPresenter::text("\u{0301}basi"));
+    }
+
+    public function test_aksen_pada_huruf_tetap_utuh(): void
+    {
+        foreach ([
+            'Sándwich',
+            'café',
+            "Sa\u{0301}ndwich",            // aksen terurai (NFD)
+            "cafe\u{0301}",
+            "Vie\u{0323}\u{0302}t Nam",     // aksen bertumpuk (NFD)
+        ] as $teks) {
+            $this->assertSame($teks, RecordPresenter::text($teks), $teks);
+        }
+
+        $this->assertSame('roti café dan kue sándwich enak', RecordPresenter::redactPersonal('roti café dan kue sándwich enak'));
+        $this->assertSame("roti cafe\u{0301} enak", RecordPresenter::redactPersonal("roti cafe\u{0301} enak"));
+    }
+
+    public function test_rentang_jam_berspasi_tetap_utuh(): void
+    {
+        $this->assertSame('makan jam 07.30 - 08.00 ya', RecordPresenter::redactPersonal('makan jam 07.30 - 08.00 ya'));
+        $this->assertSame('makan jam 07.30 - 08.00 ya', RecordPresenter::redactPersonal("makan jam 07.30\u{00A0}-\n08.00 ya"));
+    }
+
     public function test_karakter_kontrol_c0_dan_c1_dibuang(): void
     {
         $this->assertSame('Nasi basi', RecordPresenter::text("Nasi\x07\u{0085} basi\x1B"));

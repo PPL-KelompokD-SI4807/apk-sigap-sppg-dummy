@@ -164,13 +164,17 @@ final class RecordPresenter
     {
         // Fail-closed: bila satu langkah PCRE gagal (null), seluruh teks diganti REDACTED, bukan diteruskan utuh.
         $teks = self::normalizeInvisible($value);
-        // Deret spasi dirapatkan agar "0812  3456" (mis. NBSP + spasi) tidak lolos pola satu pemisah.
-        $teks = $teks === null ? null : preg_replace('/[ \t]{2,}/u', ' ', $teks);
+        // Semua deret spasi putih (termasuk baris baru) dirapatkan menjadi satu spasi agar "0812 \n 3456"
+        // (mis. NBSP + baris baru) tidak lolos pola yang hanya mengizinkan satu pemisah.
+        $teks = $teks === null ? null : preg_replace('/\s+/u', ' ', $teks);
         $teks = $teks === null ? null : preg_replace('/[\p{L}\p{N}._%+\-]+[@\x{FF20}][\p{L}\p{N}.\-]+\.\p{L}{2,}/u', self::REDACTED, $teks);
         $teks = $teks === null ? null : preg_replace('#\b(?:https?://|www\.)\S+#iu', self::REDACTED, $teks);
         // \d dengan /u (UCP) juga mencocokkan digit fullwidth dan Arab-Indik. Pola 1: >= 6 digit dengan satu
         // pemisah rapat (spasi/titik/tanda hubung apa pun). Pola 2: >= 10 digit (nomor HP/NIK) dengan pemisah
         // berspasi seperti "0812 - 3456 - 7890"; ambang 10 menjaga rentang jam "07.30 - 08.00" tetap utuh.
+        // False positive yang diketahui (dapat diterima untuk teks keluhan, cenderung aman): rentang nominal
+        // "50.000 - 75.000" dan "Rp 15.000 – 20.000" (pola 2) serta rentang jam tanpa spasi "07.30–08.00"
+        // (pola 1) ikut disamarkan.
         $teks = $teks === null ? null : preg_replace('/[+\x{FF0B}]?\d(?:[\s.\x{FF0E}\p{Pd}]?\d){5,}/u', self::REDACTED, $teks);
         $teks = $teks === null ? null : preg_replace('/[+\x{FF0B}]?\d(?:\s?[.\x{FF0E}\p{Pd}]?\s?\d){9,}/u', self::REDACTED, $teks);
         $teks = $teks === null ? null : preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
@@ -202,7 +206,7 @@ final class RecordPresenter
     /**
      * Normalisasi sebelum pencocokan pola (R06a-S-05): byte UTF-8 tidak valid dibuang, karakter format tak
      * terlihat (\p{Cf}: zero-width U+200B-U+200D, word joiner U+2060, BOM U+FEFF, kontrol bidi, soft hyphen)
-     * dan karakter kontrol (\p{Cc} selain spasi putih) dihapus, tanda kombinasi yang menempel pada digit
+     * dan karakter kontrol (\p{Cc} selain spasi putih) dihapus, tanda kombinasi yang tidak menempel pada huruf
      * dihapus, karakter "kosong" yang tampil sebagai spasi (Hangul filler, braille blank) serta pemisah
      * Unicode (\p{Z}: NBSP, spasi tipis, pemisah baris/paragraf) diganti spasi biasa. Tujuannya agar NIK/nomor
      * HP yang disisipi karakter tak terlihat tetap cocok dengan pola penyamaran. Mengembalikan null bila PCRE
@@ -221,7 +225,9 @@ final class RecordPresenter
         }
 
         $value = preg_replace('/[\p{Cf}\x{034F}\x{180E}\x{FE00}-\x{FE0F}]|(?![\t\n\r])\p{Cc}/u', '', $value);
-        $value = $value === null ? null : preg_replace('/(?<=\d)\p{M}+/u', '', $value);
+        // Deret tanda kombinasi yang tidak menempel pada huruf (setelah digit, spasi, tanda baca, atau di awal
+        // teks) dibuang; aksen pada huruf ("café", "Sándwich", termasuk aksen bertumpuk) tetap utuh.
+        $value = $value === null ? null : preg_replace('/(?<![\p{L}\p{M}])\p{M}+/u', '', $value);
 
         return $value === null ? null : preg_replace('/[\p{Z}\x{115F}\x{1160}\x{3164}\x{FFA0}\x{2800}]/u', ' ', $value);
     }
