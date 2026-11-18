@@ -125,7 +125,7 @@ function formTopPengeluaran({ mode, record, form, collect }) {
     if (!record) return null;
     return h('div', { class: 'stack-tight' },
       statusPengeluaran(record) === 'ditolak' ? h('div', { class: 'alert-danger', role: 'alert' }, `Ditolak investor: ${terakhirCatatan(record) ?? '-'}`) : null,
-      h('div', { class: 'notice' }, 'Menyimpan perubahan mengajukan ulang pengeluaran ini ke investor. Pengajuan yang masih menunggu akan dibatalkan.'));
+      h('div', { class: 'notice' }, 'Pengeluaran ini diajukan ulang ke investor hanya bila nominal, tanggal, kategori, atau nota berubah (pengajuan yang masih menunggu akan dibatalkan). Perubahan sub-kategori saja tidak mengajukan ulang.'));
   }
   const box = h('div', { 'aria-live': 'polite', class: 'stack-tight' }, h('div', { class: 'notice' }, 'Pengeluaran baru diajukan ke investor dan baru dihitung ke anggaran setelah disetujui.'));
   let seq = 0;
