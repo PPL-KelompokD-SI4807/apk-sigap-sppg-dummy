@@ -2,6 +2,7 @@
 // sesi = cookie HttpOnly (tak terlihat JS), CSRF hanya di memori (core/api-web.js).
 // R04-8 PR3: beranda + menu per peran dari /auth/me; layar modul masih "Segera tersedia di web" (PR berikutnya).
 import '../css/miniapp.css';
+import '../css/web.css';
 import { setPlatform } from './core/platform.js';
 import { h, clear } from './core/dom.js';
 import { initTheme } from './core/theme.js';
