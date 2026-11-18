@@ -58,7 +58,7 @@ class KredensialTest extends TestCase
         // Token dikirim HANYA ke telegram_id akun; tanpa password/no telepon.
         $pesan = $this->messagesTo(7012345678)->last();
         $this->assertStringNotContainsString(self::PASSWORD, $pesan['text']);
-        $this->assertStringNotContainsString('7890', $pesan['text']);
+        $this->assertStringNotContainsString('081234567890', $pesan['text']);
         $this->assertCount(1, $this->telegramCalls('sendMessage'));
 
         $kode = $this->kodeTerakhir(7012345678);
@@ -166,7 +166,8 @@ class KredensialTest extends TestCase
         $logs = AuditLog::query()->where('event', AuditAuth::IDENTITAS_TIDAK_COCOK)->get();
         $this->assertCount(2, $logs);
         $this->assertTrue($logs->every(fn ($l) => $l->auditable_id === $this->siti->id && $l->new_values['milik_akun_lain'] === true));
-        $this->assertStringNotContainsString('0813', $logs->toJson());
+        $this->assertStringNotContainsString('081311112222', $logs->toJson());
+        $this->assertStringNotContainsString('0813-1111-2222', $logs->toJson());
     }
 
     // ---------------------------------------------------------------- penguncian

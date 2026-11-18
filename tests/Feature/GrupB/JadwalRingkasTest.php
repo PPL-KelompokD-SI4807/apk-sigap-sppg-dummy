@@ -49,7 +49,7 @@ class JadwalRingkasTest extends GrupBTestCase
         // Kontrak minimal (peta hak): hanya 4 kolom; tanpa target porsi, catatan, anggaran, atau data pengguna.
         $this->assertEqualsCanonicalizing(['id', 'tanggal_produksi', 'nama_menu', 'status'], array_keys($row));
         $this->assertStringNotContainsString('rahasia internal', (string) $respons->getContent());
-        $this->assertStringNotContainsString('800', (string) $respons->getContent());
+        $this->assertStringNotContainsString('"target_porsi"', (string) $respons->getContent());
     }
 
     public function test_rentang_from_to_dipakai_untuk_pilihan_batch_keluhan_dan_dibatasi(): void

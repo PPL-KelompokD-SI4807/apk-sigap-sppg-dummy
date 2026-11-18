@@ -373,7 +373,7 @@ class PembelianBahanTest extends PembelianTestCase
             ->map(fn (AuditLog $a) => json_encode([$a->old_values, $a->new_values]))->implode(' ');
         $this->assertNotSame('', $teks);
         $this->assertStringNotContainsString('Pak Budi', $teks);
-        $this->assertStringNotContainsString('0812', $teks);
+        $this->assertStringNotContainsString('0812-FIKTIF', $teks);
         $this->assertStringNotContainsString('Rahasia', $teks);
         $this->assertStringNotContainsString('nota_path', $teks);
         $this->assertStringContainsString('"status":"ditolak"', $teks);

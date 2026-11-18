@@ -21,13 +21,13 @@ class BotAksiTest extends BotTestCase
     public function test_format_callback_data_ber_hmac_pendek_dan_tanpa_makna_bisnis(): void
     {
         $aksi = $this->svc()->terbit($this->investorAB, (int) $this->investorAB->telegram_id, BotAksi::JENIS_TINJAU, [
-            'sppg_id' => $this->sppgA, 'subjek_tipe' => BotAksi::SUBJEK_PENGELUARAN, 'subjek_id' => 4242, 'subjek_versi' => 7,
+            'sppg_id' => $this->sppgA, 'subjek_tipe' => BotAksi::SUBJEK_PENGELUARAN, 'subjek_id' => 987654321, 'subjek_versi' => 7,
         ]);
         $data = $this->svc()->callbackData($aksi);
 
         $this->assertMatchesRegularExpression('/^b1\.[A-Za-z0-9_-]{11}\.[A-Za-z0-9_-]{8}$/D', $data);
         $this->assertLessThanOrEqual(64, strlen($data));
-        $this->assertStringNotContainsString('4242', $data);
+        $this->assertStringNotContainsString('987654321', $data);
         $this->assertStringNotContainsString('tinjau', $data);
     }
 

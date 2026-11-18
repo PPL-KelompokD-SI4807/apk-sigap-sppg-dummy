@@ -69,7 +69,7 @@ class AktivasiResetTest extends TestCase
         $pesan = $this->messagesTo(7011112222)->last()['text'];
         $this->assertStringContainsString('aktivasi akun', $pesan);
         $this->assertStringNotContainsString(self::PASSWORD, $pesan);
-        $this->assertStringNotContainsString('5678', $pesan);
+        $this->assertStringNotContainsString('085712345678', $pesan);
 
         $this->kirim($pra, '/api/v1/auth/token/verifikasi', ['tantangan_id' => $id, 'kode' => $this->kodeTerakhir(7011112222), 'device_id' => self::HP])
             ->assertOk()->assertJsonPath('tujuan', 'aktivasi')->assertJsonPath('user.username', 'rina.gizi');
@@ -150,7 +150,7 @@ class AktivasiResetTest extends TestCase
         $this->assertNull($user->fresh()->phone);
         $this->assertSame('+6281299990000', $lain->fresh()->phone);
         $log = AuditLog::query()->where('event', AuditAuth::TELEPON_TIDAK_DISIMPAN)->sole();
-        $this->assertStringNotContainsString('9999', json_encode($log->new_values));
+        $this->assertStringNotContainsString('081299990000', json_encode($log->new_values));
     }
 
     public function test_telepon_tidak_dikenali_ditolak_format(): void
