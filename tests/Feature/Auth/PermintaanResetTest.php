@@ -69,7 +69,7 @@ class PermintaanResetTest extends TestCase
         $notif = $this->messagesTo(7000000001)->sole();
         $this->assertStringContainsString('reset password', $notif['text']);
         $this->assertStringContainsString($this->siti->name, $notif['text']);
-        $this->assertStringNotContainsString('0812', $notif['text']);
+        $this->assertStringNotContainsString('081234567890', $notif['text']);
         $this->assertCount(0, $this->messagesTo(7012345678));
 
         // Satu permintaan aktif per akun: permintaan ulang mengembalikan yang sama, tanpa notifikasi baru.
@@ -86,7 +86,11 @@ class PermintaanResetTest extends TestCase
         $daftar = $this->kirim($this->adminPenuh(), '/api/v1/pengguna/permintaan-reset', method: 'GET')->assertOk();
         $this->assertSame($id, $daftar->json('data.0.id'));
         $this->assertSame('siti.gudang', $daftar->json('data.0.pengguna.username'));
-        $this->assertStringNotContainsString('0812', $daftar->getContent());
+        // Nomor HP tidak bocor: periksa nomor utuh dan kunci, bukan potongan angka (ID ULID acak bisa memuatnya).
+        $this->assertStringNotContainsString('081234567890', $daftar->getContent());
+        $this->assertStringNotContainsString('+6281234567890', $daftar->getContent());
+        $daftar->assertJsonMissingPath('data.0.pengguna.phone')->assertJsonMissingPath('data.0.pengguna.no_hp')
+            ->assertJsonMissingPath('data.0.pengguna.telepon')->assertJsonMissingPath('data.0.pengguna.telegram_id');
 
         $this->kirim($this->adminPenuh(), "/api/v1/pengguna/permintaan-reset/{$id}/setujui")->assertOk()->assertJsonPath('data.status', 'disetujui');
         // Pemberitahuan persetujuan ke pemilik tidak memuat token.

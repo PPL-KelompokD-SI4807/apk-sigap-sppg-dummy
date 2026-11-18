@@ -633,8 +633,8 @@ class ToolKatalogTest extends MasterApiTestCase
         $this->assertStringContainsString('Nasi basi', $deskripsi);
         $this->assertStringContainsString(RecordPresenter::REDACTED, $deskripsi);
         $this->assertDoesNotMatchRegularExpression('/\d{4}/', $deskripsi);
-        $this->assertStringNotContainsString('3201', $konten);
-        $this->assertStringNotContainsString('0812', $konten);
+        $this->assertStringNotContainsString('3201012345678901', $konten);
+        $this->assertStringNotContainsString('081234567890', $konten);
     }
 
     // ------------------------------------------------------------------ util

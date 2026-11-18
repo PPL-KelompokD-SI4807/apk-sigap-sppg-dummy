@@ -327,7 +327,7 @@ class PersetujuanPengeluaranTest extends PembelianTestCase
             ->map(fn (AuditLog $a) => json_encode([$a->old_values, $a->new_values]))->implode(' ');
 
         $this->assertStringNotContainsString('Joko', $teks);
-        $this->assertStringNotContainsString('0812', $teks);
+        $this->assertStringNotContainsString('0812-FIKTIF', $teks);
         $this->assertStringNotContainsString('rahasia', $teks);
         $this->assertStringContainsString('"status_persetujuan":"ditolak"', $teks);
 
