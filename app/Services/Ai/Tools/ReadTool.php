@@ -40,6 +40,8 @@ abstract class ReadTool extends BaseAiTool
 
         try {
             $data = $this->handle($user, $arguments);
+        } catch (ArgumenTidakValid $e) {
+            return ToolResult::invalid($e->getMessage());
         } finally {
             DB::rollBack();
         }
