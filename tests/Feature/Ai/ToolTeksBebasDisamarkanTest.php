@@ -59,7 +59,8 @@ class ToolTeksBebasDisamarkanTest extends MasterApiTestCase
         $this->assertSame('ok', $json['status'] ?? null, $konten);
         $this->assertSame(RecordPresenter::NOTE, $json['data']['catatan'] ?? null, 'hasil tool baca wajib membawa catatan DATA');
 
-        return [$konten, $json['data']];
+        // Isi JSON tanpa tag bernonce acak (nonce hex dapat kebetulan memuat pola NIK/HP).
+        return [(string) json_encode($json, JSON_UNESCAPED_UNICODE), $json['data']];
     }
 
     private function pengajuan(int $sppgId, string $catatan): PengajuanMenu

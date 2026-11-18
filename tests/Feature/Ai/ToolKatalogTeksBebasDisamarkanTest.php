@@ -44,7 +44,7 @@ class ToolKatalogTeksBebasDisamarkanTest extends InvestorTestCase
     }
 
     /**
-     * Jalankan satu tool lewat Agen AI (FakeLlm) dan kembalikan [konten mentah hasil tool, data JSON terdekode].
+     * Jalankan satu tool lewat Agen AI (FakeLlm) dan kembalikan [isi JSON hasil tool di dalam tag, data JSON terdekode].
      *
      * @param  array<string, mixed>  $argumen
      * @return array{0: string, 1: array<string, mixed>}
@@ -66,7 +66,8 @@ class ToolKatalogTeksBebasDisamarkanTest extends InvestorTestCase
         $this->assertSame('ok', $json['status'] ?? null, $konten);
         $this->assertSame(RecordPresenter::NOTE, $json['data']['catatan'] ?? null);
 
-        return [$konten, $json['data']];
+        // Elemen pertama = isi JSON di dalam tag (tanpa nonce hex acak yang dapat kebetulan memuat pola NIK/HP).
+        return [$m[2], $json['data']];
     }
 
     /**
