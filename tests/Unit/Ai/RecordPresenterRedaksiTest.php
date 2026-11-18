@@ -203,7 +203,8 @@ class RecordPresenterRedaksiTest extends TestCase
             'biaya Rp 1.500.000 terlalu mahal',
             'Rp150.000 per hari',
             'RP 6.000 per porsi',
-            'Rp. 999.999.999',
+            'Rp. 99.999.999',
+            'Rp 1.000',
             'antara Rp 15.000 - 20.000 per porsi',
             'total Rp 1.500.000,00 disetujui',
         ] as $teks) {
@@ -244,6 +245,100 @@ class RecordPresenterRedaksiTest extends TestCase
 
         $this->assertSame('Rp [disamarkan]', RecordPresenter::redactPersonal('Rp 3201012345678901'));
         $this->assertSame('No. [disamarkan]', RecordPresenter::redactPersonal('No. 3201012345678901'));
+    }
+
+    // ------------------------------------------------------------------ S1 tinjauan #147: pengecualian Rp dipersempit
+
+    /** @return array<string, array{0: string}> nomor HP tanpa 0 / NIK berkedok nominal rupiah (fiktif) */
+    public static function celahRupiah(): array
+    {
+        return [
+            '9 digit dengan spasi' => ['Rp 812.345.678'],
+            '9 digit rapat' => ['Rp812.345.678'],
+            'rp huruf kecil' => ['rp 812.345.678'],
+            'RP huruf besar' => ['RP 812.345.678'],
+            'Rp. bertitik' => ['Rp. 812.345.678'],
+            'zero-width di tengah' => ["Rp 812\u{200B}.345.\u{FEFF}678"],
+            'NBSP setelah Rp' => ["Rp\u{00A0}812.345.678"],
+            'titik fullwidth' => ['Rp 812．345．678'],
+            'digit fullwidth' => ['Rp 8１２.３４５.６７８'],
+            'digit Arab-Indik' => ['Rp 8١٢.٣٤٥.٦٧٨'],
+            'digit fullwidth penuh 8 digit' => ['Rp １２.３４５.６７８'],
+            'rantai NIK tiga token' => ['Rp 320.101.234 Rp 567.890.123 Rp 4'],
+            'nominal sah lalu 9 digit' => ['Rp 1.000 Rp 812.345.678'],
+            'nominal sah lalu 8 digit menempel' => ['Rp 1.000 Rp 12.345.678'],
+            'awalan HP sebelum Rp' => ['0812 Rp 3.456.789'],
+            'awalan HP rapat sebelum Rp' => ['0812-Rp 3.456.789'],
+        ];
+    }
+
+    #[DataProvider('celahRupiah')]
+    public function test_hp_dan_nik_berkedok_rupiah_tetap_disamarkan(string $teks): void
+    {
+        foreach ([RecordPresenter::redactPersonal($teks), RecordPresenter::redactContact($teks)] as $hasil) {
+            $this->assertStringContainsString(RecordPresenter::REDACTED, $hasil, "{$teks} -> {$hasil}");
+            // Tidak ada kelompok >= 5 digit (ASCII/fullwidth/Arab-Indik) yang tersisa setelah pemisah dibuang.
+            $this->assertDoesNotMatchRegularExpression('/\d{5,}/u', (string) preg_replace('/[\s.\x{FF0E}\p{Pd}]/u', '', str_replace('1.000', '', $hasil)), "{$teks} -> {$hasil}");
+        }
+    }
+
+    public function test_hp_dan_nik_berkedok_rupiah_hasilnya_tepat(): void
+    {
+        $this->assertSame('Rp [disamarkan]', RecordPresenter::redactContact('Rp 812.345.678'));
+        $this->assertSame('Rp [disamarkan] Rp [disamarkan] Rp 4', RecordPresenter::redactContact('Rp 320.101.234 Rp 567.890.123 Rp 4'));
+        $this->assertSame('Rp 1.000 Rp [disamarkan]', RecordPresenter::redactContact('Rp 1.000 Rp 12.345.678'));
+        $this->assertSame('0812 Rp [disamarkan]', RecordPresenter::redactContact('0812 Rp 3.456.789'));
+    }
+
+    public function test_nominal_sah_tetap_utuh_dan_angka_panjang_setelah_rp_tetap_disamarkan(): void
+    {
+        foreach (['Rp 15.000 - 20.000', 'Rp 1.500.000,00', 'Rp 1.500.000', 'No. 12 RT 03'] as $teks) {
+            $this->assertSame($teks, RecordPresenter::redactContact($teks), $teks);
+            $this->assertSame($teks, RecordPresenter::redactPersonal($teks), $teks);
+        }
+
+        foreach (['Rp 3201012345678901', 'Rp 08123456789', 'Rp 0812.345.678', 'Rp812345678', 'Rp. 812 345 678'] as $teks) {
+            $hasil = RecordPresenter::redactContact($teks);
+
+            $this->assertStringContainsString(RecordPresenter::REDACTED, $hasil, $teks);
+            $this->assertDoesNotMatchRegularExpression('/\d/', $hasil, "{$teks} -> {$hasil}");
+        }
+    }
+
+    public function test_kegagalan_pcre_tetap_fail_closed(): void
+    {
+        $jit = ini_get('pcre.jit');
+        $batas = ini_get('pcre.backtrack_limit');
+        ini_set('pcre.jit', '0');
+        ini_set('pcre.backtrack_limit', '1');
+
+        try {
+            $teks = 'Rp 1.500.000 hubungi '.self::HP.' NIK '.self::NIK;
+
+            $this->assertSame(RecordPresenter::REDACTED, RecordPresenter::redactContact($teks));
+            $this->assertSame(RecordPresenter::REDACTED, RecordPresenter::redactPersonal($teks));
+        } finally {
+            ini_set('pcre.jit', (string) $jit);
+            ini_set('pcre.backtrack_limit', (string) $batas);
+        }
+    }
+
+    // ------------------------------------------------------------------ S2 tinjauan #147: false positive alamat
+
+    public function test_false_positive_yang_diketahui_angka_menempel_kode_pos_ikut_disamarkan(): void
+    {
+        // Diterima pengguna: aman karena hanya menyamarkan lebih banyak, tidak membocorkan.
+        $this->assertSame('Jl. Raya Lembang [disamarkan]', RecordPresenter::redactContact('Jl. Raya Lembang 45 40391'));
+        $this->assertSame('RW.[disamarkan]', RecordPresenter::redactContact('RW.005 40115'));
+        $this->assertSame('No [disamarkan]', RecordPresenter::redactContact('No 123 456'));
+        $this->assertSame('Posyandu Melati [disamarkan]', RecordPresenter::redactContact('Posyandu Melati 17-08-1945'));
+    }
+
+    public function test_alamat_dengan_pemisah_kata_dan_koma_tetap_utuh(): void
+    {
+        $alamat = 'Jl. Merdeka No. 12 RT 03/RW 05, Kel. X, 40115';
+
+        $this->assertSame($alamat, RecordPresenter::redactContact($alamat));
     }
 
     public function test_redact_contact_tidak_mengubah_nama_lembaga_menjadi_inisial(): void

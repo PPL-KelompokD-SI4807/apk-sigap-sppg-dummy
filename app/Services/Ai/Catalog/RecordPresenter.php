@@ -54,11 +54,19 @@ final class RecordPresenter
 
     /**
      * Nominal rupiah berformat ribuan yang tetap utuh pada teks bebas, mis. "Rp 1.500.000" atau "Rp150.000": awalan
-     * "Rp", digit pertama bukan 0, lalu 1-2 kelompok ".ddd" (maksimal 9 digit, < Rp 1 miliar), dan tidak disambung
-     * digit lain. Batasnya sengaja sempit: NIK (16 digit) dan nomor HP berawalan 0/+62 tidak pernah cocok; nominal
-     * >= Rp 1 miliar ikut disamarkan (false positive yang aman).
+     * "Rp", digit ASCII [0-9] saja (bukan \d, yang dengan /u juga cocok dengan digit fullwidth/Arab-Indik), digit
+     * pertama bukan 0, lalu 1-2 kelompok ".ddd" dengan total 4-8 digit (Rp 1.000 s.d. Rp 99.999.999), tidak
+     * didahului digit (langsung atau dengan satu pemisah, mis. "0812 Rp 3.456.789"), dan tidak disambung digit lain.
+     *
+     * Jaminan yang jujur: pengecualian ini hanya aman karena satu token paling banyak 8 digit, lebih pendek daripada
+     * nomor HP utuh tanpa 0 di depan (minimal 9 digit, mis. 812-345-678) dan NIK (16 digit); nominal >= Rp 100 juta
+     * ikut disamarkan (false positive yang aman). Ini BUKAN jaminan bahwa NIK/HP tidak pernah lolos: sisa risiko
+     * yang diketahui hanya terjadi bila penulis sengaja memecah angka, yaitu rantai beberapa token yang dipisah
+     * huruf/koma (mis. "Rp 32.010.123, Rp 45.678.901") dan rentang berspasi "Rp 812.345 - 67.890" (bagian kanan
+     * <= 5 digit tidak disamarkan agar rentang harga "Rp 15.000 - 20.000" tetap terbaca). Celah ini sejenis dengan
+     * pemisah , / _ di antara kelompok digit yang sudah tercatat (issue #145). Teks lengkap hanya di Mini App.
      */
-    private const RUPIAH = '(?i:\bRp\.?)\s?[1-9]\d{0,2}(?:[.\x{FF0E}]\d{3}){1,2}(?![\s.\x{FF0E}\p{Pd}]?\d)';
+    private const RUPIAH = '(?<!\d)(?<!\d[\s.\x{FF0E}\p{Pd}])(?i:\bRp\.?)\s?[1-9](?:[0-9]{0,2}[.\x{FF0E}][0-9]{3}|[0-9]?[.\x{FF0E}][0-9]{3}[.\x{FF0E}][0-9]{3})(?![\s.\x{FF0E}\p{Pd}]?\d)';
 
     /** @param array<int|string, string> $columns */
     public static function assertSafe(array $columns): void
@@ -205,8 +213,12 @@ final class RecordPresenter
         // berspasi seperti "0812 - 3456 - 7890"; ambang 10 menjaga rentang jam "07.30 - 08.00" tetap utuh.
         // Pada kedua pola, nominal RUPIAH ("Rp 1.500.000") dicocokkan lebih dulu dan dibiarkan utuh.
         // False positive yang diketahui (dapat diterima, cenderung aman): rentang nominal tanpa "Rp"
-        // "50.000 - 75.000" (pola 2), nominal >= Rp 1 miliar, serta rentang jam tanpa spasi "07.30–08.00"
-        // (pola 1) ikut disamarkan.
+        // "50.000 - 75.000" (pola 2), nominal >= Rp 100 juta, serta rentang jam tanpa spasi "07.30–08.00"
+        // (pola 1) ikut disamarkan. Hal yang sama berlaku untuk redactContact() pada nama/alamat: angka yang
+        // bersebelahan dengan kode pos atau nomor lain dengan satu pemisah membentuk >= 6 digit dan ikut
+        // disamarkan, mis. "Jl. Raya Lembang 45 40391", "RW.005 40115", "No 123 456", dan tanggal
+        // "Posyandu Melati 17-08-1945". Ini aman (hanya menyamarkan lebih banyak, tidak membocorkan); alamat
+        // yang ditulis dengan pemisah kata/koma, mis. "No. 12 RT 03/RW 05, Kel. X, 40115", tetap utuh.
         $samarkan = fn (array $m): string => ($m['rp'] ?? '') !== '' ? $m[0] : self::REDACTED;
         $teks = $teks === null ? null : preg_replace_callback('/(?<rp>'.self::RUPIAH.')|[+\x{FF0B}]?\d(?:[\s.\x{FF0E}\p{Pd}]?\d){5,}/u', $samarkan, $teks);
 
