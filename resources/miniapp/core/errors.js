@@ -56,7 +56,7 @@ export function errorMessage(e, fallback = 'Terjadi kesalahan.') {
 
 // ---- Konflik 409 R-06b-2 (versi basi, status berubah, pembelian final, pengeluaran dari pembelian) ----
 export const PESAN_KONFLIK = {
-  versi_tidak_cocok: 'Data sudah berubah sejak Anda membukanya. Muat ulang lalu coba lagi.',
+  versi_tidak_cocok: 'Data sudah berubah. Muat ulang lalu ubah kembali.',
   status_tidak_valid: 'Status data sudah berubah atau sudah diputuskan pihak lain. Muat ulang untuk melihat keadaan terbaru.',
   pembelian_sudah_diverifikasi: 'Pembelian ini sudah diverifikasi dan tidak dapat diubah.',
   pengeluaran_dari_pembelian: 'Pengeluaran ini berasal dari pembelian bahan terverifikasi sehingga tidak dapat diubah atau dihapus.',

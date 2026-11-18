@@ -130,7 +130,7 @@ export function defineCrudModule(def) {
       if (!g.konflik) return;
       const pesan = draft ? `${g.pesan} Draf AI ini sudah basi.` : g.pesan;
       konflik.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, pesan, ' ',
-        h('button', { class: 'btn', type: 'button', onclick: () => (draft && record?.id ? navigate(`${base}/${record.id}`, { replace: true }) : resolve()) }, draft ? 'Buka data terbaru' : 'Muat ulang data')));
+        h('button', { class: 'btn', type: 'button', onclick: () => (draft && record?.id ? navigate(`${base}/${record.id}`, { replace: true }) : resolve()) }, draft ? 'Buka data terbaru' : 'Muat ulang')));
     }
     const fv = createFormView({
       fields: fieldsFor(mode, record),
@@ -254,7 +254,7 @@ export function defineCrudModule(def) {
       const kunciBentrok = e?.status === 422 && e.errors && 'Idempotency-Key' in e.errors;
       const pesan = kunciBentrok ? 'Permintaan sebelumnya mungkin sudah tersimpan. Periksa daftar data sebelum mengirim ulang.' : g.pesan;
       konflik.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, pesan, ' ',
-        g.muatUlang ? h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang data') : null));
+        g.muatUlang ? h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang') : null));
     };
     const fv = createFormView({
       fields: fieldsFor(mode, record),
