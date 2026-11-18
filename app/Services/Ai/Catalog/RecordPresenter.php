@@ -50,6 +50,12 @@ final class RecordPresenter
         'minggu', 'januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november',
         'desember', 'sd', 'sdn', 'smp', 'smpn', 'sma', 'sman', 'smk', 'smkn', 'mi', 'min', 'mts', 'mtsn', 'ma', 'man', 'tk', 'paud',
         'kb', 'posyandu', 'puskesmas', 'uks', 'mbg', 'sppg', 'bgn', 'rt', 'rw', 'ok', 'wib', 'rp', 'no',
+        // Pembuka kalimat umum uraian pengeluaran, catatan pencairan/bukti distribusi/rekap (bukan nama orang;
+        // kata yang juga lazim sebagai nama, mis. "Dana", sengaja TIDAK dimasukkan agar tetap menjadi inisial).
+        'beli', 'belanja', 'pembelian', 'bayar', 'pembayaran', 'biaya', 'sewa', 'gaji', 'honor', 'insentif', 'upah',
+        'transport', 'transportasi', 'bensin', 'solar', 'gas', 'elpiji', 'listrik', 'beras', 'minyak', 'gula', 'garam',
+        'bumbu', 'operasional', 'pencairan', 'termin', 'tahap', 'periode', 'distribusi', 'diterima', 'selisih', 'lancar',
+        'stok', 'gudang', 'dapur', 'servis', 'perbaikan',
     ];
 
     /**

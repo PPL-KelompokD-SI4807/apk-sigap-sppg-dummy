@@ -90,6 +90,11 @@ use BackedEnum;
  *   jalur berkas): RecordPresenter::assertSafe() menolaknya saat tool dibangun.
  * - Nama orang (anak penerima manfaat, PIC, pengemudi) disajikan sebagai inisial + ID ($initials);
  *   penerima manfaat juga tanpa sekolah/kelas. Nama lengkap hanya tampil di Mini App.
+ * - Teks bebas yang dapat memuat data pribadi orang lain ($personalText: deskripsi/tindak lanjut keluhan, uraian
+ *   pengeluaran, catatan pencairan/bukti distribusi/rekap) disamarkan RecordPresenter::redactPersonal() (nama ->
+ *   inisial, NIK/HP/email/URL -> [disamarkan]) lalu dipotong MAX_TEXT_PERSONAL; juga disembunyikan di ringkasan
+ *   draf chat. Teks bertema dapur/pangan (catatan menu/jadwal, kendala log produksi, catatan mutu) hanya text():
+ *   inisial akan merusak nama bahan/menu; penyamaran kontak saja untuk kolom itu menunggu opsi baru (issue #149).
  * - Kolom form sensitif dikecualikan dari skema tulis ($exclude): pengguna mengisinya sendiri di Mini App.
  * - Ketersediaan tool = matriks Tabel 5 + aturan unit relawan + Policy (BaseAiTool); sppg_id/user_id/role
  *   tidak pernah ditawarkan dan selalu dibuang (config ai.protected_arguments).
@@ -284,23 +289,28 @@ final class CatalogDefinitions
                 initials: ['nama'],
             ),
 
-            // 13. Data Bukti Distribusi: foto/berita acara/koordinat diunggah di Mini App, tidak lewat AI.
+            // 13. Data Bukti Distribusi: foto/berita acara/koordinat diunggah di Mini App, tidak lewat AI. Catatan ditulis
+            //     relawan di titik layanan (dapat memuat nama/HP penerima): ke LLM hanya versi tersamar + terpotong.
             new ResourceSpec(
                 key: 'bukti_distribusi', module: 'bukti-distribusi', label: 'bukti distribusi', model: BuktiDistribusi::class,
                 list: ['id', 'jadwal_distribusi_id', 'tanggal_distribusi' => 'jadwalDistribusi.tanggal_distribusi', 'titik_layanan' => 'jadwalDistribusi.titikLayanan.nama', 'waktu_berangkat', 'waktu_tiba', 'porsi_diterima', 'terlambat', 'menit_keterlambatan'],
                 detail: ['catatan_selisih', 'catatan'],
+                personalText: ['catatan_selisih', 'catatan'],
                 date: 'created_at',
                 store: StoreBuktiDistribusiRequest::class, update: UpdateBuktiDistribusiRequest::class, routeParameter: 'buktiDistribusi',
                 exclude: ['latitude', 'longitude'],
                 berkas: true,
             ),
 
-            // 14. Data Keuangan: pencairan dana + pengeluaran (nominal rupiah bulat).
+            // 14. Data Keuangan: pencairan dana + pengeluaran (nominal rupiah bulat). Juga dibaca investor (R): catatan
+            //     pencairan dan uraian pengeluaran (teks bebas akuntan, dapat memuat nama/HP/no. rekening) ke LLM hanya
+            //     versi tersamar + terpotong (minimisasi data, UU PDP).
             new ResourceSpec(
                 key: 'pencairan_dana', module: 'keuangan', label: 'pencairan dana', model: PencairanDana::class,
                 search: ['periode', 'sumber_dana', 'no_referensi'],
                 list: ['id', 'periode', 'sumber_dana', 'nominal', 'tanggal_cair', 'no_referensi'],
                 detail: ['catatan'],
+                personalText: ['catatan'],
                 date: 'tanggal_cair', order: [['tanggal_cair', 'desc'], ['id', 'desc']], rupiah: ['nominal'],
                 store: StorePencairanRequest::class, update: UpdatePencairanRequest::class, routeParameter: 'pencairanDana',
                 berkas: true,
@@ -309,6 +319,7 @@ final class CatalogDefinitions
                 key: 'pengeluaran', module: 'keuangan', label: 'pengeluaran', model: Pengeluaran::class,
                 search: ['uraian'],
                 list: ['id', 'tanggal', 'kategori', 'uraian', 'nominal', 'melebihi_anggaran', 'status_persetujuan', 'pemasok' => 'pemasok.nama'],
+                personalText: ['uraian'],
                 filters: [
                     'kategori' => ['type' => 'string', 'enum' => self::values(KategoriPengeluaran::class)],
                     'status_persetujuan' => ['type' => 'string', 'enum' => self::values(StatusPersetujuanPengeluaran::class), 'description' => 'Status persetujuan investor.'],
@@ -360,12 +371,14 @@ final class CatalogDefinitions
                 rute: 'api.v1.keluhan',
             ),
 
-            // 16. Laporan Rekapitulasi Harian Operasional (ringkasan dibaca lewat detail; tanpa hapus).
+            // 16. Laporan Rekapitulasi Harian Operasional (ringkasan dibaca lewat detail; tanpa hapus). Ringkasan = angka
+            //     agregat dari server; catatan = teks bebas kepala SPPG (juga dibaca investor): disamarkan + terpotong.
             new ResourceSpec(
                 key: 'rekap_harian', module: 'rekap-harian', label: 'rekap harian operasional', model: RekapHarian::class,
                 actions: ['R', 'C', 'U'],
                 list: ['id', 'tanggal', 'status_kirim', 'dikirim_pada'],
                 detail: ['ringkasan', 'catatan'],
+                personalText: ['catatan'],
                 filters: ['status_kirim' => ['type' => 'string', 'enum' => self::values(StatusKirim::class)]],
                 date: 'tanggal', order: [['tanggal', 'desc'], ['id', 'desc']],
                 store: StoreRekapHarianRequest::class, update: UpdateRekapHarianRequest::class, routeParameter: 'rekapHarian',
