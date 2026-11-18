@@ -136,8 +136,8 @@ test('pengeluaran baru (akuntan): kolom foto nota ada; POST tanpa nota (JSON); u
   assert.match(t[0].headers['Idempotency-Key'], UUID);
   assert.equal('nota' in t[0].body, false);
   el = await buka('/keuangan/pengeluaran/11/ubah');
-  assert.ok(teks(el).includes('hanya bila nominal, tanggal, kategori, atau nota berubah'), 'info ajukan ulang (formTop)');
-  assert.ok(teks(el).includes('sub-kategori saja tidak mengajukan ulang'), 'sub-kategori tidak mengajukan ulang');
+  assert.ok(teks(el).includes('Menyimpan perubahan apa pun, termasuk sub-kategori, mengajukan ulang'), 'diajukan: semua perubahan mengajukan ulang');
+  assert.ok(!teks(el).includes('sub-kategori saja tidak mengajukan ulang'));
   isi(el, { uraian: 'Beli beras fiktif 2', nominal: '500000' }); // input rupiah kustom tidak terisi ulang oleh DOM tiruan
   skrip = [resp(200, { data: { id: 11 } })];
   await kirim();
@@ -340,4 +340,18 @@ test('detail rekap: catatan (PATCH) dan kirim ulang hanya bila aksi.kirim_ulang_
     assert.ok(!cari(el, 'f-catatan') && !tombol(el).some((b) => /Kirim ulang|Simpan catatan/.test(teks(b))), nama);
     assert.ok(!tautan(el).some((x) => /baru\?tanggal=/.test(x)), nama);
   }
+});
+
+test('notice ajukan ulang pada form ubah bergantung status pengeluaran', async () => {
+  sebagai('akuntan');
+  const asli = pengRec;
+  try {
+    for (const [status, benar] of [['disetujui', true], ['diajukan', false], ['ditolak', false]]) {
+      pengRec = { ...asli, status_persetujuan: status, riwayat_persetujuan: status === 'ditolak' ? [{ keputusan: 'ditolak', catatan: 'x' }] : [] };
+      const el = await buka('/keuangan/pengeluaran/11/ubah');
+      const t = teks(el);
+      assert.equal(t.includes('Perubahan sub-kategori saja tidak mengajukan ulang. Mengubah nominal, tanggal, kategori, atau nota mengajukan ulang pengeluaran ini ke investor.'), benar, status);
+      assert.equal(t.includes('Menyimpan perubahan apa pun, termasuk sub-kategori, mengajukan ulang pengeluaran ini ke investor.'), !benar, status);
+    }
+  } finally { pengRec = asli; }
 });
