@@ -162,25 +162,68 @@ final class RecordPresenter
      */
     public static function redactPersonal(string $value): string
     {
-        $value = (string) preg_replace('/[\p{L}\p{N}._%+\-]+@[\p{L}\p{N}.\-]+\.\p{L}{2,}/u', self::REDACTED, $value);
-        $value = (string) preg_replace('#\b(?:https?://|www\.)\S+#iu', self::REDACTED, $value);
-        $value = (string) preg_replace('/\+?\d(?:[\s.\-]?\d){5,}/u', self::REDACTED, $value);
-
-        return (string) preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
+        // Fail-closed: bila satu langkah PCRE gagal (null), seluruh teks diganti REDACTED, bukan diteruskan utuh.
+        $teks = self::normalizeInvisible($value);
+        // Deret spasi dirapatkan agar "0812  3456" (mis. NBSP + spasi) tidak lolos pola satu pemisah.
+        $teks = $teks === null ? null : preg_replace('/[ \t]{2,}/u', ' ', $teks);
+        $teks = $teks === null ? null : preg_replace('/[\p{L}\p{N}._%+\-]+[@\x{FF20}][\p{L}\p{N}.\-]+\.\p{L}{2,}/u', self::REDACTED, $teks);
+        $teks = $teks === null ? null : preg_replace('#\b(?:https?://|www\.)\S+#iu', self::REDACTED, $teks);
+        // \d dengan /u (UCP) juga mencocokkan digit fullwidth dan Arab-Indik. Pola 1: >= 6 digit dengan satu
+        // pemisah rapat (spasi/titik/tanda hubung apa pun). Pola 2: >= 10 digit (nomor HP/NIK) dengan pemisah
+        // berspasi seperti "0812 - 3456 - 7890"; ambang 10 menjaga rentang jam "07.30 - 08.00" tetap utuh.
+        $teks = $teks === null ? null : preg_replace('/[+\x{FF0B}]?\d(?:[\s.\x{FF0E}\p{Pd}]?\d){5,}/u', self::REDACTED, $teks);
+        $teks = $teks === null ? null : preg_replace('/[+\x{FF0B}]?\d(?:\s?[.\x{FF0E}\p{Pd}]?\s?\d){9,}/u', self::REDACTED, $teks);
+        $teks = $teks === null ? null : preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
             $kata = $m[0];
 
             return in_array(mb_strtolower($kata), self::KATA_UMUM, true) ? $kata : mb_substr($kata, 0, 1).'.';
-        }, $value);
+        }, $teks);
+
+        return $teks ?? self::REDACTED;
     }
 
-    /** Teks aman: tanpa karakter kontrol & penanda blok data palsu, spasi dirapikan, dipotong. */
+    /** Teks aman: tanpa karakter kontrol/tak terlihat & penanda blok data palsu, spasi dirapikan, dipotong. */
     public static function text(string $value, int $max = self::MAX_TEXT): string
     {
-        $value = (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
-        $value = (string) preg_replace('/<\s*\/?\s*(?:data_pengguna|hasil_tool)[^>]*>/iu', '', $value);
-        $value = trim((string) preg_replace('/\s+/u', ' ', $value));
+        $teks = self::normalizeInvisible($value);
+        $teks = $teks === null ? null : preg_replace('/<\s*\/?\s*(?:data_pengguna|hasil_tool)[^>]*>/iu', '', $teks);
+        $teks = $teks === null ? null : preg_replace('/\s+/u', ' ', $teks);
 
-        return mb_strlen($value) > $max ? rtrim(mb_substr($value, 0, $max)).'…' : $value;
+        // Fail-closed: kegagalan PCRE menghasilkan string kosong, bukan teks mentah.
+        if ($teks === null) {
+            return '';
+        }
+
+        $teks = trim($teks);
+
+        return mb_strlen($teks) > $max ? rtrim(mb_substr($teks, 0, $max)).'…' : $teks;
+    }
+
+    /**
+     * Normalisasi sebelum pencocokan pola (R06a-S-05): byte UTF-8 tidak valid dibuang, karakter format tak
+     * terlihat (\p{Cf}: zero-width U+200B-U+200D, word joiner U+2060, BOM U+FEFF, kontrol bidi, soft hyphen)
+     * dan karakter kontrol (\p{Cc} selain spasi putih) dihapus, tanda kombinasi yang menempel pada digit
+     * dihapus, karakter "kosong" yang tampil sebagai spasi (Hangul filler, braille blank) serta pemisah
+     * Unicode (\p{Z}: NBSP, spasi tipis, pemisah baris/paragraf) diganti spasi biasa. Tujuannya agar NIK/nomor
+     * HP yang disisipi karakter tak terlihat tetap cocok dengan pola penyamaran. Mengembalikan null bila PCRE
+     * gagal (pemanggil wajib fail-closed).
+     */
+    private static function normalizeInvisible(string $value): ?string
+    {
+        if (! mb_check_encoding($value, 'UTF-8')) {
+            // Ambil hanya urutan UTF-8 yang sah (mode byte, tanpa /u); byte rusak dibuang sehingga digit di
+            // kedua sisinya menyatu kembali dan tetap tertangkap pola NIK/HP.
+            if (preg_match_all('/[\x00-\x7F]|[\xC2-\xDF][\x80-\xBF]|\xE0[\xA0-\xBF][\x80-\xBF]|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}|\xED[\x80-\x9F][\x80-\xBF]|\xF0[\x90-\xBF][\x80-\xBF]{2}|[\xF1-\xF3][\x80-\xBF]{3}|\xF4[\x80-\x8F][\x80-\xBF]{2}/', $value, $m) === false) {
+                return null;
+            }
+
+            $value = implode('', $m[0]);
+        }
+
+        $value = preg_replace('/[\p{Cf}\x{034F}\x{180E}\x{FE00}-\x{FE0F}]|(?![\t\n\r])\p{Cc}/u', '', $value);
+        $value = $value === null ? null : preg_replace('/(?<=\d)\p{M}+/u', '', $value);
+
+        return $value === null ? null : preg_replace('/[\p{Z}\x{115F}\x{1160}\x{3164}\x{FFA0}\x{2800}]/u', ' ', $value);
     }
 
     /**
