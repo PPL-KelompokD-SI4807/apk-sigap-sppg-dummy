@@ -50,6 +50,15 @@ class HeaderKeamananWebTest extends TestCase
         $this->assertSame(["require-trusted-types-for 'script'"], $this->header('Content-Security-Policy-Report-Only'));
     }
 
+    public function test_hsts_satu_tahun_tanpa_include_subdomains(): void
+    {
+        $templat = file_get_contents(base_path('docker/nginx/templates/00-http.conf.template'));
+
+        $this->assertStringContainsString('https "max-age=31536000";', $templat);
+        $this->assertStringNotContainsString('includeSubDomains', $templat);
+        $this->assertStringNotContainsString('15552000', $templat);
+    }
+
     public function test_location_web_meng_include_snippet_dan_cache(): void
     {
         $akar = $this->blok('location\s+=\s+\/');

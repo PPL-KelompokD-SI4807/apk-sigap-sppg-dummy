@@ -62,9 +62,10 @@ map "${TELEGRAM_WEBHOOK_IP_FILTER}:$sigap_tg_cidr" $sigap_tg_tolak {
     "on:0" 1;
 }
 
-# HSTS hanya dikirim pada HTTPS (nilai kosong = header tidak dikirim).
+# HSTS hanya dikirim pada HTTPS (nilai kosong = header tidak dikirim). 1 tahun (R04-11 S2); sengaja tanpa
+# direktif subdomain (keputusan pengguna).
 map $scheme $sigap_hsts {
-    https "max-age=15552000";
+    https "max-age=31536000";
     default "";
 }
 

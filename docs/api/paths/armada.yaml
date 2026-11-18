@@ -124,7 +124,7 @@
   get:
     tags: [Armada]
     summary: Daftar pengemudi
-    description: 'Modul Armada dan Pengemudi (matriks hak sama dengan /armada). `no_sim` dan `sim_berlaku_hingga` hanya terlihat oleh peran yang boleh mengubah (Admin, Kepala SPPG); peran R lain melihat `sim_status` saja.'
+    description: 'Modul Armada dan Pengemudi (matriks hak sama dengan /armada). `no_hp`, `no_sim`, dan `sim_berlaku_hingga` hanya terlihat oleh peran yang boleh mengubah (Admin, Kepala SPPG); peran R lain melihat `nama` dan `sim_status` saja. Pencarian `q` oleh peran R hanya mencocokkan `nama`.'
     parameters:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'

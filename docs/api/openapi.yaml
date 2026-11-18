@@ -229,7 +229,7 @@ paths:
     get:
       tags: [Armada]
       summary: Daftar pengemudi
-      description: 'Modul Armada dan Pengemudi (matriks hak sama dengan /armada). `no_sim` dan `sim_berlaku_hingga` hanya terlihat oleh peran yang boleh mengubah (Admin, Kepala SPPG); peran R lain melihat `sim_status` saja.'
+      description: 'Modul Armada dan Pengemudi (matriks hak sama dengan /armada). `no_hp`, `no_sim`, dan `sim_berlaku_hingga` hanya terlihat oleh peran yang boleh mengubah (Admin, Kepala SPPG); peran R lain melihat `nama` dan `sim_status` saja. Pencarian `q` oleh peran R hanya mencocokkan `nama`.'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -5960,7 +5960,7 @@ components:
         id: { type: integer }
         sppg_id: { type: integer }
         nama: { type: string }
-        no_hp: { type: [string, 'null'] }
+        no_hp: { type: [string, 'null'], description: 'Bersyarat, sama seperti no_sim: hanya untuk peran yang boleh mengubah (Admin, Kepala SPPG); kunci tidak ada di respons peran lain (Akuntan, Relawan).' }
         no_sim: { type: [string, 'null'], description: 'Hanya untuk peran yang boleh mengubah (Admin, Kepala SPPG); tidak ada di respons peran lain.' }
         sim_berlaku_hingga: { type: [string, 'null'], format: date, description: 'Sama seperti no_sim: disembunyikan dari peran R.' }
         sim_status: { type: [string, 'null'], enum: [berlaku, segera_berakhir, kedaluwarsa, null], description: 'segera_berakhir = <= 30 hari; null bila SIM tidak dicatat.' }
