@@ -73,6 +73,9 @@ class ToolKatalogTeksBebasDisamarkanTest extends InvestorTestCase
      * Detail satu data (argumen `id`) langsung lewat ToolRegistry::resolveFor (scope peran + SPPG aktif sama dengan
      * jalur agen): argumen `id` termasuk ai.protected_arguments sehingga dibuang sebelum tool dijalankan dari agen.
      *
+     * Elemen pertama hanya memuat kolom teks bebas (JSON): kolom lain berisi nilai acak factory (no_referensi,
+     * jumlah porsi, nama titik layanan) yang dapat kebetulan memuat "3201"/"0812" dan membuat tes flaky.
+     *
      * @return array{0: string, 1: array<string, mixed>}
      */
     private function detail(User $user, string $tool, int $id): array
@@ -84,7 +87,9 @@ class ToolKatalogTeksBebasDisamarkanTest extends InvestorTestCase
         $this->assertSame(ToolResult::OK, $hasil->status, (string) $hasil->message);
         $this->assertSame(RecordPresenter::NOTE, $hasil->data['catatan'] ?? null);
 
-        return [(string) json_encode($hasil->data, JSON_UNESCAPED_UNICODE), $hasil->data];
+        $teksBebas = array_map(fn (array $baris) => array_intersect_key($baris, array_flip(['catatan', 'catatan_selisih', 'uraian'])), $hasil->data['hasil']);
+
+        return [(string) json_encode($teksBebas, JSON_UNESCAPED_UNICODE), $hasil->data];
     }
 
     private function assertTanpaNikHp(string $teks): void
