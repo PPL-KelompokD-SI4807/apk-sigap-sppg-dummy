@@ -136,7 +136,8 @@ test('pengeluaran baru (akuntan): kolom foto nota ada; POST tanpa nota (JSON); u
   assert.match(t[0].headers['Idempotency-Key'], UUID);
   assert.equal('nota' in t[0].body, false);
   el = await buka('/keuangan/pengeluaran/11/ubah');
-  assert.ok(teks(el).includes('mengajukan ulang'), 'info ajukan ulang (formTop)');
+  assert.ok(teks(el).includes('hanya bila nominal, tanggal, kategori, atau nota berubah'), 'info ajukan ulang (formTop)');
+  assert.ok(teks(el).includes('sub-kategori saja tidak mengajukan ulang'), 'sub-kategori tidak mengajukan ulang');
   isi(el, { uraian: 'Beli beras fiktif 2', nominal: '500000' }); // input rupiah kustom tidak terisi ulang oleh DOM tiruan
   skrip = [resp(200, { data: { id: 11 } })];
   await kirim();

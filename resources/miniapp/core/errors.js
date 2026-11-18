@@ -60,7 +60,7 @@ export const PESAN_KONFLIK = {
   status_tidak_valid: 'Status data sudah berubah atau sudah diputuskan pihak lain. Muat ulang untuk melihat keadaan terbaru.',
   pembelian_sudah_diverifikasi: 'Pembelian ini sudah diverifikasi dan tidak dapat diubah.',
   pengeluaran_dari_pembelian: 'Pengeluaran ini berasal dari pembelian bahan terverifikasi sehingga tidak dapat diubah atau dihapus.',
-  pengeluaran_sudah_disetujui: 'Pengeluaran sudah disetujui. Ubah pengeluaran agar diajukan ulang sebelum menambah lampiran.',
+  pengeluaran_sudah_disetujui: 'Pengeluaran sudah disetujui. Ubah nominal/tanggal/kategori/nota agar diajukan ulang ke investor sebelum menambah lampiran.',
 };
 /** Alasan 409 yang berarti data di layar basi: pengguna perlu memuat ulang. */
 export const ALASAN_MUAT_ULANG = ['versi_tidak_cocok', 'status_tidak_valid', 'pembelian_sudah_diverifikasi', 'pengeluaran_sudah_disetujui'];
