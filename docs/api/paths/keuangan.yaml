@@ -254,6 +254,10 @@
       Field opsional KECUALI `versi` (WAJIB, kunci optimistik; beda -> 409 `versi_tidak_cocok` + `versi_server`).
       Ganti nota: multipart POST dengan `_method=PUT`. PATCH = alias. Perubahan apa pun menaikkan `versi`, mengembalikan
       status ke `diajukan`, membatalkan pengajuan yang masih menunggu, dan membuat pengajuan baru (investor diberi tahu).
+      PENGECUALIAN (ADR 2026-11-18): bila pengeluaran sudah `disetujui` dan satu-satunya atribut yang benar-benar berubah
+      adalah `sub_kategori` (field lain bernilai sama dianggap tidak berubah; tanpa nota baru), status TETAP `disetujui`,
+      tidak ada pengajuan ulang dan tidak ada notifikasi investor; `versi` tetap naik dan perubahan tercatat di audit_logs
+      (event `updated`: pengguna, waktu, `sub_kategori` lama dan baru). Ubah nominal, tanggal, kategori, atau nota tetap mengajukan ulang.
       Pengeluaran hasil pembelian bahan -> 409 `pengeluaran_dari_pembelian`. Perubahan tercatat di audit_logs tanpa teks bebas.
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }

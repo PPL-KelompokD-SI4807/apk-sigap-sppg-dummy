@@ -17,6 +17,7 @@ use App\Services\Auth\GalatAuth;
 use App\Services\Persetujuan\PersetujuanPengeluaranService;
 use App\Services\Storage\GambarSiap;
 use App\Services\Storage\SecureUploadService;
+use BackedEnum;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -216,6 +217,11 @@ class BudgetService
      * `diajukan` (pengajuan lama yang masih menunggu dibatalkan, pengajuan baru dibuat). Pengeluaran hasil
      * verifikasi pembelian tidak dapat diubah lewat sini.
      *
+     * Pengecualian (ADR 2026-11-18): bila pengeluaran sudah `disetujui` dan satu-satunya atribut yang benar-benar
+     * berubah adalah `sub_kategori` (klasifikasi pelaporan; field lain bernilai sama dianggap tidak berubah, tanpa
+     * nota baru), status TETAP `disetujui`, tanpa pengajuan ulang dan tanpa notifikasi investor. Versi tetap naik
+     * (kunci optimistik) dan perubahan tercatat di audit_logs (event `updated`: user, waktu, sub_kategori lama/baru).
+     *
      * @param  array<string, mixed>  $data  hasil validasi UpdatePengeluaranRequest (key yang dikirim)
      */
     public function ubahPengeluaran(User $pengguna, Pengeluaran $pengeluaran, array $data, int $versi, ?GambarSiap $nota = null): Pengeluaran
@@ -231,6 +237,12 @@ class BudgetService
 
             if (array_key_exists('nominal', $data)) {
                 $pengeluaran->nominal = (int) $data['nominal'];
+            }
+
+            if ($nota === null && $this->hanyaSubKategoriBerubah($pengeluaran)) {
+                $pengeluaran->forceFill(['versi' => (int) $pengeluaran->versi + 1])->save();
+
+                return $pengeluaran;
             }
 
             $pengeluaran->forceFill([
@@ -311,6 +323,48 @@ class BudgetService
         if ((int) $pengeluaran->versi !== $versi) {
             throw GalatAuth::respons(409, self::ALASAN_VERSI, 'Pengeluaran sudah berubah. Muat ulang lalu ubah kembali.', tambahan: ['versi_server' => (int) $pengeluaran->versi]);
         }
+    }
+
+    /**
+     * True bila pengeluaran tersimpan berstatus `disetujui` dan satu-satunya atribut yang BENAR-BENAR berubah
+     * (nilai lama != baru, setelah normalisasi enum/tanggal/rupiah) adalah `sub_kategori`. Atribut yang hanya
+     * "kotor" tetapi bernilai sama dikembalikan ke nilai asal agar tidak masuk audit.
+     */
+    private function hanyaSubKategoriBerubah(Pengeluaran $pengeluaran): bool
+    {
+        if ($pengeluaran->status_persetujuan !== StatusPersetujuanPengeluaran::Disetujui) {
+            return false;
+        }
+
+        $berubah = [];
+        $sama = [];
+
+        foreach (array_keys($pengeluaran->getDirty()) as $kolom) {
+            if ($this->normalisasi($kolom, $pengeluaran->getOriginal($kolom)) === $this->normalisasi($kolom, $pengeluaran->getAttribute($kolom))) {
+                $sama[] = $kolom;
+            } else {
+                $berubah[] = $kolom;
+            }
+        }
+
+        if ($berubah !== ['sub_kategori']) {
+            return false;
+        }
+
+        $pengeluaran->syncOriginalAttributes($sama);
+
+        return true;
+    }
+
+    private function normalisasi(string $kolom, mixed $nilai): ?string
+    {
+        return match (true) {
+            $nilai === null || $nilai === '' => null,
+            $nilai instanceof BackedEnum => (string) $nilai->value,
+            $nilai instanceof CarbonInterface => $nilai->format('Y-m-d'),
+            $kolom === 'nominal' => (string) $this->rupiah($nilai),
+            default => (string) $nilai,
+        };
     }
 
     private function persetujuan(): PersetujuanPengeluaranService
