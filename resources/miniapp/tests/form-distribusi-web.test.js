@@ -126,13 +126,16 @@ test('jadwal distribusi baru: info sisa porsi (GET), POST /jadwal/distribusi den
   assert.equal(location.hash, '#/jadwal/distribusi/5');
 });
 
-test('detail jadwal distribusi: Ubah status PATCH hanya bila izin.ubah; tanpa tautan Catat bukti', async () => {
+test('detail jadwal distribusi: Ubah status PATCH hanya bila izin.ubah; tautan Catat bukti hanya bila flag server + hak Tambah bukti', async () => {
   kepala();
   distRec = { ...dist, izin: { ubah: true, hapus: true, catat_bukti: true } };
   let el = await buka('/jadwal/distribusi/5');
   const btn = tombol(el).find((b) => /Berangkat/i.test(teks(b)));
   assert.ok(btn, 'tombol transisi dari status siap');
-  assert.ok(!tautan(el).some((x) => /bukti-distribusi\/baru/.test(x)), 'bukti belum bisa ditambah di web');
+  assert.ok(tautan(el).some((x) => x === '#/bukti-distribusi/baru?jadwal=5'), 'tautan Catat bukti ke formulir web dengan prefill jadwal');
+  distRec = { ...dist, izin: { ubah: true, hapus: true, catat_bukti: false } };
+  assert.ok(!tautan(await buka('/jadwal/distribusi/5')).some((x) => /bukti-distribusi\/baru/.test(x)), 'tanpa flag server tidak ada tautan');
+  distRec = { ...dist, izin: { ubah: true, hapus: true, catat_bukti: true } };
   overlays.length = 0;
   skrip = [resp(200, { data: { id: 5 } })];
   const klik = btn.listeners.click();

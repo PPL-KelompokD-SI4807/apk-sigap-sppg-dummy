@@ -84,7 +84,7 @@ function listTop({ web = false } = {}) {
   dari.addEventListener('change', () => { listQuery.from = dari.value; resolve(); });
   sampai.addEventListener('change', () => { listQuery.to = sampai.value; resolve(); });
   return h('div', { class: 'stack' },
-    isAdmin() || web ? null : h('a', { class: 'btn btn-primary btn-block', href: `#/${SLUG}/ringkasan` }, 'Ringkasan hari ini'),
+    isAdmin() ? null : h('a', { class: 'btn btn-primary btn-block', href: `#/${SLUG}/ringkasan` }, 'Ringkasan hari ini'),
     h('div', { class: 'filter-row' }, dari, sampai));
 }
 
@@ -204,5 +204,9 @@ export default {
   register() {
     route(`/${SLUG}/ringkasan`, ringkasanScreen, { title: 'Laporan Harian', guard: () => me().R });
     base.register();
+  },
+  registerWeb(opsi) {
+    route(`/${SLUG}/ringkasan`, ringkasanScreen, { title: 'Laporan Harian', guard: () => me().R });
+    base.registerWeb(opsi);
   },
 };
