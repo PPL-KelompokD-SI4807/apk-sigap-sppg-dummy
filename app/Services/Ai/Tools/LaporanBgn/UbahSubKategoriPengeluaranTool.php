@@ -3,6 +3,7 @@
 namespace App\Services\Ai\Tools\LaporanBgn;
 
 use App\Enums\KategoriPengeluaran;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Enums\SubKategoriPengeluaran;
 use App\Http\Requests\Keuangan\UpdatePengeluaranRequest;
 use App\Models\AiDraft;
@@ -35,7 +36,8 @@ use Illuminate\Database\Eloquent\Model;
  *   bila hanya `sub_kategori` yang berubah pada pengeluaran `disetujui`, TIDAK ada pengajuan ulang: status tetap
  *   `disetujui`, tidak ada pengajuan/notifikasi investor baru, pengeluaran tetap dihitung di laporan BGN (angkanya
  *   berpindah ke baris sub-kategori baru), `versi` naik, dan jejak audit (`audit_logs`, event `updated`, sub_kategori
- *   lama/baru) tercatat. Pengeluaran `diajukan`/`ditolak` mengikuti alur ubah pengeluaran biasa.
+ *   lama/baru) tercatat (ringkasan tanpa peringatan). Pengeluaran `diajukan`/`ditolak` mengikuti alur ubah pengeluaran
+ *   biasa (diajukan ulang, investor diberi tahu lagi); ringkasan konfirmasi memuat peringatan sesuai status.
  */
 class UbahSubKategoriPengeluaranTool extends WriteDraftTool
 {
@@ -170,7 +172,22 @@ class UbahSubKategoriPengeluaranTool extends WriteDraftTool
             'Ubah sub-kategori pengeluaran',
             $baris,
             $target === null ? ($draft->target_id === null ? null : '#'.(int) $draft->target_id.' (tidak ditemukan)') : $this->namaTarget($target),
+            $target instanceof Pengeluaran ? self::peringatanStatus($target->status_persetujuan) : null,
         );
+    }
+
+    /**
+     * Peringatan efek simpan per status, HANYA dari data server (status), tanpa uraian/teks bebas. `disetujui`: tidak ada
+     * peringatan (status tetap, ADR 2026-11-18); `diajukan`/`ditolak`: simpan mengikuti alur ubah pengeluaran biasa
+     * (BudgetService) = diajukan ulang dan investor diberi tahu lagi.
+     */
+    private static function peringatanStatus(?StatusPersetujuanPengeluaran $status): ?string
+    {
+        return match ($status) {
+            StatusPersetujuanPengeluaran::Diajukan => 'PERINGATAN: pengeluaran ini masih menunggu persetujuan investor. Menyimpan akan membatalkan pengajuan yang menunggu dan mengajukannya ulang, dan investor akan diberi tahu lagi.',
+            StatusPersetujuanPengeluaran::Ditolak => 'PERINGATAN: pengeluaran ini sudah ditolak investor. Menyimpan akan mengajukan ulang pengeluaran ke investor, dan investor akan diberi tahu lagi.',
+            default => null,
+        };
     }
 
     /** Mis. "Draf sub-kategori pengeluaran 2026-11-02 Rp200.000: Listrik" (tanpa id internal). */

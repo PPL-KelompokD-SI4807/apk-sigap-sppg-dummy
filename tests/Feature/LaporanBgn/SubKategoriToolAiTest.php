@@ -20,6 +20,7 @@ use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
 use App\Services\Ai\Catalog\RecordPresenter;
 use App\Services\Ai\Drafts\GalatDraf;
+use App\Services\Ai\Eksekusi\RingkasanDraf;
 use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmResponse;
@@ -396,6 +397,44 @@ class SubKategoriToolAiTest extends LaporanBgnTestCase
         $rest = $this->as($this->akuntanA)->laporan('harian', ['tanggal' => $tanggal])->assertOk();
 
         return array_column((array) $rest->json('data.rincian_pembelanjaan.biaya_operasional.baris'), 'biaya_per_hari', 'sub_kategori');
+    }
+
+    /** Ringkasan konfirmasi draf sub_kategori untuk pengeluaran target (peringatan hanya dari status server). */
+    private function ringkasanDraf(Pengeluaran $target): RingkasanDraf
+    {
+        $draft = $this->jalankan($this->akuntanA, self::TULIS, ['target_id' => $target->id, 'sub_kategori' => 'gas'])->draft;
+
+        return ActingUser::run($this->akuntanA, fn () => $this->registry->all()[self::TULIS]->ringkasan($this->akuntanA, $draft));
+    }
+
+    public function test_ringkasan_status_disetujui_tanpa_peringatan(): void
+    {
+        $this->assertSame(StatusPersetujuanPengeluaran::Disetujui, $this->energiLama->status_persetujuan);
+
+        $this->assertNull($this->ringkasanDraf($this->energiLama)->peringatan);
+    }
+
+    public function test_ringkasan_status_diajukan_memperingatkan_pembatalan_dan_ajukan_ulang(): void
+    {
+        $ringkasan = $this->ringkasanDraf($this->diajukanLama);
+
+        $this->assertNotNull($ringkasan->peringatan);
+        $this->assertStringContainsString('membatalkan pengajuan yang menunggu', $ringkasan->peringatan);
+        $this->assertStringContainsString('mengajukannya ulang', $ringkasan->peringatan);
+        $this->assertStringContainsString('investor akan diberi tahu lagi', $ringkasan->peringatan);
+        $this->assertStringNotContainsString('Belanja fiktif', $ringkasan->peringatan.implode(' ', $ringkasan->baris).$ringkasan->target);
+    }
+
+    public function test_ringkasan_status_ditolak_memperingatkan_ajukan_ulang(): void
+    {
+        DB::table('pengeluarans')->where('id', $this->energiLama->id)->update(['status_persetujuan' => StatusPersetujuanPengeluaran::Ditolak->value]);
+
+        $ringkasan = $this->ringkasanDraf($this->energiLama->fresh());
+
+        $this->assertNotNull($ringkasan->peringatan);
+        $this->assertStringContainsString('mengajukan ulang pengeluaran ke investor', $ringkasan->peringatan);
+        $this->assertStringContainsString('investor akan diberi tahu lagi', $ringkasan->peringatan);
+        $this->assertStringNotContainsString('Belanja fiktif', $ringkasan->peringatan.implode(' ', $ringkasan->baris).$ringkasan->target);
     }
 
     public function test_draf_basi_ditolak_409_karena_versi_dari_server(): void

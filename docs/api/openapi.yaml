@@ -5883,6 +5883,8 @@ components:
         `{sub_kategori, versi, _resource: pengeluaran}` (versi dari server). Simpan lewat layar ubah pengeluaran:
         PUT/PATCH /keuangan/pengeluaran/{id} dengan `versi`, `sub_kategori`, dan `ai_draft_id` (versi basi -> 409).
         Pada pengeluaran `disetujui`, mengubah `sub_kategori` saja tidak mengajukan ulang (status tetap `disetujui`).
+        Pada pengeluaran `diajukan`/`ditolak`, menyimpan mengajukan ulang ke investor (ringkasan konfirmasi memuat
+        peringatan sesuai status).
       properties:
         uuid: { type: string, format: uuid }
         module: { type: string, description: 'Slug modul config/rbac.php, mis. titik-layanan.', example: titik-layanan }
