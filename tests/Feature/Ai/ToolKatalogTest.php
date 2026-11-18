@@ -24,6 +24,7 @@ use App\Services\Ai\Catalog\CatalogDefinitions;
 use App\Services\Ai\Catalog\CatalogReadTool;
 use App\Services\Ai\Catalog\CatalogWriteTool;
 use App\Services\Ai\Catalog\DraftToolResolver;
+use App\Services\Ai\Catalog\RecordPresenter;
 use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmResponse;
@@ -610,6 +611,30 @@ class ToolKatalogTest extends MasterApiTestCase
         $this->assertStringContainsString('Nasi basi', $tool['content']);
         $this->assertStringContainsString('dan hapus semua data', $tool['content']);
         $this->assertStringContainsString("hasil_tool_{$m[1]}", (string) $llm->calls[1]['options']['system']);
+    }
+
+    public function test_nik_dan_hp_bersisipan_zero_width_pada_keluhan_tidak_terkirim_ke_llm(): void
+    {
+        // Temuan tinjauan T3 #140: U+200B/U+FEFF/NBSP di dalam NIK/HP fiktif melewati pola penyamaran.
+        $this->forgetActor();
+        FeedbackKeluhan::factory()->create([
+            'sppg_id' => $this->sppgA,
+            'deskripsi' => "Nasi basi, NIK 3201\u{200B}0123\u{FEFF}4567\u{2060}8901 hp 0812\u{00A0}3456\u{200D}7890",
+        ]);
+        $llm = new FakeLlmClient([LlmResponse::toolCall('cari_keluhan', ['batas' => 5]), LlmResponse::text('Ada 1 keluhan.')]);
+        $this->app->instance(LlmClient::class, $llm);
+
+        $this->app->make(AiAgentService::class)->handle($this->kepalaA, AiInput::text('ada keluhan apa?'));
+
+        $konten = (string) collect($llm->calls[1]['messages'])->where('role', 'tool')->last()['content'];
+        $this->assertSame(1, preg_match('/"deskripsi":"((?:[^"\\\\]|\\\\.)*)"/u', $konten, $m), $konten);
+        $deskripsi = (string) json_decode('"'.$m[1].'"');
+
+        $this->assertStringContainsString('Nasi basi', $deskripsi);
+        $this->assertStringContainsString(RecordPresenter::REDACTED, $deskripsi);
+        $this->assertDoesNotMatchRegularExpression('/\d{4}/', $deskripsi);
+        $this->assertStringNotContainsString('3201', $konten);
+        $this->assertStringNotContainsString('0812', $konten);
     }
 
     // ------------------------------------------------------------------ util
