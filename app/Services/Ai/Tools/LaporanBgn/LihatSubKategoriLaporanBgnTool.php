@@ -34,15 +34,14 @@ use Illuminate\Support\Facades\DB;
  * disebut lewat `sppg` (kode/nama persis); admin = SPPG baca-saja Bot (SppgAktif::sppgBacaAdmin) atau `sppg` (kode/nama
  * persis). Tidak cocok / bukan milik = penolakan yang sama (tanpa membocorkan keberadaan SPPG lain).
  *
- * Data tak tepercaya: kode/nama SPPG dan uraian pengeluaran ditulis pengguna. Keduanya diratakan + dipotong
- * (RecordPresenter::text), uraian juga disamarkan (nama orang -> inisial, angka panjang/kontak -> [disamarkan]), dan hasil
- * selalu membawa RecordPresenter::NOTE; AiAgentService membungkus hasil tool dalam blok `<hasil_tool_{nonce}>`.
+ * Data tak tepercaya: kode/nama SPPG dan uraian pengeluaran ditulis pengguna. Kode/nama diratakan + dipotong di sini
+ * (RecordPresenter::text); uraian SUDAH disamarkan oleh SubKategoriOperasionalService (redactPersonal: nama orang ->
+ * inisial, NIK/HP/kontak -> [disamarkan], lalu text()). Hasil selalu membawa RecordPresenter::NOTE; AiAgentService
+ * membungkus hasil tool dalam blok `<hasil_tool_{nonce}>`.
  * Tool ini hanya membaca (transaksi ReadTool di-rollback) dan tidak pernah memanggil tool lain atau membuat draf.
  */
 class LihatSubKategoriLaporanBgnTool extends ReadTool
 {
-    public const MAKS_URAIAN = 80;
-
     protected string $name = 'lihat_sub_kategori_laporan_bgn';
 
     protected string $description = 'Lihat rincian Biaya Operasional laporan BGN (17 baris sub-kategori, Lampiran 30b-B/30d-B) SPPG pengguna: nominal per sub-kategori dari pengeluaran disetujui dan status kelengkapan (pengeluaran operasional yang belum diberi sub-kategori). Isi `bulan` (YYYY-MM, bawaan bulan ini) atau `tanggal` (YYYY-MM-DD, laporan harian). Hanya baca.';
@@ -144,7 +143,8 @@ class LihatSubKategoriLaporanBgnTool extends ReadTool
         ];
 
         if ($rinci) {
-            $hasil['belum_diisi'] = array_map(fn (array $p) => ['uraian' => RecordPresenter::text(RecordPresenter::redactPersonal($p['uraian']), self::MAKS_URAIAN)] + $p, $data['belum_diisi'] ?? []);
+            // `uraian` sudah disamarkan + dipotong oleh SubKategoriOperasionalService (tidak ada uraian mentah di sini).
+            $hasil['belum_diisi'] = $data['belum_diisi'] ?? [];
             $hasil['belum_diisi_ada_lagi'] = (bool) ($data['belum_diisi_ada_lagi'] ?? false);
         }
 

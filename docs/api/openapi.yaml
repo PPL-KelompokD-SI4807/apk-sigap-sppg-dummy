@@ -5882,6 +5882,7 @@ components:
         R07-5: tool `ubah_sub_kategori_pengeluaran` menghasilkan draf `module` keuangan, `action` update, `payload`
         `{sub_kategori, versi, _resource: pengeluaran}` (versi dari server). Simpan lewat layar ubah pengeluaran:
         PUT/PATCH /keuangan/pengeluaran/{id} dengan `versi`, `sub_kategori`, dan `ai_draft_id` (versi basi -> 409).
+        Pada pengeluaran `disetujui`, mengubah `sub_kategori` saja tidak mengajukan ulang (status tetap `disetujui`).
       properties:
         uuid: { type: string, format: uuid }
         module: { type: string, description: 'Slug modul config/rbac.php, mis. titik-layanan.', example: titik-layanan }

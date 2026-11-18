@@ -6,6 +6,7 @@ use App\Enums\KategoriPengeluaran;
 use App\Enums\StatusPersetujuanPengeluaran;
 use App\Enums\SubKategoriPengeluaran;
 use App\Models\Pengeluaran;
+use App\Services\Ai\Catalog\RecordPresenter;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -19,14 +20,21 @@ use Illuminate\Database\Eloquent\Builder;
  *   `sub_kategori`; yang jatuh ke "Lain-lain" karena pemetaan otomatis dihitung terpisah.
  * - `belum_diisi` (opsional, $rinci) = daftar pengeluaran operasional tanpa sub_kategori yang disetujui ATAU masih
  *   diajukan (akan masuk laporan bila disetujui), maks $batas baris. Hanya kolom minimal: id, tanggal, kategori,
- *   nominal, status, baris laporan saat ini, dan `uraian` MENTAH (teks bebas tak tepercaya, dapat memuat nama orang):
- *   pemanggil WAJIB menyamarkan/memotongnya sebelum ditampilkan atau dikirim ke LLM.
+ *   nominal, status, baris laporan saat ini, dan `uraian` yang SUDAH DISAMARKAN di sini (bukan oleh pemanggil):
+ *   uraian adalah teks bebas tak tepercaya yang dapat memuat nama orang, NIK, atau nomor HP (termasuk disisipi
+ *   karakter tak terlihat/pemisah), sehingga diproses lewat jalur RecordPresenter yang sama dengan kolom
+ *   `personalText` katalog: redactPersonal() (nama -> inisial, email/URL/angka panjang -> [disamarkan]) lalu text()
+ *   (penanda blok data dibuang, diratakan, dipotong SESUDAH disamarkan). Service ini tidak pernah mengembalikan
+ *   uraian mentah, sehingga tidak ada pemanggil yang dapat lupa menyamarkannya.
  * Pemanggil WAJIB sudah memeriksa hak (LaporanBgnPolicy::lihat) untuk $sppgId; query tetap memakai sppg_id eksplisit
  * dan SppgScope pengguna yang sedang bertindak.
  */
 class SubKategoriOperasionalService
 {
     public const BATAS_RINCI = 10;
+
+    /** Panjang maksimum uraian tersamar pada daftar `belum_diisi`. */
+    public const MAKS_URAIAN = 80;
 
     public function __construct(private readonly RingkasanKeuanganService $keuangan) {}
 
@@ -109,11 +117,17 @@ class SubKategoriOperasionalService
             'nominal' => RingkasanKeuanganService::rupiah($p->nominal),
             'status_persetujuan' => (string) $p->status_persetujuan?->value,
             'baris_laporan' => RingkasanKeuanganService::subOperasional($p)[0]->label(),
-            'uraian' => (string) $p->uraian,
+            'uraian' => self::uraianTersamar($p->uraian),
         ])->values()->all();
         $hasil['belum_diisi_ada_lagi'] = $daftar->count() > $batas;
 
         return $hasil;
+    }
+
+    /** Uraian pengeluaran yang aman disajikan: disamarkan dulu, baru dibersihkan + dipotong (fail-closed di RecordPresenter). */
+    public static function uraianTersamar(?string $uraian): string
+    {
+        return RecordPresenter::text(RecordPresenter::redactPersonal((string) $uraian), self::MAKS_URAIAN);
     }
 
     /**

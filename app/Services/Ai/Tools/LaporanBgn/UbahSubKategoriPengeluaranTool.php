@@ -30,13 +30,15 @@ use Illuminate\Database\Eloquent\Model;
  *   operasional"); target dicari dengan SppgBound + SppgScope lalu Policy update (SPPG lain = "tidak ditemukan").
  * - Payload draf hanya {sub_kategori, versi}: tanpa teks bebas, sehingga tidak ada isian pengguna yang dapat berperan
  *   sebagai instruksi di layar konfirmasi. Ringkasan dibangun server dari basis data (tanpa uraian).
- * - Eksekusi dari chat TIDAK diaktifkan (eksekusi() = null -> tombol "Periksa & Simpan" Mini App): menyimpan perubahan
- *   memakai alur BudgetService::ubahPengeluaran yang mengajukan ulang pengeluaran ke investor (lihat peringatan).
+ * - Eksekusi dari chat TIDAK diaktifkan (eksekusi() = null -> tombol "Periksa & Simpan" Mini App).
+ * - Efek simpan (BudgetService::ubahPengeluaran, ADR docs/decisions/2026-11-18-sub-kategori-pengeluaran-tanpa-ajukan-ulang.md):
+ *   bila hanya `sub_kategori` yang berubah pada pengeluaran `disetujui`, TIDAK ada pengajuan ulang: status tetap
+ *   `disetujui`, tidak ada pengajuan/notifikasi investor baru, pengeluaran tetap dihitung di laporan BGN (angkanya
+ *   berpindah ke baris sub-kategori baru), `versi` naik, dan jejak audit (`audit_logs`, event `updated`, sub_kategori
+ *   lama/baru) tercatat. Pengeluaran `diajukan`/`ditolak` mengikuti alur ubah pengeluaran biasa.
  */
 class UbahSubKategoriPengeluaranTool extends WriteDraftTool
 {
-    public const PERINGATAN = 'Menyimpan perubahan ini mengajukan ulang pengeluaran (alur ubah pengeluaran biasa). Bila perlu persetujuan investor, pengeluaran tidak masuk laporan BGN sampai disetujui kembali.';
-
     protected string $name = 'ubah_sub_kategori_pengeluaran';
 
     protected string $description = 'Siapkan DRAF pengisian atau perubahan sub-kategori (baris Biaya Operasional laporan BGN) untuk SATU pengeluaran operasional. target_id = ID pengeluaran dari tool lihat_sub_kategori_laporan_bgn atau cari_pengeluaran. Data BELUM berubah sampai pengguna menyimpan di Mini App.';
@@ -168,7 +170,6 @@ class UbahSubKategoriPengeluaranTool extends WriteDraftTool
             'Ubah sub-kategori pengeluaran',
             $baris,
             $target === null ? ($draft->target_id === null ? null : '#'.(int) $draft->target_id.' (tidak ditemukan)') : $this->namaTarget($target),
-            self::PERINGATAN,
         );
     }
 
