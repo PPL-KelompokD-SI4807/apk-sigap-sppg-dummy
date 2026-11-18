@@ -5,13 +5,17 @@ namespace App\Services\Ai\Tools\Persetujuan;
 use App\Enums\StatusPengajuanMenu;
 use App\Models\PengajuanMenu;
 use App\Models\User;
+use App\Services\Ai\Catalog\RecordPresenter;
 use App\Services\Ai\Catalog\SppgBound;
 use App\Services\Ai\Tools\ReadTool;
 
 /**
  * Tool BACA pengajuan persetujuan menu (R-06b-1). Mewarisi matriks modul persetujuan-menu
  * (admin, kepala, ahli gizi, investor). Tidak ada tool tulis: keputusan hanya di Mini App.
- * Data minimal (tanpa rincian bahan/nama pengguna) karena hasil dikirim ke LLM.
+ * Data minimal (tanpa rincian bahan/nama pengguna) karena hasil dikirim ke LLM. Teks DB adalah DATA tak tepercaya:
+ * nama menu lewat RecordPresenter::text(); catatan keputusan (teks bebas investor, dapat memuat nama/kontak) lewat
+ * jalur kolom personalText katalog (redactPersonal() lalu text(), dipotong SESUDAH disamarkan); hasil membawa
+ * `catatan` RecordPresenter::NOTE seperti CatalogReadTool.
  */
 class DaftarPengajuanMenuTool extends ReadTool
 {
@@ -53,15 +57,18 @@ class DaftarPengajuanMenuTool extends ReadTool
             'hasil' => $items->map(fn (PengajuanMenu $p) => [
                 'id' => $p->id,
                 'menu_id' => $p->menu_id,
-                'nama_menu' => $p->rincian['menu']['nama_menu'] ?? null,
+                'nama_menu' => is_string($p->rincian['menu']['nama_menu'] ?? null) ? RecordPresenter::text($p->rincian['menu']['nama_menu']) : null,
                 'nomor' => $p->nomor,
                 'status' => $p->status->value,
                 'biaya_per_porsi' => (float) $p->biaya_per_porsi,
                 'jumlah_porsi' => $p->jumlah_porsi,
                 'total_biaya' => (float) $p->total_biaya,
                 'diajukan_pada' => $p->diajukan_pada?->toDateString(),
-                'catatan_keputusan' => $p->catatan_keputusan === null ? null : mb_substr($p->catatan_keputusan, 0, 200),
+                'catatan_keputusan' => $p->catatan_keputusan === null
+                    ? null
+                    : RecordPresenter::text(RecordPresenter::redactPersonal($p->catatan_keputusan), RecordPresenter::MAX_TEXT_PERSONAL),
             ])->all(),
+            'catatan' => RecordPresenter::NOTE,
         ];
     }
 }
