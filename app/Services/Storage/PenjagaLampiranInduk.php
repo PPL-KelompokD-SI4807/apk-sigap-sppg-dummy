@@ -66,7 +66,7 @@ class PenjagaLampiranInduk
         }
 
         if ($pengeluaran->status_persetujuan === StatusPersetujuanPengeluaran::Disetujui) {
-            throw GalatAuth::respons(409, self::ALASAN_SUDAH_DISETUJUI, 'Pengeluaran sudah disetujui. Ubah pengeluaran agar diajukan ulang ke investor sebelum menambah lampiran.');
+            throw GalatAuth::respons(409, self::ALASAN_SUDAH_DISETUJUI, 'Pengeluaran sudah disetujui. Ubah nominal/tanggal/kategori/nota agar diajukan ulang ke investor sebelum menambah lampiran.');
         }
 
         $baru = (int) $pengeluaran->versi + 1;

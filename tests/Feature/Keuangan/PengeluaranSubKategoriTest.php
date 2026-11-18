@@ -182,6 +182,162 @@ class PengeluaranSubKategoriTest extends PembelianTestCase
         Event::assertDispatchedTimes(PengeluaranDiajukan::class, 1);
     }
 
+    /** @return array<string, array{0: string}> */
+    public static function fieldBersamaSubKategoriProvider(): array
+    {
+        return [
+            'uraian' => ['uraian'],
+            'pemasok_id' => ['pemasok_id'],
+            'pencairan_dana_id' => ['pencairan_dana_id'],
+        ];
+    }
+
+    #[DataProvider('fieldBersamaSubKategoriProvider')]
+    public function test_sub_kategori_bersama_uraian_pemasok_atau_pencairan_tetap_mengajukan_ulang(string $field): void
+    {
+        $id = $this->disetujui();
+        $nilai = match ($field) {
+            'uraian' => 'Token listrik dapur (koreksi)',
+            'pemasok_id' => $this->pemasokA->id,
+            'pencairan_dana_id' => $this->pencairan($this->sppgA, 10_000_000)->id,
+        };
+        Event::fake([PengeluaranDiajukan::class]);
+
+        $this->ubah($id, ['sub_kategori' => 'gas', $field => $nilai])->assertOk()->assertJsonPath('data.status_persetujuan', 'diajukan');
+
+        Event::assertDispatchedTimes(PengeluaranDiajukan::class, 1);
+        $this->assertSame('diajukan', $this->raw($id)->status_persetujuan->value);
+    }
+
+    public function test_sub_kategori_dikosongkan_ke_null_tetap_disetujui_tanpa_ajukan_ulang(): void
+    {
+        $id = $this->disetujui();
+        $pengajuanSebelum = $this->jumlahPengajuan($id);
+        Event::fake([PengeluaranDiajukan::class]);
+
+        $this->ubah($id, ['sub_kategori' => null])->assertOk()
+            ->assertJsonPath('data.status_persetujuan', 'disetujui')
+            ->assertJsonPath('data.sub_kategori', null);
+
+        Event::assertNotDispatched(PengeluaranDiajukan::class);
+        $this->assertNull($this->raw($id)->sub_kategori);
+        $this->assertSame('disetujui', $this->raw($id)->status_persetujuan->value);
+        $this->assertSame($pengajuanSebelum, $this->jumlahPengajuan($id));
+    }
+
+    public function test_put_multipart_tanpa_nota_dengan_semua_field_string_tetap_disetujui(): void
+    {
+        $id = $this->disetujui();
+        $pengajuanSebelum = $this->jumlahPengajuan($id);
+        Event::fake([PengeluaranDiajukan::class]);
+
+        // Multipart: semua nilai string; pemasok_id kosong -> null; uraian bertepi spasi dipangkas; nominal "750000" = nilai lama.
+        $this->sebagai($this->akuntanA)->post("/api/v1/keuangan/pengeluaran/{$id}", [
+            '_method' => 'PUT',
+            'versi' => (string) $this->raw($id)->versi,
+            'tanggal' => now()->toDateString(),
+            'kategori' => 'energi',
+            'sub_kategori' => 'gas',
+            'uraian' => '  Token listrik dapur  ',
+            'nominal' => '750000',
+            'pemasok_id' => '',
+            'pencairan_dana_id' => '',
+        ], ['Accept' => 'application/json'])
+            ->assertOk()->assertJsonPath('data.status_persetujuan', 'disetujui')->assertJsonPath('data.sub_kategori', 'gas');
+
+        Event::assertNotDispatched(PengeluaranDiajukan::class);
+        $baris = $this->raw($id);
+        $this->assertSame('disetujui', $baris->status_persetujuan->value);
+        $this->assertSame('Token listrik dapur', $baris->uraian);
+        $this->assertSame($pengajuanSebelum, $this->jumlahPengajuan($id));
+    }
+
+    public function test_pengeluaran_disetujui_otomatis_di_bawah_ambang_ubah_sub_kategori_tetap_disetujui(): void
+    {
+        config(['operasional.keuangan.ambang_persetujuan_pengeluaran' => 1_000_000]);
+        $this->pencairan($this->sppgA, 10_000_000);
+        $id = (int) $this->sebagai($this->akuntanA)->postJson('/api/v1/keuangan/pengeluaran', $this->body(['nominal' => 500_000]))
+            ->assertCreated()->assertJsonPath('data.status_persetujuan', 'disetujui')->json('data.id');
+        Event::fake([PengeluaranDiajukan::class]);
+
+        $this->ubah($id, ['sub_kategori' => 'gas'])->assertOk()
+            ->assertJsonPath('data.status_persetujuan', 'disetujui')->assertJsonPath('data.sub_kategori', 'gas');
+
+        Event::assertNotDispatched(PengeluaranDiajukan::class);
+        $this->assertSame('disetujui', $this->raw($id)->status_persetujuan->value);
+        $this->assertSame(0, $this->jumlahPengajuan($id));
+        $this->sebagai($this->akuntanA)->getJson('/api/v1/keuangan/ringkasan')->assertJsonPath('data.terpakai', 500_000);
+    }
+
+    public function test_penyelundupan_status_dan_melebihi_anggaran_diabaikan(): void
+    {
+        // Pengeluaran diajukan: ubah nominal sambil menyelundupkan status disetujui + melebihi_anggaran.
+        $id = (int) $this->sebagai($this->akuntanA)->postJson('/api/v1/keuangan/pengeluaran', $this->body())->assertCreated()->json('data.id');
+        $this->ubah($id, ['nominal' => 800_000, 'status_persetujuan' => 'disetujui', 'melebihi_anggaran' => true])
+            ->assertOk()->assertJsonPath('data.status_persetujuan', 'diajukan');
+        $baris = $this->raw($id);
+        $this->assertSame('diajukan', $baris->status_persetujuan->value);
+        $this->assertFalse((bool) $baris->melebihi_anggaran);
+
+        // Pengeluaran disetujui: ubah sub_kategori sambil menyelundupkan status ditolak + melebihi_anggaran.
+        $disetujui = $this->disetujui();
+        $melebihiSebelum = (bool) $this->raw($disetujui)->melebihi_anggaran;
+        $this->ubah($disetujui, ['sub_kategori' => 'gas', 'status_persetujuan' => 'ditolak', 'melebihi_anggaran' => ! $melebihiSebelum])
+            ->assertOk()->assertJsonPath('data.status_persetujuan', 'disetujui');
+        $this->assertSame('disetujui', $this->raw($disetujui)->status_persetujuan->value);
+        $this->assertSame($melebihiSebelum, (bool) $this->raw($disetujui)->melebihi_anggaran);
+    }
+
+    public function test_enum_huruf_besar_ditolak_422(): void
+    {
+        $id = $this->disetujui();
+
+        $this->ubah($id, ['sub_kategori' => 'GAS'])->assertStatus(422)->assertJsonValidationErrors(['sub_kategori']);
+        $this->ubah($id, ['kategori' => 'Energi'])->assertStatus(422)->assertJsonValidationErrors(['kategori']);
+        $this->ubah($id, ['sub_kategori' => 'Gas'])->assertStatus(422)->assertJsonValidationErrors(['sub_kategori']);
+
+        $baris = $this->raw($id);
+        $this->assertSame('listrik', $baris->sub_kategori->value);
+        $this->assertSame('disetujui', $baris->status_persetujuan->value);
+    }
+
+    public function test_request_tanpa_perubahan_tetap_mengajukan_ulang(): void
+    {
+        $id = $this->disetujui();
+        Event::fake([PengeluaranDiajukan::class]);
+
+        // Hanya versi (tidak ada perubahan sub_kategori) -> perilaku ADR R-06b-2 tetap: diajukan ulang.
+        $this->ubah($id, [])->assertOk()->assertJsonPath('data.status_persetujuan', 'diajukan');
+        Event::assertDispatchedTimes(PengeluaranDiajukan::class, 1);
+        $this->assertSame('diajukan', $this->raw($id)->status_persetujuan->value);
+    }
+
+    public function test_request_dengan_nilai_sama_tanpa_perubahan_sub_kategori_mengajukan_ulang(): void
+    {
+        $id = $this->disetujui();
+        Event::fake([PengeluaranDiajukan::class]);
+
+        $this->ubah($id, $this->body())->assertOk()->assertJsonPath('data.status_persetujuan', 'diajukan');
+
+        Event::assertDispatchedTimes(PengeluaranDiajukan::class, 1);
+    }
+
+    public function test_pengeluaran_diajukan_ubah_sub_kategori_saja_menyisakan_satu_pengajuan_menunggu_yang_bisa_diputuskan(): void
+    {
+        $id = (int) $this->sebagai($this->akuntanA)->postJson('/api/v1/keuangan/pengeluaran', $this->body())->assertCreated()->json('data.id');
+
+        $this->ubah($id, ['sub_kategori' => 'gas'])->assertOk()->assertJsonPath('data.status_persetujuan', 'diajukan');
+
+        $versi = $this->raw($id)->versi;
+        $menunggu = PersetujuanPengeluaran::withoutGlobalScope(SppgScope::class)->where('pengeluaran_id', $id)->where('status', 'diajukan')->get();
+        $this->assertCount(1, $menunggu);
+        $this->assertSame($versi, (int) $menunggu->first()->pengeluaran_versi);
+
+        // Pengajuan menunggu tidak hilang: investor dapat memutuskan dengan versi terbaru.
+        $this->sebagai($this->investorAB, $this->sppgA)->postJson("/api/v1/keuangan/pengeluaran/{$id}/keputusan", ['keputusan' => 'disetujui', 'versi' => $versi])
+            ->assertOk()->assertJsonPath('data.status_persetujuan', 'disetujui');
+    }
+
     public function test_versi_basi_tetap_409_dan_sub_kategori_tidak_berubah(): void
     {
         $id = $this->disetujui();
