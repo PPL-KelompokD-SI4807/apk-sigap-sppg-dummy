@@ -5,7 +5,6 @@ namespace Tests\Feature\Master;
 use App\Enums\Role;
 use App\Http\Middleware\IdempotencyKey;
 use App\Models\User;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
@@ -116,11 +115,12 @@ class PenggunaIdempotensiTest extends MasterApiTestCase
         $kunci = (string) Str::uuid();
 
         $a = $this->postJson('/api/v1/pengguna/undangan', ['user_id' => $akun->id], ['Idempotency-Key' => $kunci])->assertCreated();
-        $b = $this->postJson('/api/v1/pengguna/undangan', ['user_id' => $akun->id], ['Idempotency-Key' => $kunci]);
+        $b = $this->postJson('/api/v1/pengguna/undangan', ['user_id' => $akun->id], ['Idempotency-Key' => $kunci])->assertCreated();
 
+        // Perilaku: tidak ada replay, tiap panggilan menerbitkan token baru (respons tidak pernah di-cache).
         $this->assertFalse($b->headers->has('Idempotent-Replayed'));
-        $cacheKey = 'idempotency:'.hash('sha256', $this->admin->getAuthIdentifier().'|'.$kunci.'|api/v1/pengguna/undangan');
-        $this->assertNull(Cache::get($cacheKey));
-        $this->assertNotNull($a->json('data.token'));
+        $this->assertNotEmpty($a->json('data.token'));
+        $this->assertNotEmpty($b->json('data.token'));
+        $this->assertNotSame($a->json('data.token'), $b->json('data.token'));
     }
 }
