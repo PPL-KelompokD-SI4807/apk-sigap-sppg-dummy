@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\StatusArmada;
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Armada extends Model
 {
-    use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'armadas';
 

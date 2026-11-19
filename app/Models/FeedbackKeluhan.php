@@ -6,6 +6,7 @@ use App\Enums\KategoriKeluhan;
 use App\Enums\PrioritasKeluhan;
 use App\Enums\StatusKeluhan;
 use App\Enums\SumberKeluhan;
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,9 +16,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class FeedbackKeluhan extends Model
 {
-    use BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'feedback_keluhans';
+
+    /**
+     * Teks keluhan dan berkas foto tidak masuk audit (data pribadi/berkas).
+     *
+     * @var list<string>
+     */
+    protected array $auditExclude = ['deskripsi', 'tindak_lanjut', 'foto_path'];
 
     /** @var list<string> */
     protected array $searchable = ['deskripsi', 'tindak_lanjut'];

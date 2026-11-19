@@ -47,6 +47,8 @@ trait Auditable
     }
 
     /**
+     * Bayt UTF-8 tidak sah diganti '?' agar kolom JSON audit tidak pernah menggagalkan penulisan data utama.
+     *
      * @param  array<string, mixed>  $attributes
      * @return array<string, mixed>
      */
@@ -58,7 +60,10 @@ trait Auditable
             property_exists($this, 'auditExclude') ? $this->auditExclude : [],
         );
 
-        return array_diff_key($attributes, array_flip($exclude));
+        return array_map(
+            fn (mixed $nilai) => is_string($nilai) && ! mb_check_encoding($nilai, 'UTF-8') ? mb_convert_encoding($nilai, 'UTF-8', 'UTF-8') : $nilai,
+            array_diff_key($attributes, array_flip($exclude)),
+        );
     }
 
     /**
