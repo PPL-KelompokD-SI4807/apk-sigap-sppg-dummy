@@ -39,6 +39,7 @@ Sprint 2 = minggu 11–14 (23 Nov – 20 Des 2026, operasional + notifikasi + re
 | `backend-dev` | `app/**`, `routes/**`, `database/**`, `config/**`, `tests/**`, `phpunit.xml`, `docs/api/openapi.yaml`; berkas deploy: `Dockerfile`, `docker/**`, `docker-compose*.yml`, `scripts/**` (kecuali `scripts/create-labels.sh` dan `scripts/create-issues.sh`), `docs/ops/**`, `.dockerignore`, `.gitattributes` |
 | `frontend-dev` | `resources/miniapp/**`, `resources/css/**`, `resources/js/**`, `vite.config.js` |
 | `github-ops` | `.github/**`, `CHANGELOG.md`, `scripts/create-labels.sh`, `scripts/create-issues.sh`, branch, commit, PR, issue, label |
+| `qa-engineer` | `docs/qa/**` (uji per peran, rencana uji, laporan temuan; tidak mengedit kode) |
 
 Dua agen tidak boleh mengedit file yang sama. Bila perlu perubahan di wilayah agen lain, kirim pesan (SendMessage) ke agen pemiliknya.
 
@@ -52,6 +53,8 @@ PM menilai setiap tugas lalu mengirim parameter `model` dan `effort` saat memang
 | **T2 Penting** | logika bisnis (validasi kapasitas, stok min/kedaluwarsa, ambang anggaran 80/100%, prioritas keluhan kritis, estimasi tiba, rekap 17.00), integrasi lintas fitur, bug multi-file | `sonnet` | `high` |
 | **T3 Kritis** | autentikasi initData HMAC/Sanctum, RBAC & scope SPPG, Agen AI (ToolRegistry, prompt injection, AiDraft), migrasi yang mengubah/menghapus data, keamanan unggahan, keputusan arsitektur, deploy produksi | `opus` | `high` (pakai `xhigh` bila tersedia) |
 
+Pekerjaan QA: uji rutin = T1 (sonnet/medium); audit RBAC dan alur lintas fitur = T2 (sonnet/high).
+
 Aturan hemat token:
 1. Mulai dari tier terendah yang masuk akal; naikkan satu tier hanya bila hasil gagal review/tes dua kali.
 2. Jangan pakai `opus` untuk pekerjaan T0–T1. Jangan pakai `haiku` untuk menulis logika bisnis.
@@ -63,12 +66,14 @@ Aturan hemat token:
 2. `backend-dev` membuat migrasi → model → Form Request → Policy → Service → Controller → tes, lalu memperbarui `docs/api/openapi.yaml` dan mengirim pesan ke `frontend-dev` berisi endpoint + contoh JSON.
 3. `frontend-dev` membuat layar Mini App sesuai mockup (Gambar 9–27) memakai kontrak API tersebut.
 4. `github-ops` membuat branch `feat/pbi-<no>-<slug>`, commit bertahap (Conventional Commits), membuka PR dengan checklist DoD, memantau CI.
-5. PM meninjau PR. Perubahan T3 wajib ditinjau dengan `opus`. PM menandai tugas selesai hanya jika DoD terpenuhi.
+5. QA menguji layar dan endpoint; temuan dikirim ke backend-dev/frontend-dev.
+6. PM meninjau PR. Perubahan T3 wajib ditinjau dengan `opus`. PM menandai tugas selesai hanya jika DoD terpenuhi.
 
 ## Definition of Done
 - Endpoint + layar Mini App selesai, lolos validasi dan Policy RBAC (akses tanpa hak → 403)
 - Tool Agen AI fitur tersedia dan aksi tulis hanya menjadi draf yang dikonfirmasi pengguna
 - Feature test lulus (`php artisan test`), kode lolos `vendor/bin/pint --test`
+- Temuan QA tingkat Kritis/Tinggi sudah ditutup
 - PR ditinjau, CI hijau, berjalan di Docker staging
 
 ## Larangan
