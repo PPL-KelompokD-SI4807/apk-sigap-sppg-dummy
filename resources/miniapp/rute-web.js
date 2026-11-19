@@ -18,6 +18,7 @@ export const TULIS_WEB = new Set([
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keluhan', 'rekap-harian', // PR4f keuangan, keluhan, rekap (foto/lampiran + keputusan investor: PR5)
   'pengguna', // PR-W3: Admin Tambah/Ubah/Hapus; peran R* hanya Profil Saya (tanpa daftar)
   'persetujuan-menu', // PR-W4: keputusan investor (user.keputusan) + Ajukan Menu (aksi.ajukan_menu)
+  'pembelian-bahan', // PR-W4: staf gudang Tambah/Ubah + foto nota; verifikasi akuntan (izin.verifikasi); investor tanpa akses
 ]);
 
 export const BACA_WEB = new Set([
@@ -26,9 +27,9 @@ export const BACA_WEB = new Set([
   // 4b operasional (jadwal/distribusi dan keuangan/* adalah sub-modul tersembunyi)
   'jadwal/distribusi', 'jadwal', 'log-produksi', 'mutu', 'notifikasi-perjalanan', 'bukti-distribusi', 'keluhan',
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keuangan', 'rekap-harian', 'dashboard',
+  // PR-W4: persetujuan menu (investor memutuskan, ahli gizi mengajukan) dan pembelian bahan (gudang mencatat, akuntan verifikasi)
+  'persetujuan-menu', 'pembelian-bahan',
   // ekspor PDF Laporan BGN (hak = aksi.lihat_laporan_bgn*, bolehMenu)
-  // PR-W4 persetujuan menu (investor memutuskan, ahli gizi mengajukan)
-  'persetujuan-menu',
   'laporan-bgn',
   // PR-W3 Data Pengguna: daftar/detail Admin & Kepala SPPG, Profil Saya (R*), undangan salin tautan, reset password, sesi
   'pengguna',
