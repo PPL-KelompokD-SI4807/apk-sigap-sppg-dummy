@@ -239,7 +239,8 @@
     summary: Daftar permintaan reset password (Admin)
     description: |
       Hanya Admin (hak ubah Data Pengguna); peran lain 403. Hanya permintaan pengguna dalam scope
-      Admin dan bukan milik sendiri. Default `status=menunggu` (belum kedaluwarsa).
+      Admin dan bukan milik sendiri; penyaringan dilakukan sebelum paginasi sehingga `per_page`, `total`, dan
+      `last_page` akurat. Default `status=menunggu` (belum kedaluwarsa).
     parameters:
       - { name: status, in: query, schema: { type: string, enum: [menunggu, disetujui, ditolak, selesai, kedaluwarsa, semua], default: menunggu } }
       - $ref: '#/components/parameters/Page'
