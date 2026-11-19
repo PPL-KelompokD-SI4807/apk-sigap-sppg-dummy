@@ -127,7 +127,8 @@ class BotAksiTulisKeamananTest extends AksiTulisTestCase
         Event::assertDispatchedTimes(RekapHarianDibuat::class, 1);
         Event::assertDispatchedTimes(PerjalananDimulai::class, 1);
         $this->assertSame(1, $this->jumlahPerjalanan($a['jadwal']));
-        $this->assertSame(3, AuditLog::query()->withoutGlobalScopes()->where('sumber', 'bot')->count());
+        // Tiga jejak aksi bot (bot_*) tepat sekali; log "updated" otomatis model Auditable (keluhan) tidak ikut dihitung.
+        $this->assertSame(3, AuditLog::query()->withoutGlobalScopes()->where('sumber', 'bot')->where('event', 'like', 'bot_%')->count());
     }
 
     public function test_tombol_aksi_sekali_pakai_dan_ya_batal_satu_grup(): void

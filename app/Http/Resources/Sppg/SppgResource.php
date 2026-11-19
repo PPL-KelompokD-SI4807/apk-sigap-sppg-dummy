@@ -20,6 +20,8 @@ class SppgResource extends JsonResource
         $user = $request->user();
         // Data keuangan/rekening hanya untuk peran yang boleh membaca modul keuangan (bukan relawan/gudang/ahli gizi).
         $keuangan = Rbac::can($user, 'keuangan', 'R');
+        // F-04: nomor VA dan saldo awal disembunyikan dari investor (baca-saja; sama dengan PDF Laporan BGN).
+        $rekening = $keuangan && ! $user->isInvestor();
 
         return [
             'id' => $sppg->id,
@@ -38,9 +40,11 @@ class SppgResource extends JsonResource
             'updated_at' => $sppg->updated_at?->toIso8601String(),
         ] + ($keuangan ? [
             'nama_ketua_yayasan' => $sppg->nama_ketua_yayasan,
+        ] + ($rekening ? [
             'no_va' => $sppg->no_va,
             'saldo_awal' => $sppg->saldo_awal === null ? null : (int) $sppg->saldo_awal,
             'saldo_awal_tanggal' => $sppg->saldo_awal_tanggal?->toDateString(),
+        ] : []) + [
             'pengaturan_anggaran' => $sppg->pengaturanAnggaran(),
             'pengaturan_anggaran_kustom' => [
                 'acuan_bahan_baku_kecil' => $sppg->acuan_bahan_baku_kecil,

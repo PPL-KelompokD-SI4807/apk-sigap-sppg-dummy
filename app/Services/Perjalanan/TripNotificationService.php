@@ -2,6 +2,7 @@
 
 namespace App\Services\Perjalanan;
 
+use App\Enums\Role;
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusKirim;
 use App\Enums\StatusPerjalanan;
@@ -41,6 +42,21 @@ class TripNotificationService
     public const SUMBER_JADWAL = 'jadwal';
 
     public const SUMBER_DEFAULT = 'default';
+
+    public const PESAN_PETUGAS_LAIN = 'Jadwal distribusi ini ditugaskan kepada petugas lain.';
+
+    /**
+     * Aturan penugasan pemicu (F-02): relawan hanya boleh memicu jadwal yang ditugaskan kepadanya atau yang belum
+     * punya petugas; peran lain (Kepala SPPG, Admin, dst.) tidak dibatasi penugasan, hanya Policy create.
+     */
+    public static function bolehMemicu(User $pemicu, JadwalDistribusi $jadwal): bool
+    {
+        if ($pemicu->role !== Role::Relawan) {
+            return true;
+        }
+
+        return $jadwal->petugas_id === null || (int) $jadwal->petugas_id === (int) $pemicu->getKey();
+    }
 
     public function zona(): string
     {
@@ -117,6 +133,10 @@ class TripNotificationService
         return DB::transaction(function () use ($pemicu, $jadwal, $berangkat, $manualMenit, $setelahSimpan) {
             // Kunci baris jadwal agar dua pemicu bersamaan tidak membuat perjalanan ganda.
             $jadwal = JadwalDistribusi::query()->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
+            // Jaring pengaman jalur non-REST (bot/AI): penugasan diperiksa pada baris yang sudah dikunci.
+            if (! self::bolehMemicu($pemicu, $jadwal)) {
+                throw ValidationException::withMessages(['jadwal_distribusi_id' => [self::PESAN_PETUGAS_LAIN]]);
+            }
             $this->pastikanBisaBerangkat($jadwal);
 
             $titik = $jadwal->titikLayanan;

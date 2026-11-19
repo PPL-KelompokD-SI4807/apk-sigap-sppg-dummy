@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\KategoriBahan;
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class BahanBaku extends Model
 {
-    use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'bahan_bakus';
 

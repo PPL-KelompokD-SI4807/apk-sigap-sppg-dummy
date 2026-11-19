@@ -8,6 +8,7 @@ use App\Http\Resources\LampiranResource;
 use App\Models\Pengeluaran;
 use App\Models\User;
 use App\Services\Keuangan\BudgetService;
+use App\Support\LampiranTersembunyi;
 use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -22,7 +23,9 @@ class PengeluaranResource extends JsonResource
     {
         /** @var Pengeluaran $p */
         $p = $this->resource;
-        $nota = $p->lampiranUntukPath($p->nota_path);
+        // F-04: foto nota/bukti pengeluaran disembunyikan dari investor (sama dengan PDF Laporan BGN); teks tetap terlihat.
+        $lampiranTersembunyi = LampiranTersembunyi::untuk($request->user(), 'keuangan-pengeluaran');
+        $nota = $lampiranTersembunyi ? null : $p->lampiranUntukPath($p->nota_path);
 
         return [
             'id' => $p->id,
@@ -43,7 +46,8 @@ class PengeluaranResource extends JsonResource
             'pemasok' => $p->pemasok === null ? null : ['id' => $p->pemasok->id, 'nama' => $p->pemasok->nama],
             'pencairan_dana_id' => $p->pencairan_dana_id,
             'nota' => $nota === null ? null : ['lampiran_id' => $nota->id, 'url' => $nota->url(), 'mime' => $nota->mime, 'ukuran' => $nota->ukuran],
-            'lampiran' => LampiranResource::collection($p->relationLoaded('lampirans') ? $p->lampirans : $p->lampirans()->get()),
+            'lampiran' => $lampiranTersembunyi ? [] : LampiranResource::collection($p->relationLoaded('lampirans') ? $p->lampirans : $p->lampirans()->get()),
+            'lampiran_disembunyikan' => $lampiranTersembunyi,
             'dicatat_oleh' => $p->pencatat === null ? null : ['id' => $p->pencatat->id, 'name' => $p->pencatat->name],
             'izin' => $this->izin($request->user(), $p),
             'created_at' => $this->wib($p->created_at),

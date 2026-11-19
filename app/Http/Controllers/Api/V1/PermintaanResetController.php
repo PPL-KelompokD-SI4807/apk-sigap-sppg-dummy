@@ -37,9 +37,12 @@ class PermintaanResetController extends ApiController
             default => $query->whereRaw('1 = 0'),
         };
 
-        // Hanya permintaan yang boleh diputus aktor (scope Policy, bukan milik sendiri).
-        $query->where('user_id', '!=', $actor->getKey());
+        // F-07: saring SEBELUM paginasi agar per_page, total, dan last_page akurat. Aturan di SQL mengikuti
+        // PermintaanResetPasswordPolicy::putuskan (pemohon ada dan bukan aktor; SPPG dibatasi SppgScope).
+        $query->where('user_id', '!=', $actor->getKey())
+            ->whereHas('user', fn ($q) => $q->withoutGlobalScopes());
         $paginator = $this->paginate($query, $request);
+        // Jaring pengaman: Policy tetap diperiksa per baris (tidak mengubah jumlah halaman selama SQL selaras dengan Policy).
         $paginator->setCollection($paginator->getCollection()->filter(fn ($p) => $actor->can('putuskan', $p))->values());
 
         return PermintaanResetResource::collection($paginator);

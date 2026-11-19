@@ -17,8 +17,8 @@ schemas:
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
       nama_ketua_yayasan: { type: [string, 'null'], description: 'R07-1. HANYA untuk peran yang boleh membaca modul keuangan (admin, kepala_sppg, akuntan, investor); peran lain: kunci tidak ada.' }
-      no_va: { type: [string, 'null'], description: 'R07-1. Rekening/Virtual Account; pembatasan peran sama dengan nama_ketua_yayasan.' }
-      saldo_awal: { type: [integer, 'null'], description: 'R07-1. Rupiah bulat; diisi lewat PUT /sppg/{id}/saldo-awal; null = belum diisi. Pembatasan peran sama.' }
+      no_va: { type: [string, 'null'], description: 'R07-1. Rekening/Virtual Account; peran keuangan kecuali investor (kunci tidak ada untuk investor, audit RBAC F-04).' }
+      saldo_awal: { type: [integer, 'null'], description: 'R07-1. Rupiah bulat; diisi lewat PUT /sppg/{id}/saldo-awal; null = belum diisi. Kunci tidak ada untuk investor (audit RBAC F-04).' }
       saldo_awal_tanggal: { type: [string, 'null'], format: date }
       pengaturan_anggaran: { $ref: '#/components/schemas/PengaturanAnggaran' }
       pengaturan_anggaran_kustom: { $ref: '#/components/schemas/PengaturanAnggaranKustom' }

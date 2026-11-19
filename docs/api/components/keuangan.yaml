@@ -113,10 +113,18 @@ schemas:
           id: { type: integer }
           nama: { type: string }
       pencairan_dana_id: { type: [integer, 'null'] }
-      nota: { $ref: '#/components/schemas/BerkasRingkas' }
+      nota:
+        description: 'null untuk investor (foto nota disembunyikan, sama dengan PDF Laporan BGN).'
+        oneOf:
+          - $ref: '#/components/schemas/BerkasRingkas'
+          - type: 'null'
       lampiran:
         type: array
+        description: 'Kosong untuk investor (`lampiran_disembunyikan: true`).'
         items: { $ref: '#/components/schemas/Lampiran' }
+      lampiran_disembunyikan:
+        type: boolean
+        description: 'true = foto nota tidak ditampilkan untuk peran pengguna (investor); teks dan nominal tetap terlihat. GET /lampiran/{id} -> 403 `lampiran_disembunyikan`.'
       dicatat_oleh:
         type: [object, 'null']
         properties:

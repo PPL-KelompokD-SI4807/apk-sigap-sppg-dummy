@@ -2,7 +2,10 @@
 
 namespace App\Http\Requests\Perjalanan;
 
+use App\Models\JadwalDistribusi;
 use App\Models\NotifikasiPerjalanan;
+use App\Services\Perjalanan\TripNotificationService;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -17,7 +20,8 @@ class StoreNotifikasiPerjalananRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        $sppgId = $this->user()?->sppg_id;
+        $user = $this->user();
+        $sppgId = $user?->sppg_id;
 
         return [
             'jadwal_distribusi_id' => [
@@ -25,6 +29,15 @@ class StoreNotifikasiPerjalananRequest extends FormRequest
                 Rule::exists('jadwal_distribusis', 'id')->where(
                     fn ($q) => $q->where('sppg_id', $sppgId)->whereNull('deleted_at')
                 ),
+                // F-02: relawan hanya memicu perjalanan untuk jadwal yang ditugaskan kepadanya atau belum punya petugas
+                // (sama dengan aturan bukti distribusi). Peran lain mengikuti hak Policy create.
+                function (string $attribute, mixed $value, Closure $fail) use ($user, $sppgId): void {
+                    $jadwal = $user === null ? null : JadwalDistribusi::query()->where('sppg_id', $sppgId)->whereKey($value)->first();
+
+                    if ($jadwal !== null && ! TripNotificationService::bolehMemicu($user, $jadwal)) {
+                        $fail(TripNotificationService::PESAN_PETUGAS_LAIN);
+                    }
+                },
             ],
             'waktu_berangkat' => ['nullable', 'date', 'before_or_equal:+30 minutes'],
             'estimasi_menit' => ['nullable', 'integer', 'min:1', 'max:'.config('operasional.perjalanan.durasi_maksimum_menit', 720)],

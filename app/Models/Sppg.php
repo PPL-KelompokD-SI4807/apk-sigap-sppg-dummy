@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\StatusOperasional;
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Sppg extends Model
 {
-    use HasFactory, Searchable, SoftDeletes;
+    use Auditable, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'sppgs';
 
@@ -38,6 +39,20 @@ class Sppg extends Model
         'insentif_fasilitas_per_hari',
         'insentif_fasilitas_maks_hari_minggu',
     ];
+
+    /**
+     * Saldo awal punya event audit sendiri (SaldoAwalService: saldo_awal_diubah), jadi tidak dicatat dobel di sini.
+     * no_va, parameter anggaran, dan insentif fasilitas TERCATAT lewat trait Auditable.
+     *
+     * @var list<string>
+     */
+    protected array $auditExclude = ['saldo_awal', 'saldo_awal_tanggal'];
+
+    /** Sppg tidak punya kolom sppg_id: baris audit memakai id SPPG itu sendiri. */
+    protected function auditSppgId(): ?int
+    {
+        return $this->getKey() === null ? null : (int) $this->getKey();
+    }
 
     // saldo_awal dan saldo_awal_tanggal TIDAK mass-assignable: hanya SaldoAwalService (Akuntan/Admin + audit).
 

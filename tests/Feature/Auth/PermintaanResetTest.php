@@ -198,6 +198,35 @@ class PermintaanResetTest extends TestCase
         $this->kirim($pra, '/api/v1/auth/lupa-password', method: 'GET')->assertJsonPath('data.status', 'disetujui');
     }
 
+    public function test_daftar_permintaan_reset_disaring_sebelum_paginasi(): void
+    {
+        $adminLain = User::factory()->admin()->create(['telegram_id' => 7000000002]);
+        $pemohon = [$this->siti];
+        foreach (['budi.gudang', 'dewi.gudang', 'eko.gudang'] as $i => $username) {
+            $pemohon[] = User::factory()->role(Role::StafGudang)->denganKredensial($username, self::PASSWORD)
+                ->create(['sppg_id' => $this->sppgA, 'telegram_id' => 7011100000 + $i]);
+        }
+        foreach ($pemohon as $user) {
+            $this->minta($user);
+        }
+        // Permintaan milik admin yang melihat daftar tidak boleh memakan slot halaman atau menaikkan total.
+        $this->minta($this->admin);
+
+        $token = $this->adminPenuh();
+        $halaman1 = $this->kirim($token, '/api/v1/pengguna/permintaan-reset?per_page=2', method: 'GET')->assertOk();
+        $halaman1->assertJsonCount(2, 'data')->assertJsonPath('meta.total', 4)->assertJsonPath('meta.last_page', 2);
+        $halaman2 = $this->kirim($token, '/api/v1/pengguna/permintaan-reset?per_page=2&page=2', method: 'GET')->assertOk();
+        $halaman2->assertJsonCount(2, 'data')->assertJsonPath('meta.total', 4);
+
+        $ids = collect([...$halaman1->json('data'), ...$halaman2->json('data')])->pluck('pengguna.id');
+        $this->assertCount(4, $ids->unique());
+        $this->assertNotContains($this->admin->id, $ids->all());
+
+        // Admin lain melihat permintaan admin pertama (bukan miliknya sendiri): total 5.
+        $this->kirim($this->adminPenuh($adminLain), '/api/v1/pengguna/permintaan-reset?per_page=2', method: 'GET')
+            ->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('meta.total', 5);
+    }
+
     public function test_admin_tunggal_diarahkan_ke_perintah_server(): void
     {
         $pra = $this->praLogin($this->admin);

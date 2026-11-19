@@ -46,6 +46,8 @@
       Estimasi tiba dihitung TripNotificationService (lihat `NotifikasiPerjalananPratinjau`).
       Memancarkan event `PerjalananDimulai` (pengiriman bot dilakukan listener, bukan endpoint ini).
       Bila PIC titik layanan belum menghubungkan Telegram: `dialihkan_ke_kepala=true`, `status_kirim=tidak_terkirim`.
+      Penugasan (audit RBAC F-02): relawan hanya boleh memicu jadwal yang `petugas_id`-nya dirinya atau yang belum
+      punya petugas; jadwal yang ditugaskan ke relawan lain -> 422 pada `jadwal_distribusi_id`. Kepala SPPG tidak dibatasi penugasan.
     requestBody:
       required: true
       content:
@@ -99,7 +101,7 @@
   post:
     tags: [Notifikasi Perjalanan]
     summary: Pratinjau estimasi tiba dan pesan (tanpa menyimpan)
-    description: Hak C. Tidak membuat data dan tidak memancarkan event. Validasi sama dengan POST /notifikasi-perjalanan.
+    description: Hak C. Tidak membuat data dan tidak memancarkan event. Validasi (termasuk aturan penugasan relawan, 422) sama dengan POST /notifikasi-perjalanan.
     requestBody:
       required: true
       content:
