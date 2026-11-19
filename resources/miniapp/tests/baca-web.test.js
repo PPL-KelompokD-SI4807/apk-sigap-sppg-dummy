@@ -85,8 +85,7 @@ const izinBaca = (user, slug) => userPerms(user, slug === 'pengemudi' ? 'armada'
 
 test('layar baca web: modul data master terdaftar dan guard mengikuti peta hak server per profil', () => {
   assert.deepEqual([...BACA_WEB].sort(), [
-    'armada', 'bukti-distribusi', 'dashboard', 'jadwal', 'jadwal/distribusi', 'keluhan', 'keuangan', 'keuangan/pencairan', 'keuangan/pengeluaran',
-    'laporan-bgn', 'log-produksi', 'menu-gizi', 'menu-gizi/standar-gizi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'pembelian-bahan', 'penerima-manfaat', 'pengemudi', 'pengguna', 'persetujuan-menu', 'rekap-harian', 'sppg', 'titik-layanan',
+    'armada', 'bahan-baku', 'bukti-distribusi', 'dashboard', 'jadwal', 'jadwal/distribusi', 'keluhan', 'keuangan', 'keuangan/pencairan', 'keuangan/pengeluaran', 'laporan-bgn', 'log-produksi', 'menu-gizi', 'menu-gizi/standar-gizi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'pembelian-bahan', 'penerima-manfaat', 'pengemudi', 'pengguna', 'persetujuan-menu', 'rekap-harian', 'sppg', 'titik-layanan',
   ]);
   for (const nama of Object.keys(PROFIL)) {
     setUserSesi(salin(nama));
