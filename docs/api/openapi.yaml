@@ -1075,6 +1075,9 @@ paths:
       description: |
         Hak: C (admin, staf_gudang). `sppg_id` hanya dipakai Admin (wajib); diabaikan untuk peran lain.
         Menerima `ai_draft_id` opsional (draf Agen AI ditandai confirmed setelah sukses).
+        Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama tidak membuat bahan baku ganda.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1250,6 +1253,10 @@ paths:
         (boleh negatif, bukan 0) dan `catatan` (alasan) wajib. `keluar` wajib `jadwal_produksi_id` atau
         `catatan`. `pemasok_id` dan `tanggal_kedaluwarsa` hanya untuk `masuk`. Stok per batch dihitung FEFO
         dari mutasi masuk bertanggal kedaluwarsa (lihat /bahan-baku/{id}/batch). Pencatat = pengguna login.
+        Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama mengembalikan
+        respons semula (`Idempotent-Replayed: true`) tanpa mencatat mutasi lagi, sehingga stok tidak berubah dua kali.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -4316,6 +4323,11 @@ paths:
         `POST /pengguna/undangan`. `telegram_id` tidak dapat diisi dari body. Peran admin wajib
         `sppg_id` kosong; peran lain wajib `sppg_id`; peran relawan wajib `unit`.
         Menerima `ai_draft_id` opsional (draf Agen AI milik pengguna, pending) yang ditandai confirmed.
+        Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama tidak membuat pengguna ganda.
+        Respons tidak memuat password, hash, token, atau telegram_id sehingga aman disimpan untuk replay.
+        Ubah pengguna (PUT/PATCH) tidak memakai Idempotency-Key (sudah idempoten).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -4631,6 +4643,8 @@ paths:
         dipakai ditolak bot ("SPPG pada tautan undangan ini tidak lagi tersedia. ...").
         Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 72 jam, sekali pakai.
         `token` dan `deep_link` hanya ada pada respons ini; simpan/kirimkan segera.
+        SENGAJA tanpa dukungan `Idempotency-Key`: respons memuat token mentah dan tidak boleh disimpan di cache
+        idempotensi. Header tersebut diabaikan di rute ini; tiap panggilan menerbitkan undangan baru.
       requestBody:
         required: true
         content:

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\PenggunaKepemilikanController;
 use App\Http\Controllers\Api\V1\PenggunaKredensialController;
 use App\Http\Controllers\Api\V1\PenggunaUndanganController;
 use App\Http\Controllers\Api\V1\PermintaanResetController;
+use App\Http\Middleware\IdempotencyKey;
 use Illuminate\Support\Facades\Route;
 
 // Undangan didaftarkan sebelum {user} agar "undangan" tidak dianggap id pengguna.
@@ -40,4 +41,8 @@ Route::post('pengguna/{user}/kepemilikan-sppg', [PenggunaKepemilikanController::
 Route::delete('pengguna/{user}/kepemilikan-sppg/{sppg}', [PenggunaKepemilikanController::class, 'destroy'])
     ->whereNumber(['user', 'sppg'])->name('pengguna.kepemilikan-sppg.destroy');
 
-Route::apiResource('pengguna', PenggunaController::class)->parameters(['pengguna' => 'user'])->whereNumber('user');
+// NFR-07: Tambah pengguna idempoten. PenggunaResource tidak memuat password/hash/token/telegram_id sehingga aman
+// disimpan di cache idempotensi. Ubah (PUT/PATCH) tidak dipasangi: middleware hanya menangani POST dan ubah sudah idempoten.
+// SENGAJA tanpa IdempotencyKey: pengguna.undangan.store (respons memuat token mentah satu kali, tidak boleh di-cache).
+Route::apiResource('pengguna', PenggunaController::class)->parameters(['pengguna' => 'user'])->whereNumber('user')->except('store');
+Route::post('pengguna', [PenggunaController::class, 'store'])->middleware(IdempotencyKey::class)->name('pengguna.store');
