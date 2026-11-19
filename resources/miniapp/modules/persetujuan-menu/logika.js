@@ -70,6 +70,14 @@ export function payloadAjukan({ versi, catatan }) {
   return out;
 }
 
+// Kunci idempotensi per isian (dipakai juga Pembelian Bahan): lihat core/kunci-idempoten.js.
+export { kunciPerIsian } from '../../core/kunci-idempoten.js';
+
+/** Keterangan untuk menu yang TIDAK dapat diajukan pada status tertentu (layar Ajukan web). */
+export const keteranganTakBisaDiajukan = (status) => (status === 'diajukan'
+  ? 'Sedang menunggu keputusan investor.'
+  : status === 'disetujui' ? 'Sudah disetujui investor. Ubah menu bila perlu pengajuan ulang.' : 'Menu ini belum dapat diajukan.');
+
 /** Menu yang boleh dipilih di Jadwal Produksi: hanya status_persetujuan 'disetujui'. */
 export const menuDisetujui = (menu) => menu?.status_persetujuan === 'disetujui';
 export const filterMenuDisetujui = (items) => (items || []).filter(menuDisetujui);

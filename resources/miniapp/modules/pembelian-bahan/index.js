@@ -9,6 +9,8 @@ import { h, formatValue } from '../../core/dom.js';
 import { fetchList, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, punyaKeputusan } from '../../core/permissions.js';
+import { lampiranDisembunyikan } from '../../core/lampiran-uploader.js';
+import { kunciPerIsian } from '../../core/kunci-idempoten.js';
 import { resolve } from '../../core/router.js';
 import { toast, showConfirm } from '../../core/ui.js';
 import { ringkasGalatAksi } from '../../core/errors.js';
@@ -25,6 +27,7 @@ const angka = (v) => Number(v ?? 0).toLocaleString('id-ID', { maximumFractionDig
 // ---- Skema form ----
 function notaField(mode, record) {
   const existing = record?.lampirans || [];
+  // Formulir hanya terbuka bagi pemegang C/U (staf gudang), yang berhak melihat nota; peran baca-saja tak pernah sampai ke sini.
   const base = lampiranField({
     modul: SLUG, label: 'Foto nota', kategori: 'nota', max: MAKS_NOTA, existing,
     help: `Wajib, 1-${MAKS_NOTA} foto (JPEG/PNG/WebP, maks 5 MB). Terunggah langsung; Simpan menunggu semua foto selesai.`,
@@ -32,11 +35,12 @@ function notaField(mode, record) {
   return { ...base, validate: (ids) => base.validate() || validasiNota({ mode, jumlahBaru: Array.isArray(ids) ? ids.length : 0, jumlahTersimpan: existing.length }) };
 }
 
+// Resource memuat bahan_baku/pemasok sebagai objek bersarang (tanpa bahan_baku_id/pemasok_id), jadi pilihan awal formulir Ubah diambil dari `.id` nested.
 function formFields({ mode, record }) {
   return [
     { name: 'tanggal_beli', label: 'Tanggal beli', type: 'date', required: true, default: todayWIB(), validate: (v) => validasiTanggalBeli(v) },
-    { name: 'bahan_baku_id', label: 'Bahan baku', type: 'relasi', required: true, relation: { endpoint: '/bahan-baku', value: 'id', filter: (b) => b.is_active !== false, format: (b) => (b.satuan ? `${b.nama} (${b.satuan})` : b.nama) } },
-    { name: 'pemasok_id', label: 'Pemasok', type: 'relasi', required: true, relation: { endpoint: '/pemasok', label: 'nama', value: 'id', filter: (p) => p.is_active !== false } },
+    { name: 'bahan_baku_id', label: 'Bahan baku', type: 'relasi', required: true, default: record?.bahan_baku?.id, relation: { endpoint: '/bahan-baku', value: 'id', filter: (b) => b.is_active !== false, format: (b) => (b.satuan ? `${b.nama} (${b.satuan})` : b.nama) } },
+    { name: 'pemasok_id', label: 'Pemasok', type: 'relasi', required: true, default: record?.pemasok?.id, relation: { endpoint: '/pemasok', label: 'nama', value: 'id', filter: (p) => p.is_active !== false } },
     { name: 'jumlah', label: 'Jumlah (dalam satuan bahan)', type: 'number', required: true, step: 'any', placeholder: 'Mis. 50', validate: (v) => validasiJumlah(v) },
     { name: 'harga_satuan', label: 'Harga per satuan (Rp)', type: 'number', required: true, step: 'any', placeholder: 'Mis. 12500', validate: (v) => validasiHargaSatuan(v) },
     { name: 'catatan', label: 'Catatan (opsional)', type: 'textarea', maxlength: 500 },
@@ -107,6 +111,7 @@ function verifikasiPanel(rec) {
   const alasan = h('textarea', { class: 'input', id: 'alasan-verifikasi', rows: '3', maxlength: String(MAKS_ALASAN), placeholder: 'Wajib diisi bila menolak (min. 5 karakter)' });
   const err = h('p', { class: 'field-error', role: 'alert' });
   const tombol = [];
+  const kunciUntuk = kunciPerIsian(newKey); // satu kunci per isian; dipakai ulang pada pengulangan manual (web dan Mini App)
   async function kirim(keputusan, label) {
     const salah = validasiAlasan(keputusan, alasan.value);
     err.textContent = salah;
@@ -117,7 +122,8 @@ function verifikasiPanel(rec) {
     if (!(await showConfirm({ title: label, message: pesan, okText: 'Ya, kirim', destructive: keputusan === 'ditolak' }))) return;
     tombol.forEach((b) => { b.disabled = true; });
     try {
-      await request('POST', `/${SLUG}/${rec.id}/verifikasi`, { body: payloadVerifikasi({ keputusan, alasan: alasan.value, versi: rec.versi }), key: newKey(), silent: true });
+      const body = payloadVerifikasi({ keputusan, alasan: alasan.value, versi: rec.versi });
+      await request('POST', `/${SLUG}/${rec.id}/verifikasi`, { body, key: kunciUntuk(body), silent: true });
       toast(keputusan === 'disetujui' ? 'Pembelian diverifikasi dan dicatat sebagai pengeluaran.' : 'Pembelian ditolak.', 'success');
       resolve();
     } catch (e) {
@@ -164,9 +170,12 @@ function detailExtras(rec, p) {
     nodes.push(h('div', { class: 'alert-ok' }, 'Pembelian terverifikasi dan sudah tercatat sebagai pengeluaran bahan baku. Data ini tidak dapat diubah. ',
       rec.pengeluaran_id && userPerms(user, 'keuangan').R ? h('a', { class: 'link', href: `#/keuangan/pengeluaran/${rec.pengeluaran_id}` }, 'Lihat pengeluaran') : null));
   }
-  const nota = (rec.lampirans || []).filter((l) => l?.url);
+  // Nota privat: peran tanpa hak lihat nota (baca-saja, atau record menandai disembunyikan) tidak pernah memuat GET /lampiran
+  // dan tautan nota tidak dirender (tak ada URL/objek untuk di-cache).
+  const nota = lampiranDisembunyikan(user, rec) ? [] : (rec.lampirans || []).filter((l) => l?.url);
   nodes.push(h('section', { class: 'panel stack-tight', 'aria-label': 'Foto nota' }, h('h2', { class: 'panel-title' }, 'Foto nota'),
-    nota.length ? h('div', { class: 'photo-grid' }, nota.map((l, i) => createAuthImage(l, { alt: `Foto nota ${i + 1}` }))) : h('p', { class: 'muted small' }, 'Tidak ada foto nota.')));
+    lampiranDisembunyikan(user, rec) ? h('p', { class: 'muted small' }, 'Foto tidak ditampilkan untuk peran Anda.')
+      : nota.length ? h('div', { class: 'photo-grid' }, nota.map((l, i) => createAuthImage(l, { alt: `Foto nota ${i + 1}` }))) : h('p', { class: 'muted small' }, 'Tidak ada foto nota.')));
   nodes.push(hargaReferensiPanel(rec));
   if (tombolVerifikasiTampil(rec)) nodes.push(verifikasiPanel(rec));
   else if (rec.status === 'diajukan' && punyaKeputusan(user, SLUG)) {
@@ -194,6 +203,11 @@ export default defineCrudModule({
   listQuery,
   listTop,
   formTop,
+  // Web (R04-8 PR-W4): filter daftar dan info total/penolakan di formulir hanya membaca (GET); detail membawa panel verifikasi
+  // akuntan (izin.verifikasi), harga referensi, dan foto nota lewat cookie sesi (hanya peran berhak). Tanpa draf AI/antrean offline.
+  listTopWeb: listTop,
+  formTopWeb: formTop,
+  detailExtrasWeb: (rec, ctx, p) => detailExtras(rec, p),
   izin: true, // Ubah mengikuti izin.ubah server; Hapus selalu false (tidak ada endpoint)
   renderCard: (r, href) => rowCard({
     href,
