@@ -1,6 +1,8 @@
 // PR-W3: modul Data Pengguna di web. Hak tombol hanya dari peta server (permissions/aksi); peran R* hanya Profil Saya
 // (tanpa memanggil daftar); undangan = Salin tautan (tanpa berbagi Telegram); token/tautan undangan tidak pernah masuk URL,
-// riwayat hash, storage, console, toast, atau pesan galat; Idempotency-Key sekali per formulir Tambah/Ubah. Data fiktif.
+// riwayat hash, storage, console, toast, atau pesan galat. Idempotency-Key sekali per formulir: pada Tambah (POST /pengguna)
+// dihormati server sesudah PR backend #159 (middleware IdempotencyKey); pada Ubah (PUT) header tetap dikirim crud-module
+// tetapi diabaikan server (middleware hanya memproses POST; ubah bernilai absolut). POST undangan sengaja tanpa header. Data fiktif.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -262,7 +264,8 @@ test('Admin: daftar memuat Tambah, Kelola undangan, Permintaan reset (aksi serve
   assert.ok(panggilan.every((p) => p.metode === 'GET'));
 });
 
-test('Admin Tambah: POST /pengguna dengan Idempotency-Key UUID yang sama saat diulang; body mengikuti mapPayload', async () => {
+// Server menghormati kunci ini pada POST /pengguna sesudah PR backend #159 (replay respons sama, tanpa akun ganda).
+test('Admin Tambah: POST /pengguna dengan Idempotency-Key UUID yang sama saat diulang (dihormati server sesudah #159); body mengikuti mapPayload', async () => {
   sebagai('admin');
   const el = await buka('/pengguna/baru');
   isi(el, { name: 'Budi Fiktif', role: 'akuntan', phone: '0800-1111-2222' });
@@ -281,7 +284,9 @@ test('Admin Tambah: POST /pengguna dengan Idempotency-Key UUID yang sama saat di
   assert.equal(location.hash, '#/pengguna/77');
 });
 
-test('Admin Ubah: PUT /pengguna/{id} dengan is_active boolean dan Idempotency-Key; 422 per kolom', async () => {
+// Ubah TIDAK dilindungi idempotensi: header dikirim crud-module (perilaku bersama semua formulir web) tetapi diabaikan server
+// (middleware IdempotencyKey hanya POST). Aman karena PUT bernilai absolut; tes hanya mencatat perilaku klien.
+test('Admin Ubah: PUT /pengguna/{id} dengan is_active boolean; 422 per kolom; Idempotency-Key dikirim, diabaikan server', async () => {
   sebagai('admin');
   const el = await buka('/pengguna/50/ubah');
   assert.equal(cari(el, 'f-name').value, 'Siti Fiktif');
@@ -297,7 +302,7 @@ test('Admin Ubah: PUT /pengguna/{id} dengan is_active boolean dan Idempotency-Ke
   assert.equal(t[1].path, '/pengguna/50');
   assert.equal(t[1].body.is_active, false);
   assert.equal(t[1].body.name, 'Siti Fiktif Dua');
-  assert.equal(t[0].headers['Idempotency-Key'], t[1].headers['Idempotency-Key']);
+  assert.equal(t[0].headers['Idempotency-Key'], t[1].headers['Idempotency-Key'], 'header klien tetap sama per formulir (server mengabaikannya pada PUT)');
 });
 
 test('Admin detail akun sendiri: Ubah ada, Hapus tidak (rowPerms), Akun login + sesi sendiri, tanpa Reset password', async () => {
