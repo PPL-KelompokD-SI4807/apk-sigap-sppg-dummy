@@ -13,11 +13,13 @@ use App\Events\PerjalananTerlambat;
 use App\Events\PerjalananTiba;
 use App\Models\AiDraft;
 use App\Models\NotifikasiPerjalanan;
+use App\Services\Perjalanan\TripNotificationService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\SkenarioOperasional;
 use Tests\TestCase;
 
@@ -341,5 +343,50 @@ class NotifikasiPerjalananTest extends TestCase
         $this->masukPenuh($kepala);
 
         $this->getJson("/api/v1/notifikasi-perjalanan/{$n->id}")->assertOk()->assertJsonPath('data.terlambat', true);
+    }
+
+    public function test_relawan_hanya_memicu_jadwal_yang_ditugaskan_kepadanya_atau_belum_bertugas(): void
+    {
+        Event::fake([PerjalananDimulai::class]);
+        $r1 = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
+        $r2 = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
+        $kepala = $this->pengguna(Role::KepalaSppg, $this->sppgA);
+        $jadwalR1 = $this->jadwalSiap($this->sppgA, [], ['petugas_id' => $r1->id]);
+        $jadwalBebas = $this->jadwalSiap($this->sppgA, [], ['petugas_id' => null]);
+
+        // R2 ditolak (422) pada pemicu maupun pratinjau; tidak ada notifikasi dan event.
+        $this->masukPenuh($r2);
+        foreach (['/api/v1/notifikasi-perjalanan', '/api/v1/notifikasi-perjalanan/pratinjau'] as $url) {
+            $this->postJson($url, ['jadwal_distribusi_id' => $jadwalR1->id])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['jadwal_distribusi_id']);
+        }
+        $this->assertSame(0, NotifikasiPerjalanan::query()->count());
+        Event::assertNotDispatched(PerjalananDimulai::class);
+
+        // Jadwal tanpa petugas boleh dipicu relawan mana pun di SPPG itu.
+        $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwalBebas->id])->assertCreated();
+
+        // Petugas yang ditugaskan (R1) dan Kepala SPPG boleh memicu jadwal R1.
+        $this->masukPenuh($r1);
+        $this->postJson('/api/v1/notifikasi-perjalanan/pratinjau', ['jadwal_distribusi_id' => $jadwalR1->id])->assertOk();
+        $jadwalKepala = $this->jadwalSiap($this->sppgA, [], ['petugas_id' => $r1->id]);
+        $this->masukPenuh($kepala);
+        $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwalKepala->id])->assertCreated();
+    }
+
+    public function test_service_mulai_menolak_relawan_bukan_petugas_untuk_jalur_bot_dan_ai(): void
+    {
+        $r1 = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
+        $r2 = $this->pengguna(Role::Relawan, $this->sppgA, RelawanUnit::Distribusi);
+        $jadwal = $this->jadwalSiap($this->sppgA, [], ['petugas_id' => $r1->id]);
+
+        try {
+            app(TripNotificationService::class)->mulai($r2, $jadwal);
+            $this->fail('Relawan bukan petugas seharusnya ditolak.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('jadwal_distribusi_id', $e->errors());
+        }
+        $this->assertSame(0, NotifikasiPerjalanan::query()->count());
     }
 }
