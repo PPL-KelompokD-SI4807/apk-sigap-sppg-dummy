@@ -70,6 +70,26 @@ export function payloadAjukan({ versi, catatan }) {
   return out;
 }
 
+/**
+ * Kunci idempotensi untuk aksi satu panel/form (web, R04-8 PR-W4): SATU kunci dibuat per isian dan dipakai ulang pada
+ * pengulangan manual dengan isian yang sama; isian berbeda = permintaan berbeda = kunci baru (server menolak kunci sama
+ * dengan isi berbeda). `buat` = newKey dari transport (diinjeksi agar murni).
+ */
+export function kunciPerIsian(buat) {
+  let kunci = null;
+  let sidik = null;
+  return (body) => {
+    const s = JSON.stringify(body);
+    if (s !== sidik) { sidik = s; kunci = buat(); }
+    return kunci;
+  };
+}
+
+/** Keterangan untuk menu yang TIDAK dapat diajukan pada status tertentu (layar Ajukan web). */
+export const keteranganTakBisaDiajukan = (status) => (status === 'diajukan'
+  ? 'Sedang menunggu keputusan investor.'
+  : status === 'disetujui' ? 'Sudah disetujui investor. Ubah menu bila perlu pengajuan ulang.' : 'Menu ini belum dapat diajukan.');
+
 /** Menu yang boleh dipilih di Jadwal Produksi: hanya status_persetujuan 'disetujui'. */
 export const menuDisetujui = (menu) => menu?.status_persetujuan === 'disetujui';
 export const filterMenuDisetujui = (items) => (items || []).filter(menuDisetujui);

@@ -86,7 +86,7 @@ const izinBaca = (user, slug) => userPerms(user, slug === 'pengemudi' ? 'armada'
 test('layar baca web: modul data master terdaftar dan guard mengikuti peta hak server per profil', () => {
   assert.deepEqual([...BACA_WEB].sort(), [
     'armada', 'bukti-distribusi', 'dashboard', 'jadwal', 'jadwal/distribusi', 'keluhan', 'keuangan', 'keuangan/pencairan', 'keuangan/pengeluaran',
-    'laporan-bgn', 'log-produksi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'penerima-manfaat', 'pengemudi', 'pengguna', 'rekap-harian', 'sppg', 'titik-layanan',
+    'laporan-bgn', 'log-produksi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'penerima-manfaat', 'pengemudi', 'pengguna', 'persetujuan-menu', 'rekap-harian', 'sppg', 'titik-layanan',
   ]);
   for (const nama of Object.keys(PROFIL)) {
     setUserSesi(salin(nama));
@@ -192,7 +192,8 @@ test('rute tulis: hanya modul TULIS_WEB (PR4c) yang punya /baru dan /ubah, mengi
       if (slug === 'laporan-bgn') { assert.equal(cekAkses('/laporan-bgn/baru'), 'tidak-ada'); continue; }
       if (TULIS_WEB.has(slug)) {
         assert.equal(cekAkses(`/${slug}/baru`), userPerms(user, perm).C ? 'boleh' : 'ditolak', `${nama} ${slug}/baru`);
-        assert.equal(cekAkses(`/${slug}/1/ubah`), userPerms(user, perm).U ? 'boleh' : 'ditolak', `${nama} ${slug}/ubah`);
+        // Persetujuan menu: /baru = layar Ajukan (aksi.ajukan_menu); tidak ada layar ubah (keputusan lewat POST di detail).
+        assert.equal(cekAkses(`/${slug}/1/ubah`), slug === 'persetujuan-menu' ? 'tidak-ada' : userPerms(user, perm).U ? 'boleh' : 'ditolak', `${nama} ${slug}/ubah`);
       } else {
         assert.equal(cekAkses(`/${slug}/1/ubah`), 'tidak-ada', `${nama} ${slug}/ubah`);
         assert.equal(cekAkses(`/${slug}/baru`), ['keuangan', 'dashboard'].includes(slug) ? 'tidak-ada' : 'ditolak', `${nama} ${slug}/baru`);

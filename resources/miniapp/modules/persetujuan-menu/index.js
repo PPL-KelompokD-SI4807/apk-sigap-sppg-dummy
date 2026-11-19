@@ -3,13 +3,13 @@
 import { h, formatValue } from '../../core/dom.js';
 import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { route, resolve } from '../../core/router.js';
 import { toast, showConfirm } from '../../core/ui.js';
 import { createListView } from '../../components/list-view.js';
 import { rowCard } from '../../components/row-card.js';
 import { rincianBiayaPanel } from '../../components/rincian-biaya.js';
-import { SLUG, STATUS_PENGAJUAN, statusBadge, statusLabel, KEPUTUSAN, tombolKeputusanTampil, validasiCatatan, payloadKeputusan, ringkasGalat, MIN_CATATAN } from './logika.js';
+import { SLUG, STATUS_PENGAJUAN, statusBadge, statusLabel, KEPUTUSAN, tombolKeputusanTampil, validasiCatatan, payloadKeputusan, ringkasGalat, kunciPerIsian, MIN_CATATAN } from './logika.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const me = () => userPerms(getUser(), SLUG);
@@ -33,8 +33,13 @@ function riwayatPanel(rec, daftar) {
   return box;
 }
 
-/** Panel keputusan investor: catatan + tiga tombol. 409 -> pesan server lalu muat ulang. */
+/**
+ * Panel keputusan investor: catatan + tiga tombol. 409 -> pesan server lalu muat ulang. Dipakai Mini App dan web (R04-8 PR-W4).
+ * Idempotency-Key dibuat sekali per isian dan dipakai ulang pada pengulangan manual (diganti bila keputusan/catatan berubah);
+ * perlindungan keputusan ganda tetap dari `versi_menu` + status di server (409).
+ */
 function keputusanPanel(rec) {
+  const kunciUntuk = kunciPerIsian(newKey);
   const catatan = h('textarea', { class: 'input', rows: '3', maxlength: '1000', id: 'catatan-keputusan', placeholder: `Wajib diisi untuk Tolak/Perlu Revisi (min. ${MIN_CATATAN} karakter)` });
   const err = h('p', { class: 'field-error', role: 'alert' });
   const row = h('div', { class: 'row-actions' });
@@ -46,7 +51,8 @@ function keputusanPanel(rec) {
     if (!(await showConfirm({ title: label, message: `${label} menu "${rec.nama_menu}" (versi ${rec.menu_versi})? Keputusan tidak dapat diubah.`, okText: 'Ya, kirim', destructive: keputusan === 'ditolak' }))) return;
     tombol.forEach((b) => { b.disabled = true; });
     try {
-      await request('POST', `/persetujuan-menu/${rec.id}/keputusan`, { body: payloadKeputusan({ keputusan, catatan: catatan.value, versiMenu: rec.menu_versi }), key: newKey(), silent: true });
+      const body = payloadKeputusan({ keputusan, catatan: catatan.value, versiMenu: rec.menu_versi });
+      await request('POST', `/persetujuan-menu/${rec.id}/keputusan`, { body, key: kunciUntuk(body), silent: true });
       toast('Keputusan tersimpan.', 'success');
       resolve();
     } catch (e) {
@@ -67,7 +73,8 @@ function keputusanPanel(rec) {
     h('label', { class: 'label', for: 'catatan-keputusan' }, 'Catatan'), catatan, err, row);
 }
 
-async function detailScreen(ctx) {
+// tulis=false: layar baca saja (web tanpa TULIS_WEB). Hak tombol tetap dari peta hak server (user.keputusan) + status record.
+async function detailScreen(ctx, { tulis = true } = {}) {
   const rec = unwrap(await api.get(`/persetujuan-menu/${encodeURIComponent(ctx.params.id)}`));
   if (ctx.isStale()) return;
   ctx.setTitle(rec.nama_menu ?? 'Pengajuan Menu');
@@ -92,7 +99,7 @@ async function detailScreen(ctx) {
   }
   ctx.el.append(rincianBiayaPanel({ ...rec, bahan: r.bahan }, { judul: `Rincian biaya (harga per ${formatValue(r.tanggal_acuan, 'date')})` }));
 
-  if (tombolKeputusanTampil(getUser(), rec)) ctx.el.append(keputusanPanel(rec));
+  if (tulis && tombolKeputusanTampil(getUser(), rec)) ctx.el.append(keputusanPanel(rec));
 
   let daftar = [];
   try { daftar = (await api.get('/persetujuan-menu', { menu_id: rec.menu_id, per_page: 50 }, { silent: true }))?.data ?? []; } catch { /* riwayat opsional */ }
@@ -100,7 +107,9 @@ async function detailScreen(ctx) {
   ctx.el.append(riwayatPanel(rec, daftar));
 }
 
-function listScreen(ctx) {
+// ajukan=true (web, TULIS_WEB): tautan "Ajukan Menu" bagi pemegang aksi.ajukan_menu (ahli gizi) dari peta hak server.
+function listScreen(ctx, { ajukan = false } = {}) {
+  if (ajukan && bolehAksi(getUser(), 'ajukan_menu')) ctx.el.append(h('a', { class: 'btn btn-primary btn-block', href: `#/${SLUG}/baru` }, '+ Ajukan Menu'));
   ctx.el.append(createListView({
     endpoint: '/persetujuan-menu',
     columns: [{ key: 'nama_menu', primary: true }],
@@ -128,5 +137,15 @@ export default {
   register() {
     route(`/${SLUG}`, listScreen, { title: 'Persetujuan Menu', guard: () => me().R });
     route(`/${SLUG}/:id`, detailScreen, { title: 'Pengajuan Menu', guard: () => me().R });
+  },
+  // Web (R04-8 PR-W4): daftar + detail; tulis (TULIS_WEB) menambah keputusan investor dan layar Ajukan (ahli gizi).
+  // Semua hak tombol dari peta hak server (user.keputusan, aksi.ajukan_menu) dan status record.
+  registerWeb({ tulis = false } = {}) {
+    route(`/${SLUG}`, (ctx) => listScreen(ctx, { ajukan: tulis }), { title: 'Persetujuan Menu', guard: () => me().R });
+    if (tulis) {
+      route(`/${SLUG}/baru`, async (ctx) => (await import('./ajukan-web.js')).ajukanScreen(ctx),
+        { title: 'Ajukan Menu', guard: () => bolehAksi(getUser(), 'ajukan_menu') });
+    }
+    route(`/${SLUG}/:id`, (ctx) => detailScreen(ctx, { tulis }), { title: 'Pengajuan Menu', guard: (params) => params.id !== 'baru' && me().R });
   },
 };
