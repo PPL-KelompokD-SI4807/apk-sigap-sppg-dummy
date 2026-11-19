@@ -26,7 +26,7 @@ export function penggunaFields({ mode }) {
       { name: 'name', label: 'Nama', type: 'text' },
       { name: 'role', label: 'Peran', type: 'text', display: (r) => r.role_label ?? ROLES[r.role] ?? r.role },
       { name: 'unit', label: 'Unit', type: 'text', display: (r) => unitLabel(r.unit) ?? '-' },
-      { name: 'sppg_id', label: 'SPPG', type: 'text', display: (r) => r.sppg_nama ?? (r.sppg_id ? `#${r.sppg_id}` : 'Semua SPPG') },
+      { name: 'sppg_id', label: 'SPPG', type: 'text', display: (r) => r.sppg_nama ?? (r.sppg_id ? `#${r.sppg_id}` : r.role === 'investor' ? 'Sesuai kepemilikan SPPG' : 'Semua SPPG') },
       { name: 'phone', label: 'Telepon', type: 'text' },
       { name: 'telegram_username', label: 'Telegram', type: 'text', display: (r) => (r.telegram_terhubung ? (r.telegram_username ? `@${r.telegram_username}` : 'Terhubung') : 'Belum terhubung') },
       { name: 'status', label: 'Status', type: 'text', display: (r) => statusLabel(r.status) },

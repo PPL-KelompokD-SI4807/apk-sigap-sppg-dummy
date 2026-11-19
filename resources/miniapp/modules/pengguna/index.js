@@ -21,6 +21,7 @@ import {
   STATUS_UNDANGAN, undanganCls, undanganLabel, undanganTarget, undanganFields, buildInvitePayload,
   isianUndanganDariDraf, isianPenggunaDariDraf,
 } from './schema.js';
+import { listTopPenggunaWeb, detailPenggunaWeb, registerRuteWeb } from './web.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 // Aksi pengguna mengikuti peta hak server (aksi.*), bukan huruf modul/peran.
@@ -65,6 +66,9 @@ const base = defineCrudModule({
   // Kartu menu: bagi hak "R*" (profil sendiri) judulnya "Profil Saya", bukan daftar "Data Pengguna".
   menuInfo: (user) => (userPerms(user, 'pengguna').selfOnly ? { title: 'Profil Saya', description: 'Akun, peran, dan perangkat Anda' } : {}),
   prefillDraf: isianPenggunaDariDraf,
+  // Web (PR-W3): tanpa undangan berbagi Telegram/draf AI; Profil Saya (R*) = akun + perangkat/sesi sendiri. Lihat web.js.
+  listTopWeb: listTopPenggunaWeb,
+  detailExtrasWeb: (rec, ctx) => detailPenggunaWeb(rec, ctx),
   // Admin tidak boleh menghapus akunnya sendiri (422 di server): sembunyikan tombol hapus.
   rowPerms: (rec, p) => (rec.id === getUser()?.id ? { ...p, D: false } : p),
   detailExtras: (rec) => {
@@ -198,4 +202,6 @@ function registerUndangan() {
 export default {
   ...base,
   register() { registerUndangan(); base.register(); },
+  // Rute tambahan web didaftarkan sebelum rute registerWeb (/pengguna/:id) agar "undangan" tidak dianggap id.
+  registerWeb(opsi) { registerRuteWeb(); base.registerWeb(opsi); },
 };
