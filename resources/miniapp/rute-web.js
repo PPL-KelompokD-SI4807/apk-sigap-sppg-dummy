@@ -13,6 +13,7 @@ import { multiSppg } from './core/permissions.js';
 /** Modul yang juga mendapat formulir web (Tambah/Ubah/Hapus, PR4c). Hak tetap dari peta/izin server. */
 export const TULIS_WEB = new Set([
   'sppg', 'titik-layanan', 'penerima-manfaat', 'pemasok', 'armada', 'pengemudi', // PR4c data master
+  'menu-gizi', 'menu-gizi/standar-gizi', // PR-W2: ahli gizi CRUD menu + komposisi + standar gizi; Ajukan ke Investor (aksi.ajukan_menu)
   'jadwal', 'log-produksi', 'mutu', // PR4d produksi
   'jadwal/distribusi', 'notifikasi-perjalanan', 'bukti-distribusi', // PR4e distribusi (bukti: Tambah + foto sejak PR5)
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keluhan', 'rekap-harian', // PR4f keuangan, keluhan, rekap (foto/lampiran + keputusan investor: PR5)
@@ -24,6 +25,7 @@ export const TULIS_WEB = new Set([
 export const BACA_WEB = new Set([
   // 4a data master
   'sppg', 'titik-layanan', 'penerima-manfaat', 'pemasok', 'armada', 'pengemudi',
+  'menu-gizi/standar-gizi', 'menu-gizi', // PR-W2 (standar-gizi sub-modul tersembunyi; relawan R menu-gizi sesuai rbac.php)
   // 4b operasional (jadwal/distribusi dan keuangan/* adalah sub-modul tersembunyi)
   'jadwal/distribusi', 'jadwal', 'log-produksi', 'mutu', 'notifikasi-perjalanan', 'bukti-distribusi', 'keluhan',
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keuangan', 'rekap-harian', 'dashboard',

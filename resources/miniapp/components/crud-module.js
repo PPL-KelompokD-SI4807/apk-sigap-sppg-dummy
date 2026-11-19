@@ -60,12 +60,13 @@ function displayValue(field, rec) {
  *   field.onlyIfPresent: kolom detail disembunyikan bila kuncinya tak ada di respons (mis. no_sim untuk peran R)
  *   tambahWeb:false -> web TIDAK menyediakan Tambah (layar tambah belum layak di web); Ubah/Hapus tetap
  *   formTopWeb({mode,record,form,collect,values}) -> Node info di atas formulir web (hanya baca; tanpa aksi tulis)
+ *   onSavedWeb({mode,res}) -> dipanggil setelah simpan di formulir web (res = {queued:false, data} seperti onSaved Mini App); opt-in per modul
  *   listTopWeb() / detailExtrasWeb(rec, ctx, perms) -> padanan listTop/detailExtras untuk layar BACA web (registerWeb). Tanpanya web tidak
  *     menampilkan bagian itu (listTop/detailExtras Mini App memuat aksi tulis, undangan Telegram, dan tautan ke layar yang belum ada di web)
  * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register(),registerWeb()}
  */
 export function defineCrudModule(def) {
-  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb, formTopWeb, tambahWeb = true } = def;
+  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb, formTopWeb, onSavedWeb, tambahWeb = true } = def;
   // Opsi tambahan (aditif): searchable=false, queueOffline=false (tanpa antrian offline),
   // beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
   // sertakanVersi (R-06b-2): kunci optimistik; saat ubah, body memuat `versi` = versi draf AI (dari server) atau versi record yang dimuat.
@@ -275,6 +276,7 @@ export function defineCrudModule(def) {
           return;
         }
         toast('Data tersimpan.', 'success');
+        if (onSavedWeb) { try { onSavedWeb({ mode, res: { queued: false, data: res } }); } catch { /* abaikan */ } }
         const saved = res && unwrap(res);
         navigate(saved?.id ? `${base}/${saved.id}` : base, { replace: true });
       },

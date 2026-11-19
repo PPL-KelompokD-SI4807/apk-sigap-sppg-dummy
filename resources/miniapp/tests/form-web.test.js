@@ -210,7 +210,7 @@ test('hak per profil: formulir tambah hanya terbuka bila peta hak server memberi
   for (const nama of Object.keys(PROFIL)) {
     setUserSesi(salin(nama));
     for (const slug of TULIS_WEB) {
-      const perm = slug === 'pengemudi' ? 'armada' : slug === 'jadwal/distribusi' ? 'jadwal' : slug.startsWith('keuangan/') ? 'keuangan' : slug;
+      const perm = slug === 'pengemudi' ? 'armada' : slug === 'jadwal/distribusi' ? 'jadwal' : slug.startsWith('keuangan/') ? 'keuangan' : slug.startsWith('menu-gizi/') ? 'menu-gizi' : slug;
       let tambah = userPerms(getUser(), perm).C && (slug !== 'jadwal' || jadwalTabBoleh(getUser(), 'produksi')); // jadwal: tab produksi menurut unit_scope server
       if (slug === 'jadwal/distribusi') tambah = tambah && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser());
       if (slug === 'notifikasi-perjalanan') tambah = tambah && bolehAksi(getUser(), 'picu_perjalanan') && jadwalTabBoleh(getUser(), 'distribusi');

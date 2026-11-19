@@ -89,8 +89,10 @@ const standarModule = defineCrudModule({
   mapPayload: standarPayload,
   itemTitle: (r) => `Standar ${kelompokLabel(r.kelompok_sasaran)}`,
   listTop: () => menuTabs('standar'),
+  listTopWeb: () => menuTabs('standar'),
   createLabel: '+ Standar',
   onSaved: () => { standarCache = null; },
+  onSavedWeb: () => { standarCache = null; },
   renderCard: (r, href) => rowCard({
     href,
     title: kelompokLabel(r.kelompok_sasaran),
@@ -99,6 +101,12 @@ const standarModule = defineCrudModule({
 });
 // Slug tak muncul di menu beranda; layar dibuka lewat tab pada daftar menu.
 standarModule.hidden = true;
+
+// Peringatan gizi dari respons simpan: hanya informasi, tidak pernah memblokir.
+function peringatanSetelahSimpan({ res }) {
+  const w = unwrap(res.data)?.peringatan_gizi;
+  if (w?.length) toast(`Peringatan gizi: ${w.map((p) => p.pesan).join(' ')}`, 'info', 6000);
+}
 
 const menuModule = defineCrudModule({
   slug: 'menu-gizi',
@@ -115,6 +123,7 @@ const menuModule = defineCrudModule({
   searchPlaceholder: 'Cari nama menu atau siklus...',
   filters: { param: 'kelompok_sasaran', label: 'Kelompok sasaran', options: [{ value: '', label: 'Semua' }, ...KELOMPOK] },
   listTop: () => menuTabs('menu'),
+  listTopWeb: () => menuTabs('menu'),
   renderCard: (r, href) => rowCard({
     href,
     title: r.nama_menu,
@@ -124,11 +133,13 @@ const menuModule = defineCrudModule({
     badges: statusBadges(r),
   }),
   formTop,
-  onSaved: ({ res }) => {
-    const w = unwrap(res.data)?.peringatan_gizi;
-    if (w?.length) toast(`Peringatan gizi: ${w.map((p) => p.pesan).join(' ')}`, 'info', 6000);
-  },
+  // Web: standar gizi dimuat ulang tiap formulir dibuka (standar bisa diubah/dihapus di layar lain); hanya GET.
+  formTopWeb: (a) => { standarCache = null; return formTop(a); },
+  onSaved: peringatanSetelahSimpan,
+  onSavedWeb: peringatanSetelahSimpan,
   detailExtras: async (rec) => [persetujuanPanel(rec), komposisiPanel(rec), await ringkasanPanel(rec)],
+  // Web: Ajukan ke Investor hanya bila aksi.ajukan_menu (server) + status menu; Ubah/Hapus dari peta hak (rbac: ahli gizi CRUD, lainnya baca).
+  detailExtrasWeb: async (rec) => [persetujuanPanel(rec, { web: true }), komposisiPanel(rec), await ringkasanPanel(rec)],
 });
 
 const menuDenganRincian = {
@@ -136,6 +147,11 @@ const menuDenganRincian = {
   register() {
     route('/menu-gizi/:id/rincian-biaya', rincianBiayaScreen, { title: 'Rincian Biaya Menu', guard: () => bolehAksi(getUser(), 'lihat_rincian_biaya') });
     menuModule.register();
+  },
+  // Web: rincian biaya (GET saja) hanya bagi pemegang aksi.lihat_rincian_biaya; didaftarkan sebelum /menu-gizi/:id.
+  registerWeb(opsi) {
+    route('/menu-gizi/:id/rincian-biaya', rincianBiayaScreen, { title: 'Rincian Biaya Menu', guard: () => bolehAksi(getUser(), 'lihat_rincian_biaya') });
+    menuModule.registerWeb(opsi);
   },
 };
 

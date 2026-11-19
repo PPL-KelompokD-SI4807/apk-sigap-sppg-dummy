@@ -6,6 +6,7 @@ import { userPerms, bolehAksi } from '../../core/permissions.js';
 import { resolve } from '../../core/router.js';
 import { toast, showConfirm } from '../../core/ui.js';
 import { rincianBiayaPanel } from '../../components/rincian-biaya.js';
+import { kunciPerIsian } from '../../core/kunci-idempoten.js';
 import { SLUG, statusBadge, statusLabel, bolehAjukan, payloadAjukan, ringkasGalat, bahanBermasalah, MAKS_CATATAN } from '../persetujuan-menu/logika.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
@@ -18,8 +19,11 @@ export const statusBadges = (r) => [
 
 const daftarBermasalah = (items) => h('ul', { class: 'stack-tight' }, items.map((b) => h('li', {}, h('strong', {}, b.nama), `: ${b.masalah}`)));
 
-/** Panel di detail menu: status persetujuan, tautan rincian biaya, dan tombol Ajukan (ahli gizi). */
-export function persetujuanPanel(rec) {
+/**
+ * Panel di detail menu: status persetujuan, tautan rincian biaya, dan tombol Ajukan (ahli gizi; hak = aksi.ajukan_menu dari server).
+ * web: Idempotency-Key dibuat sekali per isian (dipakai ulang saat pengulangan manual); sesudah berhasil memuat ulang detail menu.
+ */
+export function persetujuanPanel(rec, { web = false } = {}) {
   const user = getUser();
   const box = h('div', { class: 'panel' }, h('h2', { class: 'panel-title' }, 'Persetujuan investor'),
     h('div', { class: 'card-row' }, h('span', { class: 'muted' }, 'Status'),
@@ -30,23 +34,26 @@ export function persetujuanPanel(rec) {
   if (bolehAksi(user, 'lihat_rincian_biaya')) aksi.append(h('a', { class: 'btn', href: `#/menu-gizi/${rec.id}/rincian-biaya` }, 'Rincian biaya'));
   if (userPerms(user, SLUG).R) aksi.append(h('a', { class: 'btn', href: `#/${SLUG}` }, 'Pengajuan menu'));
   if (aksi.childNodes.length) box.append(aksi);
-  if (bolehAjukan(user, rec.status_persetujuan)) box.append(ajukanForm(rec));
+  if (bolehAjukan(user, rec.status_persetujuan)) box.append(ajukanForm(rec, { web }));
   return box;
 }
 
-function ajukanForm(rec) {
+function ajukanForm(rec, { web = false } = {}) {
   const catatan = h('textarea', { class: 'input', rows: '2', maxlength: String(MAKS_CATATAN), 'aria-label': 'Catatan untuk investor', placeholder: 'Catatan untuk investor (opsional)' });
   const hasil = h('div', { class: 'stack-tight', 'aria-live': 'polite' });
   const btn = h('button', { class: 'btn btn-primary', type: 'button' }, 'Ajukan ke Investor');
+  const kunciUntuk = web ? kunciPerIsian(newKey) : () => newKey();
   btn.addEventListener('click', async () => {
     if (!(await showConfirm({ title: 'Ajukan ke Investor', message: `Ajukan "${rec.nama_menu}" (versi ${rec.versi}) ke investor? Harga dan porsi dihitung otomatis oleh sistem.`, okText: 'Ya, ajukan' }))) return;
     btn.disabled = true;
     hasil.replaceChildren();
     try {
-      const res = await request('POST', `/menu-gizi/${rec.id}/ajukan`, { body: payloadAjukan({ versi: rec.versi, catatan: catatan.value }), key: newKey(), silent: true });
+      const body = payloadAjukan({ versi: rec.versi, catatan: catatan.value });
+      const res = await request('POST', `/menu-gizi/${encodeURIComponent(rec.id)}/ajukan`, { body, key: kunciUntuk(body), silent: true });
       toast('Menu diajukan ke investor.', 'success');
       const id = unwrap(res)?.id;
-      if (id) location.hash = `#/${SLUG}/${id}`; else resolve();
+      // Web: tetap di detail menu (status berubah jadi Diajukan); layar detail pengajuan web belum tentu ada.
+      if (id && !web) location.hash = `#/${SLUG}/${id}`; else resolve();
     } catch (e) {
       if (e?.status === 401) throw e;
       const g = ringkasGalat(e, 'Pengajuan gagal.');
