@@ -37,6 +37,11 @@
       `POST /pengguna/undangan`. `telegram_id` tidak dapat diisi dari body. Peran admin wajib
       `sppg_id` kosong; peran lain wajib `sppg_id`; peran relawan wajib `unit`.
       Menerima `ai_draft_id` opsional (draf Agen AI milik pengguna, pending) yang ditandai confirmed.
+      Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama tidak membuat pengguna ganda.
+      Respons tidak memuat password, hash, token, atau telegram_id sehingga aman disimpan untuk replay.
+      Ubah pengguna (PUT/PATCH) tidak memakai Idempotency-Key (sudah idempoten).
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
     requestBody:
       required: true
       content:
@@ -352,6 +357,8 @@
       dipakai ditolak bot ("SPPG pada tautan undangan ini tidak lagi tersedia. ...").
       Token acak 32 byte (base64url), hanya hash SHA-256 yang disimpan, berlaku 72 jam, sekali pakai.
       `token` dan `deep_link` hanya ada pada respons ini; simpan/kirimkan segera.
+      SENGAJA tanpa dukungan `Idempotency-Key`: respons memuat token mentah dan tidak boleh disimpan di cache
+      idempotensi. Header tersebut diabaikan di rute ini; tiap panggilan menerbitkan undangan baru.
     requestBody:
       required: true
       content:
