@@ -13,7 +13,7 @@ import { getUser } from '../../core/auth.js';
 import { userPerms, bolehAksi, aksiOpsional } from '../../core/permissions.js';
 import { route, navigate } from '../../core/router.js';
 import { toast } from '../../core/ui.js';
-import { bahanFields, mapPayload, kategoriLabel, penandaBahan, fmtQty, sisaHariText, sisaHariCls, jenisMutasiLabel, mutasiFields, cekMutasi, mutasiPayload, bolehRiwayatMutasi, batchDariText, isianMutasiDariDraf } from './schema.js';
+import { KATEGORI, bahanFields, mapPayload, kategoriLabel, penandaBahan, fmtQty, sisaHariText, sisaHariCls, jenisMutasiLabel, mutasiFields, cekMutasi, mutasiPayload, bolehRiwayatMutasi, batchDariText, isianMutasiDariDraf } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const SLUG = 'bahan-baku';
@@ -89,21 +89,25 @@ const base = defineCrudModule({
     : bahanFields({ mode, user, record })),
   mapPayload,
   searchPlaceholder: 'Cari nama atau kode bahan...',
-  filters: { param: 'kategori', label: 'Kategori', options: [{ value: '', label: 'Semua' }, ...['karbohidrat', 'protein_hewani', 'sayur', 'buah', 'susu', 'bumbu'].map((v) => ({ value: v, label: kategoriLabel(v) }))] },
+  filters: { param: 'kategori', label: 'Kategori', options: [{ value: '', label: 'Semua' }, ...KATEGORI] },
   listTop: () => bahanTabs('semua'),
+  listTopWeb: () => bahanTabs('semua'), // tab menuju layar baca stok menipis/kedaluwarsa dekat (didaftarkan di registerWeb)
+  detailExtrasWeb: (rec) => detailExtras(rec), // tautan mutasi hanya bila aksi.catat_mutasi_stok; riwayat hanya bila aksi.lihat_mutasi_stok === true
   renderCard: card,
-  detailExtras: async (rec, p) => {
-    const nodes = [];
-    const flags = penandaBahan(rec);
-    if (rec.stok_menipis) nodes.push(h('div', { class: 'alert-danger' }, `Stok menipis: ${fmtQty(rec.stok, rec.satuan)} (minimum ${fmtQty(rec.stok_minimum)}). Segera catat penerimaan dari pemasok.`));
-    if (rec.akan_kedaluwarsa) nodes.push(h('div', { class: 'notice' }, 'Ada batch yang segera atau sudah kedaluwarsa. Pakai batch terdekat lebih dulu (FEFO).'));
-    if (flags.length === 0 && Number(rec.stok) > 0) nodes.push(h('div', { class: 'alert-ok' }, 'Stok aman.'));
-    if (bolehAksi(getUser(), 'catat_mutasi_stok')) nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/bahan-baku/${rec.id}/mutasi` }, 'Catat mutasi stok'));
-    nodes.push(await batchPanel(rec));
-    if (bolehRiwayatMutasi(getUser(), aksiOpsional)) nodes.push(await riwayatPanel(rec)); // titik gating: lihat schema.js
-    return nodes;
-  },
+  detailExtras,
 });
+
+async function detailExtras(rec) {
+  const nodes = [];
+  const flags = penandaBahan(rec);
+  if (rec.stok_menipis) nodes.push(h('div', { class: 'alert-danger' }, `Stok menipis: ${fmtQty(rec.stok, rec.satuan)} (minimum ${fmtQty(rec.stok_minimum)}). Segera catat penerimaan dari pemasok.`));
+  if (rec.akan_kedaluwarsa) nodes.push(h('div', { class: 'notice' }, 'Ada batch yang segera atau sudah kedaluwarsa. Pakai batch terdekat lebih dulu (FEFO).'));
+  if (flags.length === 0 && Number(rec.stok) > 0) nodes.push(h('div', { class: 'alert-ok' }, 'Stok aman.'));
+  if (bolehAksi(getUser(), 'catat_mutasi_stok')) nodes.push(h('a', { class: 'btn btn-primary btn-block', href: `#/bahan-baku/${rec.id}/mutasi` }, 'Catat mutasi stok'));
+  nodes.push(await batchPanel(rec));
+  if (bolehRiwayatMutasi(getUser(), aksiOpsional)) nodes.push(await riwayatPanel(rec)); // titik gating: lihat schema.js
+  return nodes;
+}
 
 // ---- Layar tambahan ----
 function listScreen(endpoint, tab, emptyText) {
@@ -163,5 +167,13 @@ export default {
     route('/bahan-baku/kedaluwarsa-dekat', listScreen('/bahan-baku/kedaluwarsa-dekat', 'kedaluwarsa', 'Tidak ada bahan yang segera kedaluwarsa.'), { title: 'Kedaluwarsa Dekat', guard: () => me().R });
     route('/bahan-baku/:id/mutasi', mutasiScreen, { title: 'Catat Mutasi Stok', guard: () => bolehAksi(getUser(), 'catat_mutasi_stok') });
     base.register();
+  },
+  // Web (R04-8 PR-W1): layar baca stok menipis/kedaluwarsa dekat + catat mutasi (tanpa draf AI/antrean offline). Hak dari peta server.
+  registerWeb(opsi) {
+    route('/bahan-baku/stok-menipis', listScreen('/bahan-baku/stok-menipis', 'menipis', 'Tidak ada bahan dengan stok menipis.'), { title: 'Stok Menipis', guard: () => me().R });
+    route('/bahan-baku/kedaluwarsa-dekat', listScreen('/bahan-baku/kedaluwarsa-dekat', 'kedaluwarsa', 'Tidak ada bahan yang segera kedaluwarsa.'), { title: 'Kedaluwarsa Dekat', guard: () => me().R });
+    route('/bahan-baku/:id/mutasi', async (ctx) => (await import('./mutasi-web.js')).mutasiScreenWeb(ctx, SLUG),
+      { title: 'Catat Mutasi Stok', guard: () => me().R && bolehAksi(getUser(), 'catat_mutasi_stok') });
+    base.registerWeb(opsi);
   },
 };

@@ -20,6 +20,7 @@ export const TULIS_WEB = new Set([
   'pengguna', // PR-W3: Admin Tambah/Ubah/Hapus; peran R* hanya Profil Saya (tanpa daftar)
   'persetujuan-menu', // PR-W4: keputusan investor (user.keputusan) + Ajukan Menu (aksi.ajukan_menu)
   'pembelian-bahan', // PR-W4: staf gudang Tambah/Ubah + foto nota; verifikasi akuntan (izin.verifikasi); investor tanpa akses
+  'bahan-baku', // PR-W1: Tambah/Ubah/Hapus (staf gudang, admin) + catat mutasi stok (aksi.catat_mutasi_stok); riwayat mutasi (aksi.lihat_mutasi_stok)
 ]);
 
 export const BACA_WEB = new Set([
@@ -31,6 +32,8 @@ export const BACA_WEB = new Set([
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keuangan', 'rekap-harian', 'dashboard',
   // PR-W4: persetujuan menu (investor memutuskan, ahli gizi mengajukan) dan pembelian bahan (gudang mencatat, akuntan verifikasi)
   'persetujuan-menu', 'pembelian-bahan',
+  // PR-W1: bahan baku (daftar, detail, stok menipis, kedaluwarsa dekat, mutasi stok)
+  'bahan-baku',
   // ekspor PDF Laporan BGN (hak = aksi.lihat_laporan_bgn*, bolehMenu)
   'laporan-bgn',
   // PR-W3 Data Pengguna: daftar/detail Admin & Kepala SPPG, Profil Saya (R*), undangan salin tautan, reset password, sesi
