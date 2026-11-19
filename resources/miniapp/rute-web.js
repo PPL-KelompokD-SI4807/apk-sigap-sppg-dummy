@@ -16,6 +16,7 @@ export const TULIS_WEB = new Set([
   'jadwal', 'log-produksi', 'mutu', // PR4d produksi
   'jadwal/distribusi', 'notifikasi-perjalanan', 'bukti-distribusi', // PR4e distribusi (bukti: Tambah + foto sejak PR5)
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keluhan', 'rekap-harian', // PR4f keuangan, keluhan, rekap (foto/lampiran + keputusan investor: PR5)
+  'pengguna', // PR-W3: Admin Tambah/Ubah/Hapus; peran R* hanya Profil Saya (tanpa daftar)
 ]);
 
 export const BACA_WEB = new Set([
@@ -26,6 +27,8 @@ export const BACA_WEB = new Set([
   'keuangan/pencairan', 'keuangan/pengeluaran', 'keuangan', 'rekap-harian', 'dashboard',
   // ekspor PDF Laporan BGN (hak = aksi.lihat_laporan_bgn*, bolehMenu)
   'laporan-bgn',
+  // PR-W3 Data Pengguna: daftar/detail Admin & Kepala SPPG, Profil Saya (R*), undangan salin tautan, reset password, sesi
+  'pengguna',
 ]);
 
 /** modules: getModules() dari registry. getUser: () => pengguna sesi. */
