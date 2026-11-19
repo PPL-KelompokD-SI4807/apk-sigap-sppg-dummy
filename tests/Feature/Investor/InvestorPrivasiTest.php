@@ -4,6 +4,8 @@ namespace Tests\Feature\Investor;
 
 use App\Models\FeedbackKeluhan;
 use App\Models\PemeriksaanMutu;
+use App\Models\Pengeluaran;
+use App\Models\Sppg;
 use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
 use App\Services\Ai\Catalog\RecordPresenter;
@@ -71,6 +73,54 @@ class InvestorPrivasiTest extends InvestorTestCase
         // Investor SPPG lain: 404 (scope), bukan 403 penanda.
         $this->sebagai($this->investorC);
         $this->get("/api/v1/lampiran/{$fotoKeluhan}", ['Accept' => 'application/json'])->assertNotFound();
+    }
+
+    // ---------------------------------------------------------------- F-04 audit RBAC: nota pengeluaran, no_va, saldo awal
+
+    public function test_foto_nota_pengeluaran_disembunyikan_dari_investor_teks_dan_nominal_tetap_terlihat(): void
+    {
+        Storage::fake('uploads');
+        $pengeluaran = Pengeluaran::factory()->create(['sppg_id' => $this->sppgA, 'uraian' => 'Beli sayur (fiktif)']);
+        $foto = $this->lampirkan($pengeluaran, 'keuangan-pengeluaran');
+
+        $this->sebagai($this->investorAB, $this->sppgA);
+
+        $this->getJson("/api/v1/keuangan/pengeluaran/{$pengeluaran->id}")->assertOk()
+            ->assertJsonPath('data.uraian', 'Beli sayur (fiktif)')
+            ->assertJsonPath('data.lampiran', [])
+            ->assertJsonPath('data.lampiran_disembunyikan', true)
+            ->assertJsonPath('data.nota', null);
+        $this->getJson('/api/v1/keuangan/pengeluaran')->assertOk()
+            ->assertJsonPath('data.0.lampiran', [])
+            ->assertJsonPath('data.0.lampiran_disembunyikan', true);
+        $this->assertAlasan($this->get("/api/v1/lampiran/{$foto}", ['Accept' => 'application/json']), 403, LampiranTersembunyi::ALASAN);
+
+        // Peran keuangan tetap melihat foto nota.
+        $this->sebagai($this->akuntanA);
+        $this->getJson("/api/v1/keuangan/pengeluaran/{$pengeluaran->id}")->assertOk()
+            ->assertJsonPath('data.lampiran.0.id', $foto)
+            ->assertJsonPath('data.lampiran_disembunyikan', false);
+        $this->get("/api/v1/lampiran/{$foto}")->assertOk();
+    }
+
+    public function test_no_va_dan_saldo_awal_sppg_disembunyikan_dari_investor_tetapi_tidak_dari_peran_keuangan(): void
+    {
+        $this->forgetActor();
+        Sppg::query()->whereKey($this->sppgA)->update(['no_va' => '8881234500', 'saldo_awal' => 25_000_000, 'saldo_awal_tanggal' => '2026-11-01']);
+
+        $this->sebagai($this->investorAB, $this->sppgA);
+        $json = $this->getJson("/api/v1/sppg/{$this->sppgA}")->assertOk()->assertJsonPath('data.id', $this->sppgA)->json('data');
+        foreach (['no_va', 'saldo_awal', 'saldo_awal_tanggal'] as $kolom) {
+            $this->assertArrayNotHasKey($kolom, $json, $kolom);
+        }
+        $this->assertStringNotContainsString('8881234500', json_encode($this->getJson('/api/v1/sppg')->assertOk()->json()));
+
+        foreach ([$this->akuntanA, $this->kepalaA] as $peran) {
+            $this->sebagai($peran);
+            $this->getJson("/api/v1/sppg/{$this->sppgA}")->assertOk()
+                ->assertJsonPath('data.no_va', '8881234500')
+                ->assertJsonPath('data.saldo_awal', 25_000_000);
+        }
     }
 
     // ---------------------------------------------------------------- S-05 Agen AI
