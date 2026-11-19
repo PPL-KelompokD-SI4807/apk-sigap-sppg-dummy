@@ -55,6 +55,10 @@ export function daftarkanRuteWeb(modules, getUser) {
     route(`/${m.slug}`, (ctx) => renderSegera(ctx.el, m.title), { title: m.title, guard: () => (typeof m.bolehMenu === 'function' ? m.bolehMenu(getUser()) === true : userPerms(getUser(), slug).R) });
   }
   if (!dashboardWeb) route('/dashboard', (ctx) => renderSegera(ctx.el, 'Dashboard'), { title: 'Dashboard', guard: () => dashboardTersedia(getUser()) });
-  route('/penerima-manfaat-agregat', (ctx) => renderSegera(ctx.el, 'Ringkasan Penerima Manfaat'),
+  // Ringkasan agregat untuk investor: hanya hitungan (tanpa data pribadi); hak dari peta server (agregat). Dimuat lazy.
+  route('/penerima-manfaat-agregat', async (ctx) => {
+    const { renderAgregatPenerima } = await import('./components/agregat-view.js');
+    return renderAgregatPenerima(ctx);
+  },
     { title: 'Ringkasan Penerima Manfaat', guard: () => agregatBoleh(getUser(), 'penerima-manfaat') });
 }
