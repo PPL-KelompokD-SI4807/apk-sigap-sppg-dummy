@@ -3675,6 +3675,8 @@ paths:
         Estimasi tiba dihitung TripNotificationService (lihat `NotifikasiPerjalananPratinjau`).
         Memancarkan event `PerjalananDimulai` (pengiriman bot dilakukan listener, bukan endpoint ini).
         Bila PIC titik layanan belum menghubungkan Telegram: `dialihkan_ke_kepala=true`, `status_kirim=tidak_terkirim`.
+        Penugasan (audit RBAC F-02): relawan hanya boleh memicu jadwal yang `petugas_id`-nya dirinya atau yang belum
+        punya petugas; jadwal yang ditugaskan ke relawan lain -> 422 pada `jadwal_distribusi_id`. Kepala SPPG tidak dibatasi penugasan.
       requestBody:
         required: true
         content:
@@ -3728,7 +3730,7 @@ paths:
     post:
       tags: [Notifikasi Perjalanan]
       summary: Pratinjau estimasi tiba dan pesan (tanpa menyimpan)
-      description: Hak C. Tidak membuat data dan tidak memancarkan event. Validasi sama dengan POST /notifikasi-perjalanan.
+      description: Hak C. Tidak membuat data dan tidak memancarkan event. Validasi (termasuk aturan penugasan relawan, 422) sama dengan POST /notifikasi-perjalanan.
       requestBody:
         required: true
         content:
@@ -4525,7 +4527,8 @@ paths:
       summary: Daftar permintaan reset password (Admin)
       description: |
         Hanya Admin (hak ubah Data Pengguna); peran lain 403. Hanya permintaan pengguna dalam scope
-        Admin dan bukan milik sendiri. Default `status=menunggu` (belum kedaluwarsa).
+        Admin dan bukan milik sendiri; penyaringan dilakukan sebelum paginasi sehingga `per_page`, `total`, dan
+        `last_page` akurat. Default `status=menunggu` (belum kedaluwarsa).
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [menunggu, disetujui, ditolak, selesai, kedaluwarsa, semua], default: menunggu } }
         - $ref: '#/components/parameters/Page'
@@ -7579,10 +7582,18 @@ components:
             id: { type: integer }
             nama: { type: string }
         pencairan_dana_id: { type: [integer, 'null'] }
-        nota: { $ref: '#/components/schemas/BerkasRingkas' }
+        nota:
+          description: 'null untuk investor (foto nota disembunyikan, sama dengan PDF Laporan BGN).'
+          oneOf:
+            - $ref: '#/components/schemas/BerkasRingkas'
+            - type: 'null'
         lampiran:
           type: array
+          description: 'Kosong untuk investor (`lampiran_disembunyikan: true`).'
           items: { $ref: '#/components/schemas/Lampiran' }
+        lampiran_disembunyikan:
+          type: boolean
+          description: 'true = foto nota tidak ditampilkan untuk peran pengguna (investor); teks dan nominal tetap terlihat. GET /lampiran/{id} -> 403 `lampiran_disembunyikan`.'
         dicatat_oleh:
           type: [object, 'null']
           properties:
@@ -8976,8 +8987,8 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         nama_ketua_yayasan: { type: [string, 'null'], description: 'R07-1. HANYA untuk peran yang boleh membaca modul keuangan (admin, kepala_sppg, akuntan, investor); peran lain: kunci tidak ada.' }
-        no_va: { type: [string, 'null'], description: 'R07-1. Rekening/Virtual Account; pembatasan peran sama dengan nama_ketua_yayasan.' }
-        saldo_awal: { type: [integer, 'null'], description: 'R07-1. Rupiah bulat; diisi lewat PUT /sppg/{id}/saldo-awal; null = belum diisi. Pembatasan peran sama.' }
+        no_va: { type: [string, 'null'], description: 'R07-1. Rekening/Virtual Account; peran keuangan kecuali investor (kunci tidak ada untuk investor, audit RBAC F-04).' }
+        saldo_awal: { type: [integer, 'null'], description: 'R07-1. Rupiah bulat; diisi lewat PUT /sppg/{id}/saldo-awal; null = belum diisi. Kunci tidak ada untuk investor (audit RBAC F-04).' }
         saldo_awal_tanggal: { type: [string, 'null'], format: date }
         pengaturan_anggaran: { $ref: '#/components/schemas/PengaturanAnggaran' }
         pengaturan_anggaran_kustom: { $ref: '#/components/schemas/PengaturanAnggaranKustom' }
