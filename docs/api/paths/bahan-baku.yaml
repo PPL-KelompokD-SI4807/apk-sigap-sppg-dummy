@@ -33,6 +33,9 @@
     description: |
       Hak: C (admin, staf_gudang). `sppg_id` hanya dipakai Admin (wajib); diabaikan untuk peran lain.
       Menerima `ai_draft_id` opsional (draf Agen AI ditandai confirmed setelah sukses).
+      Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama tidak membuat bahan baku ganda.
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
     requestBody:
       required: true
       content:
@@ -208,6 +211,10 @@
       (boleh negatif, bukan 0) dan `catatan` (alasan) wajib. `keluar` wajib `jadwal_produksi_id` atau
       `catatan`. `pemasok_id` dan `tanggal_kedaluwarsa` hanya untuk `masuk`. Stok per batch dihitung FEFO
       dari mutasi masuk bertanggal kedaluwarsa (lihat /bahan-baku/{id}/batch). Pencatat = pengguna login.
+      Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama mengembalikan
+      respons semula (`Idempotent-Replayed: true`) tanpa mencatat mutasi lagi, sehingga stok tidak berubah dua kali.
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
     requestBody:
       required: true
       content:
