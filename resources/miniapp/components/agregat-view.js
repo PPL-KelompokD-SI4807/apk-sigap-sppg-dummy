@@ -27,9 +27,11 @@ export async function renderAgregatPenerima(ctx) {
   try {
     a = normalisasiAgregat(await api.get('/penerima-manfaat/agregat', undefined, { silent: true }));
   } catch (e) {
+    if (ctx.isStale?.()) return;
     ctx.el.replaceChildren(h('p', { class: 'notice' }, errorMessage(e, 'Gagal memuat ringkasan penerima manfaat.')));
     return;
   }
+  if (ctx.isStale?.()) return;
   ctx.el.replaceChildren(
     h('p', { class: 'muted small' }, `Ringkasan jumlah penerima manfaat${multiSppg(getUser()) ? ' SPPG terpilih' : ''}. Data pribadi tidak ditampilkan.`),
     h('div', { class: 'stack' }, kartuAngka('Total', a.totalTampil), kartuAngka('Aktif', a.aktifTampil), kartuAngka('Nonaktif', a.nonaktifTampil)),
