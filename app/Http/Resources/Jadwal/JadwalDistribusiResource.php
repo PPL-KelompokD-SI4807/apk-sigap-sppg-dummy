@@ -59,12 +59,40 @@ class JadwalDistribusiResource extends JsonResource
 
                 return $mutu?->hasil === HasilMutu::Layak;
             }),
+            'peringatan' => $this->peringatan($d),
             'catatan' => $d->catatan,
             'izin' => $this->izin($request, $d),
             'versi' => (int) $d->versi,
             'created_at' => $d->created_at?->toIso8601String(),
             'updated_at' => $d->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Peringatan (BUKAN galat 422): jam berangkat lebih awal dari jam mulai masak jadwal produksi terkait pada hari
+     * yang sama berarti makanan belum selesai dimasak saat armada berangkat. Hanya untuk jadwal yang masih direncanakan
+     * (menunggu/siap); null bila jam salah satu kosong, tanggal berbeda, atau relasi produksi tidak dimuat.
+     */
+    private function peringatan(JadwalDistribusi $d): ?string
+    {
+        if (! in_array($d->status, [StatusJadwalDistribusi::Menunggu, StatusJadwalDistribusi::Siap], true)
+            || ! $d->relationLoaded('jadwalProduksi') || $d->jadwalProduksi === null) {
+            return null;
+        }
+
+        $produksi = $d->jadwalProduksi;
+
+        if ($d->jam_berangkat === null || $produksi->jam_mulai_masak === null
+            || $d->tanggal_distribusi?->toDateString() !== $produksi->tanggal_produksi?->toDateString()) {
+            return null;
+        }
+
+        $berangkat = substr((string) $d->jam_berangkat, 0, 5);
+        $mulaiMasak = substr((string) $produksi->jam_mulai_masak, 0, 5);
+
+        return $berangkat < $mulaiMasak
+            ? sprintf('Jam berangkat %s lebih awal dari jam mulai masak %s pada jadwal produksi terkait (hari yang sama).', $berangkat, $mulaiMasak)
+            : null;
     }
 
     /**
