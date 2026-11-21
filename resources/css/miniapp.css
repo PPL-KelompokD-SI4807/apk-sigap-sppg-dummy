@@ -156,6 +156,10 @@ a.seg-btn { display: flex; align-items: center; justify-content: center; color: 
 .panel input[type="date"], .panel select, .panel textarea, .filter-row input, .filter-row select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--separator); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
 .panel textarea { resize: vertical; }
 .filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.filter-row > * { min-width: 0; }
+/* Input tanggal/waktu/bulan punya lebar bawaan (WebKit/Android) yang melebihi kolom: paksa mengikuti wadah. */
+input[type="date"], input[type="time"], input[type="month"], input[type="datetime-local"] { min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; }
+.field, .panel { min-width: 0; }
 .big-num { font-size: 1.25rem; font-weight: 700; }
 .preview-msg { padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); }
 .preview-msg p { margin: 4px 0 0; overflow-wrap: anywhere; }
