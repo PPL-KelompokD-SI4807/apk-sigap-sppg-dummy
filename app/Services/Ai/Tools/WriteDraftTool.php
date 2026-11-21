@@ -119,6 +119,18 @@ abstract class WriteDraftTool extends BaseAiTool
         return $this->model === null ? null : $this->model::query()->find($id);
     }
 
+    /**
+     * Target draf ubah/hapus dari argumen (bawaan: `target_id` lewat findTarget). Subkelas boleh menerima rujukan lain
+     * (mis. kata kunci) yang diselesaikan SERVER lewat query ber-scope SPPG + Policy; kembalikan ToolResult untuk
+     * berhenti tanpa draf (mis. tidak ditemukan / lebih dari satu kandidat), null = tidak ditemukan.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    protected function targetDariArgumen(User $user, array $arguments): Model|ToolResult|null
+    {
+        return $this->findTarget($user, (int) ($arguments['target_id'] ?? 0));
+    }
+
     /** Policy per record target untuk draf ubah/hapus (bawaan: Policy update/delete model). */
     protected function izinkanTarget(User $user, Model $target): bool
     {
@@ -400,8 +412,12 @@ abstract class WriteDraftTool extends BaseAiTool
         $target = null;
 
         if ($this->action !== 'C') {
-            $target = $this->findTarget($user, (int) ($arguments['target_id'] ?? 0));
+            $target = $this->targetDariArgumen($user, $arguments);
             unset($arguments['target_id']);
+
+            if ($target instanceof ToolResult) {
+                return $target;
+            }
 
             if ($target === null) {
                 return ToolResult::invalid('Data yang dimaksud tidak ditemukan.');

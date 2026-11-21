@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Ai\Catalog\SppgBound;
 use App\Services\Ai\Eksekusi\RingkasanDraf;
 use App\Services\Ai\Eksekusi\SpesifikasiEksekusi;
+use App\Services\Ai\Tools\ToolResult;
 use App\Services\Ai\Tools\WriteDraftTool;
 use App\Services\LaporanBgn\RingkasanKeuanganService;
 use App\Support\Rbac;
@@ -43,7 +44,14 @@ class UbahSubKategoriPengeluaranTool extends WriteDraftTool
 {
     protected string $name = 'ubah_sub_kategori_pengeluaran';
 
-    protected string $description = 'Siapkan DRAF pengisian atau perubahan sub-kategori (baris Biaya Operasional laporan BGN) untuk SATU pengeluaran operasional. target_id = ID pengeluaran dari tool lihat_sub_kategori_laporan_bgn atau cari_pengeluaran. Data BELUM berubah sampai pengguna menyimpan di Mini App.';
+    /**
+     * Kalimat pertama memuat cara menyebut target (target_id ATAU kata_kunci) karena ToolSelector meringkas deskripsi
+     * ke kalimat pertama (temuan P10: petunjuk target_id terpotong sehingga model tidak tahu cara menunjuk pengeluaran).
+     */
+    protected string $description = 'Siapkan DRAF sub-kategori (baris Biaya Operasional BGN) untuk SATU pengeluaran operasional: isi kata_kunci uraian pengeluaran seperti ditulis pengguna, atau target_id dari cari_pengeluaran. Data BELUM berubah sampai pengguna menyimpan di Mini App.';
+
+    /** Kandidat maksimum yang dikembalikan ke model bila kata_kunci cocok dengan beberapa pengeluaran. */
+    private const MAKS_KANDIDAT = 5;
 
     protected string $module = 'keuangan';
 
@@ -73,6 +81,81 @@ class UbahSubKategoriPengeluaranTool extends WriteDraftTool
             ],
             'required' => ['sub_kategori'],
         ];
+    }
+
+    /**
+     * target_id TIDAK wajib: model boleh mengirim `kata_kunci` (uraian seperti ditulis pengguna) + `tanggal` opsional yang
+     * diselesaikan SERVER (targetDariArgumen). Kolom lain tetap ditolak (additionalProperties false).
+     */
+    public function parameters(): array
+    {
+        $parameters = parent::parameters();
+        $properties = $parameters['properties'];
+        $targetId = $properties['target_id'];
+        $targetId['description'] = 'ID pengeluaran dari cari_pengeluaran atau lihat_sub_kategori_laporan_bgn. Kosongkan bila memakai kata_kunci.';
+        unset($properties['target_id']);
+
+        $parameters['properties'] = [
+            'target_id' => $targetId,
+            'kata_kunci' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 100, 'description' => 'Uraian pengeluaran persis seperti ditulis pengguna; sistem mencari pengeluarannya. Dipakai bila target_id tidak diketahui.'],
+            'tanggal' => ['type' => 'string', 'format' => 'date', 'description' => 'Opsional: tanggal pengeluaran YYYY-MM-DD untuk mempersempit kata_kunci.'],
+        ] + $properties;
+        $parameters['required'] = ['sub_kategori'];
+
+        return $parameters;
+    }
+
+    /**
+     * Target dari `target_id`, atau dari `kata_kunci` (+ `tanggal`) yang dicari SERVER: hanya pengeluaran operasional
+     * SPPG pengguna (SppgBound + SppgScope), bukan hasil pembelian bahan, lolos Policy update. Satu cocok = target;
+     * nol = tidak ditemukan; lebih dari satu = kandidat (id, tanggal, kategori, nominal, sub-kategori; TANPA uraian)
+     * dikembalikan ke model untuk dipilih (pengguna tidak diminta menyebut ID).
+     */
+    protected function targetDariArgumen(User $user, array $arguments): Model|ToolResult|null
+    {
+        if (isset($arguments['target_id'])) {
+            return parent::targetDariArgumen($user, $arguments);
+        }
+
+        $kunci = trim((string) ($arguments['kata_kunci'] ?? ''));
+
+        if (mb_strlen($kunci) < 2) {
+            return ToolResult::invalid('Sebutkan pengeluaran yang dimaksud: isi kata_kunci (uraian seperti ditulis pengguna) atau target_id dari cari_pengeluaran.');
+        }
+
+        $query = SppgBound::apply(Pengeluaran::query(), $user)
+            ->whereNull('pembelian_bahan_id')
+            ->whereNotIn('kategori', [KategoriPengeluaran::BahanBaku->value, KategoriPengeluaran::InsentifFasilitas->value]);
+        $model = $query->getModel();
+        $query->whereRaw($query->getQuery()->getGrammar()->wrap($model->qualifyColumn('uraian'))." LIKE ? ESCAPE '!'", [SppgBound::likePattern($kunci)]);
+
+        if (isset($arguments['tanggal'])) {
+            $query->whereDate($model->qualifyColumn('tanggal'), (string) $arguments['tanggal']);
+        }
+
+        $cocok = $query->orderByDesc($model->qualifyColumn('tanggal'))->orderByDesc($model->getQualifiedKeyName())
+            ->limit(self::MAKS_KANDIDAT + 1)->get()
+            ->filter(fn (Pengeluaran $p) => $this->allows($user, 'update', $p))->values();
+
+        if ($cocok->count() === 1) {
+            return $cocok->first();
+        }
+
+        if ($cocok->isEmpty()) {
+            return ToolResult::invalid('Pengeluaran operasional dengan kata kunci itu tidak ditemukan. Cari dengan cari_pengeluaran atau lihat_sub_kategori_laporan_bgn, lalu isi target_id.');
+        }
+
+        $kandidat = $cocok->take(self::MAKS_KANDIDAT)->map(fn (Pengeluaran $p) => sprintf(
+            'target_id %d: %s, %s, %s, sub-kategori %s',
+            $p->getKey(),
+            (string) $p->tanggal?->toDateString(),
+            (string) $p->kategori?->label(),
+            self::rupiah(RingkasanKeuanganService::rupiah($p->nominal)),
+            $p->sub_kategori?->value ?? '(belum diisi)',
+        ))->implode('; ');
+
+        return ToolResult::invalid('Kata kunci cocok dengan lebih dari satu pengeluaran ('.$kandidat.($cocok->count() > self::MAKS_KANDIDAT ? '; dan lainnya' : '')
+            .'). Bila pesan pengguna menunjuk salah satunya dengan jelas (tanggal/nominal), panggil ulang dengan target_id itu; bila tidak, minta pengguna menyebut tanggal atau nominalnya (jangan meminta ID).');
     }
 
     /** Penanda sub-modul sama dengan ubah_pengeluaran: Mini App membuka layar ubah pengeluaran, Confirmer `pengeluaran`. */

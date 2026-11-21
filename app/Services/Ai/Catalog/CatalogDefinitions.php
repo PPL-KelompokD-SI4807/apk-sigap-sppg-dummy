@@ -318,7 +318,8 @@ final class CatalogDefinitions
             new ResourceSpec(
                 key: 'pengeluaran', module: 'keuangan', label: 'pengeluaran', model: Pengeluaran::class,
                 search: ['uraian'],
-                list: ['id', 'tanggal', 'kategori', 'uraian', 'nominal', 'melebihi_anggaran', 'status_persetujuan', 'pemasok' => 'pemasok.nama'],
+                // sub_kategori ikut disajikan (P10): pengguna sering menunjuk pengeluaran dari sub-kategori saat ini.
+                list: ['id', 'tanggal', 'kategori', 'sub_kategori', 'uraian', 'nominal', 'melebihi_anggaran', 'status_persetujuan', 'pemasok' => 'pemasok.nama'],
                 personalText: ['uraian'],
                 filters: [
                     'kategori' => ['type' => 'string', 'enum' => self::values(KategoriPengeluaran::class)],

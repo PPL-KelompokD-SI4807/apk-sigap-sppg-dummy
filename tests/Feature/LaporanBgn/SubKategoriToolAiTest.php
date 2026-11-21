@@ -470,7 +470,9 @@ class SubKategoriToolAiTest extends LaporanBgnTestCase
         // Skema ketat: kolom lain (nominal, kategori, versi, status) dan enum karangan ditolak.
         $params = $this->registry->all()[self::TULIS]->parameters();
         $validator = app(ArgumentValidator::class);
-        $this->assertSame(['target_id', 'sub_kategori', 'keyakinan'], array_keys($params['properties']));
+        // P10: target lewat target_id ATAU kata_kunci (+ tanggal) yang dicari server; tetap tanpa kolom lain.
+        $this->assertSame(['target_id', 'kata_kunci', 'tanggal', 'sub_kategori', 'keyakinan'], array_keys($params['properties']));
+        $this->assertSame(['sub_kategori'], $params['required']);
         $this->assertNotSame([], $validator->validate($params, ['target_id' => 1, 'sub_kategori' => 'listrik', 'nominal' => 1]));
         $this->assertNotSame([], $validator->validate($params, ['target_id' => 1, 'sub_kategori' => 'listrik', 'versi' => 9]));
         $this->assertNotSame([], $validator->validate($params, ['target_id' => 1, 'sub_kategori' => 'hapus_semua']));
