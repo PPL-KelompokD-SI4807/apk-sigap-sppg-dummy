@@ -9,6 +9,16 @@ export const getUser = () => user;
 export function setUserSesi(u) { user = u; }
 export const getRole = () => user?.role ?? null;
 
+/**
+ * Muat ulang peta hak dari GET /auth/me DENGAN header X-SPPG-Id SPPG aktif saat ini (request() menerapkannya). Peta dari login/me awal
+ * dihitung tanpa SPPG aktif, sehingga untuk Investor multi-SPPG `aksi.*` (mis. lihat_laporan_bgn_agregat) masih false. Ganti `user` bila valid.
+ */
+export async function muatUlangPeta() {
+  const res = await api.get('/auth/me', undefined, { silent: true });
+  if (res?.user && typeof res.user === 'object') user = res.user;
+  return user;
+}
+
 const DEVICE_KEY = 'sigap_device_id';
 const DEVICE_RE = /^[A-Za-z0-9_-]{22,128}$/;
 

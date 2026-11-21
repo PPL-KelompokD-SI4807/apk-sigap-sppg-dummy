@@ -13,6 +13,9 @@ export const labelPerangkat = () => 'Web';
 /** Muat profil dari GET /auth/me (null bila belum/tidak login). Dipakai titik masuk web setelah halaman dimuat. */
 export const muatPengguna = async () => (await klienWeb.muatSesi())?.user ?? null;
 
+/** Muat ulang peta hak (GET /auth/me; klienWeb menambah X-SPPG-Id aktif) setelah investor memilih/mengganti SPPG. Padanan auth.js. */
+export const muatUlangPeta = async () => (await klienWeb.muatSesi())?.user ?? null;
+
 const tidakTersedia = () => Promise.reject(new Error('Fitur ini tidak tersedia di versi web.'));
 export const login = tidakTersedia;
 export const pulihkanSesi = tidakTersedia;
