@@ -218,3 +218,16 @@ test('bukti distribusi: Ubah tanpa foto baru (PUT JSON) mengikuti izin server; f
   assert.equal(t[0].path, '/bukti-distribusi/9');
   assert.equal('foto' in t[0].body, false);
 });
+
+test('detail jadwal produksi (web): "+ Distribusi" mengikuti peta hak server (C jadwal + tab distribusi + dropdown terbaca)', async () => {
+  const { userPerms, jadwalTabBoleh } = await import('../core/permissions.js');
+  const { distribusiBisaDibuat } = await import('../modules/jadwal/schema.js');
+  kepala();
+  const harus = userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser());
+  assert.equal(harus, true, 'fixture: kepala SPPG berhak membuat distribusi');
+  assert.ok(tautan(await buka('/jadwal/1')).includes('#/jadwal/distribusi/baru?jadwal=1'), 'tautan + Distribusi ada');
+  setUserSesi(salin('relawan_dapur'));
+  const sama = userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser());
+  assert.equal(tautan(await buka('/jadwal/1')).includes('#/jadwal/distribusi/baru?jadwal=1'), !!sama, 'peran lain mengikuti peta hak');
+});
+

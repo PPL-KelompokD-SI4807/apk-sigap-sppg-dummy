@@ -208,6 +208,8 @@ const distribusiModule = defineCrudModule({
 distribusiModule.hidden = true;
 
 // ---- Modul produksi ----
+/** Tombol "+ Distribusi" di detail jadwal produksi (Mini App dan web): hanya bila peta hak server mengizinkan. */
+const bolehTambahDistribusi = (rec) => userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser()) && rec.status !== 'dibatalkan';
 const produksiQuery = { menu_belum_disetujui: '' };
 function listTopProduksi() {
   const on = produksiQuery.menu_belum_disetujui === '1';
@@ -242,6 +244,8 @@ const produksiBase = defineCrudModule({
     const links = [];
     // Tautan ke layar/formulir web (kebutuhan bahan, log-produksi, mutu); hak dari peta server. Distribusi menyusul.
     if (jadwalTabBoleh(getUser(), 'produksi')) links.push(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
+    // "+ Distribusi": syarat sama dengan Mini App, seluruhnya dari peta hak server (C jadwal, tab distribusi, dropdown wajib terbaca).
+    if (aktif && bolehTambahDistribusi(rec)) links.push(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
     if (aktif && userPerms(getUser(), 'log-produksi').C) links.push(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
     if (aktif && userPerms(getUser(), 'mutu').C) links.push(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
     return [
@@ -279,7 +283,7 @@ const produksiBase = defineCrudModule({
     const aktif = rec.status !== 'dibatalkan';
     const links = h('div', { class: 'row-actions' });
     links.append(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
-    if (aktif && userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser())) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
+    if (aktif && bolehTambahDistribusi(rec)) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
     if (aktif && userPerms(getUser(), 'log-produksi').C) links.append(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
     if (aktif && userPerms(getUser(), 'mutu').C) links.append(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
     nodes.push(links);
