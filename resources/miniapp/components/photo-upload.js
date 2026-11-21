@@ -189,8 +189,17 @@ export function createPhotoUpload({ name, existing = null, existingUrl = null, m
   // Input kamera TIDAK boleh `multiple`: dengan atribut itu Android/Chrome mengabaikan capture dan membuka pemilih galeri.
   // Galeri boleh multiple; jepretan kamera masuk satu per satu.
   const gal = h('input', { type: 'file', accept: 'image/*', id: `f-${name}-galeri`, class: 'sr-only', multiple: max > 1 });
-  const camBtn = h('label', { class: 'btn', for: `f-${name}` }, 'Ambil foto');
-  const galBtn = h('label', { class: 'btn', for: `f-${name}-galeri` }, 'Pilih dari galeri');
+  // Tombol sungguhan (bukan <label for>): klik membuka pemilih berkas langsung dalam gestur yang sama setelah fokus (mis. kolom
+  // nominal dengan papan ketik terbuka) dilepas. Label proxy gagal bila tata letak bergeser antara sentuh dan lepas (papan ketik menutup),
+  // sehingga kamera tidak terbuka di Telegram Android pada formulir yang foto-nya setelah kolom angka (Pengeluaran > Foto nota).
+  const bukaPemilih = (inp) => () => {
+    if (inp.disabled) return;
+    const aktif = document.activeElement;
+    if (aktif && aktif !== document.body && typeof aktif.blur === 'function') aktif.blur();
+    inp.click();
+  };
+  const camBtn = h('button', { class: 'btn', type: 'button', onclick: bukaPemilih(cam) }, 'Ambil foto');
+  const galBtn = h('button', { class: 'btn', type: 'button', onclick: bukaPemilih(gal) }, 'Pilih dari galeri');
   const actions = h('div', { class: 'photo-actions' }, camera ? camBtn : null, galBtn, cam, gal);
   const el = h('div', { class: 'photo-upload' }, old, list, actions, progress, status);
 
@@ -207,6 +216,7 @@ export function createPhotoUpload({ name, existing = null, existingUrl = null, m
     const f = full();
     for (const b of [camBtn, galBtn]) b.classList.toggle('disabled', f);
     cam.disabled = gal.disabled = f || busy;
+    camBtn.disabled = galBtn.disabled = f || busy;
     if (f) status.textContent = `Batas ${max} foto tercapai. Hapus salah satu untuk menambah.`;
   }
 

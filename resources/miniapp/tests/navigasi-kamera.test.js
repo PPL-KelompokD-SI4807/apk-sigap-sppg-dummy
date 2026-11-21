@@ -74,3 +74,13 @@ test('input kamera: capture=environment tanpa multiple; galeri tanpa capture (mu
   assert.match(src, /'Ambil foto'/);
   assert.match(src, /'Pilih dari galeri'/);
 });
+
+test('tombol foto: <button> + click() pada input berkas (bukan <label for>), dan .sr-only tidak ditimpa .field input', () => {
+  const src = readFileSync(join(akar, 'components', 'photo-upload.js'), 'utf8');
+  assert.match(src, /const camBtn = h\('button'/);
+  assert.match(src, /const galBtn = h\('button'/);
+  assert.doesNotMatch(src, /h\('label', \{ class: 'btn'/);
+  assert.match(src, /inp\.click\(\)/);
+  const css = readFileSync(join(akar, '..', 'css', 'miniapp.css'), 'utf8');
+  assert.match(css, /\.field input\.sr-only\s*\{[^}]*width: 1px/);
+});

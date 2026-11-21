@@ -31,6 +31,8 @@ img { max-width: 100%; }
 .center { text-align: center; }
 .pad { padding: 24px 16px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* `.field input` (lebih spesifik) menimpa .sr-only: input berkas tersembunyi ikut jadi 100% x 44 px. Kembalikan ke 1 px. */
+.field input.sr-only { width: 1px; min-height: 0; height: 1px; padding: 0; border: 0; margin: -1px; }
 [hidden] { display: none !important; }
 
 .appbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg-header); border-bottom: 1px solid var(--separator); }
