@@ -62,3 +62,13 @@ test('tidak ada simpan otomatis: save() hanya dipanggil dari onSubmit pengguna',
   const blok = fv.slice(fv.indexOf('function terapkanDraf'), fv.indexOf('const draftErr'));
   assert.doesNotMatch(blok, /onSubmit|submit\(/);
 });
+
+test('P10b: pesan null/"null"/kosong tidak pernah menjadi teks galat; galat tanpa pesan terdeteksi', async () => {
+  const { pesanPertama, adaGalatTanpaPesan, petakanGalatDraf: petak } = await import('../core/draf-galat.js');
+  for (const v of [null, undefined, 'null', ' NULL ', '', [null], ['null'], [], [{ a: 1 }]]) assert.equal(pesanPertama(v), '', JSON.stringify(v));
+  assert.equal(pesanPertama([null, 'Wajib diisi.']), 'Wajib diisi.');
+  assert.equal(pesanPertama('Stok kurang'), 'Stok kurang');
+  assert.deepEqual(petak({ umum: [null], x: 'null' }, []).lainnya, []);
+  assert.equal(adaGalatTanpaPesan({ umum: [null] }), true);
+  assert.equal(adaGalatTanpaPesan({ umum: ['Wajib.'] }), false);
+});
