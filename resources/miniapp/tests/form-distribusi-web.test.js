@@ -231,3 +231,30 @@ test('detail jadwal produksi (web): "+ Distribusi" mengikuti peta hak server (C 
   assert.equal(tautan(await buka('/jadwal/1')).includes('#/jadwal/distribusi/baru?jadwal=1'), !!sama, 'peran lain mengikuti peta hak');
 });
 
+test('status distribusi menjadi diterima: otomatis ke form Bukti Distribusi dengan jadwal terisi (hanya bila respons izin.catat_bukti)', async () => {
+  kepala();
+  distRec = { ...dist, status: 'berangkat', izin: { ubah: true, hapus: false, catat_bukti: true } };
+  let el = await buka('/jadwal/distribusi/5');
+  let btn = tombol(el).find((b) => /Tandai diterima/i.test(teks(b)));
+  assert.ok(btn, 'tombol Tandai diterima');
+  overlays.length = 0;
+  skrip = [resp(200, { data: { id: 5, status: 'diterima', izin: { ubah: false, hapus: false, catat_bukti: true } } })];
+  let klik = btn.listeners.click();
+  await new Promise((r) => setTimeout(r, 5));
+  tombol(overlays[0]).find((b) => /Ya, ubah/.test(teks(b))).listeners.click();
+  await klik;
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(location.hash, '#/bukti-distribusi/baru?jadwal=5');
+  // Tanpa izin.catat_bukti di respons: tetap di detail (gagal tertutup).
+  el = await buka('/jadwal/distribusi/5');
+  btn = tombol(el).find((b) => /Tandai diterima/i.test(teks(b)));
+  overlays.length = 0;
+  skrip = [resp(200, { data: { id: 5, status: 'diterima', izin: { ubah: false, hapus: false, catat_bukti: false } } })];
+  klik = btn.listeners.click();
+  await new Promise((r) => setTimeout(r, 5));
+  tombol(overlays[0]).find((b) => /Ya, ubah/.test(teks(b))).listeners.click();
+  await klik;
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(!/bukti-distribusi\/baru/.test(location.hash), location.hash);
+  distRec = dist;
+});

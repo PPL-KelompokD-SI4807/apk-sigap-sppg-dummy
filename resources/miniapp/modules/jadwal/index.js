@@ -7,7 +7,7 @@ import { h, formatValue } from '../../core/dom.js';
 import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, jadwalTabBoleh } from '../../core/permissions.js';
-import { route, resolve } from '../../core/router.js';
+import { route, resolve, navigate } from '../../core/router.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage, ringkasGalatAksi } from '../../core/errors.js';
 import {
@@ -47,8 +47,14 @@ function aksiStatus(kind, rec, base, p) {
       if (!(await showConfirm({ title: aksiLabel(kind, to), message: `Ubah status jadwal menjadi "${nama}"?`, okText: 'Ya, ubah', destructive: gagal }))) return;
       btn.disabled = true;
       try {
-        await request('PATCH', `${base}/${rec.id}`, { body: { status: to, ...(rec.versi != null ? { versi: Math.trunc(Number(rec.versi)) } : {}) }, key: newKey(), silent: true });
+        const res = await request('PATCH', `${base}/${rec.id}`, { body: { status: to, ...(rec.versi != null ? { versi: Math.trunc(Number(rec.versi)) } : {}) }, key: newKey(), silent: true });
         toast(`Status menjadi ${nama}.`, 'success');
+        // Diterima -> lanjut ke form Bukti Distribusi (jadwal terisi). Hanya bila server menandai izin.catat_bukti pada respons PATCH
+        // (gagal tertutup) dan peta hak memberi C; selain itu tetap di detail.
+        if (kind === 'distribusi' && to === 'diterima' && unwrap(res)?.izin?.catat_bukti === true && userPerms(getUser(), 'bukti-distribusi').C) {
+          navigate(`/bukti-distribusi/baru?jadwal=${encodeURIComponent(rec.id)}`);
+          return;
+        }
         resolve();
       } catch (e) {
         if (e?.status === 401) throw e;
