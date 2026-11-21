@@ -51,6 +51,12 @@ class ToolSelector
         'D' => ['hapus', 'buang', 'batalkan', 'hilangkan', 'delete', 'cabut'],
     ];
 
+    /**
+     * Kata kerja niat tulis yang hanya dicocokkan sebagai kata UTUH tanpa imbuhan: "baru" (data baru) tidak boleh
+     * cocok dengan "terbaru" (temuan uji per peran P11: "tampilkan keluhan terbaru" terbaca niat tambah).
+     */
+    private const VERBS_TANPA_IMBUHAN = ['baru'];
+
     /** Kata tanya/baca: pesan berangka TANPA kata ini dianggap pencatatan (mis. "log produksi 240 porsi"). */
     private const READ_WORDS = ['berapa', 'apa', 'siapa', 'kapan', 'mana', 'bagaimana', 'cari', 'lihat', 'tampilkan', 'tunjukkan', 'daftar', 'cek', 'ada', 'adakah', 'apakah', 'total', 'rekap'];
 
@@ -105,10 +111,13 @@ class ToolSelector
             $tokens += $cost;
         }
 
+        // Modul yang SUDAH punya tool terpilih tidak disebut sebagai "modul lain" (temuan P10: "Data Keuangan" ikut
+        // tercantum sebagai modul lain padahal tool keuangan ditawarkan, membingungkan model).
+        $ditawarkan = array_flip(array_map(fn (AiTool $t) => $t->module(), array_values($selected)));
         $others = [];
 
         foreach ($allowed as $name => $tool) {
-            if (! isset($selected[$name])) {
+            if (! isset($selected[$name]) && ! isset($ditawarkan[$tool->module()])) {
                 $others[$tool->module()] = (string) config('rbac.modules.'.$tool->module().'.label', $tool->module());
             }
         }
@@ -213,28 +222,14 @@ class ToolSelector
      */
     public function rank(array $allowed, string $text, JenisInputAi $type = JenisInputAi::Teks): array
     {
-        $haystack = ' '.trim((string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($text))).' ';
+        $haystack = self::haystack($text);
 
         if ($type === JenisInputAi::Foto) {
             // Foto tanpa keterangan jelas umumnya nota belanja / surat jalan.
             $haystack .= 'nota belanja ';
         }
 
-        $intents = ['R' => true];
-
-        foreach (self::VERBS as $letter => $verbs) {
-            foreach ($verbs as $verb) {
-                if (self::hasWord($haystack, $verb, true)) {
-                    $intents[$letter] = true;
-                    break;
-                }
-            }
-        }
-
-        if ($type === JenisInputAi::Foto || (count($intents) === 1 && preg_match('/\d/', $haystack) === 1 && ! self::hasAny($haystack, self::READ_WORDS))) {
-            $intents['C'] = true;
-        }
-
+        $intents = self::niat($haystack, $type);
         $scores = [];
 
         foreach ($allowed as $name => $tool) {
@@ -310,6 +305,47 @@ class ToolSelector
             'description' => $compact ? self::shorten($tool->description(), 140, 200) : $tool->description(),
             'input_schema' => $compact ? self::compactSchema($tool->parameters()) : $tool->parameters(),
         ];
+    }
+
+    /** Teks huruf kecil, hanya huruf/angka dipisah satu spasi, diapit spasi (untuk pencocokan kata). */
+    public static function haystack(string $text): string
+    {
+        return ' '.trim((string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($text))).' ';
+    }
+
+    /**
+     * Niat pesan: R selalu; C/U/D bila ada kata kerjanya. Pesan berangka tanpa kata tanya/baca (dan foto) = C.
+     *
+     * @return array<string, true>
+     */
+    public static function niat(string $haystack, JenisInputAi $type = JenisInputAi::Teks): array
+    {
+        $intents = ['R' => true];
+
+        foreach (self::VERBS as $letter => $verbs) {
+            foreach ($verbs as $verb) {
+                $cocok = in_array($verb, self::VERBS_TANPA_IMBUHAN, true)
+                    ? str_contains($haystack, ' '.$verb.' ')
+                    : self::hasWord($haystack, $verb, true);
+
+                if ($cocok) {
+                    $intents[$letter] = true;
+                    break;
+                }
+            }
+        }
+
+        if ($type === JenisInputAi::Foto || (count($intents) === 1 && preg_match('/\d/', $haystack) === 1 && ! self::adaKataBaca($haystack))) {
+            $intents['C'] = true;
+        }
+
+        return $intents;
+    }
+
+    /** Pesan memuat kata tanya/baca utuh (berapa, tampilkan, lihat, cek, ...). */
+    public static function adaKataBaca(string $haystack): bool
+    {
+        return self::hasAny($haystack, self::READ_WORDS);
     }
 
     /** @param array<string, true> $intents */

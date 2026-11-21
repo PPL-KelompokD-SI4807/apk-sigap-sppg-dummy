@@ -35,7 +35,8 @@ use Throwable;
  *   1. pengguna aktif + rate limit (per menit & per jam, NFR-12);
  *   2. masukan dibersihkan, dipotong, dibungkus sebagai data tak tepercaya (IntentParser);
  *      foto pada klien SupportsVision: tahap 1 model vision tanpa tool -> teks hasil baca = data (D6);
- *   3. tool disaring per peran (forUser) lalu, bila aktif, dipilih sesuai niat (ToolSelector, subset);
+ *   3. tool disaring per peran (forUser); pesan teks/suara yang jelas menyasar modul tanpa hak peran -> balasan server
+ *      yang menyebut peran berhak (HakModulAi, tanpa LLM); lalu, bila aktif, dipilih sesuai niat (ToolSelector, subset);
  *   4. loop tool-calling maks config ai.agent.max_iterations; tiap panggilan melewati pelindung token
  *      global (TokenBudget); tiap tool call: nama dikenal? -> tool milik peran pengguna? -> ditawarkan?
  *      -> argumen JSON sah? -> argumen terlindungi dibuang -> skema argumen valid? -> eksekusi
@@ -102,6 +103,7 @@ class AiAgentService
         private readonly ToolSelector $selector,
         private readonly TokenBudget $budget,
         private readonly DraftToolResolver $resolver,
+        private readonly HakModulAi $hak,
     ) {}
 
     /**
@@ -245,6 +247,19 @@ class AiAgentService
 
         // D7: subset tool milik peran yang relevan (selalu subset forUser()). Foto: subset dokumen (selectFoto).
         $allowed = $this->registry->forUser($user);
+
+        // Pesan teks/suara yang jelas menyasar modul tanpa hak peran (Tabel 5): balasan SERVER yang menyebut peran
+        // berhak, tanpa memanggil LLM (P10/P11). Tidak pernah membuka hak; pesan ambigu tetap ke agen.
+        if (! $foto && ($tolak = $this->hak->penolakan($user, $text, $input->type, $allowed)) !== null) {
+            $log['tolak_hak_modul'] = 1;
+            $log['balasan'] = 'server';
+
+            return $this->finish($interaction, $started, $log, HasilAi::Ditolak, 'tanpa_hak_modul', new AiReply(
+                $tolak,
+                interactionId: $interaction->id,
+            ));
+        }
+
         $gabungan = trim($text.' '.($imageText ?? ''));
         $selection = $foto
             ? $this->selector->selectFoto($allowed, $text, $gabungan)
@@ -257,7 +272,7 @@ class AiAgentService
             $log['tool_dipilih'] = true;
         }
 
-        $system = $this->parser->systemPrompt($user, array_keys($tools), $nonce, $selection->active ? $selection->otherModules : [], $foto);
+        $system = $this->parser->systemPrompt($user, array_keys($tools), $nonce, $selection->active ? $selection->otherModules : [], $foto, $foto ? [] : $this->hak->catatanPrompt($user, $text, $input->type));
         $messages = [$this->parser->userMessage($input, $text, $nonce, $imageText)];
         // Teks pengguna hanya untuk penjagaan server (ResolverReferensi), tidak disimpan dan tidak dikirim ulang.
         $context = new ToolContext($interaction->id, $input->type, $gabungan);
@@ -671,7 +686,7 @@ class AiAgentService
 
             return $this->record($log, $call->name, $e->reason === ToolException::UNKNOWN
                 ? ToolResult::invalid('Tool tidak dikenal.')
-                : ToolResult::denied(), []);
+                : ToolResult::denied($this->pesanTanpaHak($call->name)), []);
         }
 
         // Pemilihan tool dinamis: hanya tool yang ditawarkan yang boleh dijalankan (skemanya dikenal model).
@@ -722,6 +737,18 @@ class AiAgentService
         }
 
         return $this->record($log, $call->name, $result, $catatArgumen ? $arguments : [], $stripped);
+    }
+
+    /**
+     * Pesan ke model untuk tool yang dikenal tetapi di luar hak peran: menyebut peran yang BERHAK menurut matriks
+     * (bukan "Kepala SPPG/Admin"), agar penolakan model ke pengguna akurat (P10). Nama tool sudah lolos NAME_PATTERN.
+     */
+    private function pesanTanpaHak(string $nama): string
+    {
+        $tool = $this->registry->all()[$nama] ?? null;
+        $peran = $tool === null ? [] : HakModulAi::peranBerhak($tool->module(), $tool->action());
+
+        return ToolResult::denied()->message.($peran === [] ? '' : ' Peran yang berhak: '.implode(', ', $peran).'.');
     }
 
     /**

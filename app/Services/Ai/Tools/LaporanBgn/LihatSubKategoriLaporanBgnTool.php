@@ -57,7 +57,7 @@ class LihatSubKategoriLaporanBgnTool extends ReadTool
             'properties' => [
                 'bulan' => ['type' => 'string', 'pattern' => '^\d{4}-(0[1-9]|1[0-2])$', 'description' => 'Bulan laporan YYYY-MM (30d-B). Kosongkan bersama tanggal = bulan ini.'],
                 'tanggal' => ['type' => 'string', 'format' => 'date', 'description' => 'Tanggal laporan harian YYYY-MM-DD (30b-B).'],
-                'sppg' => ['type' => 'string', 'maxLength' => 60, 'description' => 'Khusus admin dan investor: kode atau nama SPPG. Kosongkan untuk SPPG aktif.'],
+                'sppg' => ['type' => 'string', 'maxLength' => 60, 'description' => 'Kosongkan (SPPG pengguna dipakai otomatis). Hanya admin/investor: kode atau nama SPPG.'],
             ],
             'required' => [],
             'additionalProperties' => false,
