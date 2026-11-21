@@ -150,7 +150,8 @@ class OpenAiCompatAgentTest extends MasterApiTestCase
             ->push(self::reply(null, [self::toolCall('call_h', 'hapus_titik_layanan', '{"target_id":'.$titik->id.'}')]))
             ->push(self::reply('Tidak bisa.'));
 
-        $this->agent()->handle($this->relawanA, AiInput::text('hapus titik layanan'));
+        // Kata baca "cek": tidak ditolak server lebih dulu (HakModulAi), sehingga penolakan di runTool yang diuji.
+        $this->agent()->handle($this->relawanA, AiInput::text('cek lalu hapus titik layanan'));
 
         $offered = array_map(fn (array $t) => $t['function']['name'], $this->llmRequests()[0]->data()['tools'] ?? []);
         $this->assertNotContains('hapus_titik_layanan', $offered);

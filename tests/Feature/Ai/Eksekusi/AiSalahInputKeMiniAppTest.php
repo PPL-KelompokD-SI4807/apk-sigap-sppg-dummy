@@ -246,9 +246,16 @@ class AiSalahInputKeMiniAppTest extends AiEksekusiTestCase
     {
         $this->assertNull($this->admin->sppg_id);
 
-        // Tool tulis modul ber-tenant tidak pernah ditawarkan ke Admin tanpa SPPG: LLM menjawab teks, dipanggil SEKALI.
-        $this->llm->push(LlmResponse::text('Untuk membuat menu, pilih SPPG di Mini App.'));
+        // P10/P11: permintaan tulis yang jelas di luar hak (Admin = R menu) dijawab SERVER tanpa LLM, menyebut peran berhak.
         $this->chat($this->admin, 'buat menu nasi goreng, lemak 5 ml, bahan ay');
+        $this->assertCount(0, $this->llm->calls);
+        $this->assertStringContainsString('Yang berhak: Ahli Gizi', $this->teks($this->admin));
+        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
+
+        // Pesan campuran (ada kata baca) tetap ke agen. Tool tulis modul ber-tenant tidak pernah ditawarkan ke Admin tanpa
+        // SPPG: LLM menjawab teks, dipanggil SEKALI.
+        $this->llm->push(LlmResponse::text('Untuk membuat menu, pilih SPPG di Mini App.'));
+        $this->chat($this->admin, 'cek lalu buat menu nasi goreng, lemak 5 ml, bahan ay');
 
         $this->assertCount(1, $this->llm->calls);
         $this->assertNotContains('buat_menu', $this->llm->offeredTools(0));
@@ -260,7 +267,7 @@ class AiSalahInputKeMiniAppTest extends AiEksekusiTestCase
         $this->llm->calls = [];
         $this->llm->push(LlmResponse::toolCall('buat_menu', self::menu(['lemak_g' => '5 ml', 'bahan' => [['nama' => 'ay', 'jumlah' => 10, 'satuan' => 'gram']]])))
             ->push(LlmResponse::text('Maaf, Anda tidak berhak membuat menu tanpa SPPG terpilih.'));
-        $this->chat($this->admin, 'buat menu nasi goreng, lemak 5 ml, bahan ay');
+        $this->chat($this->admin, 'cek lalu buat menu nasi goreng, lemak 5 ml, bahan ay');
 
         $this->assertCount(2, $this->llm->calls);
         $this->assertStringContainsString('"status":"ditolak"', (string) collect($this->llm->calls[1]['messages'])->where('role', 'tool')->last()['content']);

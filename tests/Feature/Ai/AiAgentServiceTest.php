@@ -171,7 +171,8 @@ class AiAgentServiceTest extends MasterApiTestCase
     {
         $this->llm->push(LlmResponse::toolCall('buat_titik_layanan', ['nama' => 'SD Palsu']))->push(LlmResponse::text('Tidak bisa.'));
 
-        $this->agent()->handle($this->relawanA, AiInput::text('tambahkan titik layanan SD Palsu'));
+        // Kata baca "cek" membuat pesan tidak ditolak server lebih dulu (HakModulAi): jalur pertahanan berlapis diuji.
+        $this->agent()->handle($this->relawanA, AiInput::text('cek lalu tambahkan titik layanan SD Palsu'));
 
         $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
         $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => str_ends_with($n, '_titik_layanan') && ! str_starts_with($n, 'cari_'))));
