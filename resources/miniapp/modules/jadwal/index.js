@@ -162,6 +162,13 @@ function distribusiFormTop({ record, form, collect, values }) {
   return box;
 }
 
+// Peringatan jam berangkat dari server (string/null): informasi saja, tidak memblokir simpan. Teks dirender sebagai teks.
+export const bannerPeringatan = (rec) => (rec?.peringatan ? h('div', { class: 'notice', role: 'status' }, `⚠ ${rec.peringatan}`) : null);
+function peringatanSetelahSimpan({ res }) {
+  const w = unwrap(res?.data)?.peringatan;
+  if (w) toast(`Peringatan: ${w}`, 'info', 6000);
+}
+
 // ---- Modul distribusi (didaftarkan lebih dulu agar /jadwal/distribusi tidak ditangkap /jadwal/:id) ----
 const distribusiModule = defineCrudModule({
   slug: 'jadwal/distribusi',
@@ -185,7 +192,10 @@ const distribusiModule = defineCrudModule({
   listTop: () => jadwalTabs('distribusi'),
   listTopWeb: () => jadwalTabs('distribusi'),
   formTopWeb: distribusiFormTop,
+  onSaved: peringatanSetelahSimpan,
+  onSavedWeb: peringatanSetelahSimpan,
   detailExtrasWeb: (rec, ctx, p) => [
+    bannerPeringatan(rec),
     rec.status === 'siap' && rec.layak_distribusi === false ? h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.') : null,
     aksiStatus('distribusi', rec, '/jadwal/distribusi', p), // PATCH /jadwal/distribusi/{id} {status}; hanya bila izin U dari server
     // Formulir bukti web (foto + lampiran, PR5) ada; tampil bila flag server DAN peta hak bukti-distribusi mengizinkan Tambah.
@@ -203,7 +213,7 @@ const distribusiModule = defineCrudModule({
     badge: { text: r.status_label || statusDistribusiLabel(r.status), cls: statusBadge(r.status) },
   }),
   detailExtras: (rec, p) => {
-    const nodes = [];
+    const nodes = [bannerPeringatan(rec)];
     if (rec.status === 'siap' && rec.layak_distribusi === false) nodes.push(h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.'));
     nodes.push(aksiStatus('distribusi', rec, '/jadwal/distribusi', p));
     // Tautan memakai flag server (fail closed); aturan status/tanggal/petugas tidak dihitung di klien.
