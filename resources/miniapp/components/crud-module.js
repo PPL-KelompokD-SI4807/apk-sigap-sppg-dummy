@@ -300,7 +300,7 @@ export function defineCrudModule(def) {
       const top = listTopWeb ? listTopWeb() : null;
       if (top) ctx.el.append(top);
       ctx.el.append(createListView({
-        endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder,
+        endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder, createLabel, // label tombol sama dengan Mini App
         createHref: tulis && tambahWeb && bolehBuat() ? `#${base}/baru` : null, itemHref: (r) => `#${base}/${r.id}`,
       }).el);
     }, { title, guard: () => me(permissionSlug).R, alihan: () => redirect(me(permissionSlug)) });

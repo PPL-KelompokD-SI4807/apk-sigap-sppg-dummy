@@ -79,13 +79,34 @@ async function ringkasanScreen(ctx) {
 
 // ---- Daftar riwayat ----
 function listTop({ web = false } = {}) {
-  const dari = h('input', { type: 'date', id: 'f-from', value: listQuery.from, 'aria-label': 'Dari tanggal' });
-  const sampai = h('input', { type: 'date', id: 'f-to', value: listQuery.to, 'aria-label': 'Sampai tanggal' });
+  const dari = h('input', { type: 'date', id: 'f-from', value: listQuery.from, 'aria-label': 'Dari tanggal', placeholder: 'HH/BB/TTTT' });
+  const sampai = h('input', { type: 'date', id: 'f-to', value: listQuery.to, 'aria-label': 'Sampai tanggal', placeholder: 'HH/BB/TTTT' });
   dari.addEventListener('change', () => { listQuery.from = dari.value; resolve(); });
   sampai.addEventListener('change', () => { listQuery.to = sampai.value; resolve(); });
+  // Label terlihat (input tanggal kosong tidak menampilkan placeholder di Android/iOS); sel menyusut agar tidak melebar keluar layar.
+  const kolom = (label, id, input) => h('div', { class: 'stack-tight filter-col' }, h('label', { class: 'label small muted', for: id }, label), input);
   return h('div', { class: 'stack' },
     isAdmin() ? null : h('a', { class: 'btn btn-primary btn-block', href: `#/${SLUG}/ringkasan` }, 'Ringkasan hari ini'),
-    h('div', { class: 'filter-row' }, dari, sampai));
+    h('div', { class: 'filter-row' }, kolom('Dari tanggal', 'f-from', dari), kolom('Sampai tanggal', 'f-to', sampai)));
+}
+
+/**
+ * Status kirim rekap bisa berubah di server setelah job antrean berjalan (menunggu -> terkirim/gagal). Selama masih "menunggu",
+ * muat ulang data detail berkala (maks ~40 detik) dan render ulang begitu status berubah; berhenti saat layar ditinggalkan.
+ */
+function pantauStatusKirim(rec, ctx) {
+  if (rec?.status_kirim !== 'menunggu' || typeof ctx?.isStale !== 'function') return;
+  let n = 0;
+  const tick = async () => {
+    if (ctx.isStale() || ++n > 10) return;
+    try {
+      const r = unwrap(await api.get(`/rekap-harian/${rec.id}`, null, { silent: true }));
+      if (ctx.isStale()) return;
+      if (r?.status_kirim && r.status_kirim !== 'menunggu') { resolve(); return; }
+    } catch { /* coba lagi pada putaran berikut */ }
+    setTimeout(tick, 4000);
+  };
+  setTimeout(tick, 3000);
 }
 
 // ---- Detail snapshot: KPI, catatan (ubah), kirim ulang ----
@@ -159,7 +180,8 @@ const base = defineCrudModule({
   listQuery,
   listTop,
   listTopWeb: () => listTop({ web: true }),
-  detailExtrasWeb: (rec) => {
+  detailExtrasWeb: (rec, ctx) => {
+    pantauStatusKirim(rec, ctx);
     const charts = chartsBlock(rec.ringkasan, [], { tren: false });
     // Aksi tulis hanya bila aksi.* dari peta server (kirim_ulang_rekap = PATCH catatan + kirim ulang; susun_rekap = susun ulang).
     const ubah = bolehAksi(getUser(), 'kirim_ulang_rekap');
@@ -185,7 +207,8 @@ const base = defineCrudModule({
       badge: { text: statusKirimLabel(r.status_kirim), cls: statusKirimBadge(r.status_kirim) },
     });
   },
-  detailExtras: (rec) => {
+  detailExtras: (rec, p, ctx) => {
+    pantauStatusKirim(rec, ctx);
     // Catatan (PATCH) dan kirim ulang = RekapHarianPolicy::update -> aksi.kirim_ulang_rekap; susun ulang = aksi.susun_rekap.
     const ubah = bolehAksi(getUser(), 'kirim_ulang_rekap');
     const charts = chartsBlock(rec.ringkasan, [], { tren: false });
