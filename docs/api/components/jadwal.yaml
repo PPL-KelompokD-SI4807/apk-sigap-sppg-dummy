@@ -81,6 +81,7 @@ schemas:
       status: { $ref: '#/components/schemas/StatusJadwalDistribusi' }
       status_label: { type: string }
       layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
+      peringatan: { type: [string, 'null'], description: 'PERINGATAN, bukan galat (POST/PATCH tetap 201/200): terisi bila jam_berangkat lebih awal dari jam_mulai_masak jadwal produksi terkait pada hari yang sama (jadwal menunggu/siap). null bila jam kosong, tanggal berbeda, atau sudah berangkat/diterima/dibatalkan. Dihitung ulang pada setiap pembacaan.', examples: ['Jam berangkat 02:00 lebih awal dari jam mulai masak 03:00 pada jadwal produksi terkait (hari yang sama).'] }
       catatan: { type: [string, 'null'] }
       izin: { $ref: '#/components/schemas/IzinJadwalDistribusi' }
       versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
