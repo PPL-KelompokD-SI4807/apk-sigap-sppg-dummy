@@ -7,7 +7,7 @@ import { h, formatValue } from '../../core/dom.js';
 import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
 import { userPerms, jadwalTabBoleh } from '../../core/permissions.js';
-import { route, resolve } from '../../core/router.js';
+import { route, resolve, navigate } from '../../core/router.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage, ringkasGalatAksi } from '../../core/errors.js';
 import {
@@ -47,8 +47,14 @@ function aksiStatus(kind, rec, base, p) {
       if (!(await showConfirm({ title: aksiLabel(kind, to), message: `Ubah status jadwal menjadi "${nama}"?`, okText: 'Ya, ubah', destructive: gagal }))) return;
       btn.disabled = true;
       try {
-        await request('PATCH', `${base}/${rec.id}`, { body: { status: to, ...(rec.versi != null ? { versi: Math.trunc(Number(rec.versi)) } : {}) }, key: newKey(), silent: true });
+        const res = await request('PATCH', `${base}/${rec.id}`, { body: { status: to, ...(rec.versi != null ? { versi: Math.trunc(Number(rec.versi)) } : {}) }, key: newKey(), silent: true });
         toast(`Status menjadi ${nama}.`, 'success');
+        // Diterima -> lanjut ke form Bukti Distribusi (jadwal terisi). Hanya bila server menandai izin.catat_bukti pada respons PATCH
+        // (gagal tertutup) dan peta hak memberi C; selain itu tetap di detail.
+        if (kind === 'distribusi' && to === 'diterima' && unwrap(res)?.izin?.catat_bukti === true && userPerms(getUser(), 'bukti-distribusi').C) {
+          navigate(`/bukti-distribusi/baru?jadwal=${encodeURIComponent(rec.id)}`);
+          return;
+        }
         resolve();
       } catch (e) {
         if (e?.status === 401) throw e;
@@ -208,6 +214,8 @@ const distribusiModule = defineCrudModule({
 distribusiModule.hidden = true;
 
 // ---- Modul produksi ----
+/** Tombol "+ Distribusi" di detail jadwal produksi (Mini App dan web): hanya bila peta hak server mengizinkan. */
+const bolehTambahDistribusi = (rec) => userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser()) && rec.status !== 'dibatalkan';
 const produksiQuery = { menu_belum_disetujui: '' };
 function listTopProduksi() {
   const on = produksiQuery.menu_belum_disetujui === '1';
@@ -242,6 +250,8 @@ const produksiBase = defineCrudModule({
     const links = [];
     // Tautan ke layar/formulir web (kebutuhan bahan, log-produksi, mutu); hak dari peta server. Distribusi menyusul.
     if (jadwalTabBoleh(getUser(), 'produksi')) links.push(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
+    // "+ Distribusi": syarat sama dengan Mini App, seluruhnya dari peta hak server (C jadwal, tab distribusi, dropdown wajib terbaca).
+    if (aktif && bolehTambahDistribusi(rec)) links.push(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
     if (aktif && userPerms(getUser(), 'log-produksi').C) links.push(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
     if (aktif && userPerms(getUser(), 'mutu').C) links.push(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
     return [
@@ -279,7 +289,7 @@ const produksiBase = defineCrudModule({
     const aktif = rec.status !== 'dibatalkan';
     const links = h('div', { class: 'row-actions' });
     links.append(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
-    if (aktif && userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser())) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
+    if (aktif && bolehTambahDistribusi(rec)) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
     if (aktif && userPerms(getUser(), 'log-produksi').C) links.append(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
     if (aktif && userPerms(getUser(), 'mutu').C) links.append(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
     nodes.push(links);

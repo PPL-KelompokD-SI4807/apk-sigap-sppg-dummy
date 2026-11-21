@@ -37,7 +37,8 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     } else if (type === 'photo') {
       // Nilai awal foto: url string atau objek BerkasRingkas {lampiran_id,url} (dimuat lewat token). f.label dipakai sebagai nama foto.
       const up = createPhotoUpload({ name: f.name, existing: initial && typeof initial === 'object' ? initial : null, existingUrl: typeof initial === 'string' && initial ? initial : null, label: f.photoLabel || 'foto', camera: f.camera !== false, onChange: clearFlag });
-      ctl = { get: () => up.getFile(), set: () => {}, hasValue: up.hasValue, setError: up.setError, focusEl: null };
+      // Galat validasi tampil di errEl di bawah kolom; setError komponen foto hanya untuk status kompres (tanpa pesan ganda).
+      ctl = { get: () => up.getFile(), set: () => {}, hasValue: up.hasValue, setError: null, focusEl: null };
       wrap.append(label, up.el);
     } else {
       let input;

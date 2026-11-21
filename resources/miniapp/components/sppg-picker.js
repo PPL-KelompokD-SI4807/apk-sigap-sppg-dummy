@@ -2,6 +2,12 @@ import { h, clear } from '../core/dom.js';
 import { api } from '../core/transport.js';
 import { getSppgAktif, setSppgAktif, hapusSppgAktif, tentukanSppgAktif, PESAN_TANPA_SPPG } from '../core/sppg-aktif.js';
 import { errorMessage } from '../core/errors.js';
+import { muatUlangPeta } from '../core/auth.js';
+
+/** Peta hak dihitung server per SPPG aktif: muat ulang dengan header X-SPPG-Id. Gagal (bukan 401) = peta lama (tanpa aksi agregat) tetap, gagal tertutup. */
+async function segarkanPeta() {
+  try { await muatUlangPeta(); } catch (e) { if (e?.status === 401) throw e; }
+}
 
 /**
  * Ambil /sppg-saya dan tentukan SPPG aktif. Hasil: {langkah:'siap'|'pilih'|'kosong', daftar, id?}.
@@ -18,7 +24,7 @@ export async function muatSppgSaya() {
     } else throw e;
   }
   const hasil = tentukanSppgAktif(res, getSppgAktif());
-  if (hasil.langkah === 'siap') setSppgAktif(hasil.id); else if (hasil.langkah === 'pilih') hapusSppgAktif();
+  if (hasil.langkah === 'siap') { setSppgAktif(hasil.id); await segarkanPeta(); } else if (hasil.langkah === 'pilih') hapusSppgAktif();
   return { ...hasil, daftar: res?.data ?? [] };
 }
 
@@ -45,7 +51,7 @@ export async function renderPemilihSppg(el, { onPilih }) {
   for (const s of hasil.daftar) {
     list.append(h('button', {
       class: `btn btn-block${s.id === aktif ? ' btn-primary' : ''}`, type: 'button',
-      onclick: () => { setSppgAktif(s.id); onPilih?.(s.id); },
+      onclick: async () => { setSppgAktif(s.id); await segarkanPeta(); onPilih?.(s.id); },
     }, h('strong', {}, s.nama), h('span', { class: 'muted small' }, ` ${s.kode}${s.status_operasional ? ` · ${s.status_operasional}` : ''}`)));
   }
   el.append(h('section', { class: 'hero' }, h('h2', {}, 'Pilih SPPG'),

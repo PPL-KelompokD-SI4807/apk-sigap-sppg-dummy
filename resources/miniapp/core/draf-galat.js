@@ -7,7 +7,16 @@ export function perluDiperbaiki(draft) {
   return Object.keys(draft.errors || {}).length > 0;
 }
 
-const pesanPertama = (v) => String((Array.isArray(v) ? v[0] : v) ?? '');
+/** Pesan galat pertama sebagai teks; null/undefined/"null"/"undefined"/kosong dan objek mentah dianggap tanpa pesan (''). */
+export function pesanPertama(v) {
+  const x = Array.isArray(v) ? v.find((y) => y != null && String(y).trim() !== '') : v;
+  if (x == null || typeof x === 'object') return '';
+  const t = String(x).trim();
+  return /^(null|undefined)$/i.test(t) ? '' : t;
+}
+
+/** Ada kunci galat (nilai tak kosong, mis. [null]) tetapi tanpa pesan yang layak tampil. */
+export const adaGalatTanpaPesan = (errors) => !!errors && typeof errors === 'object' && Object.values(errors).some((v) => !pesanPertama(v) && !(Array.isArray(v) && !v.length));
 
 /**
  * Petakan errors server ke struktur form.

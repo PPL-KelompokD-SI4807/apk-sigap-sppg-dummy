@@ -152,8 +152,10 @@ function formTopPengeluaran({ mode, record, form, collect }) {
       box.append(h('div', { class: 'alert-danger', role: 'alert' }, 'Nominal melebihi sisa anggaran periode. Pengeluaran tetap dicatat dan ditandai "Melebihi anggaran".'));
     }
   }
-  form.addEventListener('input', show);
-  form.addEventListener('change', show);
+  // Pilihan foto tidak memengaruhi anggaran: jangan memicu muat ulang/penataan ulang kotak di atas formulir saat kamera kembali.
+  const kecualiBerkas = (ev) => { if (ev?.target?.type !== 'file') show(); };
+  form.addEventListener('input', kecualiBerkas);
+  form.addEventListener('change', kecualiBerkas);
   setTimeout(show, 0);
   return box;
 }

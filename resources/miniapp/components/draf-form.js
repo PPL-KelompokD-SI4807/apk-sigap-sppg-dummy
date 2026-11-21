@@ -2,7 +2,7 @@
 import { h } from '../core/dom.js';
 import { api } from '../core/transport.js';
 import { toast } from '../core/ui.js';
-import { perluDiperbaiki } from '../core/draf-galat.js';
+import { perluDiperbaiki, pesanPertama, adaGalatTanpaPesan } from '../core/draf-galat.js';
 
 const unwrap = (res) => (res && res.data !== undefined && !Array.isArray(res) ? res.data : res);
 
@@ -27,11 +27,14 @@ export function pemberitahuanDraf(draft) {
   function pasang(fv) {
     if (!draft) return;
     if (perluDiperbaiki(draft)) {
-      const lainnya = fv.terapkanDraf({ errors: draft.errors || {}, pilihan: draft.pilihan_referensi || [] });
+      const lainnya = fv.terapkanDraf({ errors: draft.errors || {}, pilihan: draft.pilihan_referensi || [] }).filter((m) => pesanPertama(m));
+      // Tanpa satu pun pesan galat yang layak tampil (mis. nilai null dari server): kotak merah disembunyikan, bukan menampilkan "null".
+      const adaIsi = lainnya.length > 0 || Object.values(draft.errors || {}).some((v) => pesanPertama(v));
+      if (adaIsi && adaGalatTanpaPesan(draft.errors) && !lainnya.length) lainnya.push('Ada isian lain yang perlu diperiksa ulang sebelum disimpan.');
       alert.replaceChildren(h('strong', {}, 'Draf dari Agen AI perlu diperbaiki'),
         h('p', { class: 'small' }, 'Perbaiki kolom bertanda merah di bawah, lalu tekan Simpan. Tidak ada yang disimpan otomatis.'),
         lainnya.length ? h('ul', { class: 'small' }, lainnya.map((m) => h('li', {}, m))) : null);
-      alert.hidden = false;
+      alert.hidden = !adaIsi;
     } else fv.terapkanDraf({ errors: {}, pilihan: draft.pilihan_referensi || [] });
   }
   return { info, alert, pasang };

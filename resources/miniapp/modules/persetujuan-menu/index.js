@@ -85,7 +85,7 @@ async function detailScreen(ctx, { tulis = true } = {}) {
     ['Catatan pengaju', rec.catatan_pengaju],
     ...(rec.diputuskan_pada ? [['Diputuskan oleh', rec.diputuskan_oleh ?? 'Sistem'], ['Diputuskan pada', formatValue(rec.diputuskan_pada, 'datetime')], ['Catatan keputusan', rec.catatan_keputusan]] : []),
   ];
-  for (const [k, v] of baris) ket.append(h('dt', {}, k), h('dd', {}, formatValue(v)));
+  for (const [k, v] of baris) ket.append(h('div', { class: 'detail-item' }, h('dt', {}, k), h('dd', {}, formatValue(v))));
   ctx.el.append(h('div', { class: 'panel' }, ket));
   if (rec.kedaluwarsa) ctx.el.append(h('div', { class: 'alert-danger' }, `Menu sudah berubah sejak diajukan (versi sekarang ${rec.menu_versi_sekarang ?? '-'}). Pengajuan ini tidak dapat diputuskan.`));
 
