@@ -198,6 +198,7 @@ test('bukti distribusi (PR5): Tambah web aktif bila peta hak memberi C; foto ser
   await kirim();
   assert.equal(tulis().length, 0, 'tanpa foto: validasi klien menahan kiriman');
   assert.match(teks(el), /Foto serah terima wajib diisi/);
+  assert.equal(teks(el).match(/Foto serah terima wajib diisi/g).length, 1, 'pesan wajib foto tampil sekali (tanpa duplikat di status foto)');
   setUserSesi(salin('kepala_sppg'));
   el = await buka('/bukti-distribusi');
   // Tambah murni dari peta hak server: profil tanpa C pada bukti-distribusi tidak mendapat tautan.
