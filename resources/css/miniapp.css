@@ -92,6 +92,7 @@ img { max-width: 100%; }
 .photo-actions .btn { width: 100%; }
 
 .detail { margin: 0; display: grid; gap: 10px; }
+.detail-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .detail dt { color: var(--hint); font-size: .8rem; }
 .detail dd { margin: 0; overflow-wrap: anywhere; }
 

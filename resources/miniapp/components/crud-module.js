@@ -161,7 +161,7 @@ export function defineCrudModule(def) {
       const dt = h('dt', {}, f.label || f.name);
       const v = rec[f.name];
       const dd = f.type === 'photo' && v ? h('dd', {}, createAuthImage(v, { alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
-      dl.append(dt, dd);
+      dl.append(h('div', { class: 'detail-item' }, dt, dd)); // pasangan label+nilai satu sel grid (web 2/3 kolom)
     }
     return h('div', { class: 'panel' }, dl);
   }

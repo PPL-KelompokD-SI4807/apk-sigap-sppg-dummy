@@ -140,9 +140,9 @@ function panelAkunSaya(rec) {
   return h('div', { class: 'panel stack' },
     h('h2', { class: 'panel-title' }, 'Akun login'),
     h('dl', { class: 'detail' },
-      h('dt', {}, 'Username'), h('dd', {}, rec.username || '-'),
-      h('dt', {}, 'Password'), h('dd', {}, rec.password_diatur ? 'Sudah diatur' : 'Belum diatur'),
-      h('dt', {}, 'Telegram'), h('dd', {}, rec.telegram_terhubung ? 'Terhubung' : 'Belum terhubung')),
+      h('div', { class: 'detail-item' }, h('dt', {}, 'Username'), h('dd', {}, rec.username || '-')),
+      h('div', { class: 'detail-item' }, h('dt', {}, 'Password'), h('dd', {}, rec.password_diatur ? 'Sudah diatur' : 'Belum diatur')),
+      h('div', { class: 'detail-item' }, h('dt', {}, 'Telegram'), h('dd', {}, rec.telegram_terhubung ? 'Terhubung' : 'Belum terhubung'))),
     h('p', { class: 'muted small' }, PESAN_UBAH_PASSWORD));
 }
 
