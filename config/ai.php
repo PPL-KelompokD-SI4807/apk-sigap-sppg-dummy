@@ -220,4 +220,13 @@ return [
         'max_detik_per_jam' => (int) env('AI_STT_DETIK_PER_JAM', 600),
     ],
 
+    /*
+    | Evaluasi akurasi Agen AI (NFR-11): `php artisan sigap:ai-evaluasi`. Memanggil LLM sungguhan, hanya manual (tidak
+    | pernah dari CI/scheduler). jeda_ms = jeda antar-kasus bawaan agar kuota gratis penyedia (mis. Groq TPM) tidak
+    | cepat habis; dapat ditimpa opsi --jeda. Lihat docs/ops/ai-evaluasi.md.
+    */
+    'evaluasi' => [
+        'jeda_ms' => (int) env('AI_EVAL_JEDA_MS', 3000),
+    ],
+
 ];

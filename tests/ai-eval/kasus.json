@@ -1,0 +1,1107 @@
+[
+    {
+        "id": "K001",
+        "modul": "pengguna",
+        "peran": "admin",
+        "pesan": "Tampilkan daftar pengguna yang berperan akuntan.",
+        "tool": "cari_pengguna",
+        "argumen": {
+            "role": "akuntan"
+        }
+    },
+    {
+        "id": "K002",
+        "modul": "pengguna",
+        "peran": "admin",
+        "pesan": "Nonaktifkan pengguna nomor 14.",
+        "tool": "nonaktifkan_pengguna",
+        "argumen": {
+            "target_id": 14
+        }
+    },
+    {
+        "id": "K003",
+        "modul": "pengguna",
+        "peran": "admin",
+        "pesan": "Buat undangan pengguna baru dengan peran staf gudang.",
+        "tool": "buat_undangan_pengguna",
+        "argumen": {
+            "role": "staf_gudang"
+        }
+    },
+    {
+        "id": "K004",
+        "modul": "pengguna",
+        "peran": "admin",
+        "pesan": "Ubah peran pengguna nomor 21 menjadi ahli gizi.",
+        "tool": "ubah_peran_pengguna",
+        "argumen": {
+            "target_id": 21,
+            "role": "ahli_gizi"
+        }
+    },
+    {
+        "id": "K005",
+        "modul": "pengguna",
+        "peran": "admin",
+        "pesan": "Cabut undangan pengguna nomor 5 karena salah kirim.",
+        "tool": "cabut_undangan",
+        "argumen": {
+            "target_id": 5
+        }
+    },
+    {
+        "id": "K006",
+        "modul": "pengguna",
+        "peran": "admin",
+        "pesan": "Lihat undangan pengguna untuk peran relawan.",
+        "tool": "cari_undangan_pengguna",
+        "argumen": {
+            "role": "relawan"
+        }
+    },
+    {
+        "id": "K007",
+        "modul": "notifikasi-perjalanan",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan notifikasi perjalanan yang statusnya berangkat.",
+        "tool": "cari_notifikasi_perjalanan",
+        "argumen": {
+            "status_perjalanan": "berangkat"
+        }
+    },
+    {
+        "id": "K008",
+        "modul": "notifikasi-perjalanan",
+        "peran": "kepala_sppg",
+        "pesan": "Notifikasi perjalanan mana saja yang pengirimannya gagal?",
+        "tool": "cari_notifikasi_perjalanan",
+        "argumen": {
+            "status_kirim": "gagal"
+        }
+    },
+    {
+        "id": "K009",
+        "modul": "notifikasi-perjalanan",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Kirim notifikasi perjalanan untuk jadwal distribusi nomor 31, estimasi tiba 25 menit.",
+        "tool": "buat_notifikasi_perjalanan",
+        "argumen": {
+            "jadwal_distribusi_id": 31,
+            "estimasi_menit": 25
+        }
+    },
+    {
+        "id": "K010",
+        "modul": "notifikasi-perjalanan",
+        "peran": "kepala_sppg",
+        "pesan": "Buat notifikasi perjalanan mobil untuk jadwal distribusi nomor 17 dengan estimasi 40 menit.",
+        "tool": "buat_notifikasi_perjalanan",
+        "argumen": {
+            "jadwal_distribusi_id": 17,
+            "estimasi_menit": 40
+        }
+    },
+    {
+        "id": "K011",
+        "modul": "notifikasi-perjalanan",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Lihat notifikasi perjalanan dari 1 Desember 2026 sampai 5 Desember 2026.",
+        "tool": "cari_notifikasi_perjalanan",
+        "argumen": {
+            "dari": "2026-12-01",
+            "sampai": "2026-12-05"
+        }
+    },
+    {
+        "id": "K012",
+        "modul": "notifikasi-perjalanan",
+        "peran": "kepala_sppg",
+        "pesan": "Perjalanan mobil mana yang sudah tiba di tujuan?",
+        "tool": "cari_notifikasi_perjalanan",
+        "argumen": {
+            "status_perjalanan": "tiba"
+        }
+    },
+    {
+        "id": "K013",
+        "modul": "sppg",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan data SPPG yang status operasionalnya aktif.",
+        "tool": "cari_sppg",
+        "argumen": {
+            "status_operasional": "aktif"
+        }
+    },
+    {
+        "id": "K014",
+        "modul": "sppg",
+        "peran": "akuntan",
+        "pesan": "Cari data SPPG dengan nama Melati.",
+        "tool": "cari_sppg",
+        "argumen": {
+            "q": "Melati"
+        }
+    },
+    {
+        "id": "K015",
+        "modul": "sppg",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah kapasitas porsi harian SPPG nomor 1 menjadi 2500.",
+        "tool": "ubah_sppg",
+        "argumen": {
+            "target_id": 1,
+            "kapasitas_porsi_harian": 2500
+        }
+    },
+    {
+        "id": "K016",
+        "modul": "sppg",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah status operasional SPPG nomor 1 menjadi libur.",
+        "tool": "ubah_sppg",
+        "argumen": {
+            "target_id": 1,
+            "status_operasional": "libur"
+        }
+    },
+    {
+        "id": "K017",
+        "modul": "sppg",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah alamat SPPG nomor 1 menjadi Jl. Kenanga Raya No. 8, Bandung.",
+        "tool": "ubah_sppg",
+        "argumen": {
+            "target_id": 1,
+            "alamat": "Jl. Kenanga Raya No. 8, Bandung"
+        }
+    },
+    {
+        "id": "K018",
+        "modul": "sppg",
+        "peran": "ahli_gizi",
+        "pesan": "Tampilkan data SPPG nomor 1.",
+        "tool": "cari_sppg",
+        "argumen": {
+            "id": 1
+        }
+    },
+    {
+        "id": "K019",
+        "modul": "titik-layanan",
+        "peran": "kepala_sppg",
+        "pesan": "Tambah titik layanan baru bernama SDN Harapan 3, jenis sekolah, jumlah sasaran 240.",
+        "tool": "buat_titik_layanan",
+        "argumen": {
+            "nama": "SDN Harapan 3",
+            "jenis": "sekolah",
+            "jumlah_sasaran": 240
+        }
+    },
+    {
+        "id": "K020",
+        "modul": "titik-layanan",
+        "peran": "kepala_sppg",
+        "pesan": "Tambah titik layanan Posyandu Melati, jenis posyandu, alamat Jl. Mawar No. 12, jarak 3,5 km.",
+        "tool": "buat_titik_layanan",
+        "argumen": {
+            "nama": "Posyandu Melati",
+            "jenis": "posyandu",
+            "alamat": "Jl. Mawar No. 12",
+            "jarak_km": 3.5
+        }
+    },
+    {
+        "id": "K021",
+        "modul": "titik-layanan",
+        "peran": "ahli_gizi",
+        "pesan": "Cari titik layanan dengan nama Harapan.",
+        "tool": "cari_titik_layanan",
+        "argumen": {
+            "q": "Harapan"
+        }
+    },
+    {
+        "id": "K022",
+        "modul": "titik-layanan",
+        "peran": "relawan",
+        "unit": "dapur",
+        "pesan": "Tampilkan titik layanan yang jenisnya PAUD.",
+        "tool": "cari_titik_layanan",
+        "argumen": {
+            "jenis": "paud"
+        }
+    },
+    {
+        "id": "K023",
+        "modul": "titik-layanan",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah jumlah sasaran titik layanan nomor 8 menjadi 310.",
+        "tool": "ubah_titik_layanan",
+        "argumen": {
+            "target_id": 8,
+            "jumlah_sasaran": 310
+        }
+    },
+    {
+        "id": "K024",
+        "modul": "titik-layanan",
+        "peran": "kepala_sppg",
+        "pesan": "Hapus titik layanan nomor 15 dengan alasan: sekolah sudah tutup.",
+        "tool": "hapus_titik_layanan",
+        "argumen": {
+            "target_id": 15,
+            "alasan": "sekolah sudah tutup"
+        }
+    },
+    {
+        "id": "K025",
+        "modul": "penerima-manfaat",
+        "peran": "ahli_gizi",
+        "pesan": "Cari penerima manfaat bernama Siti Contoh.",
+        "tool": "cari_penerima_manfaat",
+        "argumen": {
+            "q": "Siti Contoh"
+        }
+    },
+    {
+        "id": "K026",
+        "modul": "penerima-manfaat",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan penerima manfaat dengan kelompok sasaran balita.",
+        "tool": "cari_penerima_manfaat",
+        "argumen": {
+            "kelompok_sasaran": "balita"
+        }
+    },
+    {
+        "id": "K027",
+        "modul": "penerima-manfaat",
+        "peran": "kepala_sppg",
+        "pesan": "Tambah penerima manfaat siswa perempuan bernama Ananda Uji di titik layanan nomor 4.",
+        "tool": "buat_penerima_manfaat",
+        "argumen": {
+            "titik_layanan_id": 4,
+            "nama": "Ananda Uji",
+            "kelompok_sasaran": "siswa",
+            "jenis_kelamin": "perempuan"
+        }
+    },
+    {
+        "id": "K028",
+        "modul": "penerima-manfaat",
+        "peran": "kepala_sppg",
+        "pesan": "Tambah penerima manfaat balita laki-laki bernama Raka Contoh di titik layanan nomor 2.",
+        "tool": "buat_penerima_manfaat",
+        "argumen": {
+            "titik_layanan_id": 2,
+            "nama": "Raka Contoh",
+            "kelompok_sasaran": "balita",
+            "jenis_kelamin": "laki_laki"
+        }
+    },
+    {
+        "id": "K029",
+        "modul": "penerima-manfaat",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah penerima manfaat nomor 33 menjadi tidak aktif.",
+        "tool": "ubah_penerima_manfaat",
+        "argumen": {
+            "target_id": 33,
+            "is_active": false
+        }
+    },
+    {
+        "id": "K030",
+        "modul": "penerima-manfaat",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah keterangan kelas penerima manfaat nomor 12 menjadi Kelas 5B.",
+        "tool": "ubah_penerima_manfaat",
+        "argumen": {
+            "target_id": 12,
+            "kelas_keterangan": "Kelas 5B"
+        }
+    },
+    {
+        "id": "K031",
+        "modul": "bahan-baku",
+        "peran": "staf_gudang",
+        "pesan": "Bahan baku apa saja yang stoknya menipis?",
+        "tool": "cari_bahan_baku",
+        "argumen": {
+            "menipis": true
+        }
+    },
+    {
+        "id": "K032",
+        "modul": "bahan-baku",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan bahan baku yang akan kedaluwarsa.",
+        "tool": "cari_bahan_baku",
+        "argumen": {
+            "akan_kedaluwarsa": true
+        }
+    },
+    {
+        "id": "K033",
+        "modul": "bahan-baku",
+        "peran": "akuntan",
+        "pesan": "Cari bahan baku kategori sayur.",
+        "tool": "cari_bahan_baku",
+        "argumen": {
+            "kategori": "sayur"
+        }
+    },
+    {
+        "id": "K034",
+        "modul": "bahan-baku",
+        "peran": "staf_gudang",
+        "pesan": "Tambah bahan baku Beras Medium, kategori karbohidrat, satuan kg, stok minimum 50.",
+        "tool": "buat_bahan_baku",
+        "argumen": {
+            "nama": "Beras Medium",
+            "kategori": "karbohidrat",
+            "satuan": "kg",
+            "stok_minimum": 50
+        }
+    },
+    {
+        "id": "K035",
+        "modul": "bahan-baku",
+        "peran": "staf_gudang",
+        "pesan": "Ubah stok minimum bahan baku nomor 6 menjadi 20.",
+        "tool": "ubah_bahan_baku",
+        "argumen": {
+            "target_id": 6,
+            "stok_minimum": 20
+        }
+    },
+    {
+        "id": "K036",
+        "modul": "bahan-baku",
+        "peran": "staf_gudang",
+        "pesan": "Hapus bahan baku nomor 10.",
+        "tool": "hapus_bahan_baku",
+        "argumen": {
+            "target_id": 10
+        }
+    },
+    {
+        "id": "K037",
+        "modul": "bahan-baku",
+        "peran": "staf_gudang",
+        "pesan": "Catat stok masuk bahan baku nomor 3 sebanyak 100.",
+        "tool": "catat_mutasi_stok",
+        "argumen": {
+            "target_id": 3,
+            "jenis": "masuk",
+            "jumlah": 100
+        }
+    },
+    {
+        "id": "K038",
+        "modul": "pemasok",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan pemasok yang jenisnya petani.",
+        "tool": "cari_pemasok",
+        "argumen": {
+            "jenis": "petani"
+        }
+    },
+    {
+        "id": "K039",
+        "modul": "pemasok",
+        "peran": "akuntan",
+        "pesan": "Cari pemasok bernama Tani Makmur.",
+        "tool": "cari_pemasok",
+        "argumen": {
+            "q": "Tani Makmur"
+        }
+    },
+    {
+        "id": "K040",
+        "modul": "pemasok",
+        "peran": "staf_gudang",
+        "pesan": "Tambah pemasok baru UD Sumber Rejeki, jenis UMKM.",
+        "tool": "buat_pemasok",
+        "argumen": {
+            "nama": "UD Sumber Rejeki",
+            "jenis": "umkm"
+        }
+    },
+    {
+        "id": "K041",
+        "modul": "pemasok",
+        "peran": "staf_gudang",
+        "pesan": "Tambah pemasok Koperasi Nelayan Sejahtera, jenis koperasi, menyediakan ikan segar.",
+        "tool": "buat_pemasok",
+        "argumen": {
+            "nama": "Koperasi Nelayan Sejahtera",
+            "jenis": "koperasi",
+            "jenis_bahan": "ikan segar"
+        }
+    },
+    {
+        "id": "K042",
+        "modul": "pemasok",
+        "peran": "staf_gudang",
+        "pesan": "Ubah alamat pemasok nomor 5 menjadi Jl. Pasar Baru No. 3.",
+        "tool": "ubah_pemasok",
+        "argumen": {
+            "target_id": 5,
+            "alamat": "Jl. Pasar Baru No. 3"
+        }
+    },
+    {
+        "id": "K043",
+        "modul": "pemasok",
+        "peran": "staf_gudang",
+        "pesan": "Ubah pemasok nomor 9 menjadi tidak aktif.",
+        "tool": "ubah_pemasok",
+        "argumen": {
+            "target_id": 9,
+            "is_active": false
+        }
+    },
+    {
+        "id": "K044",
+        "modul": "menu-gizi",
+        "peran": "ahli_gizi",
+        "pesan": "Buat menu Nasi Ayam Sayur Lodeh untuk siswa dengan energi 520 kkal dan protein 22 gram.",
+        "tool": "buat_menu",
+        "argumen": {
+            "nama_menu": "Nasi Ayam Sayur Lodeh",
+            "kelompok_sasaran": "siswa",
+            "energi_kkal": 520,
+            "protein_g": 22
+        }
+    },
+    {
+        "id": "K045",
+        "modul": "menu-gizi",
+        "peran": "ahli_gizi",
+        "pesan": "Buat menu Bubur Kacang Hijau untuk balita, tanggal sajian 8 Desember 2026.",
+        "tool": "buat_menu",
+        "argumen": {
+            "nama_menu": "Bubur Kacang Hijau",
+            "kelompok_sasaran": "balita",
+            "tanggal_sajian": "2026-12-08"
+        }
+    },
+    {
+        "id": "K046",
+        "modul": "menu-gizi",
+        "peran": "relawan",
+        "unit": "dapur",
+        "pesan": "Cari menu yang mengandung ikan.",
+        "tool": "cari_menu",
+        "argumen": {
+            "q": "ikan"
+        }
+    },
+    {
+        "id": "K047",
+        "modul": "menu-gizi",
+        "peran": "ahli_gizi",
+        "pesan": "Tampilkan standar gizi untuk ibu hamil.",
+        "tool": "cari_standar_gizi",
+        "argumen": {
+            "kelompok_sasaran": "ibu_hamil"
+        }
+    },
+    {
+        "id": "K048",
+        "modul": "menu-gizi",
+        "peran": "ahli_gizi",
+        "pesan": "Ubah energi menu nomor 7 menjadi 480 kkal.",
+        "tool": "ubah_menu",
+        "argumen": {
+            "target_id": 7,
+            "energi_kkal": 480
+        }
+    },
+    {
+        "id": "K049",
+        "modul": "menu-gizi",
+        "peran": "ahli_gizi",
+        "pesan": "Hapus menu nomor 3.",
+        "tool": "hapus_menu",
+        "argumen": {
+            "target_id": 3
+        }
+    },
+    {
+        "id": "K050",
+        "modul": "jadwal",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan jadwal produksi yang statusnya dimasak.",
+        "tool": "cari_jadwal_produksi",
+        "argumen": {
+            "status": "dimasak"
+        }
+    },
+    {
+        "id": "K051",
+        "modul": "jadwal",
+        "peran": "ahli_gizi",
+        "pesan": "Tampilkan jadwal distribusi yang statusnya siap.",
+        "tool": "cari_jadwal_distribusi",
+        "argumen": {
+            "status": "siap"
+        }
+    },
+    {
+        "id": "K052",
+        "modul": "jadwal",
+        "peran": "kepala_sppg",
+        "pesan": "Buat jadwal produksi menu nomor 5 pada tanggal 10 Desember 2026 dengan target 1800 porsi.",
+        "tool": "buat_jadwal_produksi",
+        "argumen": {
+            "menu_id": 5,
+            "tanggal_produksi": "2026-12-10",
+            "target_porsi": 1800
+        }
+    },
+    {
+        "id": "K053",
+        "modul": "jadwal",
+        "peran": "ahli_gizi",
+        "pesan": "Ubah target porsi jadwal produksi nomor 22 menjadi 2000.",
+        "tool": "ubah_jadwal_produksi",
+        "argumen": {
+            "target_id": 22,
+            "target_porsi": 2000
+        }
+    },
+    {
+        "id": "K054",
+        "modul": "jadwal",
+        "peran": "kepala_sppg",
+        "pesan": "Buat jadwal distribusi dari jadwal produksi nomor 14 ke titik layanan nomor 3 sebanyak 300 porsi.",
+        "tool": "buat_jadwal_distribusi",
+        "argumen": {
+            "jadwal_produksi_id": 14,
+            "titik_layanan_id": 3,
+            "jumlah_porsi": 300
+        }
+    },
+    {
+        "id": "K055",
+        "modul": "jadwal",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Ubah jam berangkat jadwal distribusi nomor 40 menjadi 08:15.",
+        "tool": "ubah_jadwal_distribusi",
+        "argumen": {
+            "target_id": 40,
+            "jam_berangkat": "08:15"
+        }
+    },
+    {
+        "id": "K056",
+        "modul": "jadwal",
+        "peran": "kepala_sppg",
+        "pesan": "Hapus jadwal produksi nomor 19.",
+        "tool": "hapus_jadwal_produksi",
+        "argumen": {
+            "target_id": 19
+        }
+    },
+    {
+        "id": "K057",
+        "modul": "log-produksi",
+        "peran": "relawan",
+        "unit": "dapur",
+        "pesan": "Catat log produksi untuk jadwal produksi nomor 27, realisasi 1750 porsi.",
+        "tool": "buat_log_produksi",
+        "argumen": {
+            "jadwal_produksi_id": 27,
+            "realisasi_porsi": 1750
+        }
+    },
+    {
+        "id": "K058",
+        "modul": "log-produksi",
+        "peran": "relawan",
+        "unit": "dapur",
+        "pesan": "Catat log produksi jadwal produksi nomor 28, realisasi 1500 porsi, sisa makanan 4,5 kg.",
+        "tool": "buat_log_produksi",
+        "argumen": {
+            "jadwal_produksi_id": 28,
+            "realisasi_porsi": 1500,
+            "sisa_makanan_kg": 4.5
+        }
+    },
+    {
+        "id": "K059",
+        "modul": "log-produksi",
+        "peran": "relawan",
+        "unit": "dapur",
+        "pesan": "Tampilkan log produksi yang saya buat sendiri.",
+        "tool": "cari_log_produksi",
+        "argumen": {
+            "milik_saya": true
+        }
+    },
+    {
+        "id": "K060",
+        "modul": "log-produksi",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah kendala pada log produksi nomor 11 menjadi: kompor gas mati sebentar.",
+        "tool": "ubah_log_produksi",
+        "argumen": {
+            "target_id": 11,
+            "kendala": "kompor gas mati sebentar"
+        }
+    },
+    {
+        "id": "K061",
+        "modul": "log-produksi",
+        "peran": "kepala_sppg",
+        "pesan": "Hapus log produksi nomor 6.",
+        "tool": "hapus_log_produksi",
+        "argumen": {
+            "target_id": 6
+        }
+    },
+    {
+        "id": "K062",
+        "modul": "log-produksi",
+        "peran": "akuntan",
+        "pesan": "Lihat log produksi dari 24 November 2026 sampai 28 November 2026.",
+        "tool": "cari_log_produksi",
+        "argumen": {
+            "dari": "2026-11-24",
+            "sampai": "2026-11-28"
+        }
+    },
+    {
+        "id": "K063",
+        "modul": "mutu",
+        "peran": "ahli_gizi",
+        "pesan": "Catat pemeriksaan mutu untuk jadwal produksi nomor 15: dapur bersih, petugas bersih, hasil layak.",
+        "tool": "buat_pemeriksaan_mutu",
+        "argumen": {
+            "jadwal_produksi_id": 15,
+            "kebersihan_dapur": true,
+            "kebersihan_petugas": true,
+            "hasil": "layak"
+        }
+    },
+    {
+        "id": "K064",
+        "modul": "mutu",
+        "peran": "ahli_gizi",
+        "pesan": "Catat pemeriksaan mutu jadwal produksi nomor 16, suhu makanan 62 derajat, dapur bersih, petugas tidak bersih, hasil tidak layak.",
+        "tool": "buat_pemeriksaan_mutu",
+        "argumen": {
+            "jadwal_produksi_id": 16,
+            "suhu_makanan_c": 62,
+            "kebersihan_dapur": true,
+            "kebersihan_petugas": false,
+            "hasil": "tidak_layak"
+        }
+    },
+    {
+        "id": "K065",
+        "modul": "mutu",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan pemeriksaan mutu yang hasilnya tidak layak.",
+        "tool": "cari_pemeriksaan_mutu",
+        "argumen": {
+            "hasil": "tidak_layak"
+        }
+    },
+    {
+        "id": "K066",
+        "modul": "mutu",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Lihat pemeriksaan mutu dari 1 Desember 2026 sampai 3 Desember 2026.",
+        "tool": "cari_pemeriksaan_mutu",
+        "argumen": {
+            "dari": "2026-12-01",
+            "sampai": "2026-12-03"
+        }
+    },
+    {
+        "id": "K067",
+        "modul": "mutu",
+        "peran": "ahli_gizi",
+        "pesan": "Ubah suhu makanan pada pemeriksaan mutu nomor 4 menjadi 65 derajat.",
+        "tool": "ubah_pemeriksaan_mutu",
+        "argumen": {
+            "target_id": 4,
+            "suhu_makanan_c": 65
+        }
+    },
+    {
+        "id": "K068",
+        "modul": "mutu",
+        "peran": "ahli_gizi",
+        "pesan": "Hapus pemeriksaan mutu nomor 2.",
+        "tool": "hapus_pemeriksaan_mutu",
+        "argumen": {
+            "target_id": 2
+        }
+    },
+    {
+        "id": "K069",
+        "modul": "armada",
+        "peran": "kepala_sppg",
+        "pesan": "Tambah armada baru plat D 1234 ABC, jenis minibus box, kapasitas 60 box.",
+        "tool": "buat_armada",
+        "argumen": {
+            "plat_nomor": "D 1234 ABC",
+            "jenis": "minibus box",
+            "kapasitas_box": 60
+        }
+    },
+    {
+        "id": "K070",
+        "modul": "armada",
+        "peran": "akuntan",
+        "pesan": "Tampilkan armada yang statusnya servis.",
+        "tool": "cari_armada",
+        "argumen": {
+            "status": "servis"
+        }
+    },
+    {
+        "id": "K071",
+        "modul": "armada",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah status armada nomor 2 menjadi servis.",
+        "tool": "ubah_armada",
+        "argumen": {
+            "target_id": 2,
+            "status": "servis"
+        }
+    },
+    {
+        "id": "K072",
+        "modul": "armada",
+        "peran": "kepala_sppg",
+        "pesan": "Tambah pengemudi bernama Bima Uji, SIM berlaku hingga 20 Mei 2027.",
+        "tool": "buat_pengemudi",
+        "argumen": {
+            "nama": "Bima Uji",
+            "sim_berlaku_hingga": "2027-05-20"
+        }
+    },
+    {
+        "id": "K073",
+        "modul": "armada",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Cari pengemudi bernama Bima.",
+        "tool": "cari_pengemudi",
+        "argumen": {
+            "q": "Bima"
+        }
+    },
+    {
+        "id": "K074",
+        "modul": "armada",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah pengemudi nomor 3 menjadi tidak aktif.",
+        "tool": "ubah_pengemudi",
+        "argumen": {
+            "target_id": 3,
+            "is_active": false
+        }
+    },
+    {
+        "id": "K075",
+        "modul": "bukti-distribusi",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Catat bukti distribusi jadwal distribusi nomor 44, diterima 300 porsi oleh Ibu Sari Contoh.",
+        "tool": "buat_bukti_distribusi",
+        "argumen": {
+            "jadwal_distribusi_id": 44,
+            "porsi_diterima": 300,
+            "nama_pic": "Ibu Sari Contoh"
+        }
+    },
+    {
+        "id": "K076",
+        "modul": "bukti-distribusi",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Catat bukti distribusi jadwal distribusi nomor 45, diterima 250 porsi oleh Bapak Tono Uji.",
+        "tool": "buat_bukti_distribusi",
+        "argumen": {
+            "jadwal_distribusi_id": 45,
+            "porsi_diterima": 250,
+            "nama_pic": "Bapak Tono Uji"
+        }
+    },
+    {
+        "id": "K077",
+        "modul": "bukti-distribusi",
+        "peran": "akuntan",
+        "pesan": "Lihat bukti distribusi dari 25 November 2026 sampai 30 November 2026.",
+        "tool": "cari_bukti_distribusi",
+        "argumen": {
+            "dari": "2026-11-25",
+            "sampai": "2026-11-30"
+        }
+    },
+    {
+        "id": "K078",
+        "modul": "bukti-distribusi",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan bukti distribusi nomor 12.",
+        "tool": "cari_bukti_distribusi",
+        "argumen": {
+            "id": 12
+        }
+    },
+    {
+        "id": "K079",
+        "modul": "bukti-distribusi",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Ubah porsi diterima pada bukti distribusi nomor 9 menjadi 280.",
+        "tool": "ubah_bukti_distribusi",
+        "argumen": {
+            "target_id": 9,
+            "porsi_diterima": 280
+        }
+    },
+    {
+        "id": "K080",
+        "modul": "bukti-distribusi",
+        "peran": "kepala_sppg",
+        "pesan": "Hapus bukti distribusi nomor 5.",
+        "tool": "hapus_bukti_distribusi",
+        "argumen": {
+            "target_id": 5
+        }
+    },
+    {
+        "id": "K081",
+        "modul": "keuangan",
+        "peran": "akuntan",
+        "pesan": "Catat pencairan dana periode November 2026 dari BGN sebesar 150000000, tanggal cair 20 November 2026.",
+        "tool": "buat_pencairan_dana",
+        "argumen": {
+            "periode": "November 2026",
+            "sumber_dana": "BGN",
+            "nominal": 150000000,
+            "tanggal_cair": "2026-11-20"
+        }
+    },
+    {
+        "id": "K082",
+        "modul": "keuangan",
+        "peran": "akuntan",
+        "pesan": "Catat pengeluaran energi tanggal 21 November 2026, pembelian gas elpiji, nominal 450000.",
+        "tool": "buat_pengeluaran",
+        "argumen": {
+            "tanggal": "2026-11-21",
+            "kategori": "energi",
+            "nominal": 450000
+        }
+    },
+    {
+        "id": "K083",
+        "modul": "keuangan",
+        "peran": "akuntan",
+        "pesan": "Catat pengeluaran transportasi tanggal 22 November 2026, BBM mobil box, nominal 350000.",
+        "tool": "buat_pengeluaran",
+        "argumen": {
+            "tanggal": "2026-11-22",
+            "kategori": "transportasi",
+            "nominal": 350000
+        }
+    },
+    {
+        "id": "K084",
+        "modul": "keuangan",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan pengeluaran yang status persetujuannya diajukan.",
+        "tool": "cari_pengeluaran",
+        "argumen": {
+            "status_persetujuan": "diajukan"
+        }
+    },
+    {
+        "id": "K085",
+        "modul": "keuangan",
+        "peran": "kepala_sppg",
+        "pesan": "Lihat pencairan dana dari 1 November 2026 sampai 30 November 2026.",
+        "tool": "cari_pencairan_dana",
+        "argumen": {
+            "dari": "2026-11-01",
+            "sampai": "2026-11-30"
+        }
+    },
+    {
+        "id": "K086",
+        "modul": "keuangan",
+        "peran": "akuntan",
+        "pesan": "Ubah nominal pengeluaran nomor 31 menjadi 500000.",
+        "tool": "ubah_pengeluaran",
+        "argumen": {
+            "target_id": 31,
+            "nominal": 500000
+        }
+    },
+    {
+        "id": "K087",
+        "modul": "keuangan",
+        "peran": "akuntan",
+        "pesan": "Ubah sub kategori pengeluaran token listrik menjadi listrik.",
+        "tool": "ubah_sub_kategori_pengeluaran",
+        "argumen": {
+            "kata_kunci": "token listrik",
+            "sub_kategori": "listrik"
+        }
+    },
+    {
+        "id": "K088",
+        "modul": "keluhan",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Guru melapor keluhan: makanan datang terlambat.",
+        "tool": "buat_keluhan",
+        "argumen": {
+            "sumber": "guru",
+            "kategori": "terlambat"
+        }
+    },
+    {
+        "id": "K089",
+        "modul": "keluhan",
+        "peran": "relawan",
+        "unit": "dapur",
+        "pesan": "Catat keluhan dari orang tua murid: makanan basi, prioritas kritis.",
+        "tool": "buat_keluhan",
+        "argumen": {
+            "sumber": "orang_tua",
+            "kategori": "makanan_basi",
+            "prioritas": "kritis"
+        }
+    },
+    {
+        "id": "K090",
+        "modul": "keluhan",
+        "peran": "relawan",
+        "unit": "distribusi",
+        "pesan": "Catat keluhan dari penerima: porsi kurang.",
+        "tool": "buat_keluhan",
+        "argumen": {
+            "sumber": "penerima",
+            "kategori": "porsi_kurang"
+        }
+    },
+    {
+        "id": "K091",
+        "modul": "keluhan",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan keluhan yang berstatus kritis.",
+        "tool": "cari_keluhan",
+        "argumen": {
+            "kritis": true
+        }
+    },
+    {
+        "id": "K092",
+        "modul": "keluhan",
+        "peran": "ahli_gizi",
+        "pesan": "Tampilkan keluhan yang statusnya baru.",
+        "tool": "cari_keluhan",
+        "argumen": {
+            "status": "baru"
+        }
+    },
+    {
+        "id": "K093",
+        "modul": "keluhan",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah status keluhan nomor 18 menjadi diproses.",
+        "tool": "ubah_keluhan",
+        "argumen": {
+            "target_id": 18,
+            "status": "diproses"
+        }
+    },
+    {
+        "id": "K094",
+        "modul": "keluhan",
+        "peran": "ahli_gizi",
+        "pesan": "Ubah status keluhan nomor 7 menjadi selesai.",
+        "tool": "ubah_keluhan",
+        "argumen": {
+            "target_id": 7,
+            "status": "selesai"
+        }
+    },
+    {
+        "id": "K095",
+        "modul": "rekap-harian",
+        "peran": "kepala_sppg",
+        "pesan": "Tampilkan rekap harian yang pengirimannya gagal.",
+        "tool": "cari_rekap_harian",
+        "argumen": {
+            "status_kirim": "gagal"
+        }
+    },
+    {
+        "id": "K096",
+        "modul": "rekap-harian",
+        "peran": "akuntan",
+        "pesan": "Lihat rekap harian dari 23 November 2026 sampai 27 November 2026.",
+        "tool": "cari_rekap_harian",
+        "argumen": {
+            "dari": "2026-11-23",
+            "sampai": "2026-11-27"
+        }
+    },
+    {
+        "id": "K097",
+        "modul": "rekap-harian",
+        "peran": "kepala_sppg",
+        "pesan": "Buat rekap harian untuk tanggal 24 November 2026.",
+        "tool": "buat_rekap_harian",
+        "argumen": {
+            "tanggal": "2026-11-24"
+        }
+    },
+    {
+        "id": "K098",
+        "modul": "rekap-harian",
+        "peran": "kepala_sppg",
+        "pesan": "Buat rekap harian tanggal 25 November 2026 dan langsung kirim.",
+        "tool": "buat_rekap_harian",
+        "argumen": {
+            "tanggal": "2026-11-25",
+            "kirim": true
+        }
+    },
+    {
+        "id": "K099",
+        "modul": "rekap-harian",
+        "peran": "kepala_sppg",
+        "pesan": "Ubah catatan rekap harian nomor 8 menjadi: Distribusi lancar tanpa kendala.",
+        "tool": "ubah_rekap_harian",
+        "argumen": {
+            "target_id": 8,
+            "catatan": "Distribusi lancar tanpa kendala"
+        }
+    },
+    {
+        "id": "K100",
+        "modul": "rekap-harian",
+        "peran": "ahli_gizi",
+        "pesan": "Tampilkan rekap harian nomor 3.",
+        "tool": "cari_rekap_harian",
+        "argumen": {
+            "id": 3
+        }
+    }
+]
