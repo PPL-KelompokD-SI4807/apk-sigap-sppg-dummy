@@ -14,7 +14,7 @@ import {
   STATUS_PRODUKSI, STATUS_DISTRIBUSI, statusProduksiLabel, statusDistribusiLabel, statusBadge, transisiValid, aksiLabel,
   distribusiBisaDibuat, hitungKapasitas, sisaPorsiDistribusi,
   produksiFields, produksiDetailFields, produksiPayload, distribusiFields, distribusiDetailFields, distribusiPayload,
-  statusKebutuhan, ringkasKebutuhan, catatanTidakDapat, menuBelumDisetujui, masakDitahanMenu, pesanGagalStatus,
+  barisPesanPic, statusKebutuhan, ringkasKebutuhan, catatanTidakDapat, menuBelumDisetujui, masakDitahanMenu, pesanGagalStatus,
 } from './schema.js';
 import { statusLabel as statusMenuLabel } from '../persetujuan-menu/logika.js';
 
@@ -54,6 +54,12 @@ function aksiStatus(kind, rec, base, p) {
         if (kind === 'distribusi' && to === 'diterima' && unwrap(res)?.izin?.catat_bukti === true && userPerms(getUser(), 'bukti-distribusi').C) {
           navigate(`/bukti-distribusi/baru?jadwal=${encodeURIComponent(rec.id)}`);
           return;
+        }
+        if (kind === 'distribusi' && (to === 'berangkat' || to === 'diterima')) {
+          toast('Pesan ke PIC dijadwalkan', 'info');
+          // Job antrean belum jalan saat PATCH: GET ulang detail sekali setelah ~3 detik bila pengguna masih di layar ini.
+          const hashAwal = location.hash;
+          setTimeout(() => { if (location.hash === hashAwal) resolve(); }, 3000);
         }
         resolve();
       } catch (e) {
@@ -164,6 +170,16 @@ function distribusiFormTop({ record, form, collect, values }) {
 
 // Peringatan jam berangkat dari server (string/null): informasi saja, tidak memblokir simpan. Teks dirender sebagai teks.
 export const bannerPeringatan = (rec) => (rec?.peringatan ? h('div', { class: 'notice', role: 'status' }, `⚠ ${rec.peringatan}`) : null);
+/** Bagian "Pesan ke PIC": satu baris per entri riwayat notifikasi_pic (jenis, badge status, jam). */
+export function bagianPesanPic(rec) {
+  const baris = barisPesanPic(rec?.notifikasi_pic);
+  const isi = baris.length
+    ? baris.map((b) => h('div', { class: 'card-row' },
+      h('span', {}, b.jenis, b.jam ? h('span', { class: 'muted' }, ` · ${b.jam}`) : null),
+      h('span', { class: `badge ${b.cls}` }, b.label)))
+    : [h('p', { class: 'muted small' }, 'Belum ada pesan ke PIC')];
+  return h('div', { class: 'panel' }, h('div', { class: 'stack-tight' }, h('h2', { class: 'panel-title' }, 'Pesan ke PIC'), ...isi));
+}
 function peringatanSetelahSimpan({ res }) {
   const w = unwrap(res?.data)?.peringatan;
   if (w) toast(`Peringatan: ${w}`, 'info', 6000);
@@ -196,6 +212,7 @@ const distribusiModule = defineCrudModule({
   onSavedWeb: peringatanSetelahSimpan,
   detailExtrasWeb: (rec, ctx, p) => [
     bannerPeringatan(rec),
+    bagianPesanPic(rec),
     rec.status === 'siap' && rec.layak_distribusi === false ? h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.') : null,
     aksiStatus('distribusi', rec, '/jadwal/distribusi', p), // PATCH /jadwal/distribusi/{id} {status}; hanya bila izin U dari server
     // Formulir bukti web (foto + lampiran, PR5) ada; tampil bila flag server DAN peta hak bukti-distribusi mengizinkan Tambah.
@@ -213,7 +230,7 @@ const distribusiModule = defineCrudModule({
     badge: { text: r.status_label || statusDistribusiLabel(r.status), cls: statusBadge(r.status) },
   }),
   detailExtras: (rec, p) => {
-    const nodes = [bannerPeringatan(rec)];
+    const nodes = [bannerPeringatan(rec), bagianPesanPic(rec)];
     if (rec.status === 'siap' && rec.layak_distribusi === false) nodes.push(h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.'));
     nodes.push(aksiStatus('distribusi', rec, '/jadwal/distribusi', p));
     // Tautan memakai flag server (fail closed); aturan status/tanggal/petugas tidak dihitung di klien.

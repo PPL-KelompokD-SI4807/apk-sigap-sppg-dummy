@@ -24,6 +24,26 @@ export const statusDistribusiLabel = (v) => labelOf(STATUS_DISTRIBUSI, v);
 const BADGE = { direncanakan: 'badge-info', dimasak: 'badge-warn', selesai: 'badge-ok', dibatalkan: 'badge-danger', menunggu: 'badge-info', siap: 'badge-warn', berangkat: 'badge-warn', diterima: 'badge-ok' };
 export const statusBadge = (v) => BADGE[v] || '';
 
+// Pesan ke PIC (notifikasi_pic dari server): pemformat murni, tanpa DOM.
+const JENIS_PIC = { berangkat: 'Berangkat', diterima: 'Diterima' };
+const STATUS_PIC = {
+  menunggu: { label: 'Menunggu', cls: 'badge-warn' },
+  terkirim: { label: 'Terkirim', cls: 'badge-ok' },
+  gagal: { label: 'Gagal', cls: 'badge-danger' },
+  dialihkan_ke_kepala: { label: 'Dialihkan ke Kepala SPPG', cls: 'badge-info' },
+};
+export const statusPicInfo = (v) => STATUS_PIC[v] || { label: String(v ?? '-'), cls: 'badge-info' };
+const jamWib = (iso) => { const m = /T(\d{2}:\d{2})/.exec(String(iso ?? '')); return m ? m[1] : ''; };
+/** Baris tampilan dari notifikasi_pic; [] bila null. Tanpa riwayat, entri teratas dipakai sebagai satu baris. */
+export function barisPesanPic(n) {
+  if (!n || typeof n !== 'object') return [];
+  const src = Array.isArray(n.riwayat) && n.riwayat.length ? n.riwayat : [n];
+  return src.map((e) => {
+    const s = statusPicInfo(e.status_kirim);
+    return { jenis: JENIS_PIC[e.jenis] || String(e.jenis ?? '-'), label: s.label, cls: s.cls, jam: jamWib(e.waktu) };
+  });
+}
+
 // Transisi status valid (contract: StatusJadwalProduksi / StatusJadwalDistribusi).
 export const TRANSISI = {
   produksi: { direncanakan: ['dimasak', 'dibatalkan'], dimasak: ['selesai', 'dibatalkan'], selesai: [], dibatalkan: [] },
