@@ -3,6 +3,7 @@
 // Nota diunggah dulu ke POST /lampiran (modul pembelian-bahan), lalu id-nya dikirim sebagai lampiran_ids.
 import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
+import { kolomTanggal } from '../../components/filter-tanggal.js';
 import { createAuthImage } from '../../components/photo-upload.js';
 import { lampiranField } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
@@ -100,7 +101,7 @@ function inputTanggal(id, label, param) {
 }
 function listTop() {
   return h('div', { class: 'stack' },
-    h('div', { class: 'filter-row' }, inputTanggal('f-dari', 'Dari tanggal', 'from'), inputTanggal('f-sampai', 'Sampai tanggal', 'to')),
+    h('div', { class: 'filter-row' }, kolomTanggal('Dari tanggal', 'f-dari', inputTanggal('f-dari', 'Dari tanggal', 'from')), kolomTanggal('Sampai tanggal', 'f-sampai', inputTanggal('f-sampai', 'Sampai tanggal', 'to'))),
     h('div', { class: 'filter-row' },
       selectRelasi('f-bahan', 'Semua bahan', 'bahan_baku_id', '/bahan-baku', (b) => b.nama),
       selectRelasi('f-pemasok', 'Semua pemasok', 'pemasok_id', '/pemasok', (p) => p.nama)));
