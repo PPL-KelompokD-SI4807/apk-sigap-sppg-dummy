@@ -3,6 +3,7 @@
 import { defineCrudModule } from '../../components/crud-module.js';
 import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { rowCard } from '../../components/row-card.js';
+import { kolomTanggal } from '../../components/filter-tanggal.js';
 import { h } from '../../core/dom.js';
 import { api } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
@@ -96,7 +97,7 @@ function listTop() {
   const sampai = h('input', { type: 'date', id: 'f-to', value: listQuery.to, 'aria-label': 'Sampai tanggal' });
   dari.addEventListener('change', () => setF('from', dari.value));
   sampai.addEventListener('change', () => setF('to', sampai.value));
-  wrap.append(kritis, chips, h('div', { class: 'filter-row' }, prio, dari, sampai));
+  wrap.append(kritis, chips, h('div', { class: 'filter-row' }, h('div', { class: 'filter-col-penuh' }, prio), kolomTanggal('Dari tanggal', 'f-from', dari), kolomTanggal('Sampai tanggal', 'f-to', sampai)));
 
   // Ringkasan jumlah per status mengikuti filter tanggal.
   api.get('/keluhan/ringkasan', { from: listQuery.from, to: listQuery.to }, { silent: true }).then((res) => {

@@ -112,7 +112,7 @@ img { max-width: 100%; }
 @media (min-width: 480px) { .menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* ---- Modul grup A: tab segmen, kartu baris, dialog undangan ---- */
-.seg { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border-radius: var(--radius); overflow-x: auto; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--bg-secondary); border-radius: var(--radius); max-width: 100%; }
 .seg-btn { flex: 1 0 auto; min-height: 40px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font: inherit; font-weight: 600; font-size: .9rem; cursor: pointer; white-space: nowrap; }
 .seg-btn.active { background: var(--bg-section); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 .row-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; color: var(--text); background: var(--bg-section); border-radius: var(--radius); }
@@ -157,6 +157,9 @@ a.seg-btn { display: flex; align-items: center; justify-content: center; color: 
 .panel textarea { resize: vertical; }
 .filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .filter-row > * { min-width: 0; }
+.filter-col { min-width: 0; }
+.filter-col input { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.filter-col-penuh { grid-column: 1 / -1; }
 /* Input tanggal/waktu/bulan punya lebar bawaan (WebKit/Android) yang melebihi kolom: paksa mengikuti wadah. */
 input[type="date"], input[type="time"], input[type="month"], input[type="datetime-local"] { min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; }
 .field, .panel { min-width: 0; }
