@@ -23,7 +23,7 @@ class DomainEventNotifications
     /** Event yang didengarkan (didaftarkan hanya bila kelas App\Events\<nama> ada saat boot). */
     public const EVENTS = [
         'StokMenipis', 'BahanAkanKedaluwarsa', 'KekuranganBahan', 'MutuTidakLayak', 'KeluhanKritis',
-        'PerjalananDimulai', 'PerjalananTiba', 'PerjalananTerlambat', 'RekapHarianDibuat',
+        'PerjalananDimulai', 'PerjalananTiba', 'PerjalananTerlambat', 'DistribusiDiterima', 'RekapHarianDibuat',
         'BuktiDistribusiDicatat', 'DistribusiTerlambat', 'BuktiDistribusiBelumMasuk',
         'AnggaranMencapai80', 'AnggaranMencapai100', 'AnggaranMelampaui',
         'MenuDiajukan', 'MenuDiputuskan', 'PengeluaranDiajukan',
@@ -40,6 +40,8 @@ class DomainEventNotifications
         'PerjalananDimulai' => [Role::KepalaSppg],
         'PerjalananTiba' => [Role::KepalaSppg],
         'PerjalananTerlambat' => [Role::KepalaSppg],
+        // PIC titik layanan menerima konfirmasi; PIC belum terhubung -> Kepala SPPG (sama seperti FR-12).
+        'DistribusiDiterima' => [Role::KepalaSppg],
         'RekapHarianDibuat' => [Role::KepalaSppg, Role::AhliGizi, Role::Akuntan],
         'BuktiDistribusiDicatat' => [Role::KepalaSppg],
         'DistribusiTerlambat' => [Role::KepalaSppg],
@@ -112,6 +114,7 @@ class DomainEventNotifications
             'MutuTidakLayak' => $this->mutuTidakLayak($name, $sppgId, $p),
             'KeluhanKritis' => $this->keluhanKritis($name, $sppgId, $p),
             'PerjalananDimulai', 'PerjalananTiba', 'PerjalananTerlambat' => $this->perjalanan($name, $sppgId, $p),
+            'DistribusiDiterima' => $this->distribusiDiterima($name, $sppgId, $p),
             'RekapHarianDibuat' => $this->rekap($name, $sppgId, $p),
             'BuktiDistribusiDicatat' => $this->buktiDistribusi($name, $sppgId, $p),
             'DistribusiTerlambat' => $this->distribusiTerlambat($name, $sppgId, $p),
@@ -299,6 +302,37 @@ class DomainEventNotifications
             buttonLabel: 'Buka Notifikasi Perjalanan',
             buttonPath: '/notifikasi-perjalanan',
             track: $name === 'PerjalananDimulai' && $toPic ? ['type' => DeliveryTracker::PERJALANAN, 'id' => $id] : null,
+        );
+    }
+
+    /**
+     * Konfirmasi singkat ke PIC: nama titik dan waktu terima saja (tanpa data pribadi). PIC belum terhubung ->
+     * Kepala SPPG (status "dialihkan_ke_kepala" sudah dicatat saat event dibuat, jadi tidak dilacak).
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function distribusiDiterima(string $name, int $sppgId, array $p): NotificationMessage
+    {
+        $jadwalId = (int) $this->int($p, 'jadwalDistribusiId', 'jadwal_distribusi_id');
+        $titik = $this->e($this->str($p, 'titikLayananNama', 'titik_layanan_nama'));
+        $picChat = $this->int($p, 'picTelegramChatId', 'pic_telegram_chat_id');
+        $dialihkan = (bool) ($p['dialihkanKeKepala'] ?? $p['dialihkan_ke_kepala'] ?? $picChat === null);
+        $toPic = $picChat !== null && ! $dialihkan;
+        $waktu = $this->time($this->str($p, 'waktuTerima', 'waktu_terima'));
+        $isi = "Makanan MBG untuk {$titik} tercatat diterima pukul {$waktu} WIB. Terima kasih.";
+
+        return new NotificationMessage(
+            type: $name,
+            dedupKey: "{$name}:{$sppgId}:{$jadwalId}",
+            sppgId: $sppgId,
+            html: $toPic
+                ? "<b>SiGAP SPPG</b>\n{$isi}"
+                : "<b>Distribusi diterima</b>\n{$isi}\nPIC titik layanan belum menghubungkan Telegram, konfirmasi dialihkan ke Anda.",
+            roles: $toPic ? [] : self::RECIPIENTS[$name],
+            chatIds: $toPic ? [$picChat] : [],
+            buttonLabel: 'Buka Jadwal Distribusi',
+            buttonPath: '/jadwal',
+            track: $toPic ? ['type' => DeliveryTracker::DISTRIBUSI_DITERIMA, 'id' => $jadwalId] : null,
         );
     }
 

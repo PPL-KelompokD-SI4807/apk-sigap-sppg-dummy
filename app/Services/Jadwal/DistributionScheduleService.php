@@ -13,6 +13,7 @@ use App\Models\Pengemudi;
 use App\Models\Scopes\SppgScope;
 use App\Models\TitikLayanan;
 use App\Models\User;
+use App\Services\Perjalanan\TripNotificationService;
 use App\Support\KunciVersi;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +38,8 @@ class DistributionScheduleService
         'titik_layanan_id', 'armada_id', 'pengemudi_id', 'petugas_id',
         'tanggal_distribusi', 'jam_berangkat', 'jam_rencana_tiba', 'jumlah_porsi',
     ];
+
+    public function __construct(private readonly TripNotificationService $perjalanan) {}
 
     /**
      * @param  array<string, mixed>  $data
@@ -75,9 +78,9 @@ class DistributionScheduleService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function perbarui(JadwalDistribusi $jadwal, array $data, ?int $versi = null): JadwalDistribusi
+    public function perbarui(User $pengguna, JadwalDistribusi $jadwal, array $data, ?int $versi = null): JadwalDistribusi
     {
-        return DB::transaction(function () use ($jadwal, $data, $versi): JadwalDistribusi {
+        return DB::transaction(function () use ($pengguna, $jadwal, $data, $versi): JadwalDistribusi {
             $produksi = $this->kunciProduksi((int) $jadwal->jadwal_produksi_id, (int) $jadwal->sppg_id);
             $jadwal = JadwalDistribusi::withoutGlobalScope(SppgScope::class)->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
             KunciVersi::periksa($jadwal, $versi, 'Jadwal distribusi');
@@ -102,6 +105,7 @@ class DistributionScheduleService
             }
 
             $statusBaru = isset($data['status']) ? StatusJadwalDistribusi::from($data['status']) : $jadwal->status;
+            $statusLama = $jadwal->status;
 
             if ($statusBaru !== $jadwal->status) {
                 $this->validasiTransisi($jadwal->status, $statusBaru);
@@ -117,8 +121,22 @@ class DistributionScheduleService
             }
 
             $jadwal->fill($final + array_intersect_key($data, ['catatan' => true]));
+
+            if ($statusBaru === StatusJadwalDistribusi::Berangkat && $statusLama !== StatusJadwalDistribusi::Berangkat) {
+                // Status ke "berangkat" lewat TripNotificationService (estimasi tiba + pesan ke PIC; F-02 berlaku). Service
+                // yang mengubah status jadwal (satu transaksi) dan idempoten bila perjalanan aktif sudah ada.
+                $jadwal->save();
+                $this->perjalanan->berangkatkanDariJadwal($pengguna, $jadwal);
+
+                return $jadwal->refresh();
+            }
+
             $jadwal->status = $statusBaru;
             $jadwal->save();
+
+            if ($statusBaru === StatusJadwalDistribusi::Diterima && $statusLama !== StatusJadwalDistribusi::Diterima) {
+                $this->perjalanan->konfirmasiDiterima($jadwal);
+            }
 
             return $jadwal;
         });

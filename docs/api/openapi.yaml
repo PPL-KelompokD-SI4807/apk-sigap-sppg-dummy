@@ -1824,6 +1824,12 @@ paths:
       description: |
         Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
         mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+        Perubahan `status` menyatukan dua jalur (isu #177): ke `berangkat` (dari `siap`) memakai TripNotificationService:
+        gerbang mutu (422 `status`), aturan petugas F-02 (relawan bukan petugas -> 422 `status`), lalu membuat perjalanan
+        (estimasi tiba) dan menjadwalkan pesan ke PIC titik layanan lewat antrean (PIC belum terhubung Telegram -> dialihkan ke
+        Kepala SPPG). Idempoten: bila sudah ada perjalanan aktif untuk jadwal itu, hanya status yang diselaraskan, tanpa
+        perjalanan/pesan baru. Ke `diterima` lewat PATCH menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal; pencatatan bukti distribusi TIDAK mengirim pesan ini (PIC hanya menerima "tercatat tiba").
+        Hasil kirim ada di `notifikasi_pic` (respons PATCH mencerminkan keadaan saat commit, biasanya `menunggu`; baca ulang lewat GET).
         Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
@@ -1850,6 +1856,12 @@ paths:
       description: |
         Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
         mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+        Perubahan `status` menyatukan dua jalur (isu #177): ke `berangkat` (dari `siap`) memakai TripNotificationService:
+        gerbang mutu (422 `status`), aturan petugas F-02 (relawan bukan petugas -> 422 `status`), lalu membuat perjalanan
+        (estimasi tiba) dan menjadwalkan pesan ke PIC titik layanan lewat antrean (PIC belum terhubung Telegram -> dialihkan ke
+        Kepala SPPG). Idempoten: bila sudah ada perjalanan aktif untuk jadwal itu, hanya status yang diselaraskan, tanpa
+        perjalanan/pesan baru. Ke `diterima` lewat PATCH menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal; pencatatan bukti distribusi TIDAK mengirim pesan ini (PIC hanya menerima "tercatat tiba").
+        Hasil kirim ada di `notifikasi_pic` (respons PATCH mencerminkan keadaan saat commit, biasanya `menunggu`; baca ulang lewat GET).
         Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
         required: true
@@ -3757,6 +3769,8 @@ paths:
         Estimasi tiba dihitung TripNotificationService (lihat `NotifikasiPerjalananPratinjau`).
         Memancarkan event `PerjalananDimulai` (pengiriman bot dilakukan listener, bukan endpoint ini).
         Bila PIC titik layanan belum menghubungkan Telegram: `dialihkan_ke_kepala=true`, `status_kirim=tidak_terkirim`.
+        Bila jadwal berstatus `siap`, status jadwal ikut menjadi `berangkat` dalam transaksi yang sama (satu pesan saja; PATCH
+        status `berangkat` sesudahnya tidak mengirim pesan lagi).
         Penugasan (audit RBAC F-02): relawan hanya boleh memicu jadwal yang `petugas_id`-nya dirinya atau yang belum
         punya petugas; jadwal yang ditugaskan ke relawan lain -> 422 pada `jadwal_distribusi_id`. Kepala SPPG tidak dibatasi penugasan.
       requestBody:
@@ -7449,10 +7463,39 @@ components:
         layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
         peringatan: { type: [string, 'null'], description: 'PERINGATAN, bukan galat (POST/PATCH tetap 201/200): terisi bila jam_berangkat lebih awal dari jam_mulai_masak jadwal produksi terkait pada hari yang sama (jadwal menunggu/siap). null bila jam kosong, tanggal berbeda, atau sudah berangkat/diterima/dibatalkan. Dihitung ulang pada setiap pembacaan.', examples: ['Jam berangkat 02:00 lebih awal dari jam mulai masak 03:00 pada jadwal produksi terkait (hari yang sama).'] }
         catatan: { type: [string, 'null'] }
+        notifikasi_pic: { $ref: '#/components/schemas/NotifikasiPicJadwal' }
         izin: { $ref: '#/components/schemas/IzinJadwalDistribusi' }
         versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    NotifikasiPicJadwal:
+      type: [object, 'null']
+      description: |
+        Status kirim pesan ke PIC titik layanan pada jadwal distribusi: entri terbaru (`jenis`, `status_kirim`, `waktu`,
+        `dialihkan_ke_kepala`) plus `riwayat` (berangkat lalu diterima). null bila belum ada pesan.
+        `status_kirim`: menunggu | terkirim | gagal | dialihkan_ke_kepala (PIC belum terhubung Telegram, pesan ke Kepala SPPG).
+      properties:
+        jenis: { type: string, enum: [berangkat, diterima] }
+        status_kirim: { type: string, enum: [menunggu, terkirim, gagal, dialihkan_ke_kepala] }
+        waktu: { type: [string, 'null'], format: date-time, description: 'Waktu kirim (atau waktu pencatatan bila belum terkirim), WIB' }
+        dialihkan_ke_kepala: { type: boolean }
+        riwayat:
+          type: array
+          items:
+            type: object
+            properties:
+              jenis: { type: string, enum: [berangkat, diterima] }
+              status_kirim: { type: string, enum: [menunggu, terkirim, gagal, dialihkan_ke_kepala] }
+              waktu: { type: [string, 'null'], format: date-time }
+              dialihkan_ke_kepala: { type: boolean }
+      examples:
+        - jenis: diterima
+          status_kirim: terkirim
+          waktu: '2026-11-02T09:10:04+07:00'
+          dialihkan_ke_kepala: false
+          riwayat:
+            - { jenis: berangkat, status_kirim: terkirim, waktu: '2026-11-02T08:30:03+07:00', dialihkan_ke_kepala: false }
+            - { jenis: diterima, status_kirim: terkirim, waktu: '2026-11-02T09:10:04+07:00', dialihkan_ke_kepala: false }
     JadwalDistribusiInput:
       type: object
       required: [jadwal_produksi_id, titik_layanan_id, jumlah_porsi]

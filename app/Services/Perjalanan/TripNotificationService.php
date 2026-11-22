@@ -6,6 +6,7 @@ use App\Enums\Role;
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusKirim;
 use App\Enums\StatusPerjalanan;
+use App\Events\DistribusiDiterima;
 use App\Events\PerjalananDimulai;
 use App\Events\PerjalananTerlambat;
 use App\Events\PerjalananTiba;
@@ -14,6 +15,7 @@ use App\Models\NotifikasiPerjalanan;
 use App\Models\Scopes\SppgScope;
 use App\Models\TitikLayanan;
 use App\Models\User;
+use App\Services\Notification\StatusKirimPic;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Closure;
@@ -31,7 +33,12 @@ use Illuminate\Validation\ValidationException;
  *   Sumber 2-4 dibatasi ke [durasi_minimum_menit, durasi_maksimum_menit].
  *   estimasi_tiba = waktu_berangkat + durasi_menit.
  *
- * Service ini hanya memancarkan event (PerjalananDimulai/Tiba/Terlambat); tidak mengirim pesan.
+ * Service ini hanya memancarkan event (PerjalananDimulai/Tiba/Terlambat/DistribusiDiterima); tidak mengirim pesan
+ * (listener KirimNotifikasiDomain menjadwalkan job SendTelegramNotification di antrean).
+ *
+ * Dua jalur menuju "berangkat" disatukan (isu #177): memicu notifikasi perjalanan dari jadwal berstatus "siap" ikut
+ * mengubah status jadwal menjadi "berangkat" (mulai()), dan PATCH status jadwal ke "berangkat" memakai service ini
+ * (berangkatkanDariJadwal()) sehingga PIC mendapat pesan. Keduanya idempoten terhadap perjalanan aktif.
  */
 class TripNotificationService
 {
@@ -163,6 +170,12 @@ class TripNotificationService
             ]);
             $notifikasi->save();
 
+            // Satu transaksi: memicu dari jadwal "siap" ikut membuat jadwal "berangkat" (tanpa pesan kedua).
+            if ($jadwal->status === StatusJadwalDistribusi::Siap) {
+                $jadwal->status = StatusJadwalDistribusi::Berangkat;
+                $jadwal->save();
+            }
+
             if ($setelahSimpan !== null) {
                 $setelahSimpan($notifikasi);
             }
@@ -171,6 +184,70 @@ class TripNotificationService
 
             return $notifikasi;
         });
+    }
+
+    /**
+     * Jalur PATCH status jadwal distribusi ke "berangkat" (dipanggil DistributionScheduleService setelah gerbang mutu
+     * dan transisi divalidasi). Aturan petugas F-02 berlaku (pelanggaran -> 422 pada field status). Idempoten: bila sudah ada perjalanan
+     * aktif untuk jadwal ini, hanya status jadwal yang diselaraskan dan TIDAK ada perjalanan/pesan baru (mengembalikan null).
+     * Selain itu memanggil mulai() sehingga estimasi tiba dihitung dan PIC (atau Kepala SPPG bila PIC belum terhubung)
+     * dijadwalkan menerima pesan lewat antrean.
+     *
+     * @throws ValidationException
+     */
+    public function berangkatkanDariJadwal(User $pemicu, JadwalDistribusi $jadwal): ?NotifikasiPerjalanan
+    {
+        return DB::transaction(function () use ($pemicu, $jadwal) {
+            $kunci = JadwalDistribusi::query()->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! self::bolehMemicu($pemicu, $kunci)) {
+                throw ValidationException::withMessages(['status' => [self::PESAN_PETUGAS_LAIN]]);
+            }
+
+            $adaAktif = NotifikasiPerjalanan::query()->where('jadwal_distribusi_id', $kunci->id)->aktif()->exists();
+
+            if ($adaAktif) {
+                if ($kunci->status === StatusJadwalDistribusi::Siap) {
+                    $kunci->status = StatusJadwalDistribusi::Berangkat;
+                    $kunci->save();
+                }
+
+                return null;
+            }
+
+            return $this->mulai($pemicu, $kunci);
+        });
+    }
+
+    /**
+     * Pesan konfirmasi "diterima" ke PIC titik layanan (atau Kepala SPPG bila PIC belum terhubung Telegram). Dipanggil
+     * setelah status jadwal menjadi "diterima" di transaksi yang sama. Sekali per jadwal (penanda
+     * jadwal_distribusis.notif_diterima_status diatur atomik): tidak ada pesan ganda bila status/bukti diulang.
+     * Status kirim awal: menunggu (PIC terhubung) atau dialihkan_ke_kepala; hasil kirim diperbarui DeliveryTracker.
+     */
+    public function konfirmasiDiterima(JadwalDistribusi $jadwal, ?CarbonInterface $waktuTerima = null): void
+    {
+        $jadwal->loadMissing('titikLayanan');
+        $titik = $jadwal->titikLayanan;
+
+        if ($titik === null) {
+            return;
+        }
+
+        $waktuTerima = $waktuTerima !== null ? Carbon::instance($waktuTerima)->setTimezone($this->zona()) : $this->sekarang();
+        $status = $titik->picTerhubung() ? StatusKirimPic::MENUNGGU : StatusKirimPic::DIALIHKAN_KE_KEPALA;
+        $nilai = ['notif_diterima_status' => $status, 'notif_diterima_waktu' => $waktuTerima->toDateTimeString()];
+
+        $diperbarui = JadwalDistribusi::query()->withoutGlobalScopes()->whereKey($jadwal->getKey())
+            ->whereNull('notif_diterima_status')->update($nilai);
+
+        if ($diperbarui !== 1) {
+            return;
+        }
+
+        $jadwal->forceFill($nilai)->syncOriginalAttributes(array_keys($nilai));
+
+        event(DistribusiDiterima::dari($jadwal, $waktuTerima));
     }
 
     /**

@@ -45,6 +45,7 @@ class JadwalDistribusi extends Model
             'tanggal_distribusi' => 'date:Y-m-d',
             'jumlah_porsi' => 'integer',
             'status' => StatusJadwalDistribusi::class,
+            'notif_diterima_waktu' => 'datetime',
         ];
     }
 
@@ -81,6 +82,12 @@ class JadwalDistribusi extends Model
     public function notifikasiPerjalanans(): HasMany
     {
         return $this->hasMany(NotifikasiPerjalanan::class);
+    }
+
+    /** Perjalanan terbaru jadwal ini (sumber status kirim pesan "berangkat" ke PIC). */
+    public function notifikasiPerjalananTerakhir(): HasOne
+    {
+        return $this->hasOne(NotifikasiPerjalanan::class)->latestOfMany();
     }
 
     public function scopeTanggal(Builder $query, string $tanggal): Builder

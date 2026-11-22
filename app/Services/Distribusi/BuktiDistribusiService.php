@@ -322,6 +322,8 @@ class BuktiDistribusiService
         if ($jadwal->status !== StatusJadwalDistribusi::Diterima) {
             $jadwal->status = StatusJadwalDistribusi::Diterima;
             $jadwal->save();
+            // Sengaja TANPA konfirmasiDiterima(): lewat bukti distribusi PIC cukup menerima "tercatat tiba"
+            // (PerjalananTiba, lewat ubahStatus di bawah). Pesan "diterima" hanya untuk PATCH status langsung.
         }
 
         // Bukti serah terima = mobil sudah tiba: tutup perjalanan aktif lewat transisi resminya

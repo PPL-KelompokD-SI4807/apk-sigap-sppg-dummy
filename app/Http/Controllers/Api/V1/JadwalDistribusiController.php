@@ -29,7 +29,8 @@ class JadwalDistribusiController extends ApiController
     private function relasi(): array
     {
         return ['titikLayanan:id,nama', 'armada:id,plat_nomor', 'pengemudi:id,nama', 'petugas:id,name',
-            'jadwalProduksi' => fn ($q) => $q->withTrashed()->with('pemeriksaanTerbaru')];
+            'jadwalProduksi' => fn ($q) => $q->withTrashed()->with('pemeriksaanTerbaru'),
+            'notifikasiPerjalananTerakhir'];
     }
 
     public function __construct(
@@ -97,7 +98,7 @@ class JadwalDistribusiController extends ApiController
         $data = $request->validated();
 
         $diubah = DB::transaction(function () use ($request, $jadwalDistribusi, $data): JadwalDistribusi {
-            $diubah = $this->distribusi->perbarui($jadwalDistribusi, $data, $this->versi($data));
+            $diubah = $this->distribusi->perbarui($request->user(), $jadwalDistribusi, $data, $this->versi($data));
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id, resource: 'distribusi');
 
             return $diubah;

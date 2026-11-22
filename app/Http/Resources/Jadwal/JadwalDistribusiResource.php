@@ -7,6 +7,7 @@ use App\Enums\StatusJadwalDistribusi;
 use App\Models\JadwalDistribusi;
 use App\Models\User;
 use App\Services\Distribusi\AturanCatatBukti;
+use App\Services\Notification\StatusKirimPic;
 use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -60,12 +61,53 @@ class JadwalDistribusiResource extends JsonResource
                 return $mutu?->hasil === HasilMutu::Layak;
             }),
             'peringatan' => $this->peringatan($d),
+            'notifikasi_pic' => $this->when($d->relationLoaded('notifikasiPerjalananTerakhir'), fn () => $this->notifikasiPic($d)),
             'catatan' => $d->catatan,
             'izin' => $this->izin($request, $d),
             'versi' => (int) $d->versi,
             'created_at' => $d->created_at?->toIso8601String(),
             'updated_at' => $d->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Status kirim pesan ke PIC titik layanan: entri terbaru (`jenis` berangkat|diterima, `status_kirim`
+     * menunggu|terkirim|gagal|dialihkan_ke_kepala, `waktu` ISO 8601 WIB) plus `riwayat` per jenis (berangkat lalu diterima). null bila
+     * belum ada pesan. "dialihkan_ke_kepala" = PIC belum terhubung Telegram sehingga pesan dikirim ke Kepala SPPG.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function notifikasiPic(JadwalDistribusi $d): ?array
+    {
+        $zona = (string) config('operasional.timezone', 'Asia/Jakarta');
+        $wib = fn ($waktu) => $waktu?->copy()->setTimezone($zona)->toIso8601String();
+        $riwayat = [];
+
+        $berangkat = $d->notifikasiPerjalananTerakhir;
+
+        if ($berangkat !== null) {
+            $riwayat[] = [
+                'jenis' => 'berangkat',
+                'status_kirim' => StatusKirimPic::dariPerjalanan($berangkat->status_kirim, (bool) $berangkat->dialihkan_ke_kepala),
+                'waktu' => $wib($berangkat->waktu_kirim ?? $berangkat->waktu_berangkat ?? $berangkat->created_at),
+                'dialihkan_ke_kepala' => (bool) $berangkat->dialihkan_ke_kepala,
+            ];
+        }
+
+        if ($d->notif_diterima_status !== null) {
+            $riwayat[] = [
+                'jenis' => 'diterima',
+                'status_kirim' => $d->notif_diterima_status,
+                'waktu' => $wib($d->notif_diterima_waktu),
+                'dialihkan_ke_kepala' => $d->notif_diterima_status === StatusKirimPic::DIALIHKAN_KE_KEPALA,
+            ];
+        }
+
+        if ($riwayat === []) {
+            return null;
+        }
+
+        return end($riwayat) + ['riwayat' => $riwayat];
     }
 
     /**
