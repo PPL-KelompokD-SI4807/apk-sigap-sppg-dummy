@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Auth;
  *   Job yang bekerja atas nama pengguna wajib memfilter sendiri (scopeOfSppg).
  * - Admin: tidak dibatasi (lintas SPPG).
  * - Non-admin tanpa sppg_id: tidak melihat data apa pun (fail closed).
+ * - Investor (R-06a): dibatasi ke SATU SPPG aktif tervalidasi (User::sppgAktifId(), header
+ *   X-SPPG-Id dicek ke pivot investor_sppg); tanpa SPPG aktif -> fail closed. Pada tabel users
+ *   investor juga selalu melihat baris dirinya sendiri (sppg_id null) agar profil R* dapat dimuat;
+ *   daftar pengguna tetap ditolak UserPolicy (R* = hanya profil sendiri).
  *
  * Memakai Auth::hasUser() (bukan Auth::user()) agar tidak memicu resolusi guard
  * secara rekursif ketika Sanctum memuat tokenable User yang juga memakai scope ini.
@@ -31,13 +35,27 @@ class SppgScope implements Scope
 
         $column = $model->qualifyColumn($model instanceof HasSppgColumn ? $model->sppgColumn() : 'sppg_id');
 
-        if ($user->sppg_id === null) {
+        $sppgId = $user->sppgAktifId();
+
+        if ($user->isInvestor() && $model instanceof User) {
+            $builder->where(function (Builder $q) use ($model, $column, $sppgId, $user): void {
+                $q->where($model->qualifyColumn($model->getKeyName()), $user->getKey());
+
+                if ($sppgId !== null) {
+                    $q->orWhere($column, $sppgId);
+                }
+            });
+
+            return;
+        }
+
+        if ($sppgId === null) {
             $builder->whereRaw('1 = 0');
 
             return;
         }
 
-        $builder->where($column, $user->sppg_id);
+        $builder->where($column, $sppgId);
     }
 
     public static function currentUser(): ?User

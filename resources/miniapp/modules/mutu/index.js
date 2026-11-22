@@ -3,6 +3,8 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
+import { getUser } from '../../core/auth.js';
+import { lampiranDisembunyikan } from '../../core/lampiran-uploader.js';
 import { mutuFields, mutuDetailFields, mutuPayload, hasilLabel, hasilBadge, rowPermsMutu } from './schema.js';
 
 export default defineCrudModule({
@@ -11,6 +13,7 @@ export default defineCrudModule({
   icon: '🧪',
   description: 'Pemeriksaan suhu, kebersihan, dan organoleptik',
   endpoint: '/mutu',
+  sertakanVersi: true,
   columns: [{ key: 'jadwal', primary: true, format: (r) => r.jadwal?.menu?.nama_menu ?? `#${r.id}` }],
   fields: ({ mode, record }) => (mode === 'detail' ? mutuDetailFields : [...mutuFields({ mode, record }), lampiranField({
     modul: 'mutu', label: 'Foto pemeriksaan', existing: record?.lampiran || [],
@@ -28,12 +31,25 @@ export default defineCrudModule({
     badge: { text: r.hasil_label || hasilLabel(r.hasil), cls: hasilBadge(r.hasil) },
   }),
   rowPerms: rowPermsMutu,
+  detailExtrasWeb: (rec, ctx, p) => [
+    rec.hasil === 'tidak_layak' ? h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.') : null,
+    rec.memengaruhi_distribusi ? h('div', { class: 'notice' }, 'Tombol Hapus tidak tersedia: pemeriksaan ini adalah yang terbaru untuk jadwal yang distribusinya masih aktif (atau sudah berangkat).') : null,
+    p?.C && rec.jadwal_produksi_id ? h('a', { class: 'btn btn-block', href: `#/mutu/baru?jadwal=${rec.jadwal_produksi_id}` }, 'Periksa ulang jadwal ini') : null,
+    panelFotoMutu(rec, p), // foto lewat cookie sesi (R04-8 PR5)
+  ].filter(Boolean),
   detailExtras: (rec, p) => {
     const nodes = [];
     if (rec.hasil === 'tidak_layak') nodes.push(h('div', { class: 'alert-danger' }, 'Hasil TIDAK LAYAK: keberangkatan distribusi untuk jadwal ini ditahan sampai ada pemeriksaan ulang berstatus Layak.'));
-    if (rec.memengaruhi_distribusi) nodes.push(h('div', { class: 'notice' }, 'Pemeriksaan ini sudah memengaruhi distribusi, sehingga tidak dapat dihapus. Gunakan Ubah dengan catatan koreksi.'));
+    if (rec.memengaruhi_distribusi) nodes.push(h('div', { class: 'notice' }, 'Tombol Hapus tidak tersedia: pemeriksaan ini adalah yang terbaru untuk jadwal yang distribusinya masih aktif (atau sudah berangkat), sehingga menjadi gerbang distribusi. Gunakan Ubah dengan catatan koreksi, atau buat pemeriksaan ulang.'));
     if (p.C && rec.jadwal_produksi_id) nodes.push(h('a', { class: 'btn btn-block', href: `#/mutu/baru?jadwal=${rec.jadwal_produksi_id}` }, 'Periksa ulang jadwal ini'));
-    if ((rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ modul: 'mutu', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto pemeriksaan' }));
+    const foto = panelFotoMutu(rec, p);
+    if (foto) nodes.push(foto);
     return nodes;
   },
 });
+
+function panelFotoMutu(rec, p) {
+  const sembunyi = lampiranDisembunyikan(getUser(), rec);
+  if (!sembunyi && !(rec.lampiran || []).length && !p?.U) return null;
+  return createLampiranPanel({ disembunyikan: sembunyi, modul: 'mutu', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p?.U, title: 'Foto pemeriksaan' });
+}

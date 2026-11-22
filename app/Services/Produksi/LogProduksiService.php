@@ -8,6 +8,7 @@ use App\Models\LogProduksi;
 use App\Models\Scopes\SppgScope;
 use App\Models\Sppg;
 use App\Models\User;
+use App\Support\KunciVersi;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -78,23 +79,29 @@ class LogProduksiService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function perbarui(LogProduksi $log, array $data): LogProduksi
+    public function perbarui(LogProduksi $log, array $data, ?int $versi = null): LogProduksi
     {
-        if (isset($data['realisasi_porsi'])) {
-            $this->pastikanRealisasiWajar((int) $data['realisasi_porsi'], (int) $log->sppg_id);
-        }
+        return DB::transaction(function () use ($log, $data, $versi): LogProduksi {
+            // Kunci baris lalu bandingkan versi (409 bila basi); dua penyunting bersamaan tidak sama-sama lolos.
+            $log = LogProduksi::withoutGlobalScope(SppgScope::class)->whereKey($log->getKey())->lockForUpdate()->firstOrFail();
+            KunciVersi::periksa($log, $versi, 'Log produksi');
 
-        $atribut = $this->atribut($data);
-        $waktuMulai = array_key_exists('waktu_mulai', $atribut) ? $atribut['waktu_mulai'] : $log->waktu_mulai;
-        $jamSelesai = array_key_exists('jam_selesai', $atribut) ? $atribut['jam_selesai'] : $log->jam_selesai;
+            if (isset($data['realisasi_porsi'])) {
+                $this->pastikanRealisasiWajar((int) $data['realisasi_porsi'], (int) $log->sppg_id);
+            }
 
-        if ($waktuMulai !== null && $jamSelesai !== null && substr((string) $jamSelesai, 0, 5) <= substr((string) $waktuMulai, 0, 5)) {
-            throw ValidationException::withMessages(['jam_selesai' => ['Jam selesai harus setelah waktu mulai.']]);
-        }
+            $atribut = $this->atribut($data);
+            $waktuMulai = array_key_exists('waktu_mulai', $atribut) ? $atribut['waktu_mulai'] : $log->waktu_mulai;
+            $jamSelesai = array_key_exists('jam_selesai', $atribut) ? $atribut['jam_selesai'] : $log->jam_selesai;
 
-        $log->fill($atribut)->save();
+            if ($waktuMulai !== null && $jamSelesai !== null && substr((string) $jamSelesai, 0, 5) <= substr((string) $waktuMulai, 0, 5)) {
+                throw ValidationException::withMessages(['jam_selesai' => ['Jam selesai harus setelah waktu mulai.']]);
+            }
 
-        return $log;
+            $log->fill($atribut)->save();
+
+            return $log;
+        });
     }
 
     /**
@@ -155,6 +162,6 @@ class LogProduksiService
      */
     private function atribut(array $data): array
     {
-        return array_intersect_key($data, array_flip(['realisasi_porsi', 'sisa_makanan_kg', 'waktu_mulai', 'jam_selesai', 'kendala']));
+        return array_intersect_key($data, array_flip(['realisasi_porsi', 'porsi_food_sample', 'porsi_uji_organoleptik', 'sisa_makanan_kg', 'waktu_mulai', 'jam_selesai', 'kendala']));
     }
 }

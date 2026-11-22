@@ -72,7 +72,7 @@ class ArmadaController extends ApiController
         return new ArmadaResource($armada->refresh());
     }
 
-    public function destroy(Armada $armada): Response
+    public function destroy(Request $request, Armada $armada): Response
     {
         $this->authorize('delete', $armada);
 
@@ -80,7 +80,7 @@ class ArmadaController extends ApiController
             throw ValidationException::withMessages(['armada' => ['Armada yang sedang bertugas tidak dapat dihapus.']]);
         }
 
-        $armada->delete();
+        $this->hapusDenganDraf($request, 'armada', (int) $armada->getKey(), fn () => $armada->delete());
 
         return response()->noContent();
     }

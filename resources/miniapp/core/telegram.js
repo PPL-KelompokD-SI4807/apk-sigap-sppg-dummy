@@ -1,5 +1,8 @@
 // Akses tunggal ke Telegram.WebApp. "Native" = benar-benar dibuka dari Telegram (bukan shim dev).
-export const getTg = () => window.Telegram?.WebApp ?? null;
+// Mode web (core/platform.js): tidak ada Telegram.WebApp, jadi getTg() null dan isNative() false.
+import { isWeb } from './platform.js';
+
+export const getTg = () => (isWeb() ? null : window.Telegram?.WebApp ?? null);
 export const isNative = () => {
   const tg = getTg();
   return !!(tg && tg.initData && !tg.__shim);

@@ -6,19 +6,24 @@ import { navTabs } from '../../components/nav-tabs.js';
 import { createAuthImage } from '../../components/photo-upload.js';
 import { createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
-import { api, fetchList } from '../../core/api.js';
+import { api, fetchList, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
+import { userPerms, bolehIzin, tanpaSppgSendiri } from '../../core/permissions.js';
 import { route, resolve, navigate } from '../../core/router.js';
-import { setMainButton, toast } from '../../core/ui.js';
+import { setMainButton, toast, showConfirm } from '../../core/ui.js';
+import { isWeb } from '../../core/platform.js';
 import { renderChart } from '../../core/charts.js';
-import { errorMessage } from '../../core/errors.js';
+import { errorMessage, ringkasGalatAksi } from '../../core/errors.js';
 import { rupiahField, periodeField } from './fields.js';
 import {
   KATEGORI, kategoriLabel, formatRupiah, labelPeriode, periodeSekarang, periodeDari, statusAnggaran, clampPersen, teksPersen, melebihiSisa,
   hitungPersen, seriKategori, AMBANG_PERINGATAN,
   pencairanFields, pengeluaranFields, pencairanDetailFields, pengeluaranDetailFields, pencairanPayload, pengeluaranPayload,
 } from './schema.js';
+import {
+  statusPersetujuanBadge, statusPersetujuanLabel, statusPengeluaran, STATUS_PERSETUJUAN, KEPUTUSAN_PENGELUARAN, tombolKeputusanPengeluaranTampil,
+  validasiCatatanKeputusan, payloadKeputusanPengeluaran, dariPembelian, pesanLampiranTerkunci, teksMenunggu, MAKS_CATATAN, MIN_CATATAN,
+} from './persetujuan.js';
 
 const SLUG = 'keuangan';
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
@@ -69,6 +74,10 @@ const pencairanModule = defineCrudModule({
     if (!pencairanInit) { pencairanQuery.periode = periodeSekarang(); pencairanInit = true; }
     return h('div', { class: 'stack' }, keuanganTabs('pencairan'), periodeInput(pencairanQuery), pencairanQuery.periode ? null : h('p', { class: 'muted small' }, 'Menampilkan semua periode.'));
   },
+  listTopWeb: () => {
+    if (!pencairanInit) { pencairanQuery.periode = periodeSekarang(); pencairanInit = true; }
+    return h('div', { class: 'stack' }, keuanganTabs('pencairan'), periodeInput(pencairanQuery), pencairanQuery.periode ? null : h('p', { class: 'muted small' }, 'Menampilkan semua periode.'));
+  },
   renderCard: (r, href) => rowCard({
     href,
     title: r.sumber_dana,
@@ -76,20 +85,24 @@ const pencairanModule = defineCrudModule({
     aside: formatRupiah(r.nominal),
     badge: r.bukti ? { text: 'Ada bukti', cls: 'badge-ok' } : null,
   }),
-  detailExtras: (rec, p) => {
-    const utama = rec.bukti?.lampiran_id;
-    const lain = (rec.lampiran || []).filter((l) => l.id !== utama);
-    return [
-      h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Bukti transfer'),
-        rec.bukti ? createAuthImage(rec.bukti, { alt: 'Bukti transfer' }) : h('p', { class: 'muted small' }, 'Tidak ada bukti.')),
-      lain.length || p.U ? createLampiranPanel({ modul: 'keuangan-pencairan', recordId: rec.id, kategori: 'bukti', lampiran: lain, canAdd: !!p.U, title: 'Lampiran lain' }) : null,
-    ];
-  },
+  detailExtras: (rec, p) => detailPencairan(rec, p),
+  // Web (R04-8 PR5): bukti transfer lewat cookie sesi; unggah lampiran hanya bila hak U dari peta server.
+  detailExtrasWeb: (rec, ctx, p) => detailPencairan(rec, p),
 });
+
+function detailPencairan(rec, p) {
+  const utama = rec.bukti?.lampiran_id;
+  const lain = (rec.lampiran || []).filter((l) => l.id !== utama);
+  return [
+    h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Bukti transfer'),
+      rec.bukti ? createAuthImage(rec.bukti, { alt: 'Bukti transfer' }) : h('p', { class: 'muted small' }, 'Tidak ada bukti.')),
+    lain.length || p?.U ? createLampiranPanel({ modul: 'keuangan-pencairan', recordId: rec.id, kategori: 'bukti', lampiran: lain, canAdd: !!p?.U, title: 'Lampiran lain' }) : null,
+  ].filter(Boolean);
+}
 pencairanModule.hidden = true;
 
 // ================= Pengeluaran =================
-const pengeluaranQuery = { periode: '', kategori: '', melebihi_anggaran: '' };
+const pengeluaranQuery = { periode: '', kategori: '', melebihi_anggaran: '', status_persetujuan: '' };
 let pengeluaranInit = false;
 
 function listTopPengeluaran() {
@@ -99,14 +112,29 @@ function listTopPengeluaran() {
   kat.addEventListener('change', () => { pengeluaranQuery.kategori = kat.value; resolve(); });
   const on = pengeluaranQuery.melebihi_anggaran === '1';
   const chip = h('button', { type: 'button', class: `seg-btn${on ? ' active' : ''}`, 'aria-pressed': on ? 'true' : 'false', onclick: () => { pengeluaranQuery.melebihi_anggaran = on ? '' : '1'; resolve(); } }, on ? 'Hanya yang melebihi anggaran (aktif)' : 'Hanya yang melebihi anggaran');
-  return h('div', { class: 'stack' }, keuanganTabs('pengeluaran'), h('div', { class: 'filter-row' }, periodeInput(pengeluaranQuery), kat), h('div', { class: 'seg' }, chip),
+  const stat = h('select', { id: 'f-status-persetujuan', 'aria-label': 'Status persetujuan' }, h('option', { value: '' }, 'Semua status persetujuan'), STATUS_PERSETUJUAN.map((k) => h('option', { value: k.value }, k.label)));
+  stat.value = pengeluaranQuery.status_persetujuan;
+  stat.addEventListener('change', () => { pengeluaranQuery.status_persetujuan = stat.value; resolve(); });
+  return h('div', { class: 'stack' }, keuanganTabs('pengeluaran'), h('div', { class: 'filter-row' }, periodeInput(pengeluaranQuery), kat), h('div', { class: 'filter-row' }, stat), h('div', { class: 'seg' }, chip),
     pengeluaranQuery.periode ? null : h('p', { class: 'muted small' }, 'Menampilkan semua periode.'));
 }
 
+// Notice pengajuan ulang bergantung status (ADR sub-kategori tanpa ajukan ulang).
+export function noticeAjukanUlang(record) {
+  return statusPengeluaran(record) === 'disetujui'
+    ? 'Perubahan sub-kategori saja tidak mengajukan ulang. Mengubah nominal, tanggal, kategori, atau nota mengajukan ulang pengeluaran ini ke investor.'
+    : 'Menyimpan perubahan apa pun, termasuk sub-kategori, mengajukan ulang pengeluaran ini ke investor.';
+}
+
 // Peringatan sisa anggaran saat mengisi form pengeluaran baru.
-function formTopPengeluaran({ mode, form, collect }) {
-  if (mode !== 'create') return null;
-  const box = h('div', { 'aria-live': 'polite', class: 'stack-tight' });
+function formTopPengeluaran({ mode, record, form, collect }) {
+  if (mode !== 'create') {
+    if (!record) return null;
+    return h('div', { class: 'stack-tight' },
+      statusPengeluaran(record) === 'ditolak' ? h('div', { class: 'alert-danger', role: 'alert' }, `Ditolak investor: ${terakhirCatatan(record) ?? '-'}`) : null,
+      h('div', { class: 'notice' }, noticeAjukanUlang(record)));
+  }
+  const box = h('div', { 'aria-live': 'polite', class: 'stack-tight' }, h('div', { class: 'notice' }, 'Pengeluaran baru diajukan ke investor dan baru dihitung ke anggaran setelah disetujui.'));
   let seq = 0;
   async function show() {
     const my = ++seq;
@@ -115,7 +143,7 @@ function formTopPengeluaran({ mode, form, collect }) {
     if (!/^\d{4}-\d{2}$/.test(periode)) return box.replaceChildren();
     const r = await ringkasanPeriode(periode);
     if (my !== seq) return;
-    box.replaceChildren();
+    box.replaceChildren(h('div', { class: 'notice' }, 'Pengeluaran baru diajukan ke investor dan baru dihitung ke anggaran setelah disetujui.'));
     if (!r) return;
     const st = statusAnggaran(r);
     box.append(h('div', { class: st.tone === 'danger' ? 'alert-danger' : st.tone === 'warn' ? 'notice' : 'panel' },
@@ -124,10 +152,98 @@ function formTopPengeluaran({ mode, form, collect }) {
       box.append(h('div', { class: 'alert-danger', role: 'alert' }, 'Nominal melebihi sisa anggaran periode. Pengeluaran tetap dicatat dan ditandai "Melebihi anggaran".'));
     }
   }
-  form.addEventListener('input', show);
-  form.addEventListener('change', show);
+  // Pilihan foto tidak memengaruhi anggaran: jangan memicu muat ulang/penataan ulang kotak di atas formulir saat kamera kembali.
+  const kecualiBerkas = (ev) => { if (ev?.target?.type !== 'file') show(); };
+  form.addEventListener('input', kecualiBerkas);
+  form.addEventListener('change', kecualiBerkas);
   setTimeout(show, 0);
   return box;
+}
+
+
+/** Badge kartu: status persetujuan (selain disetujui) tampil utama; "Melebihi anggaran" hanya bermakna setelah disetujui. */
+function badgesPengeluaran(r) {
+  const st = statusPengeluaran(r);
+  const out = [];
+  if (st !== 'disetujui') out.push({ text: r.status_persetujuan_label || statusPersetujuanLabel(st), cls: statusPersetujuanBadge(st) });
+  if (r.melebihi_anggaran && st === 'disetujui') out.push({ text: 'Melebihi anggaran', cls: 'badge-danger' });
+  return { badge: out[0] ?? null, badges: out.slice(1) };
+}
+
+const terakhirCatatan = (rec) => [...(rec.riwayat_persetujuan ?? [])].reverse().find((x) => x.status === 'ditolak')?.catatan_keputusan ?? null;
+
+function riwayatPanel(rec) {
+  const box = h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Riwayat persetujuan'));
+  const rr = rec.riwayat_persetujuan ?? [];
+  if (!rr.length) { box.append(h('p', { class: 'muted small' }, 'Belum ada riwayat persetujuan.')); return box; }
+  for (const x of [...rr].reverse()) {
+    box.append(h('div', { class: 'panel stack-tight' },
+      h('div', { class: 'card-title' }, h('strong', {}, `Pengajuan #${x.nomor} · versi ${x.pengeluaran_versi}`), h('span', { class: `badge ${statusPersetujuanBadge(x.status)}`.trim() }, x.status_label || statusPersetujuanLabel(x.status))),
+      h('div', { class: 'card-row' }, h('span', { class: 'muted' }, `${kategoriLabel(x.kategori)} · ${formatValue(x.tanggal, 'date')}`), h('strong', {}, formatRupiah(x.nominal))),
+      h('p', { class: 'muted small' }, `Diajukan ${x.diajukan_oleh ? `oleh ${x.diajukan_oleh} ` : ''}${formatValue(x.diajukan_pada, 'datetime')}`),
+      x.diputuskan_pada ? h('p', { class: 'muted small' }, `Diputuskan ${x.diputuskan_oleh ? `oleh ${x.diputuskan_oleh} ` : ''}${formatValue(x.diputuskan_pada, 'datetime')}`) : null,
+      x.catatan_keputusan ? h('p', { class: 'small' }, h('strong', {}, 'Catatan: '), x.catatan_keputusan) : null));
+  }
+  return box;
+}
+
+/**
+ * Panel keputusan investor: catatan (wajib bila tolak) + Setujui/Tolak. 409 -> pesan jelas lalu muat ulang.
+ * Dipakai Mini App dan web (R04-8 PR5); tampil hanya bila izin.putuskan dari server. Perlindungan dari keputusan ganda berasal dari
+ * `versi` di body (server menolak versi usang dengan 409), BUKAN dari idempotensi: rute ini tidak memakai middleware idempotensi.
+ * Idempotency-Key tetap dikirim dan dipakai ulang selama isian sama (tidak berbahaya, diabaikan server), diganti bila keputusan/catatan berubah.
+ */
+function keputusanPanel(rec) {
+  const catatan = h('textarea', { class: 'input', id: 'catatan-keputusan', rows: '3', maxlength: String(MAKS_CATATAN), placeholder: `Wajib diisi bila menolak (min. ${MIN_CATATAN} karakter)` });
+  const err = h('p', { class: 'field-error', role: 'alert' });
+  const tombol = [];
+  let kunci = null;
+  let sidik = null;
+  async function kirim(keputusan, label) {
+    const salah = validasiCatatanKeputusan(keputusan, catatan.value);
+    err.textContent = salah;
+    if (salah) { catatan.focus(); return; }
+    const pesan = keputusan === 'disetujui'
+      ? `Setujui pengeluaran ${kategoriLabel(rec.kategori)} senilai ${formatRupiah(rec.nominal)}? Nominal akan dihitung ke anggaran. Keputusan tidak dapat diubah.`
+      : `Tolak pengeluaran ${kategoriLabel(rec.kategori)} senilai ${formatRupiah(rec.nominal)}? Akuntan dapat memperbaiki dan mengajukan ulang.`;
+    if (!(await showConfirm({ title: label, message: pesan, okText: 'Ya, kirim', destructive: keputusan === 'ditolak' }))) return;
+    tombol.forEach((b) => { b.disabled = true; });
+    const body = payloadKeputusanPengeluaran({ keputusan, catatan: catatan.value, versi: rec.versi });
+    const s = JSON.stringify(body);
+    if (s !== sidik) { sidik = s; kunci = newKey(); }
+    try {
+      await request('POST', `/keuangan/pengeluaran/${rec.id}/keputusan`, { body, key: kunci, silent: true });
+      toast(keputusan === 'disetujui' ? 'Pengeluaran disetujui.' : 'Pengeluaran ditolak.', 'success');
+      resolve();
+    } catch (e) {
+      if (e?.status === 401) throw e;
+      const g = ringkasGalatAksi(e, 'Keputusan gagal dikirim.');
+      toast(g.pesan, 'error', 6000);
+      err.textContent = g.fields.catatan || g.fields.keputusan || g.fields.nominal || '';
+      if (g.muatUlang) { resolve(); return; }
+      tombol.forEach((b) => { b.disabled = false; });
+    }
+  }
+  const row = h('div', { class: 'row-actions' });
+  for (const k of KEPUTUSAN_PENGELUARAN) {
+    const b = h('button', { class: `btn ${k.value === 'disetujui' ? 'btn-primary' : 'btn-danger'}`, type: 'button', onclick: () => kirim(k.value, k.label) }, k.label);
+    tombol.push(b);
+    row.append(b);
+  }
+  return h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Keputusan Anda'),
+    h('div', { class: 'card-row' }, h('span', { class: 'muted' }, `${kategoriLabel(rec.kategori)} · ${formatValue(rec.tanggal, 'date')}`), h('strong', {}, formatRupiah(rec.nominal))),
+    h('p', { class: 'muted small' }, 'Periksa nota di bawah sebelum memutuskan.'),
+    h('label', { class: 'label', for: 'catatan-keputusan' }, 'Catatan'), catatan, err, row);
+}
+
+function persetujuanPanels(rec) {
+  const st = statusPengeluaran(rec);
+  const nodes = [];
+  if (st === 'diajukan') nodes.push(h('div', { class: 'notice' }, 'Menunggu persetujuan investor. Belum dihitung ke anggaran.'));
+  if (st === 'ditolak') nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, h('strong', {}, 'Ditolak investor. '), terakhirCatatan(rec) ?? '-'));
+  if (tombolKeputusanPengeluaranTampil(rec)) nodes.push(keputusanPanel(rec));
+  nodes.push(riwayatPanel(rec));
+  return nodes;
 }
 
 const pengeluaranModule = defineCrudModule({
@@ -141,33 +257,57 @@ const pengeluaranModule = defineCrudModule({
   columns: [{ key: 'uraian', primary: true }],
   fields: ({ mode, record }) => (mode === 'detail' ? pengeluaranDetailFields : pengeluaranFields({ custom, record })),
   mapPayload: (v) => pengeluaranPayload(v),
+  sertakanVersi: true,
+  izin: true, // Ubah/Hapus/Lampirkan/Putuskan mengikuti izin per record dari server
   itemTitle: (r) => r.uraian ?? `Pengeluaran #${r.id}`,
   searchPlaceholder: 'Cari uraian pengeluaran...',
   listQuery: pengeluaranQuery,
   listTop: listTopPengeluaran,
+  listTopWeb: listTopPengeluaran,
+  formTopWeb: formTopPengeluaran, // sisa anggaran periode (GET /keuangan/ringkasan); hanya baca
+  // Web (R04-8 PR5): sama dengan Mini App: panel keputusan investor (izin.putuskan), riwayat, foto nota lewat cookie sesi, dan
+  // lampiran lain (unggah hanya bila izin.lampirkan dan tidak terkunci). Semua hak tombol dari izin record server.
+  detailExtrasWeb: (rec) => detailPengeluaran(rec),
   formTop: formTopPengeluaran,
   onSaved: ({ res }) => {
     ringkasanCache.clear();
     const d = res?.data && unwrap(res.data);
-    if (d?.melebihi_anggaran) toast('Pengeluaran melebihi sisa anggaran periode. Tetap dicatat dan ditandai.', 'error', 5000);
+    if (d?.status_persetujuan === 'diajukan') toast('Pengeluaran diajukan ke investor untuk disetujui.', 'info', 5000);
+    else if (d?.melebihi_anggaran) toast('Pengeluaran melebihi sisa anggaran periode. Tetap dicatat dan ditandai.', 'error', 5000);
   },
   renderCard: (r, href) => rowCard({
     href,
     title: r.uraian,
     sub: [formatValue(r.tanggal, 'date'), r.kategori_label || kategoriLabel(r.kategori), r.nota ? 'nota ✓' : 'tanpa nota'].join(' · '),
     aside: formatRupiah(r.nominal),
-    badge: r.melebihi_anggaran ? { text: 'Melebihi anggaran', cls: 'badge-danger' } : null,
+    ...badgesPengeluaran(r),
   }),
-  detailExtras: (rec, p) => {
-    const nodes = [];
-    if (rec.melebihi_anggaran) nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, 'Pengeluaran ini melebihi sisa anggaran periode saat dicatat.'));
-    nodes.push(h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Foto nota'),
-      rec.nota ? createAuthImage(rec.nota, { alt: 'Foto nota' }) : h('p', { class: 'muted small' }, 'Tidak ada nota.')));
-    const lain = (rec.lampiran || []).filter((l) => l.id !== rec.nota?.lampiran_id);
-    if (lain.length || p.U) nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: !!p.U, title: 'Lampiran lain' }));
-    return nodes;
-  },
+  detailExtras: (rec) => detailPengeluaran(rec),
 });
+
+/** Bagian detail pengeluaran bersama Mini App dan web. Hak tombol (putuskan, lampirkan) hanya dari izin record server. */
+function detailPengeluaran(rec) {
+  const nodes = [];
+  nodes.push(...persetujuanPanels(rec));
+  if (dariPembelian(rec)) nodes.push(h('div', { class: 'notice' }, 'Pengeluaran ini berasal dari pembelian bahan terverifikasi sehingga tidak dapat diubah atau dihapus.'));
+  if (rec.melebihi_anggaran) nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, 'Pengeluaran ini melebihi sisa anggaran periode saat dicatat.'));
+  nodes.push(h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Foto nota'),
+    rec.nota ? createAuthImage(rec.nota, { alt: 'Foto nota' }) : h('p', { class: 'muted small' }, 'Tidak ada nota.')));
+  const lain = (rec.lampiran || []).filter((l) => l.id !== rec.nota?.lampiran_id);
+  // Server menolak lampiran baru pada pengeluaran disetujui (409) atau hasil pembelian (403).
+  const terkunci = pesanLampiranTerkunci(rec);
+  const bisaLampir = bolehIzin(rec, 'lampirkan');
+  if (terkunci) {
+    // Panel unggah disembunyikan; lampiran yang sudah ada tetap bisa dilihat tanpa tombol tambah.
+    if (lain.length) nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: false, title: 'Lampiran lain' }));
+    const info = h('p', { class: 'muted small', role: 'note' });
+    info.textContent = terkunci;
+    nodes.push(info);
+  } else if (lain.length || bisaLampir) {
+    nodes.push(createLampiranPanel({ modul: 'keuangan-pengeluaran', recordId: rec.id, kategori: 'nota', lampiran: lain, canAdd: bisaLampir, title: 'Lampiran lain' }));
+  }
+  return nodes;
+}
 pengeluaranModule.hidden = true;
 
 // ================= Ringkasan =================
@@ -187,9 +327,11 @@ function ringkasanPanel(r) {
   const row = (label, value, cls = '') => h('div', { class: 'tbl-row' }, h('span', { class: 'muted' }, label), h('strong', { class: `num ${cls}`.trim() }, value));
   return h('div', { class: 'panel stack-tight' },
     row('Total pencairan', formatRupiah(r.anggaran)),
-    row('Total pengeluaran', formatRupiah(r.terpakai)),
+    row('Total pengeluaran (disetujui)', formatRupiah(r.terpakai)),
     row('Sisa anggaran', `${formatRupiah(r.sisa)}${sisaNeg ? ' (minus)' : ''}`, sisaNeg ? 'neg' : 'pos'),
     barAnggaran(r),
+    teksMenunggu(r) ? h('div', { class: 'notice', role: 'status' }, h('strong', {}, 'Menunggu persetujuan: '), teksMenunggu(r), ' ',
+      h('a', { class: 'link', href: '#/keuangan/pengeluaran', onclick: () => { pengeluaranQuery.status_persetujuan = 'diajukan'; pengeluaranQuery.periode = r.periode || pengeluaranQuery.periode; pengeluaranInit = true; } }, 'Lihat daftar')) : null,
     Number(r.jumlah_melebihi_anggaran) > 0 ? h('div', { class: 'alert-danger', role: 'alert' }, `${r.jumlah_melebihi_anggaran} pengeluaran ditandai melebihi anggaran.`) : null);
 }
 
@@ -209,7 +351,7 @@ function kategoriPanel(r) {
 
 async function ringkasanScreen(ctx) {
   const user = getUser();
-  const admin = user?.role === 'admin';
+  const admin = tanpaSppgSendiri(user); // Admin lintas SPPG: pilih SPPG eksplisit
   const periode = ctx.query.get('periode') || periodeSekarang();
   const sppgId = ctx.query.get('sppg_id') || '';
   ctx.setTitle(`Keuangan · ${labelPeriode(periode)}`);
@@ -242,16 +384,17 @@ async function ringkasanScreen(ctx) {
     items.forEach((x) => terbaru.append(rowCard({
       href: `#/keuangan/pengeluaran/${x.id}`, title: x.uraian,
       sub: [formatValue(x.tanggal, 'date'), x.kategori_label || kategoriLabel(x.kategori), x.nota ? 'nota ✓' : null].filter(Boolean).join(' · '),
-      aside: formatRupiah(x.nominal), badge: x.melebihi_anggaran ? { text: 'Melebihi anggaran', cls: 'badge-danger' } : null,
+      aside: formatRupiah(x.nominal), ...badgesPengeluaran(x),
     })));
     ctx.el.append(h('a', { class: 'btn btn-block', href: '#/keuangan/pengeluaran' }, 'Lihat semua pengeluaran'));
   } catch (e) {
     if (e?.status === 401) throw e;
     terbaru.append(h('p', { class: 'muted center pad' }, errorMessage(e, 'Transaksi gagal dimuat.')));
   }
-  if (me().C) {
+  if (me().C) { // hak C dari peta server; web memakai tautan (formulir web: R04-8 PR4f), Telegram memakai MainButton
     ctx.el.append(h('a', { class: 'btn btn-block', href: '#/keuangan/pencairan/baru' }, '+ Pencairan dana'));
-    setMainButton({ text: '+ Tambah Pengeluaran', onClick: () => navigate('/keuangan/pengeluaran/baru') });
+    if (isWeb()) ctx.el.append(h('a', { class: 'btn btn-primary btn-block', href: '#/keuangan/pengeluaran/baru' }, '+ Pengeluaran'));
+    else setMainButton({ text: '+ Tambah Pengeluaran', onClick: () => navigate('/keuangan/pengeluaran/baru') });
   }
   return kat.destroy;
 }
@@ -263,6 +406,9 @@ const ringkasanModule = {
   description: 'Anggaran, pencairan dan pengeluaran',
   permissionSlug: SLUG,
   register() {
+    route('/keuangan', ringkasanScreen, { title: 'Keuangan', guard: () => me().R });
+  },
+  registerWeb() {
     route('/keuangan', ringkasanScreen, { title: 'Keuangan', guard: () => me().R });
   },
 };

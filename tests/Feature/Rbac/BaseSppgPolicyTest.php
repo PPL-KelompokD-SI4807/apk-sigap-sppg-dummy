@@ -9,7 +9,6 @@ use App\Policies\UserPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
-use Laravel\Sanctum\Sanctum;
 use Tests\Fixtures\BahanBakuLikePolicy;
 use Tests\Fixtures\JadwalDistribusiLikePolicy;
 use Tests\Fixtures\JadwalProduksiLikePolicy;
@@ -58,7 +57,7 @@ class BaseSppgPolicyTest extends SppgIsolationTestCase
     public function test_peran_dengan_crud_jalur_sukses(): void
     {
         $item = $this->item($this->sppgA);
-        Sanctum::actingAs($this->makeUser(Role::StafGudang, $this->sppgA));
+        $this->masukPenuh($this->makeUser(Role::StafGudang, $this->sppgA));
 
         $this->getJson('/api/v1/_uji/items')->assertOk()->assertJsonPath('data', [$item->id]);
         $this->getJson("/api/v1/_uji/items/{$item->id}")->assertOk();
@@ -72,7 +71,7 @@ class BaseSppgPolicyTest extends SppgIsolationTestCase
     public function test_peran_hanya_baca_ditolak_menulis_403(): void
     {
         $item = $this->item($this->sppgA);
-        Sanctum::actingAs($this->makeUser(Role::KepalaSppg, $this->sppgA));
+        $this->masukPenuh($this->makeUser(Role::KepalaSppg, $this->sppgA));
 
         $this->getJson("/api/v1/_uji/items/{$item->id}")->assertOk();
         $this->postJson('/api/v1/_uji/items', ['nama' => 'X'])
@@ -85,7 +84,7 @@ class BaseSppgPolicyTest extends SppgIsolationTestCase
     public function test_peran_tanpa_hak_ditolak_membaca_403(): void
     {
         $item = $this->item($this->sppgA);
-        Sanctum::actingAs($this->makeUser(Role::Relawan, $this->sppgA, RelawanUnit::Dapur));
+        $this->masukPenuh($this->makeUser(Role::Relawan, $this->sppgA, RelawanUnit::Dapur));
 
         $this->getJson('/api/v1/_uji/items')->assertForbidden();
         $this->getJson("/api/v1/_uji/items/{$item->id}")->assertForbidden();
@@ -95,7 +94,7 @@ class BaseSppgPolicyTest extends SppgIsolationTestCase
     {
         $itemB = $this->item($this->sppgB);
         $userA = $this->makeUser(Role::StafGudang, $this->sppgA);
-        Sanctum::actingAs($userA);
+        $this->masukPenuh($userA);
 
         $this->getJson("/api/v1/_uji/items/{$itemB->id}")->assertNotFound()->assertExactJson(['message' => 'Data tidak ditemukan.']);
         $this->patchJson("/api/v1/_uji/items/{$itemB->id}", ['nama' => 'Retas'])->assertNotFound();
@@ -125,7 +124,7 @@ class BaseSppgPolicyTest extends SppgIsolationTestCase
     {
         $itemA = $this->item($this->sppgA);
         $itemB = $this->item($this->sppgB);
-        Sanctum::actingAs($this->makeUser(Role::Admin, null));
+        $this->masukPenuh($this->makeUser(Role::Admin, null));
 
         $this->getJson('/api/v1/_uji/items')->assertOk()->assertJsonPath('data', [$itemA->id, $itemB->id]);
         $this->patchJson("/api/v1/_uji/items/{$itemB->id}", ['nama' => 'Dikoreksi'])->assertOk();
@@ -136,7 +135,7 @@ class BaseSppgPolicyTest extends SppgIsolationTestCase
     public function test_non_admin_tidak_bisa_memindahkan_data_ke_sppg_lain(): void
     {
         $item = $this->item($this->sppgA);
-        Sanctum::actingAs($this->makeUser(Role::StafGudang, $this->sppgA));
+        $this->masukPenuh($this->makeUser(Role::StafGudang, $this->sppgA));
 
         $this->patchJson("/api/v1/_uji/items/{$item->id}", ['nama' => 'Pindah', 'sppg_id' => $this->sppgB])->assertOk();
 

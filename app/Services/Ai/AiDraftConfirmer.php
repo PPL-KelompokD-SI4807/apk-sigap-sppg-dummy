@@ -6,6 +6,8 @@ use App\Enums\AksiAiDraft;
 use App\Enums\StatusAiDraft;
 use App\Models\AiDraft;
 use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -29,6 +31,13 @@ class AiDraftConfirmer
             return null;
         }
 
+        // Investor baca saja (R-06a): tidak pernah mengonfirmasi draf (lapis kedua selain Policy modul).
+        if ($user->isInvestor()) {
+            throw ValidationException::withMessages([
+                'ai_draft_id' => ['Draf AI tidak ditemukan, sudah dipakai, atau kedaluwarsa.'],
+            ]);
+        }
+
         $action ??= $targetId === null ? AksiAiDraft::Create : AksiAiDraft::Update;
         $draft = AiDraft::query()->where('uuid', $uuid)->lockForUpdate()->first();
 
@@ -47,5 +56,35 @@ class AiDraftConfirmer
         $draft->forceFill(['status' => StatusAiDraft::Confirmed, 'confirmed_at' => now()])->save();
 
         return $draft;
+    }
+
+    /**
+     * Query string opsional `ai_draft_id` pada DELETE (body DELETE tidak andal lewat proxy/fetch).
+     * Tanpa parameter = null (perilaku lama); bukan uuid = 422 pada `ai_draft_id`.
+     */
+    public function uuidDariQuery(Request $request): ?string
+    {
+        $nilai = $request->query('ai_draft_id');
+
+        if ($nilai === null) {
+            return null;
+        }
+
+        $validator = Validator::make(['ai_draft_id' => $nilai], ['ai_draft_id' => ['string', 'uuid']]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+
+        return (string) $nilai;
+    }
+
+    /**
+     * Konfirmasi draf HAPUS (aksi Delete, target_id = id record) dari query `ai_draft_id`.
+     * Panggil DI DALAM transaksi hapus, setelah guard bisnis lolos.
+     */
+    public function confirmDelete(Request $request, string $module, int $targetId, ?string $resource = null): ?AiDraft
+    {
+        return $this->confirm($this->uuidDariQuery($request), $request->user(), $module, $targetId, AksiAiDraft::Delete, $resource);
     }
 }

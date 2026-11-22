@@ -20,7 +20,17 @@ class JadwalDistribusiController extends ApiController
 {
     private const MODULE = 'jadwal';
 
-    private const RELASI = ['titikLayanan:id,nama', 'armada:id,plat_nomor', 'pengemudi:id,nama', 'petugas:id,name', 'jadwalProduksi.pemeriksaanTerbaru'];
+    /**
+     * Relasi yang dimuat untuk resource. Batch produksi dimuat termasuk yang terhapus lunak (sama dengan gerbang mutu
+     * BuktiDistribusiService) beserta pemeriksaan terbaru, tanpa query per baris.
+     *
+     * @return array<int|string, mixed>
+     */
+    private function relasi(): array
+    {
+        return ['titikLayanan:id,nama', 'armada:id,plat_nomor', 'pengemudi:id,nama', 'petugas:id,name',
+            'jadwalProduksi' => fn ($q) => $q->withTrashed()->with('pemeriksaanTerbaru')];
+    }
 
     public function __construct(
         private readonly DistributionScheduleService $distribusi,
@@ -31,7 +41,7 @@ class JadwalDistribusiController extends ApiController
     {
         $this->authorize('viewAny', JadwalDistribusi::class);
 
-        $query = JadwalDistribusi::query()->with(self::RELASI);
+        $query = JadwalDistribusi::query()->with($this->relasi());
         $this->applySearch($query, $request, ['catatan']);
 
         if (in_array($request->query('status'), StatusJadwalDistribusi::values(), true)) {
@@ -71,14 +81,14 @@ class JadwalDistribusiController extends ApiController
             return $jadwal;
         });
 
-        return (new JadwalDistribusiResource($jadwal->load(self::RELASI)))->response()->setStatusCode(201);
+        return (new JadwalDistribusiResource($jadwal->load($this->relasi())))->response()->setStatusCode(201);
     }
 
     public function show(JadwalDistribusi $jadwalDistribusi): JadwalDistribusiResource
     {
         $this->authorize('view', $jadwalDistribusi);
 
-        return new JadwalDistribusiResource($jadwalDistribusi->load(self::RELASI));
+        return new JadwalDistribusiResource($jadwalDistribusi->load($this->relasi()));
     }
 
     public function update(UpdateJadwalDistribusiRequest $request, JadwalDistribusi $jadwalDistribusi): JadwalDistribusiResource
@@ -87,19 +97,19 @@ class JadwalDistribusiController extends ApiController
         $data = $request->validated();
 
         $diubah = DB::transaction(function () use ($request, $jadwalDistribusi, $data): JadwalDistribusi {
-            $diubah = $this->distribusi->perbarui($jadwalDistribusi, $data);
+            $diubah = $this->distribusi->perbarui($jadwalDistribusi, $data, $this->versi($data));
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id, resource: 'distribusi');
 
             return $diubah;
         });
 
-        return new JadwalDistribusiResource($diubah->load(self::RELASI));
+        return new JadwalDistribusiResource($diubah->load($this->relasi()));
     }
 
-    public function destroy(JadwalDistribusi $jadwalDistribusi): Response
+    public function destroy(Request $request, JadwalDistribusi $jadwalDistribusi): Response
     {
         $this->authorize('delete', $jadwalDistribusi);
-        $this->distribusi->hapus($jadwalDistribusi);
+        $this->hapusDenganDraf($request, 'jadwal', (int) $jadwalDistribusi->getKey(), fn () => $this->distribusi->hapus($jadwalDistribusi), 'distribusi');
 
         return response()->noContent();
     }

@@ -1,14 +1,15 @@
 // Pembantu skema form + payload (murni, tanpa DOM) dipakai modul grup A.
 import { toBool, nullIfEmpty } from './validators.js';
+import { tanpaSppgSendiri } from './permissions.js';
 
 export const BOOL_OPTIONS = [{ value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' }];
 
 /** Kolom status aktif (select Aktif/Nonaktif; dikirim sebagai boolean lewat buildPayload). */
 export const activeField = (label = 'Status') => ({ name: 'is_active', label, type: 'select', required: true, default: 'true', options: BOOL_OPTIONS });
 
-/** Kolom sppg_id: hanya Admin saat tambah (peran lain memakai SPPG sendiri; tak dapat dipindah saat ubah). */
+/** Kolom sppg_id: hanya saat tambah oleh pengguna tanpa SPPG sendiri (Admin lintas SPPG); lainnya memakai SPPG sendiri. */
 export function sppgField(user, mode) {
-  if (mode !== 'create' || user?.role !== 'admin') return [];
+  if (mode !== 'create' || !tanpaSppgSendiri(user)) return [];
   return [{ name: 'sppg_id', label: 'SPPG', type: 'relasi', required: true, relation: { endpoint: '/sppg', label: 'nama', value: 'id' } }];
 }
 

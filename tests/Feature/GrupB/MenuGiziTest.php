@@ -11,7 +11,6 @@ use App\Models\BahanBaku;
 use App\Models\JadwalProduksi;
 use App\Models\Menu;
 use App\Models\StandarGizi;
-use Laravel\Sanctum\Sanctum;
 
 class MenuGiziTest extends GrupBTestCase
 {
@@ -193,7 +192,7 @@ class MenuGiziTest extends GrupBTestCase
         $user = $this->user(Role::AhliGizi);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'menu-gizi']);
         $salahModul = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'pengeluaran']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         $this->postJson('/api/v1/menu-gizi', $this->payload(['ai_draft_id' => $salahModul->uuid]))->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);
         $this->postJson('/api/v1/menu-gizi', $this->payload(['ai_draft_id' => $draf->uuid]))->assertCreated();

@@ -1,7 +1,8 @@
 // Tes unit modul grup D (logika murni): node --test resources/miniapp/tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { can, userPerms } from '../core/permissions.js';
+import { userPerms, permsDariIzin } from '../core/permissions.js';
+import { PROFIL } from './fixtures/peta.js';
 import { errorMessage, statusMessage, PESAN_413, PESAN_429 } from '../core/errors.js';
 import { ApiError } from '../core/api.js';
 import {
@@ -14,26 +15,21 @@ import * as keu from '../modules/keuangan/schema.js';
 const names = (f) => f.map((x) => x.name);
 
 // ---------- hak akses ----------
-test('hak akses bukti distribusi dan keuangan sesuai Tabel 5', () => {
-  assert.equal(can('relawan', 'bukti-distribusi', 'C'), true);
-  assert.equal(can('relawan', 'bukti-distribusi', 'D'), false);
+test('hak akses bukti distribusi dan keuangan mengikuti peta server', () => {
+  const can = (nama, slug, k) => userPerms(PROFIL[nama], slug)[k];
+  assert.equal(can('relawan_distribusi', 'bukti-distribusi', 'C'), true);
+  assert.equal(can('relawan_distribusi', 'bukti-distribusi', 'D'), false);
   assert.equal(can('kepala_sppg', 'bukti-distribusi', 'D'), true);
   assert.equal(can('admin', 'bukti-distribusi', 'C'), false);
   assert.equal(can('staf_gudang', 'bukti-distribusi', 'R'), false);
+  assert.equal(can('relawan_dapur', 'bukti-distribusi', 'R'), false, 'relawan dapur: modul bukti tidak ada di peta (unit)');
   for (const a of ['C', 'R', 'U', 'D']) assert.equal(can('akuntan', 'keuangan', a), true);
-  for (const r of ['admin', 'kepala_sppg']) {
+  for (const r of ['admin', 'kepala_sppg', 'investor']) {
     assert.equal(can(r, 'keuangan', 'R'), true);
     for (const a of ['C', 'U', 'D']) assert.equal(can(r, 'keuangan', a), false, `${r} ${a}`);
   }
-  for (const r of ['ahli_gizi', 'staf_gudang', 'relawan']) assert.equal(can(r, 'keuangan', 'R'), false);
-  assert.equal(userPerms({ role: 'akuntan', modules: ['bahan-baku'] }, 'keuangan').R, false);
-});
-
-test('relawan bukti distribusi hanya unit distribusi', () => {
-  assert.equal(bukti.unitDistribusiBoleh({ role: 'relawan', unit: 'distribusi' }), true);
-  assert.equal(bukti.unitDistribusiBoleh({ role: 'relawan', unit: 'dapur' }), false);
-  assert.equal(bukti.unitDistribusiBoleh({ role: 'kepala_sppg' }), true);
-  assert.equal(bukti.unitDistribusiBoleh(null), false);
+  for (const r of ['ahli_gizi', 'staf_gudang', 'relawan_dapur']) assert.equal(can(r, 'keuangan', 'R'), false);
+  assert.equal(userPerms({ ...PROFIL.akuntan, modules: ['bahan-baku'] }, 'keuangan').R, false);
 });
 
 // ---------- rupiah ----------
@@ -106,10 +102,10 @@ test('periode dan tanggal keuangan', () => {
 });
 
 test('skema keuangan: kategori enum kontrak, payload integer, nota/bukti opsional', () => {
-  assert.deepEqual(keu.KATEGORI.map((k) => k.value), ['bahan_baku', 'insentif_relawan', 'energi', 'transportasi', 'peralatan', 'lainnya']);
+  assert.deepEqual(keu.KATEGORI.map((k) => k.value), ['bahan_baku', 'insentif_relawan', 'energi', 'transportasi', 'peralatan', 'lainnya', 'insentif_fasilitas']);
   const custom = { periode: { type: 'custom' }, nominal: (name, label) => ({ name, label, type: 'custom', required: true }) };
   const peng = keu.pengeluaranFields({ custom });
-  assert.deepEqual(names(peng), ['tanggal', 'kategori', 'uraian', 'nominal', 'pemasok_id', 'pencairan_dana_id', 'nota']);
+  assert.deepEqual(names(peng), ['tanggal', 'kategori', 'sub_kategori', 'uraian', 'nominal', 'pemasok_id', 'pencairan_dana_id', 'nota']);
   assert.equal(peng.find((f) => f.name === 'nota').type, 'photo');
   assert.equal(peng.find((f) => f.name === 'nota').required, undefined);
   assert.equal(keu.pengeluaranFields({ custom, record: { pemasok: { id: 7 } } }).find((f) => f.name === 'pemasok_id').default, 7);
@@ -252,16 +248,25 @@ test('fetchLampiranBlob memakai header Authorization dan memetakan galat', async
 });
 
 // ---------- bukti distribusi ----------
-test('jadwal yang dapat dipilih: relawan hanya hari ini dan milik sendiri/belum bertugas', () => {
-  const relawan = { role: 'relawan', unit: 'distribusi', id: 7 };
-  const j = (o) => ({ id: 1, status: 'siap', tanggal_distribusi: '2026-11-20', petugas_id: null, ...o });
-  assert.equal(bukti.jadwalDapatDipilih(j({}), relawan, '2026-11-20'), true);
-  assert.equal(bukti.jadwalDapatDipilih(j({ petugas_id: 7 }), relawan, '2026-11-20'), true);
-  assert.equal(bukti.jadwalDapatDipilih(j({ petugas_id: 8 }), relawan, '2026-11-20'), false);
-  assert.equal(bukti.jadwalDapatDipilih(j({ tanggal_distribusi: '2026-11-19' }), relawan, '2026-11-20'), false);
-  assert.equal(bukti.jadwalDapatDipilih(j({ status: 'diterima' }), relawan, '2026-11-20'), false);
-  assert.equal(bukti.jadwalDapatDipilih(j({ status: 'dibatalkan' }), { role: 'kepala_sppg' }, '2026-11-20'), false);
-  assert.equal(bukti.jadwalDapatDipilih(j({ petugas_id: 8, tanggal_distribusi: '2026-11-01' }), { role: 'kepala_sppg', id: 2 }, '2026-11-20'), true);
+test('pemilih jadwal bukti: hanya izin.catat_bukti === true; status/tanggal/petugas tidak dicek di klien', () => {
+  const j = (id, izin, o = {}) => ({ id, status: 'siap', tanggal_distribusi: '2026-11-20', petugas_id: null, ...(izin === undefined ? {} : { izin }), ...o });
+  const daftar = [
+    j(1, { ubah: false, hapus: false, catat_bukti: true }),
+    j(2, { ubah: false, hapus: false, catat_bukti: false }),
+    j(3, undefined), // flag izin hilang -> fail closed
+    j(4, { ubah: false, hapus: false }), // catat_bukti hilang -> fail closed
+    j(5, { catat_bukti: 'true' }), // bukan boolean true
+    j(6, { catat_bukti: true }, { status: 'diterima', petugas_id: 99, tanggal_distribusi: '2020-01-01' }), // server yang memutuskan
+  ];
+  assert.deepEqual(daftar.filter(bukti.jadwalDapatDipilih).map((x) => x.id), [1, 6]);
+  assert.equal(bukti.jadwalDapatDipilih(null), false);
+  assert.equal(bukti.jadwalDapatDipilih(undefined), false);
+});
+
+test('pemilih jadwal bukti: tak ada yang ber-izin -> daftar kosong dan pesan keadaan kosong tersedia', () => {
+  const daftar = [{ id: 1, status: 'siap' }, { id: 2, status: 'siap', izin: { catat_bukti: false } }];
+  assert.equal(daftar.filter(bukti.jadwalDapatDipilih).length, 0);
+  assert.equal(bukti.PESAN_TANPA_JADWAL_BUKTI, 'Belum ada jadwal yang bisa dicatat buktinya');
 });
 
 test('peringatan jadwal: ditahan mutu, belum siap, belum berangkat', () => {
@@ -298,17 +303,14 @@ test('validator porsi dan catatan selisih', () => {
   assert.equal(bukti.validasiCatatanSelisih('', 5, null), '');
 });
 
-test('hak per baris bukti: relawan ubah hanya milik sendiri hari ini, tak boleh hapus', () => {
-  const relawan = { role: 'relawan', id: 7 };
-  const p = { C: true, R: true, U: true, D: false };
-  const today = '2026-11-20';
-  const rec = (o) => ({ dicatat_oleh: { id: 7 }, waktu_tiba: '2026-11-20T02:00:00Z', ...o });
-  assert.equal(bukti.rowPermsBukti(relawan, rec({}), p, today).U, true);
-  assert.equal(bukti.rowPermsBukti(relawan, rec({ dicatat_oleh: { id: 8 } }), p, today).U, false);
-  assert.equal(bukti.rowPermsBukti(relawan, rec({ waktu_tiba: '2026-11-19T02:00:00Z' }), p, today).U, false);
-  assert.equal(bukti.rowPermsBukti(relawan, rec({}), { ...p, D: true }, today).D, false);
-  const kepala = { C: true, R: true, U: true, D: true };
-  assert.deepEqual(bukti.rowPermsBukti({ role: 'kepala_sppg', id: 2 }, rec({}), kepala, today), kepala);
+test('hak per baris bukti dari izin server: relawan hanya milik sendiri hari ini, tak boleh hapus', () => {
+  const relawan = userPerms(PROFIL.relawan_distribusi, 'bukti-distribusi');
+  const kepala = userPerms(PROFIL.kepala_sppg, 'bukti-distribusi');
+  assert.equal(permsDariIzin(relawan, { izin: { ubah: true, hapus: false } }).U, true);
+  assert.equal(permsDariIzin(relawan, { dicatat_oleh: { id: 8 }, izin: { ubah: false, hapus: false } }).U, false);
+  assert.equal(permsDariIzin(relawan, { izin: { ubah: true, hapus: true } }).D, false, 'relawan tak punya D modul');
+  assert.equal(permsDariIzin(kepala, { izin: { ubah: true, hapus: true } }).D, true);
+  assert.equal(permsDariIzin(kepala, {}).U, false, 'tanpa izin = tanpa tombol');
 });
 
 test('skema bukti: foto wajib saat baru, opsional saat ubah; payload multipart', () => {

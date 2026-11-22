@@ -4,7 +4,7 @@ import { rowCard } from '../../components/row-card.js';
 import { pengemudiFields, mapPayload, simLabel, simBadge } from './schema.js';
 import { armadaTabs } from '../armada/index.js';
 
-export default defineCrudModule({
+const pengemudiModule = defineCrudModule({
   slug: 'pengemudi',
   permissionSlug: 'armada',
   title: 'Pengemudi',
@@ -21,6 +21,7 @@ export default defineCrudModule({
   searchPlaceholder: 'Cari nama pengemudi...',
   filters: { param: 'is_active', label: 'Status pengemudi', options: [{ value: '', label: 'Semua' }, { value: '1', label: 'Aktif' }, { value: '0', label: 'Nonaktif' }] },
   listTop: () => armadaTabs('pengemudi'),
+  listTopWeb: () => armadaTabs('pengemudi'),
   renderCard: (r, href) => rowCard({
     href,
     title: r.nama,
@@ -28,3 +29,7 @@ export default defineCrudModule({
     badge: r.sim_status ? { text: simLabel(r.sim_status), cls: simBadge(r.sim_status) } : null,
   }),
 });
+// Satu fitur "Armada dan Pengemudi" = satu kartu menu (kartu Armada); layar Pengemudi dibuka lewat tab, bukan kartu ganda.
+pengemudiModule.hidden = true;
+
+export default pengemudiModule;

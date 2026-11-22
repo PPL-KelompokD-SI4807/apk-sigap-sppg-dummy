@@ -1,0 +1,11 @@
+# SiGAP SPPG - cek pembaruan sertifikat 2x sehari (certbot hanya memperbarui bila < 30 hari tersisa).
+[Unit]
+Description=SiGAP SPPG - jadwal pembaruan sertifikat TLS
+
+[Timer]
+OnCalendar=*-*-* 03,15:17:00 Asia/Jakarta
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

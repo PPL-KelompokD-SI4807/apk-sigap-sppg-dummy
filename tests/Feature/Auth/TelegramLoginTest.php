@@ -7,6 +7,7 @@ use App\Enums\Role;
 use App\Models\User;
 use App\Services\Telegram\TelegramAuthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Sanctum\PersonalAccessToken;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -34,56 +35,59 @@ class TelegramLoginTest extends TestCase
         $this->app['auth']->forgetGuards();
     }
 
-    public function test_initdata_sah_menerbitkan_token_dan_profil(): void
+    public function test_initdata_sah_hanya_menerbitkan_token_pra_login(): void
     {
         $this->freezeSecond();
         $user = $this->registeredUser();
 
         $response = $this->postJson(self::URL, ['init_data' => $this->makeInitData(['id' => 7012345678, 'username' => 'kepala_baru'])]);
 
+        // Akun belum punya password -> wajib aktivasi; profil & hak akses belum dibuka.
         $response->assertOk()
+            ->assertJsonPath('langkah', 'aktivasi')
             ->assertJsonPath('token_type', 'Bearer')
-            ->assertJsonPath('expires_at', now()->addMinutes(480)->toIso8601String())
-            ->assertJsonPath('user.id', $user->id)
-            ->assertJsonPath('user.role', 'kepala_sppg')
-            ->assertJsonPath('user.unit', null)
-            ->assertJsonPath('user.sppg_id', $user->sppg_id)
-            ->assertJsonPath('user.sppg_name', 'SPPG Sukamaju')
-            ->assertJsonPath('user.permissions.jadwal', 'CRUD')
-            ->assertJsonStructure(['token', 'token_type', 'expires_at', 'user' => ['id', 'name', 'role', 'unit', 'sppg_id', 'sppg_name', 'modules']])
+            ->assertJsonPath('token_jenis', 'pra_login')
+            ->assertJsonPath('expires_at', now()->addMinutes(15)->toIso8601String())
+            ->assertJsonPath('akun.nama', $user->name)
+            ->assertJsonPath('akun.perlu_username', true)
+            ->assertJsonMissingPath('user')
             ->assertHeader('Cache-Control', 'no-store, private')
             ->assertHeader('X-Content-Type-Options', 'nosniff');
 
-        $this->assertContains('keuangan', $response->json('user.modules'));
-        $this->assertNotContains('menu-gizi:C', PersonalAccessToken::first()->abilities);
-        $this->assertContains('role:kepala_sppg', PersonalAccessToken::first()->abilities);
+        $this->assertSame(['auth:pra-login'], PersonalAccessToken::first()->abilities);
 
         $user->refresh();
-        $this->assertNotNull($user->last_login_at);
+        $this->assertNull($user->last_login_at, 'initData saja bukan login penuh.');
         $this->assertSame('kepala_baru', $user->telegram_username);
 
+        // Token pra-login tidak membuka rute data mana pun.
         $this->freshAuth();
         $this->withToken($response->json('token'))->getJson('/api/v1/auth/me')
-            ->assertOk()->assertJsonPath('user.id', $user->id);
+            ->assertForbidden()->assertJsonPath('alasan', 'perlu_login_penuh');
     }
 
-    public function test_login_ulang_perangkat_sama_mencabut_token_lama_perangkat_lain_tetap(): void
+    public function test_akun_berpassword_diarahkan_ke_langkah_masuk(): void
+    {
+        $this->registeredUser(['username' => 'kepala.sukamaju', 'password' => Hash::make('Rahasia123x')]);
+
+        $this->postJson(self::URL, ['init_data' => $this->makeInitData(['id' => 7012345678])])
+            ->assertOk()->assertJsonPath('langkah', 'masuk')->assertJsonPath('akun.perlu_username', false);
+    }
+
+    public function test_token_pra_login_satu_per_perangkat(): void
     {
         $user = $this->registeredUser();
         $initData = $this->makeInitData(['id' => 7012345678]);
+        $hp = str_repeat('a', 32);
+        $tablet = str_repeat('b', 32);
 
-        $first = $this->postJson(self::URL, ['init_data' => $initData])->json('token');
-        $other = $this->postJson(self::URL, ['init_data' => $initData, 'device' => 'tablet-dapur'])->json('token');
-        $second = $this->postJson(self::URL, ['init_data' => $initData])->json('token');
+        $first = $this->postJson(self::URL, ['init_data' => $initData, 'device_id' => $hp])->json('token');
+        $this->postJson(self::URL, ['init_data' => $initData, 'device_id' => $tablet])->assertOk();
+        $second = $this->postJson(self::URL, ['init_data' => $initData, 'device_id' => $hp])->json('token');
 
         $this->assertSame(2, $user->tokens()->count());
-
-        $this->freshAuth();
-        $this->withToken($first)->getJson('/api/v1/auth/me')->assertUnauthorized();
-        $this->freshAuth();
-        $this->withToken($second)->getJson('/api/v1/auth/me')->assertOk();
-        $this->freshAuth();
-        $this->withToken($other)->getJson('/api/v1/auth/me')->assertOk();
+        $this->assertNull(PersonalAccessToken::findToken($first));
+        $this->assertNotNull(PersonalAccessToken::findToken($second));
     }
 
     public function test_hash_dimanipulasi_ditolak_401(): void
@@ -160,8 +164,8 @@ class TelegramLoginTest extends TestCase
 
     public function test_device_tidak_valid_422(): void
     {
-        $this->postJson(self::URL, ['init_data' => 'x', 'device' => '../etc'])
-            ->assertUnprocessable()->assertJsonValidationErrors(['device']);
+        $this->postJson(self::URL, ['init_data' => 'x', 'device_id' => '../etc'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['device_id']);
     }
 
     public function test_token_bot_belum_diatur_menolak_semua(): void
@@ -186,19 +190,46 @@ class TelegramLoginTest extends TestCase
         $this->app['env'] = 'local';
         config(['telegram.dev_bypass' => true]);
 
-        $response = $this->postJson(self::URL, ['init_data' => 'dev_role=kepala_sppg'])
+        // Bypass dev hanya menerbitkan token pra-login bertanda auth:dev (tidak pernah login penuh).
+        $this->postJson(self::URL, ['init_data' => 'dev_role=kepala_sppg'])
             ->assertOk()
-            ->assertJsonPath('user.role', 'kepala_sppg');
+            ->assertJsonPath('langkah', 'aktivasi')
+            ->assertJsonPath('token_jenis', 'pra_login');
 
-        $this->assertNotNull($response->json('user.sppg_id'));
-        $this->assertNotNull($response->json('user.sppg_name'));
+        $demo = User::query()->where('telegram_username', 'sigap_dev_kepala_sppg')->firstOrFail();
+        $this->assertSame(Role::KepalaSppg, $demo->role);
+        $this->assertNotNull($demo->sppg_id);
+        $this->assertSame(['auth:pra-login', 'auth:dev'], PersonalAccessToken::first()->abilities);
 
         // Pemanggilan kedua memakai pengguna demo yang sama.
-        $this->postJson(self::URL, ['init_data' => 'dev_role=kepala_sppg'])->assertJsonPath('user.id', $response->json('user.id'));
-        $this->postJson(self::URL, ['init_data' => 'dev_role=relawan&dev_unit=distribusi'])
-            ->assertOk()->assertJsonPath('user.unit', 'distribusi');
-        $this->postJson(self::URL, ['init_data' => 'dev_role=admin'])
-            ->assertOk()->assertJsonPath('user.sppg_id', null);
+        $this->postJson(self::URL, ['init_data' => 'dev_role=kepala_sppg'])->assertOk();
+        $this->assertSame(1, User::query()->where('telegram_username', 'sigap_dev_kepala_sppg')->count());
+
+        $this->postJson(self::URL, ['init_data' => 'dev_role=relawan&dev_unit=distribusi'])->assertOk();
+        $this->assertSame(RelawanUnit::Distribusi, User::query()->where('telegram_username', 'sigap_dev_relawan_distribusi')->firstOrFail()->unit);
+        $this->postJson(self::URL, ['init_data' => 'dev_role=admin'])->assertOk();
+        $this->assertNull(User::query()->where('telegram_username', 'sigap_dev_admin')->first()->sppg_id);
+    }
+
+    public function test_dev_bypass_tidak_dapat_menerbitkan_login_penuh(): void
+    {
+        $this->app['env'] = 'local';
+        config(['telegram.dev_bypass' => true]);
+
+        $pra = $this->postJson(self::URL, ['init_data' => 'dev_role=admin', 'device_id' => str_repeat('d', 32)])->json('token');
+        $demo = User::query()->where('telegram_username', 'sigap_dev_admin')->firstOrFail();
+        // Walau password diatur langsung di DB, token dev tetap tidak dapat ditukar.
+        User::withoutGlobalScopes()->whereKey($demo->id)->update(['username' => 'demo.admin', 'password' => Hash::make('Rahasia123x')]);
+
+        foreach ([
+            ['/api/v1/auth/masuk', ['identitas' => 'demo.admin', 'password' => 'Rahasia123x', 'device_id' => str_repeat('d', 32)]],
+            ['/api/v1/auth/aktivasi', ['password' => 'BaruSekali9z', 'password_confirmation' => 'BaruSekali9z', 'device_id' => str_repeat('d', 32)]],
+        ] as [$url, $body]) {
+            $this->freshAuth();
+            $this->withToken($pra)->postJson($url, $body)->assertForbidden()->assertJsonPath('alasan', 'dev_bypass');
+        }
+
+        $this->assertSame(0, PersonalAccessToken::query()->get()->filter(fn ($t) => in_array('auth:penuh', $t->abilities, true))->count());
     }
 
     public function test_dev_bypass_peran_tidak_dikenal_ditolak(): void
@@ -297,11 +328,12 @@ class TelegramLoginTest extends TestCase
 
     public function test_relawan_menerima_modul_sesuai_unit(): void
     {
-        User::factory()->relawan(RelawanUnit::Distribusi)->create([
+        $relawan = User::factory()->relawan(RelawanUnit::Distribusi)->create([
             'sppg_id' => $this->createSppg(), 'telegram_id' => 6000001,
         ]);
+        $this->masukPenuh($relawan);
 
-        $response = $this->postJson(self::URL, ['init_data' => $this->makeInitData(['id' => 6000001])])->assertOk();
+        $response = $this->getJson('/api/v1/auth/me')->assertOk();
 
         $this->assertContains('bukti-distribusi', $response->json('user.modules'));
         $this->assertNotContains('log-produksi', $response->json('user.modules'));

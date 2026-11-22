@@ -8,9 +8,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Pengemudi. Keputusan privasi: no_sim dan sim_berlaku_hingga hanya terlihat oleh peran yang
- * boleh mengubah data armada/pengemudi (Admin, Kepala SPPG). Peran R lain (Akuntan, Relawan)
- * hanya melihat `sim_status` agar dapat menilai kelayakan tanpa melihat nomor SIM.
+ * Pengemudi. Keputusan privasi (minimisasi data, UU PDP): no_hp, no_sim, dan sim_berlaku_hingga
+ * hanya terlihat oleh peran yang boleh mengubah data armada/pengemudi (Admin, Kepala SPPG), yang
+ * membutuhkannya untuk mengelola dan menghubungi pengemudi. Peran R lain (Akuntan, Relawan)
+ * hanya melihat nama dan `sim_status` agar dapat menilai kelayakan tanpa data kontak/SIM.
  *
  * @mixin Pengemudi
  */
@@ -21,14 +22,14 @@ class PengemudiResource extends JsonResource
     {
         /** @var Pengemudi $p */
         $p = $this->resource;
-        $lihatSim = Rbac::can($request->user(), 'armada', 'U');
+        $lihatPribadi = Rbac::can($request->user(), 'armada', 'U');
 
         return [
             'id' => $p->id,
             'sppg_id' => $p->sppg_id,
             'nama' => $p->nama,
-            'no_hp' => $p->no_hp,
-            $this->mergeWhen($lihatSim, [
+            $this->mergeWhen($lihatPribadi, [
+                'no_hp' => $p->no_hp,
                 'no_sim' => $p->no_sim,
                 'sim_berlaku_hingga' => $p->sim_berlaku_hingga?->toDateString(),
             ]),

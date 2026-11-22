@@ -3,7 +3,11 @@
 namespace App\Http\Resources\Jadwal;
 
 use App\Enums\HasilMutu;
+use App\Enums\StatusJadwalDistribusi;
 use App\Models\JadwalDistribusi;
+use App\Models\User;
+use App\Services\Distribusi\AturanCatatBukti;
+use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -55,9 +59,80 @@ class JadwalDistribusiResource extends JsonResource
 
                 return $mutu?->hasil === HasilMutu::Layak;
             }),
+            'peringatan' => $this->peringatan($d),
             'catatan' => $d->catatan,
+            'izin' => $this->izin($request, $d),
+            'versi' => (int) $d->versi,
             'created_at' => $d->created_at?->toIso8601String(),
             'updated_at' => $d->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Peringatan (BUKAN galat 422): jam berangkat lebih awal dari jam mulai masak jadwal produksi terkait pada hari
+     * yang sama berarti makanan belum selesai dimasak saat armada berangkat. Hanya untuk jadwal yang masih direncanakan
+     * (menunggu/siap); null bila jam salah satu kosong, tanggal berbeda, atau relasi produksi tidak dimuat.
+     */
+    private function peringatan(JadwalDistribusi $d): ?string
+    {
+        if (! in_array($d->status, [StatusJadwalDistribusi::Menunggu, StatusJadwalDistribusi::Siap], true)
+            || ! $d->relationLoaded('jadwalProduksi') || $d->jadwalProduksi === null) {
+            return null;
+        }
+
+        $produksi = $d->jadwalProduksi;
+
+        if ($d->jam_berangkat === null || $produksi->jam_mulai_masak === null
+            || $d->tanggal_distribusi?->toDateString() !== $produksi->tanggal_produksi?->toDateString()) {
+            return null;
+        }
+
+        $berangkat = substr((string) $d->jam_berangkat, 0, 5);
+        $mulaiMasak = substr((string) $produksi->jam_mulai_masak, 0, 5);
+
+        return $berangkat < $mulaiMasak
+            ? sprintf('Jam berangkat %s lebih awal dari jam mulai masak %s pada jadwal produksi terkait (hari yang sama).', $berangkat, $mulaiMasak)
+            : null;
+    }
+
+    /**
+     * Hak (Policy) DAN keadaan dari atribut record: distribusi hanya dapat dihapus pada status menunggu/siap/dibatalkan;
+     * `catat_bukti` = boleh POST bukti untuk jadwal ini.
+     * Syarat relasional (sudah ada bukti distribusi) butuh query dan tetap ditegakkan service (422).
+     *
+     * @return array<string, bool>
+     */
+    private function izin(Request $request, JadwalDistribusi $d): array
+    {
+        $izin = PetaHak::izin($request->user(), $d, ['ubah' => 'update', 'hapus' => 'delete']);
+        $izin['hapus'] = $izin['hapus'] && in_array($d->status, [StatusJadwalDistribusi::Menunggu, StatusJadwalDistribusi::Siap, StatusJadwalDistribusi::Dibatalkan], true);
+        $izin['catat_bukti'] = $this->bolehCatatBukti($request->user(), $d);
+
+        return $izin;
+    }
+
+    /**
+     * Aturan SAMA dengan penegakan POST /bukti-distribusi (AturanCatatBukti: hak, petugas, hari ini, status, gerbang mutu).
+     * Gerbang mutu dibaca dari relasi `jadwalProduksi.pemeriksaanTerbaru` yang sudah di-eager-load (tanpa query per baris,
+     * produksi terhapus lunak ikut dimuat seperti di service). GAGAL TERTUTUP: bila relasi tidak dimuat atau batch tidak
+     * ada, hasilnya false (tombol tersembunyi; server tetap menegakkan).
+     */
+    private function bolehCatatBukti(?User $pengguna, JadwalDistribusi $d): bool
+    {
+        if ($pengguna === null) {
+            return false;
+        }
+
+        $layak = function () use ($d): bool {
+            if (! $d->relationLoaded('jadwalProduksi') || $d->jadwalProduksi === null) {
+                return false;
+            }
+
+            $produksi = $d->jadwalProduksi;
+
+            return $produksi->relationLoaded('pemeriksaanTerbaru') && $produksi->pemeriksaanTerbaru?->hasil === HasilMutu::Layak;
+        };
+
+        return AturanCatatBukti::boleh($pengguna, $d, $layak);
     }
 }

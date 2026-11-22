@@ -78,7 +78,8 @@ class AnthropicLlmClient implements LlmClient
                 ->timeout((int) ($options['timeout'] ?? $this->timeout))
                 ->connectTimeout($this->connectTimeout)
                 ->retry(
-                    $this->retries + 1,
+                    // tanpa_ulang (pesan foto): gambar dikirim langsung ke model ini; ulang 429 = kuota habis.
+                    ($options['tanpa_ulang'] ?? false) === true ? 1 : $this->retries + 1,
                     $this->retrySleepMs,
                     fn (Throwable $e) => $e instanceof ConnectionException
                         || ($e instanceof RequestException && ($e->response->status() === 429 || $e->response->serverError())),
@@ -86,7 +87,7 @@ class AnthropicLlmClient implements LlmClient
                 )
                 ->post('/v1/messages', $body);
         } catch (ConnectionException) {
-            throw new LlmException('Layanan LLM tidak dapat dihubungi (timeout/koneksi).');
+            throw LlmException::timeout();
         } catch (Throwable $e) {
             throw new LlmException('Permintaan ke layanan LLM gagal ('.class_basename($e).').');
         }
@@ -170,13 +171,13 @@ class AnthropicLlmClient implements LlmClient
     {
         if (! $response->successful()) {
             // Body galat penyedia tidak diteruskan (bisa memuat potongan prompt).
-            throw new LlmException('Layanan LLM menolak permintaan (HTTP '.$response->status().').');
+            throw LlmException::fromStatus($response->status());
         }
 
         $json = $response->json();
 
         if (! is_array($json) || ! is_array($json['content'] ?? null)) {
-            throw new LlmException('Respons layanan LLM tidak dapat dibaca.');
+            throw LlmException::invalidResponse();
         }
 
         $text = [];

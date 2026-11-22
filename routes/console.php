@@ -47,3 +47,32 @@ Schedule::command('sigap:proses-ulang-telegram')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->onOneServer();
+
+// R-02: hapus token tombol Bot Telegram (bot_aksi) yang lebih tua dari 30 hari, harian dini hari.
+Schedule::command('sigap:bersihkan-aksi-bot')
+    ->dailyAt('03:30')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// R-03: hapus baris token Sanctum yang expires_at-nya lewat > 24 jam (sesi login penuh & pra-login), harian.
+// Token lama tanpa expires_at tidak dihapus di sini; keberlakuannya tetap dibatasi SesiService::kedaluwarsaEfektif.
+Schedule::command('sanctum:prune-expired', ['--hours' => 24])
+    ->dailyAt('03:45')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// R04-3: browser web tepercaya yang lewat 30 hari ditandai dicabut (baris tetap) dan sesi turunannya dihapus, harian.
+Schedule::command('sigap:bersihkan-browser-tepercaya')
+    ->dailyAt('03:55')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// R-03: kepercayaan perangkat yang lewat 180 hari sejak token bot terakhir ditandai dicabut (baris tetap), harian.
+Schedule::command('sigap:bersihkan-perangkat')
+    ->dailyAt('03:50')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();

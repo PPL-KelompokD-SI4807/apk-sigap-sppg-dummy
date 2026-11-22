@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Requests\Lampiran\StoreLampiranRequest;
 use App\Http\Resources\LampiranResource;
 use App\Models\Lampiran;
+use App\Services\Auth\GalatAuth;
 use App\Services\Storage\PengikatLampiran;
+use App\Services\Storage\PenjagaLampiranInduk;
 use App\Services\Storage\SecureUploadService;
+use App\Support\LampiranTersembunyi;
 use App\Support\Rbac;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,7 +21,9 @@ use Illuminate\Validation\ValidationException;
  * Unggah lampiran tambahan ke record modul dan sajikan berkas secara privat.
  *
  * - GET /lampiran/{id}: Lampiran ber-SppgScope (SPPG lain -> 404), induk harus ada di allowlist
- *   dan belum dihapus (-> 404), lalu Policy view induk (-> 403). Header tetap dan generik.
+ *   dan belum dihapus (-> 404), lalu Policy view induk (-> 403), lalu modul yang lampirannya
+ *   disembunyikan dari peran pengguna (unggahan.modul.*.sembunyikan_dari_peran -> 403
+ *   `lampiran_disembunyikan`, mis. foto keluhan/mutu untuk investor). Header tetap dan generik.
  * - POST /lampiran: induk dicari ber-scope (-> 404), hak config('unggahan.modul.*.ability')
  *   pada induk (-> 403), berkas diverifikasi SecureUploadService (-> 422).
  *   Tanpa lampiranable_id (modul 'tertunda'): berkas disimpan belum terikat (hak C/U modul, -> 403),
@@ -32,7 +37,10 @@ class LampiranController extends ApiController
     /** Batas bawaan unggahan tertunda (belum diikat) per pengguna. */
     public const MAKS_TERTUNDA = 10;
 
-    public function __construct(private readonly SecureUploadService $unggahan) {}
+    public function __construct(
+        private readonly SecureUploadService $unggahan,
+        private readonly PenjagaLampiranInduk $penjaga,
+    ) {}
 
     public function show(Request $request, Lampiran $lampiran): Response
     {
@@ -43,6 +51,11 @@ class LampiranController extends ApiController
             $induk = $this->unggahan->induk($lampiran);
             abort_if($induk === null, 404);
             $this->authorize('view', $induk);
+
+            // R06a-S-05: foto keluhan/mutu tidak disajikan ke peran tertentu (investor) walau boleh membaca induk.
+            if (LampiranTersembunyi::untuk($request->user(), $this->unggahan->slugModul((string) $lampiran->lampiranable_type))) {
+                throw GalatAuth::respons(403, LampiranTersembunyi::ALASAN, 'Foto lampiran tidak ditampilkan untuk peran Anda.');
+            }
         }
 
         $isi = $this->unggahan->baca($lampiran);
@@ -80,8 +93,9 @@ class LampiranController extends ApiController
         $gambar = $this->unggahan->siapkan($request->file('berkas'), 'berkas');
 
         $lampiran = DB::transaction(function () use ($gambar, $induk, $data, $user, $kategori, $maks) {
-            // Kunci baris induk agar dua unggahan bersamaan tidak sama-sama lolos batas jumlah.
-            $induk->newQueryWithoutScopes()->whereKey($induk->getKey())->lockForUpdate()->first();
+            // Kunci baris induk agar dua unggahan bersamaan tidak sama-sama lolos batas jumlah. Induk berversi
+            // (pembelian, pengeluaran) juga diperiksa ulang statusnya dan versinya dinaikkan (R-06b-2 M1/M2).
+            $this->penjaga->kunciDanPeriksa($induk);
 
             if ($induk->lampirans()->count() >= $maks) {
                 throw ValidationException::withMessages(['lampiranable_id' => ["Jumlah lampiran maksimal {$maks} per data."]]);

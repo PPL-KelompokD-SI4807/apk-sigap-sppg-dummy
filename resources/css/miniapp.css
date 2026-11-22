@@ -31,6 +31,8 @@ img { max-width: 100%; }
 .center { text-align: center; }
 .pad { padding: 24px 16px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* `.field input` (lebih spesifik) menimpa .sr-only: input berkas tersembunyi ikut jadi 100% x 44 px. Kembalikan ke 1 px. */
+.field input.sr-only { width: 1px; min-height: 0; height: 1px; padding: 0; border: 0; margin: -1px; }
 [hidden] { display: none !important; }
 
 .appbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg-header); border-bottom: 1px solid var(--separator); }
@@ -90,6 +92,7 @@ img { max-width: 100%; }
 .photo-actions .btn { width: 100%; }
 
 .detail { margin: 0; display: grid; gap: 10px; }
+.detail-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .detail dt { color: var(--hint); font-size: .8rem; }
 .detail dd { margin: 0; overflow-wrap: anywhere; }
 
@@ -153,6 +156,10 @@ a.seg-btn { display: flex; align-items: center; justify-content: center; color: 
 .panel input[type="date"], .panel select, .panel textarea, .filter-row input, .filter-row select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--separator); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
 .panel textarea { resize: vertical; }
 .filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.filter-row > * { min-width: 0; }
+/* Input tanggal/waktu/bulan punya lebar bawaan (WebKit/Android) yang melebihi kolom: paksa mengikuti wadah. */
+input[type="date"], input[type="time"], input[type="month"], input[type="datetime-local"] { min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; }
+.field, .panel { min-width: 0; }
 .big-num { font-size: 1.25rem; font-weight: 700; }
 .preview-msg { padding: 10px 12px; border-radius: 10px; background: var(--bg-secondary); }
 .preview-msg p { margin: 4px 0 0; overflow-wrap: anywhere; }
@@ -204,3 +211,14 @@ a.seg-btn { display: flex; align-items: center; justify-content: center; color: 
 .tbl-row .num.neg { color: var(--danger); }
 .legend-1 { grid-template-columns: 1fr; }
 .section-title { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--hint); margin: 8px 4px 0; }
+
+/* Alur masuk kredensial (R-03) */
+.login .otp { text-align: center; letter-spacing: .5em; font-size: 1.5rem; }
+.pw-rules { list-style: none; margin: 0; padding: 0 4px; display: flex; flex-direction: column; gap: 2px; }
+.pw-rules .ok { color: #1b6e32; }
+.pw-rules .no { color: var(--hint); }
+.lock-count { font-size: 1.1rem; font-weight: 600; text-align: center; margin: 0; }
+
+/* Kotak centang bersebelahan dengan teks (layar Masuk web, R04-7) */
+.check-row { display: flex; align-items: flex-start; gap: 10px; padding: 4px 2px; cursor: pointer; }
+.check-row input { width: 22px; height: 22px; min-height: 0; margin: 0; flex: none; }

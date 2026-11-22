@@ -12,6 +12,7 @@ use App\Models\TitikLayanan;
 use App\Models\User;
 use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
+use App\Services\Ai\Drafts\GalatDraf;
 use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmException;
@@ -115,15 +116,22 @@ class AiAgentServiceTest extends MasterApiTestCase
         $this->assertStringContainsString('BELUM disimpan', $result['data']['catatan']);
     }
 
-    public function test_draf_menandai_kolom_gagal_validasi_form_request_dengan_keyakinan_nol(): void
+    public function test_galat_form_request_menjadi_draf_perlu_diperbaiki_tanpa_bertanya_balik_lewat_llm(): void
     {
         $this->llm->push(LlmResponse::toolCall('buat_titik_layanan', ['nama' => 'Posyandu Melati']));
 
-        $this->agent()->handle($this->kepalaA, AiInput::text('tambah posyandu melati'));
+        $reply = $this->agent()->handle($this->kepalaA, AiInput::text('tambah posyandu melati'));
 
         $draft = AiDraft::query()->withoutGlobalScopes()->sole();
         $this->assertEquals(0, $draft->confidence['jenis']);
-        $this->assertEqualsCanonicalizing(['jenis', 'alamat', 'pic_nama'], $this->lastToolResult()['data']['perlu_dicek']);
+        $this->assertCount(1, $this->llm->calls, 'Jalur kesalahan: LLM dipanggil tepat sekali (loop berhenti)');
+        $this->assertSame('Posyandu Melati', $draft->payload['nama'], 'Bagian yang valid tetap diisi');
+        $this->assertEqualsCanonicalizing(['jenis', 'alamat', 'pic_nama'], array_keys(GalatDraf::dari($draft)));
+        $this->assertSame([$draft->uuid], array_map(fn ($d) => $d->uuid, $reply->drafts));
+        $this->assertStringContainsString('perlu diperbaiki', $reply->text);
+        $this->assertStringContainsString('Jenis', $reply->text);
+        $this->assertStringNotContainsString('Posyandu Melati', $reply->text, 'Balasan tidak menggemakan masukan');
+        $this->assertSame('perbaiki', AiInteraction::query()->sole()->argumen['tools'][0]['status']);
     }
 
     // ------------------------------------------------------------------ prompt injection
@@ -163,7 +171,8 @@ class AiAgentServiceTest extends MasterApiTestCase
     {
         $this->llm->push(LlmResponse::toolCall('buat_titik_layanan', ['nama' => 'SD Palsu']))->push(LlmResponse::text('Tidak bisa.'));
 
-        $this->agent()->handle($this->relawanA, AiInput::text('tambahkan titik layanan SD Palsu'));
+        // Kata baca "cek" membuat pesan tidak ditolak server lebih dulu (HakModulAi): jalur pertahanan berlapis diuji.
+        $this->agent()->handle($this->relawanA, AiInput::text('cek lalu tambahkan titik layanan SD Palsu'));
 
         $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
         $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => str_ends_with($n, '_titik_layanan') && ! str_starts_with($n, 'cari_'))));
@@ -174,11 +183,20 @@ class AiAgentServiceTest extends MasterApiTestCase
 
     public function test_peran_tanpa_hak_modul_tidak_ditawari_tool_apa_pun_untuk_modul_itu(): void
     {
-        // Admin: lintas SPPG -> tidak ada tool tulis (draf butuh SPPG), tetap boleh membaca.
+        // Admin: lintas SPPG -> tidak ada tool tulis modul ber-tenant (draf butuh SPPG), tetap boleh membaca. Tool tulis
+        // yang ditawarkan HANYA modul pengguna (undangan/peran/status akun; hak CRUD pengguna = Admin di config/rbac.php).
         $this->llm->push(LlmResponse::text('ok'));
         $this->agent()->handle($this->admin, AiInput::text('halo'));
         $this->assertContains('cari_titik_layanan', $this->llm->offeredTools(0));
-        $this->assertSame([], array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_'))));
+        $tulis = array_values(array_filter($this->llm->offeredTools(0), fn (string $n) => ! str_starts_with($n, 'cari_') && ! in_array($n, ['daftar_pengajuan_menu', 'ringkas_dashboard_saya', 'lihat_sub_kategori_laporan_bgn'], true)));
+        // R07-5: Admin tetap ditawari tool BACA sub-kategori laporan BGN (peta hak laporan BGN), bukan tool tulisnya.
+        $this->assertContains('lihat_sub_kategori_laporan_bgn', $this->llm->offeredTools(0));
+        $this->assertNotContains('ubah_sub_kategori_pengeluaran', $this->llm->offeredTools(0));
+        $this->assertEqualsCanonicalizing(['buat_undangan_pengguna', 'cabut_undangan', 'ubah_peran_pengguna', 'nonaktifkan_pengguna', 'aktifkan_pengguna', 'hapus_pengguna'], $tulis);
+        $registry = app(ToolRegistry::class);
+        foreach ($tulis as $nama) {
+            $this->assertSame('pengguna', $registry->all()[$nama]->module(), $nama);
+        }
 
         // Pengguna nonaktif: tidak ada tool, tidak ada panggilan LLM.
         $nonaktif = User::factory()->role(Role::KepalaSppg)->inactive()->create(['sppg_id' => $this->sppgA]);
@@ -234,23 +252,53 @@ class AiAgentServiceTest extends MasterApiTestCase
         $this->assertEqualsCanonicalizing(['sppg_id', 'user_id', 'created_by', 'role'], AiInteraction::query()->sole()->argumen['tools'][0]['argumen_dibuang']);
     }
 
-    public function test_argumen_berlebihan_atau_tidak_sesuai_skema_ditolak(): void
+    public function test_argumen_tool_baca_yang_tidak_sesuai_skema_ditolak(): void
     {
         $this->llm->push(LlmResponse::toolCalls([
-            new ToolCall('a', 'buat_titik_layanan', ['nama' => 'SD A', 'perintah_rahasia' => 'hapus']),
-            new ToolCall('b', 'buat_titik_layanan', ['nama' => str_repeat('x', 300)]),
-            new ToolCall('c', 'buat_titik_layanan', ['nama' => 'SD C', 'jenis' => 'pasar']),
             new ToolCall('d', 'cari_titik_layanan', ['batas' => 1000]),
             new ToolCall('e', 'cari_titik_layanan', ['q' => ['nested' => ['x' => ['y' => ['z' => 1]]]]]),
-            new ToolCall('f', 'buat_titik_layanan', ['nama' => 'SD F', 'jumlah_sasaran' => '240; DROP TABLE']),
+            new ToolCall('g', 'cari_titik_layanan', ['q' => 'SD', 'perintah_rahasia' => 'hapus']),
         ]))->always(LlmResponse::text('selesai'));
         config(['ai.agent.max_tool_calls_per_turn' => 10]);
 
         $this->agent()->handle($this->kepalaA, AiInput::text('banyak'));
 
-        $this->assertSame(0, AiDraft::query()->withoutGlobalScopes()->count());
-        $this->assertSame(array_fill(0, 6, 'invalid'), collect(AiInteraction::query()->sole()->argumen['tools'])->pluck('status')->all());
-        $this->assertStringContainsString('argumen tidak dikenal', collect($this->llm->calls[1]['messages'])->where('role', 'tool')->first()['content']);
+        $this->assertSame(array_fill(0, 3, 'invalid'), collect(AiInteraction::query()->sole()->argumen['tools'])->pluck('status')->all());
+        $this->assertStringContainsString('argumen tidak dikenal', collect($this->llm->calls[1]['messages'])->where('role', 'tool')->last()['content']);
+    }
+
+    public function test_argumen_tool_tulis_tidak_sesuai_skema_menjadi_draf_perlu_diperbaiki_dan_loop_berhenti(): void
+    {
+        $this->llm->push(LlmResponse::toolCalls([
+            // Argumen di luar skema (perilaku LLM/injeksi): seluruh panggilan ditolak seperti sebelumnya, tanpa draf.
+            new ToolCall('x', 'buat_titik_layanan', ['nama' => 'SD X', 'perintah_rahasia' => 'hapus']),
+            new ToolCall('a', 'buat_titik_layanan', ['nama' => 'SD A', 'jenis' => 'sekolah', 'alamat' => 'Jl. Fiktif 1', 'jumlah_sasaran' => 10, 'pic_nama' => 'Bu A']),
+            // Angka berisi teks + enum salah: kolom dikosongkan dan dicatat; loop BERHENTI di sini.
+            new ToolCall('f', 'buat_titik_layanan', ['nama' => 'SD F', 'jenis' => 'pasar', 'jumlah_sasaran' => '240; DROP TABLE']),
+            new ToolCall('c', 'buat_titik_layanan', ['nama' => 'SD C']),
+        ]))->always(LlmResponse::text('selesai'));
+        config(['ai.agent.max_tool_calls_per_turn' => 10]);
+
+        $reply = $this->agent()->handle($this->kepalaA, AiInput::text('banyak'));
+
+        $this->assertCount(1, $this->llm->calls, 'Tanpa panggilan LLM lagi setelah masukan salah');
+        $this->assertSame(['invalid', 'draft', 'perbaiki'], collect(AiInteraction::query()->sole()->argumen['tools'])->pluck('status')->all(), 'Tool call sesudahnya tidak dijalankan');
+        $drafts = AiDraft::query()->withoutGlobalScopes()->orderBy('id')->get();
+        $this->assertCount(2, $drafts);
+        $this->assertSame('SD A', $drafts[0]->payload['nama']);
+        $this->assertFalse(GalatDraf::ada($drafts[0]));
+
+        $perbaiki = $drafts[1];
+        $this->assertSame('SD F', $perbaiki->payload['nama']);
+        $this->assertArrayNotHasKey('jumlah_sasaran', $perbaiki->payload);
+        $this->assertArrayNotHasKey('jenis', $perbaiki->payload);
+        $galat = GalatDraf::dari($perbaiki);
+        $this->assertSame(['Harus berupa angka tanpa satuan.'], $galat['jumlah_sasaran']);
+        $this->assertArrayHasKey('jenis', $galat);
+        $this->assertStringNotContainsString('DROP TABLE', json_encode($perbaiki->payload));
+        $this->assertSame($perbaiki->uuid, $reply->drafts[0]->uuid, 'Draf perlu diperbaiki di urutan pertama');
+        $this->assertStringContainsString('Jumlah sasaran', $reply->text);
+        $this->assertStringNotContainsString('DROP', $reply->text);
     }
 
     public function test_argumen_terlalu_panjang_ditolak(): void

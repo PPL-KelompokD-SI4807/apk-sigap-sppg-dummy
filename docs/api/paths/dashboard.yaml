@@ -1,0 +1,101 @@
+/dashboard:
+  get:
+    tags: [Dashboard]
+    summary: Dashboard laporan per peran (R-07)
+    description: |
+      Satu endpoint; isi `widgets` ditentukan peran (dan unit untuk relawan). Kunci widget stabil per peran;
+      nilainya `null` bila peran tidak (lagi) punya hak baca (R) atas modul sumbernya, atau bila datanya memang
+      belum ada di sistem (dijelaskan di deskripsi widget). Contoh JSON lengkap per peran: `docs/api/contoh-dashboard.md`.
+
+      **Peran dan widget**
+      - `investor`: porsi_hari_ini, anggaran, pengajuan_menunggu, stok_kritis, insiden_mutu, keluhan_kritis, bukti_nota, tren
+      - `kepala_sppg`: jadwal_produksi_hari_ini, porsi_target_vs_realisasi, distribusi_per_titik, mutu, keluhan_terbuka, stok_kritis, anggaran, bukti_nota, pengajuan_menunggu_investor, rekap_harian
+      - `ahli_gizi`: menu_hari_ini, gizi_vs_standar, biaya_per_porsi, kebutuhan_khusus, hasil_mutu
+      - `akuntan`: pencairan_vs_pengeluaran, serapan_per_kategori, pengeluaran_menunggu, selisih_tren, bukti_nota
+      - `staf_gudang`: stok_per_bahan, stok_di_bawah_minimum, stok_mendekati_kedaluwarsa, mutasi_hari_ini, pengiriman_pemasok
+      - `relawan` unit dapur: menu_target_hari_ini, status_log_produksi, checklist_mutu_belum_diisi
+      - `relawan` unit distribusi: rute_hari_ini, status_kirim, bukti_belum_diunggah, armada_pengemudi
+      - `admin`: operasional_lintas_sppg, pengguna_aktif_per_peran, login_gagal, antrean_job_webhook, draf_ai_tertunda
+      - relawan tanpa unit: `widgets` kosong.
+
+      **Cakupan SPPG.** Peran satu-SPPG: SPPG sendiri (`sppg_id` lain atau header X-SPPG-Id asing -> 403
+      `sppg_aktif_ditolak`). Investor: tanpa `sppg_id` dan tanpa header = gabungan semua SPPG miliknya
+      (`mode: gabungan`, tidak pernah 409 pada endpoint ini); `sppg_id` (atau header X-SPPG-Id) memilih satu SPPG
+      MILIKNYA, `sppg_id` milik investor lain atau tidak ada -> 403 `sppg_aktif_ditolak` (respons sama, tanpa
+      membocorkan keberadaan). `sppg_pilihan` memuat daftar pemilih (investor). Admin: gabungan semua SPPG, `sppg_id`
+      opsional (tidak ada -> 404); widget sistem (login gagal, job, webhook) selalu global.
+
+      **Periode.** Mengikuti laporan masing-masing dan dicantumkan di `widgets.<kunci>.periode`:
+      `hari_ini` (WIB), `bulan_berjalan` (keuangan, mutu bulanan), `tren` (7/30 hari lewat `rentang`), atau `saat_ini`.
+
+      **Privasi.** Hanya agregat/daftar operasional; tidak ada nama/NIK/foto/teks bebas penerima manfaat atau keluhan.
+      Agregat penerima manfaat (`kebutuhan_khusus`, ahli gizi) memakai penyamaran sel kecil k (config/rbac.php, bawaan 5):
+      sel 1..k-1 dan sel pelengkapnya menjadi `null` + penanda "<k" (berarti "disamarkan"); total disembunyikan bila ada sel tersamar.
+
+      **Cache** 60 detik per (pengguna, peran/unit, himpunan SPPG, rentang, tanggal); `dibuat_pada` menunjukkan waktu hitung.
+    parameters:
+      - name: rentang
+        in: query
+        description: Panjang tren harian pada widget bertren.
+        schema: { type: integer, enum: [7, 30], default: 7 }
+      - name: sppg_id
+        in: query
+        description: Pilih satu SPPG (investor hanya miliknya; peran satu-SPPG hanya SPPG sendiri; Admin opsional).
+        schema: { type: integer, minimum: 1 }
+      - $ref: '#/components/parameters/SppgAktif'
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { $ref: '#/components/schemas/Dashboard' }
+            example:
+              data:
+                peran: akuntan
+                unit: null
+                profil: akuntan
+                mode: satu
+                rentang_hari: 7
+                periode:
+                  zona_waktu: Asia/Jakarta
+                  hari_ini: '2026-11-02'
+                  bulan_berjalan: { bulan: '2026-11', dari: '2026-11-01', sampai: '2026-11-30' }
+                  tren: { rentang_hari: 7, dari: '2026-10-27', sampai: '2026-11-02' }
+                dibuat_pada: '2026-11-02T10:00:00+07:00'
+                cache_detik: 60
+                sppg:
+                  - { id: 1, kode: SPPG-DEMO-01, nama: SPPG Melati Demo, status_operasional: aktif }
+                sppg_pilihan: null
+                widgets:
+                  pencairan_vs_pengeluaran:
+                    periode: { jenis: bulan_berjalan, bulan: '2026-11', dari: '2026-11-01', sampai: '2026-11-30' }
+                    pencairan: 10000000
+                    jumlah_pencairan: 1
+                    pengeluaran: 5000000
+                    jumlah_pengeluaran: 2
+                    selisih: 5000000
+                    persen: 50
+                    status: aman
+                  serapan_per_kategori: null
+                  pengeluaran_menunggu: null
+                  selisih_tren: null
+                  bukti_nota: null
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: |
+          Token bukan login penuh (`perlu_login_penuh`), akun tanpa SPPG (`tanpa_sppg`), atau SPPG yang diminta bukan
+          milik pengguna (`sppg_aktif_ditolak`, juga bila header X-SPPG-Id asing).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+      '404':
+        description: Hanya Admin - `sppg_id` tidak ditemukan.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+      '429': { $ref: '#/components/responses/TooManyRequests' }

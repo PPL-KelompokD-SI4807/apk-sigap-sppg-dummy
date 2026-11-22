@@ -6,7 +6,6 @@ use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Sanctum\Sanctum;
 use Tests\Support\CreatesSppg;
 use Tests\TestCase;
 
@@ -61,7 +60,7 @@ abstract class MasterApiTestCase extends TestCase
     protected function as(User $user): static
     {
         $this->forgetActor();
-        Sanctum::actingAs($user, ['*']);
+        $this->masukPenuh($user);
 
         return $this;
     }

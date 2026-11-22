@@ -1,6 +1,8 @@
 // Data SPPG (fitur 3, PBI 3). Mockup: Gambar 19.
 import { defineCrudModule } from '../../components/crud-module.js';
 import { sppgFields, mapPayload, statusBadge } from './schema.js';
+import { saldoAwalPanel } from './saldo-awal.js';
+import { tanpaSppgSendiri } from '../../core/permissions.js';
 
 const label = (v) => ({ aktif: 'Aktif', libur: 'Libur', nonaktif: 'Nonaktif' }[v] ?? v ?? '-');
 
@@ -18,7 +20,8 @@ export default defineCrudModule({
   ],
   fields: sppgFields,
   mapPayload,
+  detailExtras: (rec) => saldoAwalPanel(rec),
   searchPlaceholder: 'Cari nama atau kode SPPG...',
-  // Peran non-Admin hanya punya satu SPPG: langsung ke profilnya (Gambar 19).
-  listRedirect: (user) => (user?.role !== 'admin' && user?.sppg_id ? `/sppg/${user.sppg_id}` : null),
+  // Yang punya SPPG sendiri (bukan lintas SPPG) langsung ke profilnya (Gambar 19).
+  listRedirect: (user) => (!tanpaSppgSendiri(user) && user?.sppg_id ? `/sppg/${user.sppg_id}` : null),
 });

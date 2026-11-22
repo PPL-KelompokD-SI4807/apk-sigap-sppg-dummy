@@ -5,6 +5,7 @@ namespace Tests\Feature\Telegram;
 use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Enums\TipeUndangan;
+use App\Jobs\ProcessAiMessage;
 use App\Jobs\ProcessTelegramUpdate;
 use App\Models\Invitation;
 use App\Models\TelegramUpdate;
@@ -13,6 +14,10 @@ use App\Models\User;
 use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
 use App\Services\Ai\Llm\LlmResponse;
+use App\Services\Auth\KredensialService;
+use App\Services\Auth\SesiService;
+use App\Services\Telegram\AiChatHandler;
+use App\Services\Telegram\TelegramUpdateHandler;
 use App\Services\Users\InvitationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -26,6 +31,8 @@ class TelegramWebhookTest extends MasterApiTestCase
     {
         parent::setUp();
         $this->fakeTelegram();
+        // Agen AI di bot hanya untuk pengguna dengan sesi login penuh (R-03).
+        $this->beriSesiPenuh($this->kepalaA);
     }
 
     private function invite(TipeUndangan $tipe, array $attrs): string
@@ -148,14 +155,28 @@ class TelegramWebhookTest extends MasterApiTestCase
         $this->assertSame(RelawanUnit::Distribusi, $user->unit);
 
         $sent = $this->messagesTo(777001)->sole();
-        $this->assertSame('HTML', $sent['parse_mode']);
-        $this->assertStringContainsString('Siti Fiktif', $sent['text']);
-        $this->assertStringContainsString('Relawan unit Distribusi', $sent['text']);
-        $this->assertStringContainsString('SPPG A', $sent['text']);
+        // R-02: akun baru belum punya sesi login penuh -> salam netral + tombol masuk, tanpa nama/peran/SPPG.
+        $this->assertStringContainsString('Masuk lewat Mini App', $sent['text']);
+        $this->assertStringNotContainsString('Siti', $sent['text']);
+        $this->assertStringNotContainsString($user->name, $sent['text']);
+        $this->assertSame('Masuk lewat Mini App', $this->markupOf($sent)['inline_keyboard'][0][0]['text']);
+        $this->assertStringNotContainsString('Relawan unit Distribusi', $sent['text']);
+        $this->assertStringNotContainsString('SPPG A', $sent['text']);
         $this->assertSame('https://sigap.test/miniapp/', $this->markupOf($sent)['inline_keyboard'][0][0]['web_app']['url']);
 
         // Payload diringkas setelah diproses (minimisasi data).
         $this->assertSame(['ringkas' => true, 'jenis' => 'start'], TelegramUpdate::query()->sole()->payload);
+    }
+
+    public function test_start_pengguna_dengan_sesi_penuh_menyebut_peran_dan_sppg_serta_menu(): void
+    {
+        $this->webhook($this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => '/start']))->assertOk();
+
+        $sent = $this->messagesTo((int) $this->kepalaA->telegram_id)->sole();
+        $this->assertStringContainsString('Kepala SPPG', $sent['text']);
+        $this->assertStringContainsString('SPPG A', $sent['text']);
+        $tombol = array_merge(...$this->markupOf($sent)['inline_keyboard']);
+        $this->assertContains('Buka Mini App', array_column($tombol, 'text'), 'Beranda memuat baris tetap Buka Mini App');
     }
 
     public function test_start_undangan_tidak_valid_kedaluwarsa_dan_terpakai_dibalas_ramah(): void
@@ -196,7 +217,8 @@ class TelegramWebhookTest extends MasterApiTestCase
         $this->webhook($this->privateUpdate((int) $this->ahliGiziA->telegram_id, ['text' => '/start']))->assertOk();
 
         $sent = $this->messagesTo((int) $this->ahliGiziA->telegram_id)->sole();
-        $this->assertStringContainsString('Selamat datang kembali', $sent['text']);
+        $this->assertSame(TelegramUpdateHandler::SALAM_TANPA_SESI, $sent['text']);
+        $this->assertStringNotContainsString($this->ahliGiziA->name, $sent['text']);
         $this->assertNotNull($this->markupOf($sent)['inline_keyboard'][0][0]['web_app'] ?? null);
     }
 
@@ -227,6 +249,56 @@ class TelegramWebhookTest extends MasterApiTestCase
         $this->assertSame([], $fake->calls);
     }
 
+    public function test_pengguna_tanpa_sesi_login_penuh_diarahkan_masuk_lewat_mini_app(): void
+    {
+        $fake = new FakeLlmClient([LlmResponse::text('tidak boleh terpanggil')]);
+        $this->app->instance(LlmClient::class, $fake);
+        $this->forgetActor();
+        $belumMasuk = User::factory()->role(Role::StafGudang)->create(['sppg_id' => $this->sppgA]);
+
+        $this->webhook($this->privateUpdate((int) $belumMasuk->telegram_id, ['text' => 'cek stok beras']))->assertOk();
+
+        $balasan = $this->messagesTo((int) $belumMasuk->telegram_id)->sole();
+        $this->assertSame(TelegramUpdateHandler::PERLU_MASUK, $balasan['text']);
+        $this->assertStringContainsString('web_app', (string) $balasan['reply_markup']);
+        $this->assertSame([], $fake->calls);
+        $this->assertSame(['ringkas' => true, 'jenis' => 'ai_tanpa_sesi'], TelegramUpdate::query()->sole()->payload);
+    }
+
+    public function test_sesi_dicabut_atau_password_direset_menghentikan_agen_ai_di_bot(): void
+    {
+        $fake = new FakeLlmClient([LlmResponse::text('tidak boleh terpanggil')]);
+        $this->app->instance(LlmClient::class, $fake);
+        $this->forgetActor();
+
+        app(SesiService::class)->keluarSemua($this->kepalaA);
+        $this->webhook($this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => 'halo']))->assertOk();
+
+        $this->beriSesiPenuh($this->kepalaA);
+        app(KredensialService::class)->resetPassword($this->kepalaA->fresh(), $this->admin);
+        $this->webhook($this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => 'halo lagi']))->assertOk();
+
+        $this->assertSame([], $fake->calls);
+        $this->assertCount(2, $this->messagesTo((int) $this->kepalaA->telegram_id)
+            ->filter(fn ($r) => $r['text'] === TelegramUpdateHandler::PERLU_MASUK));
+    }
+
+    public function test_job_agen_ai_menolak_bila_sesi_dicabut_setelah_masuk_antrean(): void
+    {
+        $fake = new FakeLlmClient([LlmResponse::text('tidak boleh terpanggil')]);
+        $this->app->instance(LlmClient::class, $fake);
+        $update = TelegramUpdate::query()->create([
+            'update_id' => 990001,
+            'payload' => $this->privateUpdate((int) $this->kepalaA->telegram_id, ['text' => 'halo']),
+        ]);
+
+        app(SesiService::class)->keluarSemua($this->kepalaA);
+        (new ProcessAiMessage($update->id, $this->kepalaA->id))->handle(app(AiChatHandler::class), app(SesiService::class));
+
+        $this->assertSame([], $fake->calls);
+        $this->assertSame('ai_tanpa_sesi', $update->fresh()->payload['jenis']);
+    }
+
     public function test_pesan_teks_pengguna_terdaftar_diteruskan_ke_agen_ai_dan_dibalas_teks_polos(): void
     {
         $fake = new FakeLlmClient([LlmResponse::text('<b>Halo</b> *tebal* <a href="https://jahat.test">klik</a>')]);
@@ -236,9 +308,9 @@ class TelegramWebhookTest extends MasterApiTestCase
 
         $this->assertCount(1, $fake->calls);
         $sent = $this->messagesTo((int) $this->kepalaA->telegram_id)->sole();
-        // Keluaran model dikirim sebagai teks polos: tanpa parse_mode sehingga tidak dirender.
+        // Keluaran model dikirim sebagai teks polos: tanpa parse_mode sehingga tidak dirender; penanda Markdown dibuang.
         $this->assertArrayNotHasKey('parse_mode', $sent->data());
-        $this->assertSame('<b>Halo</b> *tebal* <a href="https://jahat.test">klik</a>', $sent['text']);
+        $this->assertSame('<b>Halo</b> tebal <a href="https://jahat.test">klik</a>', $sent['text']);
         $this->assertCount(1, $this->telegramCalls('sendChatAction'));
         $this->assertSame(['ringkas' => true, 'jenis' => 'ai'], TelegramUpdate::query()->sole()->payload);
     }

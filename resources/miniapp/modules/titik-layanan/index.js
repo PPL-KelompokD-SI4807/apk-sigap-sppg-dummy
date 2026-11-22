@@ -4,7 +4,9 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { showInviteLink } from '../../components/invite-dialog.js';
 import { h } from '../../core/dom.js';
-import { api } from '../../core/api.js';
+import { getUser } from '../../core/auth.js';
+import { bolehAksi } from '../../core/permissions.js';
+import { api } from '../../core/transport.js';
 import { showConfirm, toast } from '../../core/ui.js';
 import { errorMessage } from '../../core/errors.js';
 import { titikFields, mapPayload, JENIS, jenisLabel, jarakText } from './schema.js';
@@ -55,12 +57,17 @@ export default defineCrudModule({
     badge: r.is_active === false ? { text: 'Nonaktif', cls: 'badge-danger' } : null,
   }),
   listTop: () => h('p', { class: 'muted small' }, 'PIC yang telah menghubungkan Telegram (✓) menerima Notifikasi Perjalanan Mobil secara otomatis.'),
+  // Web: status PIC saja. Undangan Telegram (tautan sekali pakai) hanya dibuat dari Mini App di Telegram.
+  detailExtrasWeb: (rec) => [h('div', { class: 'panel' },
+    h('h2', { class: 'panel-title' }, 'PIC & Telegram'),
+    h('p', {}, rec.pic_terhubung ? 'PIC sudah menghubungkan Telegram dan menerima notifikasi perjalanan mobil.' : 'PIC belum menghubungkan Telegram, notifikasi perjalanan belum dapat dikirim.'),
+    bolehAksi(getUser(), 'undang_pic') ? h('p', { class: 'muted small' }, 'Undangan PIC lewat Telegram dibuat dari Mini App SiGAP di Telegram (tautan sekali pakai tidak dibuat di web).') : null)],
   detailExtras: (rec, p) => {
     const nodes = [h('div', { class: 'panel' },
       h('h2', { class: 'panel-title' }, 'PIC & Telegram'),
       h('p', {}, rec.pic_terhubung ? 'PIC sudah menghubungkan Telegram dan menerima notifikasi perjalanan mobil.' : 'PIC belum menghubungkan Telegram, notifikasi perjalanan belum dapat dikirim.'))];
-    // Hak ubah titik layanan (Admin/Kepala SPPG) = hak menerbitkan undangan PIC.
-    if (p.U) {
+    // Undangan PIC = aksi.undang_pic dari server (Policy update titik layanan).
+    if (bolehAksi(getUser(), 'undang_pic')) {
       const btn = h('button', { class: 'btn btn-primary btn-block', type: 'button' }, rec.pic_terhubung ? 'Buat ulang undangan PIC' : 'Undang PIC lewat Telegram');
       btn.addEventListener('click', () => undangPic(rec, btn));
       nodes.push(btn);

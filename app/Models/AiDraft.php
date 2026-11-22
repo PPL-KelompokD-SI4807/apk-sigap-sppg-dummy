@@ -43,6 +43,8 @@ class AiDraft extends Model
             'status' => StatusAiDraft::class,
             'expires_at' => 'datetime',
             'confirmed_at' => 'datetime',
+            'konfirmasi_pertama_at' => 'datetime',
+            'hasil' => 'array',
         ];
     }
 
@@ -68,14 +70,15 @@ class AiDraft extends Model
         return 'uuid';
     }
 
+    /** Draf terbuka: pending atau menunggu konfirmasi ulang (langkah 2 aksi berbahaya). */
     public function scopePending(Builder $query): Builder
     {
-        return $query->where('status', StatusAiDraft::Pending->value);
+        return $query->whereIn('status', StatusAiDraft::nilaiTerbuka());
     }
 
     public function scopeSudahKedaluwarsa(Builder $query): Builder
     {
-        return $query->where('status', StatusAiDraft::Pending->value)->where('expires_at', '<=', now());
+        return $query->whereIn('status', StatusAiDraft::nilaiTerbuka())->where('expires_at', '<=', now());
     }
 
     public function isKedaluwarsa(): bool
@@ -83,9 +86,9 @@ class AiDraft extends Model
         return $this->expires_at->isPast();
     }
 
-    /** Draf masih dapat dikonfirmasi: pending dan belum lewat 30 menit. */
+    /** Draf masih dapat dikonfirmasi: terbuka (pending / menunggu konfirmasi ulang) dan belum lewat TTL. */
     public function bisaDikonfirmasi(): bool
     {
-        return $this->status === StatusAiDraft::Pending && ! $this->isKedaluwarsa();
+        return $this->status->terbuka() && ! $this->isKedaluwarsa();
     }
 }

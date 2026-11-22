@@ -39,7 +39,7 @@ abstract class GrupBTestCase extends TestCase
     protected function login(Role $role, ?Sppg $sppg = null, ?RelawanUnit $unit = null): User
     {
         $user = $this->user($role, $sppg, $unit);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         return $user;
     }

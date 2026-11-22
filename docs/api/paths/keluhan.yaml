@@ -157,6 +157,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Keluhan]
     summary: Hapus lunak keluhan (Admin)
     parameters:
@@ -169,3 +171,4 @@
       '401': { $ref: '#/components/responses/Unauthorized' }
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

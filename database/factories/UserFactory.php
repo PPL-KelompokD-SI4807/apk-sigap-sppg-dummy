@@ -6,6 +6,7 @@ use App\Enums\RelawanUnit;
 use App\Enums\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * Data fiktif. Default: Kepala SPPG tanpa sppg_id (isi lewat ->state(['sppg_id' => ...])
@@ -28,7 +29,8 @@ class UserFactory extends Factory
             'name' => $faker->name(),
             'role' => Role::KepalaSppg,
             'unit' => null,
-            'phone' => $faker->optional(0.5)->numerify('08##########'),
+            // Unik: users.phone berindeks unik (identitas login R-03).
+            'phone' => $faker->boolean() ? $faker->unique()->numerify('08##########') : null,
             'is_active' => true,
             'last_login_at' => null,
         ];
@@ -60,6 +62,16 @@ class UserFactory extends Factory
     public function inactive(): static
     {
         return $this->state(['is_active' => false]);
+    }
+
+    /** Akun teraktivasi (R-03): username + password fiktif untuk tes. */
+    public function denganKredensial(string $username, string $password = 'Rahasia123x'): static
+    {
+        return $this->state(fn () => [
+            'username' => $username,
+            'password' => Hash::make($password),
+            'password_changed_at' => now(),
+        ]);
     }
 
     public function withoutTelegram(): static

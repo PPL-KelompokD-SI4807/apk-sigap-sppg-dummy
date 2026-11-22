@@ -1,3 +1,4 @@
+import { bacaSaja } from './permissions.js';
 // Status unggah foto untuk form modul (keluhan, mutu, log produksi): murni, tanpa DOM, agar dapat diuji dengan node --test.
 //
 // Alur kontrak (docs/api/paths/lampiran.yaml): tiap foto langsung diunggah ke POST /lampiran TANPA lampiranable_id
@@ -27,10 +28,12 @@ export function validasiBerkasUnggah(file, { tipe = TIPE_UNGGAH, maks = MAKS_BYT
 export function pesanGalatUnggah(e) {
   const s = e?.status;
   if (s === 0) return 'Tidak ada koneksi internet. Foto belum terunggah; coba lagi saat online.';
+  if (s === 401) return 'Sesi Anda telah berakhir. Silakan masuk kembali.';
   if (s === 413) return PESAN_413;
   if (s === 429) return PESAN_429;
   if (s === 409) return PESAN_409;
   if (s === 422) return firstError(e.errors) || 'Berkas ditolak. Gunakan foto JPEG, PNG, atau WebP maksimal 5 MB.';
+  if (s === 403 && e?.data?.alasan === 'csrf_ditolak') return 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.';
   if (s === 403) return 'Anda tidak punya hak mengunggah foto untuk data ini.';
   if (s === 404) return 'Data induk tidak ditemukan atau sudah dihapus.';
   if (s >= 500) return 'Terjadi gangguan pada server. Coba lagi nanti.';
@@ -127,3 +130,7 @@ export function bodyUnggahTertunda({ modul, kategori, file, sppgId }) {
 
 /** `lampiran_ids` untuk payload store/update: undefined bila kosong (tidak dikirim). */
 export const lampiranIdsPayload = (ids) => (Array.isArray(ids) && ids.length ? [...new Set(ids.map(Number))] : undefined);
+
+/** Investor tidak boleh melihat/mengunggah lampiran foto (backend 403): sembunyikan seluruh bagian lampiran. */
+// Pengguna baca-saja (investor) tidak melihat lampiran; record juga dapat menandai sendiri dari server.
+export const lampiranDisembunyikan = (user, rec = null) => bacaSaja(user) || rec?.lampiran_disembunyikan === true;

@@ -2,28 +2,23 @@
 // docs/api/components/bukti-distribusi.yaml. Murni (tanpa DOM) agar dapat diuji dengan node --test.
 import { buildPayload } from '../../core/schema-helpers.js';
 import { noNik } from '../../core/validators.js';
-import { todayWIB, tanggalJamWIB, jamWIB } from '../../core/waktu.js';
+import { tanggalJamWIB, jamWIB } from '../../core/waktu.js';
 
 export const TERLAMBAT_BATAS_MENIT = 15; // config server; hanya untuk teks bantuan
 
 export const STATUS_JADWAL = { menunggu: 'Menunggu', siap: 'Siap', berangkat: 'Berangkat', diterima: 'Diterima', dibatalkan: 'Dibatalkan' };
 export const statusJadwalLabel = (v) => STATUS_JADWAL[v] ?? v ?? '-';
 
-/** Relawan hanya unit distribusi; peran lain mengikuti matriks. */
-export function unitDistribusiBoleh(user) {
-  if (!user) return false;
-  return user.role !== 'relawan' || user.unit === 'distribusi';
+/**
+ * Jadwal yang boleh dipilih untuk mencatat bukti: HANYA bila server menandai `izin.catat_bukti === true`
+ * (AturanCatatBukti; docs/api/peta-hak.md). Fail closed: flag hilang/bukan true = tidak ditampilkan.
+ * Klien tidak mengecek status, tanggal, atau petugas. `true` bukan jaminan sukses (server tetap bisa 422).
+ */
+export function jadwalDapatDipilih(j) {
+  return j?.izin?.catat_bukti === true;
 }
 
-/** Jadwal yang boleh dipilih untuk mencatat bukti: aktif; relawan hanya hari ini dan milik sendiri/belum bertugas. */
-export function jadwalDapatDipilih(j, user, today = todayWIB()) {
-  if (!j || !['menunggu', 'siap', 'berangkat'].includes(j.status)) return false;
-  if (user?.role === 'relawan') {
-    if (String(j.tanggal_distribusi ?? '').slice(0, 10) !== today) return false;
-    if (j.petugas_id != null && j.petugas_id !== user.id) return false;
-  }
-  return true;
-}
+export const PESAN_TANPA_JADWAL_BUKTI = 'Belum ada jadwal yang bisa dicatat buktinya';
 
 export function jadwalOptionLabel(j) {
   const jam = j.jam_rencana_tiba ? ` · tiba ${String(j.jam_rencana_tiba).slice(0, 5)}` : '';
@@ -64,14 +59,6 @@ export function validasiPorsi(diterima, dikirim) {
 export function validasiCatatanSelisih(catatan, diterima, dikirim) {
   if (dikirim != null && diterima != null && diterima < dikirim && !String(catatan ?? '').trim()) return 'Catatan selisih wajib diisi bila porsi diterima kurang dari porsi dikirim.';
   return '';
-}
-
-/** Relawan hanya mengubah bukti yang ia catat pada hari yang sama; relawan tidak menghapus. */
-export function rowPermsBukti(user, rec, p, today = todayWIB()) {
-  if (user?.role !== 'relawan') return p;
-  const milik = rec?.dicatat_oleh?.id != null && rec.dicatat_oleh.id === user.id;
-  const hariIni = rec?.waktu_tiba ? todayWIB(new Date(rec.waktu_tiba)) === today : false;
-  return { ...p, U: p.U && milik && hariIni, D: false };
 }
 
 /**

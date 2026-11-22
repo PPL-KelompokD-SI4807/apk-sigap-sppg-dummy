@@ -49,7 +49,7 @@ class BuktiDistribusiService
 
     private function zona(): string
     {
-        return (string) config('operasional.timezone', 'Asia/Jakarta');
+        return AturanCatatBukti::zona();
     }
 
     /**
@@ -252,32 +252,31 @@ class BuktiDistribusiService
         return [$acuan, $menit > 0 ? $menit : null, $menit > $toleransi];
     }
 
-    /** @throws ValidationException|AccessDeniedHttpException */
+    /**
+     * Aturan ada di AturanCatatBukti (sumber tunggal, juga dipakai `izin.catat_bukti`); di sini hanya diterjemahkan
+     * menjadi 403 (penugasan) atau 422 (keadaan jadwal). Gerbang mutu dievaluasi lewat query.
+     *
+     * @throws ValidationException|AccessDeniedHttpException
+     */
     public function pastikanBolehDiberiBukti(User $pencatat, JadwalDistribusi $jadwal): void
     {
-        $galat = fn (string $pesan) => ValidationException::withMessages(['jadwal_distribusi_id' => [$pesan]]);
+        $layak = function () use ($jadwal): bool {
+            $produksi = JadwalProduksi::withoutGlobalScope(SppgScope::class)->withTrashed()->find($jadwal->jadwal_produksi_id);
 
-        if ($pencatat->role === Role::Relawan) {
-            if ($jadwal->petugas_id !== null && (int) $jadwal->petugas_id !== (int) $pencatat->getKey()) {
-                throw new AccessDeniedHttpException('Jadwal distribusi ini ditugaskan kepada petugas lain.');
-            }
-
-            if ($jadwal->tanggal_distribusi?->toDateString() !== Carbon::now($this->zona())->toDateString()) {
-                throw $galat('Relawan hanya dapat mencatat bukti untuk distribusi hari ini.');
-            }
-        }
-
-        match ($jadwal->status) {
-            StatusJadwalDistribusi::Dibatalkan => throw $galat('Jadwal distribusi sudah dibatalkan; bukti tidak dapat dicatat.'),
-            StatusJadwalDistribusi::Menunggu => throw $galat('Jadwal distribusi belum siap berangkat; bukti belum dapat dicatat.'),
-            default => null,
+            return $produksi !== null && $produksi->isLayakDistribusi();
         };
 
-        $produksi = JadwalProduksi::withoutGlobalScope(SppgScope::class)->withTrashed()->find($jadwal->jadwal_produksi_id);
+        $pelanggaran = AturanCatatBukti::pelanggaran($pencatat, $jadwal, $layak);
 
-        if ($produksi === null || ! $produksi->isLayakDistribusi()) {
-            throw $galat('Distribusi ditahan: hasil pemeriksaan mutu batch produksi belum/tidak Layak.');
+        if ($pelanggaran === null) {
+            return;
         }
+
+        if ($pelanggaran[0] === AturanCatatBukti::PETUGAS) {
+            throw new AccessDeniedHttpException($pelanggaran[1]);
+        }
+
+        throw ValidationException::withMessages(['jadwal_distribusi_id' => [$pelanggaran[1]]]);
     }
 
     /** @param array<string, mixed> $data */

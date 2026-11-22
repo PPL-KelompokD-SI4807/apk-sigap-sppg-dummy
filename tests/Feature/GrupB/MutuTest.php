@@ -10,8 +10,8 @@ use App\Models\AuditLog;
 use App\Models\JadwalDistribusi;
 use App\Models\JadwalProduksi;
 use App\Models\PemeriksaanMutu;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use Laravel\Sanctum\Sanctum;
 
 class MutuTest extends GrupBTestCase
 {
@@ -155,16 +155,16 @@ class MutuTest extends GrupBTestCase
             && $e->tindakanKorektif === 'Masak ulang dan periksa ulang' && $e->tanggalProduksi === now()->toDateString());
 
         // Gerbang: kepala tidak dapat memberangkatkan distribusi.
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->patchJson("/api/v1/jadwal/distribusi/{$siap->id}", ['status' => 'berangkat'])->assertUnprocessable()->assertJsonValidationErrors(['status']);
         $this->assertSame('siap', $siap->fresh()->status->value);
 
         // Hasil layak tidak memancarkan event.
-        Sanctum::actingAs($ahli);
+        $this->masukPenuh($ahli);
         Event::fake([MutuTidakLayak::class]);
         $this->postJson('/api/v1/mutu', $this->payload($jadwal))->assertCreated();
         Event::assertNotDispatched(MutuTidakLayak::class);
-        Sanctum::actingAs($kepala);
+        $this->masukPenuh($kepala);
         $this->patchJson("/api/v1/jadwal/distribusi/{$siap->id}", ['status' => 'berangkat'])->assertOk();
     }
 
@@ -219,6 +219,67 @@ class MutuTest extends GrupBTestCase
         $this->deleteJson("/api/v1/mutu/{$terbaru->id}")->assertNoContent();
     }
 
+    public function test_daftar_memuat_memengaruhi_distribusi_identik_dengan_detail(): void
+    {
+        $sppg = $this->sppgA->id;
+        // Kasus 1: distribusi siap -> hanya pemeriksaan terbaru true.
+        $j1 = $this->jadwal();
+        $lama1 = PemeriksaanMutu::factory()->layak()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j1->id, 'waktu_pemeriksaan' => now()->subHours(3)]);
+        $baru1 = PemeriksaanMutu::factory()->layak()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j1->id, 'waktu_pemeriksaan' => now()->subHour()]);
+        JadwalDistribusi::factory()->siap()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j1->id, 'jumlah_porsi' => 100]);
+        // Kasus 2: distribusi sudah berangkat -> semua pemeriksaan true.
+        $j2 = $this->jadwal();
+        $lama2 = PemeriksaanMutu::factory()->layak()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j2->id, 'waktu_pemeriksaan' => now()->subHours(3)]);
+        $baru2 = PemeriksaanMutu::factory()->layak()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j2->id, 'waktu_pemeriksaan' => now()->subHour()]);
+        JadwalDistribusi::factory()->siap()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j2->id, 'jumlah_porsi' => 100])->forceFill(['status' => 'berangkat'])->save();
+        // Kasus 3: tanpa distribusi -> false. Kasus 4: hanya distribusi dibatalkan -> false.
+        $j3 = $this->jadwal();
+        $p3 = PemeriksaanMutu::factory()->layak()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j3->id]);
+        $j4 = $this->jadwal();
+        $p4 = PemeriksaanMutu::factory()->layak()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j4->id]);
+        JadwalDistribusi::factory()->siap()->create(['sppg_id' => $sppg, 'jadwal_produksi_id' => $j4->id, 'jumlah_porsi' => 100])->forceFill(['status' => 'dibatalkan'])->save();
+
+        $this->login(Role::AhliGizi);
+        $harapan = [$baru1->id => true, $lama1->id => false, $baru2->id => true, $lama2->id => true, $p3->id => false, $p4->id => false];
+
+        $daftar = collect($this->getJson('/api/v1/mutu?per_page=100')->assertOk()->json('data'))->keyBy('id');
+        $this->assertCount(6, $daftar);
+
+        foreach ($harapan as $id => $nilai) {
+            $this->assertSame($nilai, $daftar[$id]['memengaruhi_distribusi'], "daftar #{$id}");
+            $this->getJson("/api/v1/mutu/{$id}")->assertOk()->assertJsonPath('data.memengaruhi_distribusi', $nilai);
+        }
+    }
+
+    public function test_jumlah_query_daftar_mutu_tidak_tumbuh_dengan_jumlah_baris(): void
+    {
+        $buat = function (int $jumlah): void {
+            for ($i = 0; $i < $jumlah; $i++) {
+                $jadwal = $this->jadwal();
+                PemeriksaanMutu::factory()->layak()->create(['sppg_id' => $this->sppgA->id, 'jadwal_produksi_id' => $jadwal->id]);
+                JadwalDistribusi::factory()->siap()->create(['sppg_id' => $this->sppgA->id, 'jadwal_produksi_id' => $jadwal->id, 'jumlah_porsi' => 100]);
+            }
+        };
+        $hitung = function (): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->getJson('/api/v1/mutu?per_page=100')->assertOk();
+            $n = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return $n;
+        };
+
+        $buat(2);
+        $this->login(Role::AhliGizi);
+        $dua = $hitung();
+
+        $buat(10);
+        $duabelas = $hitung();
+
+        $this->assertSame($dua, $duabelas, 'jumlah query daftar /mutu tumbuh seiring jumlah baris (N+1)');
+    }
+
     public function test_pencarian_filter_paginasi(): void
     {
         $jadwal = $this->jadwal();
@@ -239,7 +300,7 @@ class MutuTest extends GrupBTestCase
         $jadwal = $this->jadwal();
         $user = $this->user(Role::AhliGizi);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'mutu']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         $this->postJson('/api/v1/mutu', $this->payload($jadwal, ['ai_draft_id' => $draf->uuid]))->assertCreated();
         $this->assertSame('confirmed', $draf->fresh()->status->value);

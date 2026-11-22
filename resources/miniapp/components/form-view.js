@@ -1,7 +1,9 @@
 import { h } from '../core/dom.js';
-import { fetchList } from '../core/api.js';
+import { fetchList } from '../core/transport.js';
 import { createPhotoUpload } from './photo-upload.js';
-import { setMainButton, setMainButtonLoading, hideMainButton } from '../core/ui.js';
+import { petakanGalatDraf, pilihanPerBaris, ringkasGalatBaris } from '../core/draf-galat.js';
+import { setMainButton, setMainButtonLoading, setMainButtonDisabled, hideMainButton } from '../core/ui.js';
+import { buatPenjagaSubmit } from '../core/submit-guard.js';
 
 export const LOW_CONFIDENCE = 0.7;
 
@@ -16,7 +18,6 @@ export const LOW_CONFIDENCE = 0.7;
 export function createFormView({ fields, values = {}, confidence = {}, submitText = 'Simpan', onSubmit }) {
   const controls = {}; // name -> {field, wrap, errEl, get(), set(v), hasValue()}
   const form = h('form', { class: 'form', novalidate: true });
-  let submitting = false;
 
   for (const f of fields) {
     const type = f.type === 'relation' ? 'relasi' : f.type || 'text';
@@ -31,12 +32,13 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     if (type === 'custom') {
       // Kolom kustom: f.build({value, values, onChange}) -> {el, get, set?, hasValue, setError?, focusEl?}
       const c = f.build({ value: initial === '' ? (values[f.name] ?? null) : initial, values, onChange: clearFlag });
-      ctl = { get: c.get, set: c.set || (() => {}), hasValue: c.hasValue, setError: c.setError || null, focusEl: c.focusEl || null };
+      ctl = { get: c.get, set: c.set || (() => {}), hasValue: c.hasValue, setError: c.setError || null, focusEl: c.focusEl || null, setRowErrors: c.setRowErrors || null, setPilihan: c.setPilihan || null };
       wrap.append(label, c.el);
     } else if (type === 'photo') {
       // Nilai awal foto: url string atau objek BerkasRingkas {lampiran_id,url} (dimuat lewat token). f.label dipakai sebagai nama foto.
       const up = createPhotoUpload({ name: f.name, existing: initial && typeof initial === 'object' ? initial : null, existingUrl: typeof initial === 'string' && initial ? initial : null, label: f.photoLabel || 'foto', camera: f.camera !== false, onChange: clearFlag });
-      ctl = { get: () => up.getFile(), set: () => {}, hasValue: up.hasValue, setError: up.setError, focusEl: null };
+      // Galat validasi tampil di errEl di bawah kolom; setError komponen foto hanya untuk status kompres (tanpa pesan ganda).
+      ctl = { get: () => up.getFile(), set: () => {}, hasValue: up.hasValue, setError: null, focusEl: null };
       wrap.append(label, up.el);
     } else {
       let input;
@@ -90,7 +92,32 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     return true;
   }
 
-  function clearErrors() { Object.keys(controls).forEach((n) => showError(n, '')); }
+  function clearErrors() {
+    Object.keys(controls).forEach((n) => { showError(n, ''); controls[n].setRowErrors?.({}); });
+    draftErr.clear();
+  }
+
+  // Galat dari draf Agen AI: kolom datar -> di bawah kolom; "kolom.N.sub" -> baris kolom kustom; sisanya dikembalikan.
+  // Galat kolom hilang saat kolom diubah (lihat listener input) atau saat validasi klien berikutnya.
+  function terapkanDraf({ errors = {}, pilihan = [] } = {}) {
+    const peta = petakanGalatDraf(errors, Object.keys(controls));
+    for (const [n, msg] of Object.entries(peta.kolom)) { showError(n, msg); draftErr.add(n); }
+    for (const [n, rows] of Object.entries(peta.baris)) controls[n].setRowErrors?.(rows);
+    for (const [n, c] of Object.entries(controls)) if (c.setPilihan) c.setPilihan(pilihanPerBaris(pilihan, n));
+    // Baris yang kolom kustomnya tak bisa menampilkan galat baris: jatuhkan ke daftar notice.
+    const lainnya = [...peta.lainnya];
+    for (const [n, rows] of Object.entries(peta.baris)) {
+      if (!controls[n].setRowErrors) lainnya.push(...Object.values(rows).map(ringkasGalatBaris));
+    }
+    return lainnya;
+  }
+  const draftErr = new Set();
+  const kolomDiubah = (ev) => {
+    const nama = ev.target?.closest?.('.field')?.dataset?.name;
+    if (nama && draftErr.has(nama)) { showError(nama, ''); draftErr.delete(nama); }
+  };
+  form.addEventListener('input', kolomDiubah);
+  form.addEventListener('change', kolomDiubah);
 
   function validate() {
     clearErrors();
@@ -142,22 +169,7 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
     return out;
   }
 
-  async function submit() {
-    if (submitting || !validate()) return;
-    submitting = true;
-    setMainButtonLoading(true);
-    try {
-      await onSubmit(collect());
-    } catch (e) {
-      if (e?.status === 422 && e.errors) {
-        const rest = setErrors(e.errors);
-        if (rest.length) formErr.textContent = rest.join(' ');
-      }
-    } finally {
-      submitting = false;
-      setMainButtonLoading(false, submitText);
-    }
-  }
+  const submit = () => penjaga.jalankan();
 
   // showIf(nilaiSekarang) -> boolean: tampilkan/sembunyikan kolom sesuai isian lain (mis. unit hanya untuk relawan).
   function applyVisibility() {
@@ -176,11 +188,31 @@ export function createFormView({ fields, values = {}, confidence = {}, submitTex
   applyVisibility();
 
   const formErr = h('p', { class: 'field-error', role: 'alert' });
+  // 422 pada ai_draft_id: alert terlihat di atas formulir (di luar layar bawah/MainButton), tombol simpan dikunci.
+  const draftAlert = h('div', { class: 'alert-danger', role: 'alert', hidden: true });
+  form.prepend(draftAlert);
   form.append(formErr);
+  const penjaga = buatPenjagaSubmit({
+    validate,
+    kirim: async () => { formErr.textContent = ''; await onSubmit(collect()); },
+    setLoading: (on) => setMainButtonLoading(on, submitText),
+    setDisabled: setMainButtonDisabled,
+    onGalatDraf: (pesan) => {
+      draftAlert.textContent = pesan;
+      draftAlert.hidden = false;
+      draftAlert.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    },
+    onGalat: (e) => {
+      if (e?.status === 422 && e.errors) {
+        const rest = setErrors(e.errors);
+        if (rest.length) { formErr.textContent = rest.join(' '); formErr.scrollIntoView?.({ block: 'center', behavior: 'smooth' }); }
+      }
+    },
+  });
   form.addEventListener('submit', (ev) => { ev.preventDefault(); submit(); });
   setMainButton({ text: submitText, onClick: submit });
 
-  return { el: form, destroy: hideMainButton, setErrors, validate, collect };
+  return { el: form, destroy: hideMainButton, setErrors, terapkanDraf, validate, collect };
 }
 
 async function loadRelation(f, select, getInitial) {
@@ -191,6 +223,10 @@ async function loadRelation(f, select, getInitial) {
     items.filter((it) => (rel.filter ? rel.filter(it) : true))
       .forEach((it) => select.append(h('option', { value: it[rel.value || 'id'] }, rel.format ? rel.format(it) : (it[rel.label || 'nama'] ?? it.name ?? it.id))));
     const init = getInitial();
+    // Nilai awal (mis. prefill ?jadwal= atau draf) di luar daftar yang dimuat: tambahkan sebagai opsi agar tidak hilang.
+    if (init != null && init !== '' && typeof rel.opsiNilaiAwal === 'function' && ![...select.options].some((o) => o.value === String(init))) {
+      select.append(h('option', { value: init }, rel.opsiNilaiAwal(init)));
+    }
     if (init != null) select.value = init;
   } catch {
     select.append(h('option', { value: '', disabled: true }, 'Gagal memuat pilihan'));

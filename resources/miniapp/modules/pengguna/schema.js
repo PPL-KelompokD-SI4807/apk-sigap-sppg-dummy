@@ -16,7 +16,8 @@ export const statusLabel = (s) => STATUS_PENGGUNA[s]?.label ?? s ?? '-';
 export const statusCls = (s) => STATUS_PENGGUNA[s]?.cls ?? '';
 
 export const needsUnit = (role) => role === 'relawan';
-export const needsSppg = (role) => !!role && role !== 'admin';
+// Admin dan Investor tidak terikat satu SPPG (investor lewat kepemilikan SPPG).
+export const needsSppg = (role) => !!role && role !== 'admin' && role !== 'investor';
 
 /** Form tambah/ubah pengguna (Admin). Unit hanya untuk relawan; SPPG hanya untuk non-admin. */
 export function penggunaFields({ mode }) {
@@ -25,7 +26,7 @@ export function penggunaFields({ mode }) {
       { name: 'name', label: 'Nama', type: 'text' },
       { name: 'role', label: 'Peran', type: 'text', display: (r) => r.role_label ?? ROLES[r.role] ?? r.role },
       { name: 'unit', label: 'Unit', type: 'text', display: (r) => unitLabel(r.unit) ?? '-' },
-      { name: 'sppg_id', label: 'SPPG', type: 'text', display: (r) => r.sppg_nama ?? (r.sppg_id ? `#${r.sppg_id}` : 'Semua SPPG') },
+      { name: 'sppg_id', label: 'SPPG', type: 'text', display: (r) => r.sppg_nama ?? (r.sppg_id ? `#${r.sppg_id}` : r.role === 'investor' ? 'Sesuai kepemilikan SPPG' : 'Semua SPPG') },
       { name: 'phone', label: 'Telepon', type: 'text' },
       { name: 'telegram_username', label: 'Telegram', type: 'text', display: (r) => (r.telegram_terhubung ? (r.telegram_username ? `@${r.telegram_username}` : 'Terhubung') : 'Belum terhubung') },
       { name: 'status', label: 'Status', type: 'text', display: (r) => statusLabel(r.status) },
@@ -51,7 +52,7 @@ export const mapPayload = (values, { mode } = {}) => {
   });
   // Konsistensi aturan server: admin tanpa sppg, non-relawan tanpa unit.
   if (out.role && !needsUnit(out.role)) out.unit = null;
-  if (out.role === 'admin') out.sppg_id = null;
+  if (out.role === 'admin' || out.role === 'investor') out.sppg_id = null;
   if (mode === 'create') delete out.is_active;
   return out;
 };
@@ -85,6 +86,39 @@ export const undanganFields = () => [
   { name: 'unit', label: 'Unit relawan', type: 'select', required: true, options: UNIT_OPTIONS, showIf: (v) => v.mode === 'baru' && needsUnit(v.role) },
   { name: 'sppg_id', label: 'SPPG', type: 'relasi', required: true, relation: { endpoint: '/sppg', label: 'nama', value: 'id' }, showIf: (v) => v.mode === 'baru' && needsSppg(v.role) },
 ];
+
+// ---- Prefill dari draf Agen AI (?draft=<uuid>) ----
+const jernih = (payload) => Object.fromEntries(Object.entries(payload && typeof payload === 'object' ? payload : {}).filter(([k]) => !k.startsWith('_')));
+
+/**
+ * Isian form undangan dari payload draf `buat_undangan_pengguna` ({role, unit?, sppg_id?, _resource:'undangan'}).
+ * Hanya kolom yang ada di form; `_resource` dibuang. Draf berisi user_id => mode 'akun', selain itu 'baru'.
+ */
+export function isianUndanganDariDraf(payload) {
+  const p = jernih(payload);
+  if (p.user_id != null) return { mode: 'akun', user_id: p.user_id };
+  const out = { mode: 'baru' };
+  if (ROLES[p.role]) out.role = p.role;
+  if (UNIT_OPTIONS.some((u) => u.value === p.unit)) out.unit = p.unit;
+  if (p.sppg_id != null && p.sppg_id !== '') out.sppg_id = p.sppg_id;
+  return out;
+}
+
+/**
+ * Isian form Ubah pengguna dari payload draf `ubah_peran_pengguna` ({role, unit?, sppg_id?}) atau
+ * `nonaktifkan_pengguna`/`aktifkan_pengguna` ({is_active}). Kolom lain dan penanda `_*` dibuang;
+ * is_active boolean dipetakan ke nilai pilihan 'true'/'false'.
+ */
+export function isianPenggunaDariDraf(payload) {
+  const p = jernih(payload);
+  const out = {};
+  if (ROLES[p.role]) out.role = p.role;
+  if (p.role !== undefined && ROLES[p.role] && !needsUnit(p.role)) out.unit = '';
+  else if (UNIT_OPTIONS.some((u) => u.value === p.unit)) out.unit = p.unit;
+  if (p.sppg_id != null && p.sppg_id !== '') out.sppg_id = p.sppg_id;
+  if (typeof p.is_active === 'boolean') out.is_active = p.is_active ? 'true' : 'false';
+  return out;
+}
 
 /** user_id TIDAK boleh bersama role/unit/sppg_id (UndanganInput). */
 export function buildInvitePayload(values) {

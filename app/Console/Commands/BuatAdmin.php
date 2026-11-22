@@ -42,6 +42,8 @@ class BuatAdmin extends Command
                 'is_active' => true,
             ]);
             $this->info('Admin dibuat.');
+            // R-03: tanpa password; wajib aktivasi (username + password + token bot) saat Mini App pertama dibuka.
+            $this->line('Saat membuka Mini App pertama kali, admin wajib mengatur username dan password (token dikirim bot).');
 
             return self::SUCCESS;
         }

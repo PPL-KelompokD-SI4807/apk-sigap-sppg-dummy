@@ -14,6 +14,7 @@ export default defineCrudModule({
   title: 'Armada',
   icon: '🚐',
   description: 'Kendaraan distribusi dan statusnya',
+  menuInfo: () => ({ title: 'Armada dan Pengemudi', description: 'Kendaraan, pengemudi, dan masa berlaku SIM' }),
   endpoint: '/armada',
   columns: [
     { key: 'plat_nomor', primary: true },
@@ -26,6 +27,7 @@ export default defineCrudModule({
   searchPlaceholder: 'Cari plat atau jenis kendaraan...',
   filters: { param: 'status', label: 'Status armada', options: [{ value: '', label: 'Semua' }, ...STATUS_ARMADA] },
   listTop: () => armadaTabs('armada'),
+  listTopWeb: () => armadaTabs('armada'),
   renderCard: (r, href) => rowCard({
     href,
     title: r.plat_nomor,

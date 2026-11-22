@@ -17,7 +17,9 @@ use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusKeluhan;
 use App\Enums\StatusKirim;
 use App\Enums\StatusOperasional;
+use App\Enums\StatusPembelianBahan;
 use App\Enums\StatusPerjalanan;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Http\Requests\Armada\StoreArmadaRequest;
 use App\Http\Requests\Armada\StorePengemudiRequest;
 use App\Http\Requests\Armada\UpdateArmadaRequest;
@@ -46,6 +48,8 @@ use App\Http\Requests\Mutu\StorePemeriksaanMutuRequest;
 use App\Http\Requests\Mutu\UpdatePemeriksaanMutuRequest;
 use App\Http\Requests\Pemasok\StorePemasokRequest;
 use App\Http\Requests\Pemasok\UpdatePemasokRequest;
+use App\Http\Requests\Pembelian\StorePembelianBahanRequest;
+use App\Http\Requests\Pembelian\UpdatePembelianBahanRequest;
 use App\Http\Requests\PenerimaManfaat\StorePenerimaManfaatRequest;
 use App\Http\Requests\PenerimaManfaat\UpdatePenerimaManfaatRequest;
 use App\Http\Requests\Perjalanan\StoreNotifikasiPerjalananRequest;
@@ -64,6 +68,7 @@ use App\Models\LogProduksi;
 use App\Models\Menu;
 use App\Models\NotifikasiPerjalanan;
 use App\Models\Pemasok;
+use App\Models\PembelianBahan;
 use App\Models\PemeriksaanMutu;
 use App\Models\PencairanDana;
 use App\Models\PenerimaManfaat;
@@ -85,10 +90,17 @@ use BackedEnum;
  *   jalur berkas): RecordPresenter::assertSafe() menolaknya saat tool dibangun.
  * - Nama orang (anak penerima manfaat, PIC, pengemudi) disajikan sebagai inisial + ID ($initials);
  *   penerima manfaat juga tanpa sekolah/kelas. Nama lengkap hanya tampil di Mini App.
+ * - Teks bebas yang dapat memuat data pribadi orang lain ($personalText: deskripsi/tindak lanjut keluhan, uraian
+ *   pengeluaran, catatan pencairan/bukti distribusi/rekap) disamarkan RecordPresenter::redactPersonal() (nama ->
+ *   inisial, NIK/HP/email/URL -> [disamarkan]) lalu dipotong MAX_TEXT_PERSONAL; juga disembunyikan di ringkasan
+ *   draf chat. Teks bertema dapur/pangan (catatan menu/jadwal, kendala log produksi, catatan mutu) hanya text():
+ *   inisial akan merusak nama bahan/menu; penyamaran kontak saja untuk kolom itu menunggu opsi baru (issue #149).
  * - Kolom form sensitif dikecualikan dari skema tulis ($exclude): pengguna mengisinya sendiri di Mini App.
  * - Ketersediaan tool = matriks Tabel 5 + aturan unit relawan + Policy (BaseAiTool); sppg_id/user_id/role
  *   tidak pernah ditawarkan dan selalu dibuang (config ai.protected_arguments).
- * - Pengguna (modul 1) hanya dibaca: akun dan peran tidak dibuat/diubah lewat draf AI.
+ * - Pengguna (modul 1): katalog hanya `cari_pengguna`; undangan/peran/status akun memakai tool khusus Admin di
+ *   Tools/Pengguna (draf + konfirmasi di chat).
+ * - `rute` = draf dapat dijalankan dari tombol konfirmasi Bot (sub-request REST); `berkas` = hanya Mini App.
  */
 final class CatalogDefinitions
 {
@@ -144,6 +156,7 @@ final class CatalogDefinitions
                 order: [['nama', 'asc'], ['id', 'asc']],
                 store: StoreTitikLayananRequest::class, update: UpdateTitikLayananRequest::class, routeParameter: 'titikLayanan',
                 skip: ['cari_titik_layanan', 'buat_titik_layanan'],
+                rute: 'api.v1.titik-layanan',
                 exclude: ['pic_telepon'],
                 initials: ['pic_nama'],
             ),
@@ -184,22 +197,27 @@ final class CatalogDefinitions
                 order: [['nama', 'asc'], ['id', 'asc']],
                 store: StorePemasokRequest::class, update: UpdatePemasokRequest::class, routeParameter: 'pemasok',
                 exclude: ['kontak'],
+                rute: 'api.v1.pemasok',
             ),
 
-            // 8. Data Menu dan Gizi: menu + standar gizi (penanda 'standar_gizi' pada draf).
+            // 8. Data Menu dan Gizi: menu + standar gizi (penanda 'standar_gizi' pada draf). Komposisi bahan pada
+            //    buat_/ubah_menu dirujuk dengan NAMA (MenuWriteTool + ResolverReferensi; ID dipetakan server).
             new ResourceSpec(
                 key: 'menu', module: 'menu-gizi', label: 'menu', model: Menu::class,
                 search: ['nama_menu', 'siklus'],
                 list: ['id', 'nama_menu', 'kelompok_sasaran', 'tanggal_sajian', 'siklus', 'energi_kkal', 'protein_g', 'lemak_g', 'karbohidrat_g', 'serat_g'],
                 detail: ['catatan'],
-                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => self::values(KelompokSasaran::class)]],
+                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => KelompokSasaran::valuesGizi()]],
                 date: 'tanggal_sajian', order: [['tanggal_sajian', 'desc'], ['id', 'desc']],
                 store: StoreMenuRequest::class, update: UpdateMenuRequest::class, routeParameter: 'menu',
+                // siklus = teks (Form Request string): contoh eksplisit agar model tidak mengirim angka (ditolak skema).
+                hints: ['siklus' => 'Teks, mis. "1".'],
+                kelasTulis: MenuWriteTool::class,
             ),
             new ResourceSpec(
                 key: 'standar_gizi', module: 'menu-gizi', label: 'standar gizi', model: StandarGizi::class,
                 list: ['id', 'kelompok_sasaran', 'energi_min', 'energi_max', 'protein_min', 'protein_max', 'lemak_min', 'lemak_max', 'karbohidrat_min', 'karbohidrat_max', 'serat_min', 'serat_max'],
-                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => self::values(KelompokSasaran::class)]],
+                filters: ['kelompok_sasaran' => ['type' => 'string', 'enum' => KelompokSasaran::valuesGizi()]],
                 store: StoreStandarGiziRequest::class, update: StoreStandarGiziRequest::class, routeParameter: 'standar_gizi',
                 marker: 'standar_gizi',
             ),
@@ -214,6 +232,7 @@ final class CatalogDefinitions
                 date: 'tanggal_produksi', order: [['tanggal_produksi', 'desc'], ['id', 'desc']],
                 store: StoreJadwalProduksiRequest::class, update: UpdateJadwalProduksiRequest::class, routeParameter: 'jadwal',
                 jenis: 'produksi',
+                exclude: ['versi'], berversi: true,
             ),
             new ResourceSpec(
                 key: 'jadwal_distribusi', module: 'jadwal', label: 'jadwal distribusi', model: JadwalDistribusi::class,
@@ -225,6 +244,7 @@ final class CatalogDefinitions
                 store: StoreJadwalDistribusiRequest::class, update: UpdateJadwalDistribusiRequest::class, routeParameter: 'jadwal_distribusi',
                 marker: 'distribusi', jenis: 'distribusi',
                 initials: ['pengemudi'],
+                exclude: ['versi'], berversi: true,
             ),
 
             // 10. Data Log Produksi Harian.
@@ -232,8 +252,11 @@ final class CatalogDefinitions
                 key: 'log_produksi', module: 'log-produksi', label: 'log produksi harian', model: LogProduksi::class,
                 list: ['id', 'jadwal_produksi_id', 'tanggal_produksi' => 'jadwalProduksi.tanggal_produksi', 'realisasi_porsi', 'sisa_makanan_kg', 'jam_selesai', 'kode_batch'],
                 detail: ['kendala'],
+                filters: ['milik_saya' => ['type' => 'boolean', 'scope' => 'milikSaya', 'description' => 'Hanya log yang dicatat pengguna ini.']],
                 date: 'created_at',
                 store: StoreLogProduksiRequest::class, update: UpdateLogProduksiRequest::class, routeParameter: 'log_produksi',
+                rute: 'api.v1.log-produksi',
+                exclude: ['versi'], berversi: true,
             ),
 
             // 11. Data Pemeriksaan Mutu dan Keamanan Pangan.
@@ -244,6 +267,7 @@ final class CatalogDefinitions
                 filters: ['hasil' => ['type' => 'string', 'enum' => self::values(HasilMutu::class)]],
                 date: 'waktu_pemeriksaan',
                 store: StorePemeriksaanMutuRequest::class, update: UpdatePemeriksaanMutuRequest::class, routeParameter: 'pemeriksaan_mutu',
+                exclude: ['versi'], berversi: true,
             ),
 
             // 12. Data Armada dan Pengemudi: nomor SIM dan HP pengemudi tidak disajikan/ditawarkan.
@@ -265,41 +289,77 @@ final class CatalogDefinitions
                 initials: ['nama'],
             ),
 
-            // 13. Data Bukti Distribusi: foto/berita acara/koordinat diunggah di Mini App, tidak lewat AI.
+            // 13. Data Bukti Distribusi: foto/berita acara/koordinat diunggah di Mini App, tidak lewat AI. Catatan ditulis
+            //     relawan di titik layanan (dapat memuat nama/HP penerima): ke LLM hanya versi tersamar + terpotong.
             new ResourceSpec(
                 key: 'bukti_distribusi', module: 'bukti-distribusi', label: 'bukti distribusi', model: BuktiDistribusi::class,
                 list: ['id', 'jadwal_distribusi_id', 'tanggal_distribusi' => 'jadwalDistribusi.tanggal_distribusi', 'titik_layanan' => 'jadwalDistribusi.titikLayanan.nama', 'waktu_berangkat', 'waktu_tiba', 'porsi_diterima', 'terlambat', 'menit_keterlambatan'],
                 detail: ['catatan_selisih', 'catatan'],
+                personalText: ['catatan_selisih', 'catatan'],
                 date: 'created_at',
                 store: StoreBuktiDistribusiRequest::class, update: UpdateBuktiDistribusiRequest::class, routeParameter: 'buktiDistribusi',
                 exclude: ['latitude', 'longitude'],
+                berkas: true,
             ),
 
-            // 14. Data Keuangan: pencairan dana + pengeluaran (nominal rupiah bulat).
+            // 14. Data Keuangan: pencairan dana + pengeluaran (nominal rupiah bulat). Juga dibaca investor (R): catatan
+            //     pencairan dan uraian pengeluaran (teks bebas akuntan, dapat memuat nama/HP/no. rekening) ke LLM hanya
+            //     versi tersamar + terpotong (minimisasi data, UU PDP).
             new ResourceSpec(
                 key: 'pencairan_dana', module: 'keuangan', label: 'pencairan dana', model: PencairanDana::class,
                 search: ['periode', 'sumber_dana', 'no_referensi'],
                 list: ['id', 'periode', 'sumber_dana', 'nominal', 'tanggal_cair', 'no_referensi'],
                 detail: ['catatan'],
+                personalText: ['catatan'],
                 date: 'tanggal_cair', order: [['tanggal_cair', 'desc'], ['id', 'desc']], rupiah: ['nominal'],
                 store: StorePencairanRequest::class, update: UpdatePencairanRequest::class, routeParameter: 'pencairanDana',
+                berkas: true,
             ),
             new ResourceSpec(
                 key: 'pengeluaran', module: 'keuangan', label: 'pengeluaran', model: Pengeluaran::class,
                 search: ['uraian'],
-                list: ['id', 'tanggal', 'kategori', 'uraian', 'nominal', 'melebihi_anggaran', 'pemasok' => 'pemasok.nama'],
-                filters: ['kategori' => ['type' => 'string', 'enum' => self::values(KategoriPengeluaran::class)]],
+                // sub_kategori ikut disajikan (P10): pengguna sering menunjuk pengeluaran dari sub-kategori saat ini.
+                list: ['id', 'tanggal', 'kategori', 'sub_kategori', 'uraian', 'nominal', 'melebihi_anggaran', 'status_persetujuan', 'pemasok' => 'pemasok.nama'],
+                personalText: ['uraian'],
+                filters: [
+                    'kategori' => ['type' => 'string', 'enum' => self::values(KategoriPengeluaran::class)],
+                    'status_persetujuan' => ['type' => 'string', 'enum' => self::values(StatusPersetujuanPengeluaran::class), 'description' => 'Status persetujuan investor.'],
+                ],
                 date: 'tanggal', order: [['tanggal', 'desc'], ['id', 'desc']], rupiah: ['nominal'],
                 store: StorePengeluaranRequest::class, update: UpdatePengeluaranRequest::class, routeParameter: 'pengeluaran',
                 marker: 'pengeluaran',
+                exclude: ['versi'], berversi: true, berkas: true,
             ),
 
-            // 15. Data Feedback dan Keluhan (deskripsi ditulis pengguna lain: DATA tak tepercaya).
+            // 14b. Pembelian Bahan (R-06b-2): staf gudang mencatat (draf), akuntan memverifikasi di Mini App.
+            // TIDAK ada tool verifikasi/keputusan. total/status/satuan/versi tidak pernah ditawarkan ke LLM; foto nota
+            // diunggah di Mini App saat konfirmasi draf (alasan penolakan = teks bebas akuntan, tidak disajikan).
+            new ResourceSpec(
+                key: 'pembelian_bahan', module: 'pembelian-bahan', label: 'pembelian bahan', model: PembelianBahan::class,
+                actions: ['R', 'C', 'U'],
+                search: ['bahanBaku.nama', 'pemasok.nama'],
+                list: ['id', 'tanggal_beli', 'bahan' => 'bahanBaku.nama', 'pemasok' => 'pemasok.nama', 'jumlah', 'satuan', 'harga_satuan', 'total', 'status'],
+                filters: [
+                    'status' => ['type' => 'string', 'enum' => self::values(StatusPembelianBahan::class)],
+                    'bahan_baku_id' => ['type' => 'integer', 'description' => 'ID bahan dari tool cari_bahan_baku.'],
+                    'pemasok_id' => ['type' => 'integer', 'description' => 'ID pemasok dari tool cari_pemasok.'],
+                ],
+                date: 'tanggal_beli', order: [['tanggal_beli', 'desc'], ['id', 'desc']], rupiah: ['total'],
+                store: StorePembelianBahanRequest::class, update: UpdatePembelianBahanRequest::class, routeParameter: 'pembelian_bahan',
+                hints: ['jumlah' => 'Jumlah dalam satuan bahan baku.', 'harga_satuan' => 'Harga per satuan bahan, rupiah.'],
+                exclude: ['versi'], berversi: true, berkas: true,
+                // Ringkasan chat dari server: nama bahan/pemasok + total, tanpa id internal.
+                kelasTulis: PembelianBahanWriteTool::class,
+            ),
+
+            // 15. Data Feedback dan Keluhan (deskripsi ditulis pengguna lain: DATA tak tepercaya). Deskripsi dan
+            // tindak lanjut dapat memuat nama anak/kontak (R06a-S-05): ke LLM hanya versi tersamar + terpotong.
             new ResourceSpec(
                 key: 'keluhan', module: 'keluhan', label: 'feedback dan keluhan', model: FeedbackKeluhan::class,
                 search: ['deskripsi', 'titikLayanan.nama'],
                 list: ['id', 'sumber', 'kategori', 'prioritas', 'status', 'titik_layanan' => 'titikLayanan.nama', 'deskripsi', 'created_at'],
                 detail: ['tindak_lanjut'],
+                personalText: ['deskripsi', 'tindak_lanjut'],
                 filters: [
                     'status' => ['type' => 'string', 'enum' => self::values(StatusKeluhan::class)],
                     'prioritas' => ['type' => 'string', 'enum' => self::values(PrioritasKeluhan::class)],
@@ -309,14 +369,17 @@ final class CatalogDefinitions
                 ],
                 date: 'created_at',
                 store: StoreKeluhanRequest::class, update: UpdateKeluhanRequest::class, routeParameter: 'keluhan',
+                rute: 'api.v1.keluhan',
             ),
 
-            // 16. Laporan Rekapitulasi Harian Operasional (ringkasan dibaca lewat detail; tanpa hapus).
+            // 16. Laporan Rekapitulasi Harian Operasional (ringkasan dibaca lewat detail; tanpa hapus). Ringkasan = angka
+            //     agregat dari server; catatan = teks bebas kepala SPPG (juga dibaca investor): disamarkan + terpotong.
             new ResourceSpec(
                 key: 'rekap_harian', module: 'rekap-harian', label: 'rekap harian operasional', model: RekapHarian::class,
                 actions: ['R', 'C', 'U'],
                 list: ['id', 'tanggal', 'status_kirim', 'dikirim_pada'],
                 detail: ['ringkasan', 'catatan'],
+                personalText: ['catatan'],
                 filters: ['status_kirim' => ['type' => 'string', 'enum' => self::values(StatusKirim::class)]],
                 date: 'tanggal', order: [['tanggal', 'desc'], ['id', 'desc']],
                 store: StoreRekapHarianRequest::class, update: UpdateRekapHarianRequest::class, routeParameter: 'rekapHarian',

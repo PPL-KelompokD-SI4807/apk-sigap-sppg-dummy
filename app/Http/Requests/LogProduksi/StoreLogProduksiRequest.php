@@ -37,11 +37,13 @@ class StoreLogProduksiRequest extends FormRequest
 
         return ($log === null ? ['jadwal_produksi_id' => ['required', 'integer', Rule::exists('jadwal_produksis', 'id')->where('sppg_id', $sppgId)->whereNull('deleted_at')]] : []) + [
             'realisasi_porsi' => [$wajib, 'integer', 'min:0', 'max:1000000'],
+            'porsi_food_sample' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'porsi_uji_organoleptik' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'sisa_makanan_kg' => ['sometimes', 'numeric', 'min:0', 'max:99999'],
             'waktu_mulai' => ['nullable', 'date_format:H:i'],
             'jam_selesai' => array_merge(['nullable', 'date_format:H:i'], $this->filled('waktu_mulai') ? ['after:waktu_mulai'] : []),
             'kendala' => ['nullable', 'string', 'max:2000'],
             'ai_draft_id' => ['nullable', 'uuid', 'exists:ai_drafts,uuid'],
-        ] + AturanLampiranIds::untuk('log-produksi');
+        ] + ($log === null ? [] : ['versi' => ['sometimes', 'integer', 'min:1']]) + AturanLampiranIds::untuk('log-produksi');
     }
 }

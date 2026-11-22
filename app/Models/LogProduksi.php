@@ -4,14 +4,17 @@ namespace App\Models;
 
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
+use App\Models\Concerns\Berversi;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Auth;
 
 class LogProduksi extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, HasLampiran, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, Berversi, HasFactory, HasLampiran, Searchable, SoftDeletes;
 
     protected $table = 'log_produksis';
 
@@ -24,6 +27,8 @@ class LogProduksi extends Model
         'dicatat_oleh',
         'kode_batch',
         'realisasi_porsi',
+        'porsi_food_sample',
+        'porsi_uji_organoleptik',
         'waktu_mulai',
         'sisa_makanan_kg',
         'jam_selesai',
@@ -36,6 +41,8 @@ class LogProduksi extends Model
     {
         return [
             'realisasi_porsi' => 'integer',
+            'porsi_food_sample' => 'integer',
+            'porsi_uji_organoleptik' => 'integer',
             'sisa_makanan_kg' => 'decimal:2',
         ];
     }
@@ -48,5 +55,19 @@ class LogProduksi extends Model
     public function pencatat(): BelongsTo
     {
         return $this->belongsTo(User::class, 'dicatat_oleh');
+    }
+
+    /**
+     * Hanya log yang dicatat pengguna yang sedang login (ActingUser). Tanpa pengguna login tidak ada hasil
+     * (fail closed). Dipakai filter `milik_saya` tool baca (layar Bot relawan: milik sendiri).
+     *
+     * @param  Builder<LogProduksi>  $query
+     * @return Builder<LogProduksi>
+     */
+    public function scopeMilikSaya(Builder $query): Builder
+    {
+        $id = Auth::hasUser() ? Auth::id() : null;
+
+        return $id === null ? $query->whereRaw('1 = 0') : $query->where($query->getModel()->qualifyColumn('dicatat_oleh'), $id);
     }
 }

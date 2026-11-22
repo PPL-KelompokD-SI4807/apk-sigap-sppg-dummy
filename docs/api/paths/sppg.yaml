@@ -117,3 +117,54 @@
       '403': { $ref: '#/components/responses/Forbidden' }
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
+/sppg/{id}/saldo-awal:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  put:
+    tags: [SPPG]
+    summary: Isi/ubah saldo awal SPPG (R-07)
+    description: |
+      Hanya **akuntan SPPG ini** dan **admin**; peran lain (termasuk kepala_sppg dan investor) dan akuntan SPPG lain = 403
+      (sebelum validasi). Saldo awal dipakai laporan 30c/30d sebagai saldo awal periode pertama. Tiap perubahan nilai
+      atau tanggal dicatat di `audit_logs` (event `saldo_awal_diubah`, nilai lama/baru nominal + tanggal). Permintaan
+      identik dengan nilai tersimpan tidak menambah log. Field ini tidak dapat diisi lewat PUT/PATCH `/sppg/{id}`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SaldoAwalInput' }
+          example: { saldo_awal: 25000000, saldo_awal_tanggal: '2026-11-01' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Sppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }
+  patch:
+    tags: [SPPG]
+    summary: Sama dengan PUT saldo awal
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SaldoAwalInput' }
+    responses:
+      '200':
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data: { $ref: '#/components/schemas/Sppg' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '422': { $ref: '#/components/responses/ValidationFailed' }

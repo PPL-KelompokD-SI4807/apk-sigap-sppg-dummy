@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
+use App\Enums\StatusPersetujuanMenu;
 use App\Http\Requests\Jadwal\StoreJadwalProduksiRequest;
 use App\Http\Requests\Jadwal\UpdateJadwalProduksiRequest;
 use App\Http\Resources\Jadwal\JadwalProduksiResource;
@@ -16,6 +17,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /** Modul 9 Data Jadwal Produksi dan Distribusi: bagian jadwal produksi (FR-06). */
 class JadwalProduksiController extends ApiController
@@ -32,7 +34,7 @@ class JadwalProduksiController extends ApiController
         $this->authorize('viewAny', JadwalProduksi::class);
 
         $query = JadwalProduksi::query()
-            ->with(['menu:id,nama_menu,kelompok_sasaran', 'pemeriksaanTerbaru'])
+            ->with(['menu:id,nama_menu,kelompok_sasaran,status_persetujuan', 'pemeriksaanTerbaru'])
             ->withSum(['jadwalDistribusis as porsi_terjadwal_distribusi' => fn ($q) => $q->where('status', '!=', StatusJadwalDistribusi::Dibatalkan->value)], 'jumlah_porsi');
 
         $term = mb_substr(trim((string) $request->query('q', '')), 0, 100);
@@ -55,6 +57,10 @@ class JadwalProduksiController extends ApiController
             $query->where('menu_id', (int) $request->query('menu_id'));
         }
 
+        if ($request->boolean('menu_belum_disetujui')) {
+            $query->whereDoesntHave('menu', fn ($m) => $m->where('status_persetujuan', StatusPersetujuanMenu::Disetujui->value));
+        }
+
         if ($request->user()->isAdmin() && is_numeric($request->query('sppg_id'))) {
             $query->where('sppg_id', (int) $request->query('sppg_id'));
         }
@@ -64,36 +70,51 @@ class JadwalProduksiController extends ApiController
         );
     }
 
-    /** Ringkasan jadwal produksi per tanggal untuk form distribusi (hak R jadwal, tanpa batasan unit). */
+    /**
+     * Pilihan jadwal produksi untuk dropdown (form distribusi, keluhan): HANYA id, tanggal, nama menu, status.
+     * Gerbang `viewRingkas` (hak R modul jadwal, bukan R*, tanpa batasan sub-jenis unit relawan); dibatasi SPPG
+     * oleh SppgScope. Tanpa target porsi, catatan, anggaran, atau data pengguna. Default hari ini (WIB);
+     * `from`/`to` (selisih to - from maks. 62 hari = 63 hari kalender inklusif) untuk rentang, mis. batch keluhan 14 hari terakhir.
+     */
     public function ringkas(Request $request): JsonResponse
     {
         $this->authorize('viewRingkas', JadwalProduksi::class);
 
         $request->validate([
             'tanggal' => ['nullable', 'date_format:Y-m-d'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
             'sppg_id' => ['nullable', 'integer'],
         ]);
 
-        $tanggal = $request->filled('tanggal')
-            ? (string) $request->query('tanggal')
-            : Carbon::now(config('operasional.timezone'))->toDateString();
-
+        $zona = config('operasional.timezone');
         $query = JadwalProduksi::query()
-            ->with('menu:id,nama_menu')
-            ->tanggal($tanggal);
+            ->select(['id', 'menu_id', 'tanggal_produksi', 'status'])
+            ->with('menu:id,nama_menu');
+
+        if ($request->filled('from') || $request->filled('to')) {
+            $dari = Carbon::parse((string) ($request->query('from') ?? $request->query('to')), $zona);
+            $sampai = Carbon::parse((string) ($request->query('to') ?? $request->query('from')), $zona);
+
+            if ($dari->diffInDays($sampai) > 62) {
+                throw ValidationException::withMessages(['to' => ['Selisih from dan to maksimal 62 hari.']]);
+            }
+
+            $query->whereDate('tanggal_produksi', '>=', $dari->toDateString())->whereDate('tanggal_produksi', '<=', $sampai->toDateString());
+        } else {
+            $query->tanggal($request->filled('tanggal') ? (string) $request->query('tanggal') : Carbon::now($zona)->toDateString());
+        }
 
         if ($request->user()->isAdmin() && $request->filled('sppg_id')) {
             $query->where('sppg_id', (int) $request->query('sppg_id'));
         }
 
-        $data = $query->orderBy('jam_mulai_masak')->orderBy('id')->limit(200)->get()
+        $data = $query->orderByDesc('tanggal_produksi')->orderBy('jam_mulai_masak')->orderBy('id')->limit(200)->get()
             ->map(fn (JadwalProduksi $j) => [
                 'id' => $j->id,
                 'tanggal_produksi' => $j->tanggal_produksi?->toDateString(),
                 'nama_menu' => $j->menu?->nama_menu,
-                'target_porsi' => $j->target_porsi,
                 'status' => $j->status->value,
-                'status_label' => $j->status->label(),
             ])->values();
 
         return response()->json(['data' => $data]);
@@ -131,7 +152,7 @@ class JadwalProduksiController extends ApiController
         $data = $request->validated();
 
         $diubah = DB::transaction(function () use ($request, $jadwal, $data): JadwalProduksi {
-            $diubah = $this->perencanaan->perbarui($jadwal, $data);
+            $diubah = $this->perencanaan->perbarui($jadwal, $data, $this->versi($data));
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id);
 
             return $diubah;
@@ -144,10 +165,10 @@ class JadwalProduksiController extends ApiController
         return new JadwalProduksiResource($this->muat($diubah));
     }
 
-    public function destroy(JadwalProduksi $jadwal): Response
+    public function destroy(Request $request, JadwalProduksi $jadwal): Response
     {
         $this->authorize('delete', $jadwal);
-        $this->perencanaan->hapus($jadwal);
+        $this->hapusDenganDraf($request, 'jadwal', (int) $jadwal->getKey(), fn () => $this->perencanaan->hapus($jadwal));
 
         return response()->noContent();
     }
@@ -161,7 +182,7 @@ class JadwalProduksiController extends ApiController
 
     private function muat(JadwalProduksi $jadwal): JadwalProduksi
     {
-        return $jadwal->load(['menu:id,nama_menu,kelompok_sasaran', 'pemeriksaanTerbaru'])
+        return $jadwal->load(['menu:id,nama_menu,kelompok_sasaran,status_persetujuan', 'pemeriksaanTerbaru'])
             ->loadSum(['jadwalDistribusis as porsi_terjadwal_distribusi' => fn ($q) => $q->where('status', '!=', StatusJadwalDistribusi::Dibatalkan->value)], 'jumlah_porsi');
     }
 }

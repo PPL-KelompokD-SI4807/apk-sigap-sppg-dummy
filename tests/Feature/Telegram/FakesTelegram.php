@@ -25,10 +25,36 @@ trait FakesTelegram
         Http::swap($factory);
 
         Http::fake($stubs + [
-            'api.telegram.org/file/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg", 200),
+            'api.telegram.org/file/*' => Http::response(self::jpegFiktif(), 200),
             'api.telegram.org/*/getFile' => Http::response(['ok' => true, 'result' => ['file_id' => 'f1', 'file_size' => 12, 'file_path' => 'photos/f1.jpg']]),
             'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
         ]);
+    }
+
+    /**
+     * JPEG sah buatan GD (foto fiktif, tanpa metadata) agar lolos pra-pemrosesan foto chat (PraprosesFotoChat).
+     * $derau = piksel acak (sulit dikompres; dipakai untuk uji batas ukuran).
+     */
+    protected static function jpegFiktif(int $lebar = 64, int $tinggi = 48, bool $derau = false, int $kualitas = 90): string
+    {
+        $g = imagecreatetruecolor($lebar, $tinggi);
+        imagefill($g, 0, 0, (int) imagecolorallocate($g, 250, 250, 245));
+
+        if ($derau) {
+            for ($y = 0; $y < $tinggi; $y++) {
+                for ($x = 0; $x < $lebar; $x++) {
+                    imagesetpixel($g, $x, $y, random_int(0, 0xFFFFFF));
+                }
+            }
+        } else {
+            imagestring($g, 2, 2, 2, 'NOTA', (int) imagecolorallocate($g, 10, 10, 10));
+        }
+
+        ob_start();
+        imagejpeg($g, null, $kualitas);
+        imagedestroy($g);
+
+        return (string) ob_get_clean();
     }
 
     /** @return Collection<int, Request> */

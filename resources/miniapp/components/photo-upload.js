@@ -1,8 +1,10 @@
 // Komponen unggah foto aman: kamera/galeri, kompres canvas (maks 1600 px, JPEG 0,8), pratinjau, hapus,
-// batas jumlah, dan tampilan gambar privat lewat fetch + Authorization (blob -> objectURL).
+// batas jumlah, dan tampilan gambar privat lewat fetch berkredensial transport (blob -> objectURL).
 // Bagian murni (tanpa DOM) diekspor agar dapat diuji dengan node --test.
 import { h } from '../core/dom.js';
-import { getToken, newKey } from '../core/api.js';
+import { kredensialBerkas, newKey, sesiBerkasHabis } from '../core/transport.js';
+import { trackUrl, lepasUrl } from '../core/url-objek.js';
+import { terapkanHeaderSppg, getSppgAktif } from '../core/sppg-aktif.js';
 
 export const MAX_SIDE = 1600;
 export const QUALITY = 0.8;
@@ -105,27 +107,34 @@ export async function compressImage(file) {
   return (await compressImageDetail(file)).file;
 }
 
-// ---- URL objek: dilepas saat berpindah layar agar memori tidak bocor ----
-const tracked = new Set();
-let hookInstalled = false;
-function trackUrl(url) {
-  tracked.add(url);
-  if (!hookInstalled && typeof window !== 'undefined') {
-    hookInstalled = true;
-    window.addEventListener('hashchange', () => { tracked.forEach((u) => URL.revokeObjectURL(u)); tracked.clear(); });
-  }
-  return url;
-}
-const release = (url) => { if (url && tracked.delete(url)) URL.revokeObjectURL(url); };
+// ---- URL objek: dilacak di core/url-objek.js; router mencabut semuanya di awal tiap render rute (juga rute yang sama) ----
+export { lepasUrl };
+const release = lepasUrl;
 
-/** Ambil gambar privat: fetch + Authorization -> Blob. Galat memuat pesan Indonesia. */
-export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token = getToken() } = {}) {
+/**
+ * Ambil gambar privat -> Blob. Kredensial dari lapisan transport (kredensialBerkas): Mini App = Bearer + credentials 'omit';
+ * web = cookie sesi HttpOnly (same-origin) + X-Sigap-Klien: web. Tanpa token di URL. `token`/`kredensial` hanya untuk tes.
+ * Galat memuat pesan Indonesia.
+ */
+export async function fetchLampiranBlob(path, { fetchFn = (...a) => fetch(...a), token, kredensial = null, sppgId = getSppgAktif(), onSesiHabis = sesiBerkasHabis } = {}) {
   if (!lampiranPath(path)) throw new Error('Alamat berkas tidak valid.');
+  const k = kredensial ?? kredensialBerkas(token);
   let res;
   try {
-    res = await fetchFn(path, { headers: { Accept: 'image/*', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+    res = await fetchFn(path, { headers: terapkanHeaderSppg({ Accept: 'image/*', ...k.headers }, sppgId), credentials: k.credentials, cache: 'no-store' });
   } catch { throw new Error('Tidak ada koneksi internet.'); }
   if (!res.ok) {
+    if (res.status === 401) {
+      // Web: memicu alur sesi-habis yang sama dengan permintaan API lain; Mini App: tanpa efek (perilaku tetap). Pesan per gambar tetap.
+      try { onSesiHabis?.(); } catch { /* jangan menutupi pesan per gambar */ }
+      throw Object.assign(new Error('Sesi Anda telah berakhir. Silakan masuk kembali.'), { status: 401 });
+    }
+    // 403 lampiran_disembunyikan (Investor) bukan galat SPPG aktif: pilihan SPPG tidak dihapus.
+    if (res.status === 403) {
+      let alasan = null;
+      try { alasan = (await res.json())?.alasan; } catch { /* bukan JSON */ }
+      if (alasan === 'lampiran_disembunyikan') throw new Error('Foto tidak ditampilkan untuk peran Anda.');
+    }
     throw new Error(res.status === 404 ? 'Berkas tidak ditemukan.' : res.status === 403 ? 'Anda tidak punya hak akses ke berkas ini.' : `Berkas gagal dimuat (${res.status}).`);
   }
   const blob = await res.blob();
@@ -150,7 +159,7 @@ export function createAuthImage(berkas, { alt = 'Foto', caption = null } = {}) {
       fig.insertBefore(img, fig.firstChild);
       state.hidden = true;
     } catch (e) {
-      state.replaceChildren(`${e.message} `, h('button', { class: 'link', type: 'button', onclick: load }, 'Coba lagi'));
+      state.replaceChildren(`${e.message} `, /hak akses/.test(e.message) ? null : h('button', { class: 'link', type: 'button', onclick: load }, 'Coba lagi'));
     }
   }
   if (path) load(); else state.textContent = 'Foto tidak tersedia.';
@@ -176,10 +185,21 @@ export function createPhotoUpload({ name, existing = null, existingUrl = null, m
   const old = hasExisting ? h('div', { class: 'photo-old' }, createAuthImage(existingRef, { alt: `${label} tersimpan`, caption: 'Foto tersimpan' })) : null;
   const progress = h('progress', { class: 'photo-progress', hidden: true, 'aria-label': 'Memampatkan foto' });
   const status = h('p', { class: 'muted small', role: 'status', 'aria-live': 'polite' });
-  const cam = h('input', { type: 'file', accept: 'image/*', capture: 'environment', id: `f-${name}`, class: 'sr-only', multiple: max > 1 });
+  const cam = h('input', { type: 'file', accept: 'image/*', capture: 'environment', id: `f-${name}`, class: 'sr-only' });
+  // Input kamera TIDAK boleh `multiple`: dengan atribut itu Android/Chrome mengabaikan capture dan membuka pemilih galeri.
+  // Galeri boleh multiple; jepretan kamera masuk satu per satu.
   const gal = h('input', { type: 'file', accept: 'image/*', id: `f-${name}-galeri`, class: 'sr-only', multiple: max > 1 });
-  const camBtn = h('label', { class: 'btn', for: `f-${name}` }, 'Ambil foto');
-  const galBtn = h('label', { class: 'btn', for: `f-${name}-galeri` }, 'Pilih dari galeri');
+  // Tombol sungguhan (bukan <label for>): klik membuka pemilih berkas langsung dalam gestur yang sama setelah fokus (mis. kolom
+  // nominal dengan papan ketik terbuka) dilepas. Label proxy gagal bila tata letak bergeser antara sentuh dan lepas (papan ketik menutup),
+  // sehingga kamera tidak terbuka di Telegram Android pada formulir yang foto-nya setelah kolom angka (Pengeluaran > Foto nota).
+  const bukaPemilih = (inp) => () => {
+    if (inp.disabled) return;
+    const aktif = document.activeElement;
+    if (aktif && aktif !== document.body && typeof aktif.blur === 'function') aktif.blur();
+    inp.click();
+  };
+  const camBtn = h('button', { class: 'btn', type: 'button', onclick: bukaPemilih(cam) }, 'Ambil foto');
+  const galBtn = h('button', { class: 'btn', type: 'button', onclick: bukaPemilih(gal) }, 'Pilih dari galeri');
   const actions = h('div', { class: 'photo-actions' }, camera ? camBtn : null, galBtn, cam, gal);
   const el = h('div', { class: 'photo-upload' }, old, list, actions, progress, status);
 
@@ -196,6 +216,7 @@ export function createPhotoUpload({ name, existing = null, existingUrl = null, m
     const f = full();
     for (const b of [camBtn, galBtn]) b.classList.toggle('disabled', f);
     cam.disabled = gal.disabled = f || busy;
+    camBtn.disabled = galBtn.disabled = f || busy;
     if (f) status.textContent = `Batas ${max} foto tercapai. Hapus salah satu untuk menambah.`;
   }
 

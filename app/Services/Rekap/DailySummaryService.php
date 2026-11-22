@@ -7,6 +7,8 @@ use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusKeluhan;
 use App\Enums\StatusKirim;
+use App\Enums\StatusPersetujuanPengeluaran;
+use App\Events\RekapHarianDibuat;
 use App\Models\BahanBaku;
 use App\Models\BuktiDistribusi;
 use App\Models\FeedbackKeluhan;
@@ -123,6 +125,21 @@ class DailySummaryService
             // Dua penyusun bersamaan: yang kalah mengulang sebagai pembaruan.
             return $simpan();
         }
+    }
+
+    /**
+     * Kirim ulang rekap tersimpan: status kirim kembali "menunggu", dikirim_pada dikosongkan, lalu RekapHarianDibuat
+     * dipancarkan (listener notifikasi mengirim ke penerima rekap). Dipakai REST (POST /rekap-harian/{id}/kirim-ulang)
+     * dan Bot (R-02 PR-3). Otorisasi (Policy `update`) dan pembatasan tambahan jalur Bot menjadi tanggung jawab pemanggil.
+     */
+    public function kirimUlang(RekapHarian $rekap): RekapHarian
+    {
+        DB::transaction(function () use ($rekap): void {
+            $rekap->forceFill(['status_kirim' => StatusKirim::Menunggu, 'dikirim_pada' => null])->save();
+            event(RekapHarianDibuat::dari($rekap));
+        });
+
+        return $rekap;
     }
 
     /**
@@ -243,9 +260,11 @@ class DailySummaryService
 
         $pencairan = $this->sen($this->q(PencairanDana::class, $sppgId)
             ->where('periode', $periode)->whereDate('tanggal_cair', '<=', $t->toDateString())->sum('nominal'));
-        $periodeKeluar = $this->sen($this->q(Pengeluaran::class, $sppgId)
+        // R-06b-2: hanya pengeluaran yang sudah disetujui investor yang dihitung (sejalan BudgetService).
+        $pengeluaran = fn () => $this->q(Pengeluaran::class, $sppgId)->where('status_persetujuan', StatusPersetujuanPengeluaran::Disetujui->value);
+        $periodeKeluar = $this->sen($pengeluaran()
             ->whereDate('tanggal', '>=', $awal)->whereDate('tanggal', '<=', $t->toDateString())->sum('nominal'));
-        $hariIni = $this->sen($this->q(Pengeluaran::class, $sppgId)
+        $hariIni = $this->sen($pengeluaran()
             ->whereDate('tanggal', $t->toDateString())->sum('nominal'));
 
         return [

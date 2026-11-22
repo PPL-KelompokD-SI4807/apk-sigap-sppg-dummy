@@ -31,7 +31,7 @@ class StoreMenuRequest extends FormRequest
 
         return [
             'nama_menu' => [$wajib, 'string', 'max:255'],
-            'kelompok_sasaran' => [$wajib, Rule::enum(KelompokSasaran::class)],
+            'kelompok_sasaran' => [$wajib, Rule::enum(KelompokSasaran::class)->only(KelompokSasaran::untukGizi())],
             'tanggal_sajian' => ['nullable', 'date_format:Y-m-d'],
             'siklus' => ['nullable', 'string', 'max:50'],
             'energi_kkal' => $gizi,

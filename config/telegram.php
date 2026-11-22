@@ -40,4 +40,47 @@ return [
     // Pembaruan yang diminta dari Telegram (setWebhook allowed_updates).
     'allowed_updates' => ['message', 'callback_query'],
 
+    /*
+    | Tombol aksi bot (R-02): callback_data berformat b1.<kode>.<mac>; status di tabel bot_aksi.
+    | - callback_ttl_menit: umur tombol sejak layar dirender (sekali pakai, dibuat ulang tiap layar).
+    | - catatan_ttl_menit: jendela membalas ForceReply alasan penolakan setelah menekan Tolak.
+    | - callback_rate: maks. callback per telegram_id per menit; callback_gagal_rate: maks. tombol tidak sah per menit.
+    | - perintah_rate: maks. /start, /bantuan, /menu, dan perintah pintasan (/jadwal, /stok, ...) per menit per telegram_id; catatan_gagal_rate: maks. balasan alasan
+    |   penolakan yang gagal per menit (lewat batas: dijawab diam).
+    | - aksi_aktif_maks: batas token aktif per pengguna (yang tertua dikedaluwarsakan).
+    | - aksi_retensi_hari: baris bot_aksi lebih tua dari ini dihapus terjadwal (sigap:bersihkan-aksi-bot).
+    */
+    'callback_ttl_menit' => (int) env('TELEGRAM_CALLBACK_TTL_MENIT', 10),
+    'catatan_ttl_menit' => (int) env('TELEGRAM_CATATAN_TTL_MENIT', 10),
+    'callback_rate' => 30,
+    'callback_gagal_rate' => 10,
+    'perintah_rate' => 20,
+    'catatan_gagal_rate' => 20,
+    'aksi_aktif_maks' => 50,
+    'aksi_retensi_hari' => 30,
+
+    /*
+    | Navigasi baca bot (R-02 v2): callback_data n1.<layar>.<sppg>.<exp>.<mac>, tanpa baris basis data,
+    | dapat dipakai ulang sampai kedaluwarsa. Hak dicek ulang setiap klik. Kedaluwarsa -> beranda dirender ulang.
+    */
+    'nav_ttl_menit' => (int) env('TELEGRAM_NAV_TTL_MENIT', 30),
+
+    /*
+    | Cache ringkasan hari ini di beranda/sambutan bot (detik), per (SPPG, tanggal, profil peran); hanya baris
+    | agregat hasil saringan peran. 0 = tanpa cache.
+    */
+    'ringkasan_cache_detik' => (int) env('TELEGRAM_RINGKASAN_CACHE_DETIK', 60),
+
+    /*
+    | Jeda minimum (detik) antar-pembukaan layar berat (Rekap, Keuangan, Anggaran) per pengguna, termasuk Segarkan.
+    | 0 = tanpa jeda.
+    */
+    'layar_berat_jeda_detik' => (int) env('TELEGRAM_LAYAR_BERAT_JEDA_DETIK', 3),
+
+    /*
+    | Aksi tulis berkonfirmasi lewat bot (R-02 PR-3): kirim ulang rekap dibatasi satu kali per rekap per jeda ini
+    | (menit, lintas pengguna). Hanya jalur bot; REST POST /rekap-harian/{id}/kirim-ulang tidak berubah.
+    */
+    'kirim_ulang_rekap_jeda_menit' => 5,
+
 ];

@@ -14,12 +14,14 @@ use App\Models\JadwalProduksi;
 use App\Models\Menu;
 use App\Models\MutasiStok;
 use App\Models\Pemasok;
+use App\Models\Sppg;
+use App\Models\User;
 use App\Services\Stock\StockService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
-use Laravel\Sanctum\Sanctum;
 
 class BahanBakuTest extends GrupBTestCase
 {
@@ -219,6 +221,70 @@ class BahanBakuTest extends GrupBTestCase
             ->assertJsonPath('stok_tanpa_batch', 0);
     }
 
+    /** Login peran baca; investor dimiliki lewat investor_sppg dan memilih SPPG aktif lewat header. */
+    private function loginBaca(Role $peran, Sppg $sppg): void
+    {
+        $this->flushHeaders();
+
+        if ($peran !== Role::Investor) {
+            $this->login($peran, $sppg);
+
+            return;
+        }
+
+        $investor = User::factory()->role(Role::Investor)->create(['sppg_id' => null]);
+        DB::table('investor_sppg')->insert(['user_id' => $investor->id, 'sppg_id' => $sppg->id, 'created_at' => now(), 'updated_at' => now()]);
+        $this->masukPenuh($investor);
+        $this->withHeader('X-SPPG-Id', (string) $sppg->id);
+    }
+
+    public function test_batch_kolom_mutasi_hanya_untuk_peran_berhak(): void
+    {
+        $pemasok = Pemasok::factory()->create(['sppg_id' => $this->sppgA->id]);
+        $bahan = BahanBaku::factory()->create(['sppg_id' => $this->sppgA->id, 'stok' => 0, 'kedaluwarsa_terdekat' => null]);
+        $this->login(Role::StafGudang);
+        $kedaluwarsa = now()->addDays(7)->toDateString();
+        $this->postJson("/api/v1/bahan-baku/{$bahan->id}/mutasi", [
+            'jenis' => 'masuk', 'jumlah' => 25, 'tanggal_kedaluwarsa' => $kedaluwarsa, 'pemasok_id' => $pemasok->id,
+        ])->assertCreated();
+
+        $url = "/api/v1/bahan-baku/{$bahan->id}/batch";
+        $kolomMutasi = ['mutasi_stok_id', 'jumlah_awal', 'pemasok_id'];
+
+        foreach ([Role::Admin, Role::KepalaSppg, Role::StafGudang, Role::Akuntan] as $peran) {
+            $this->login($peran);
+            $baris = $this->getJson($url)->assertOk()->assertJsonCount(1, 'data')->json('data.0');
+            foreach ($kolomMutasi as $kolom) {
+                $this->assertArrayHasKey($kolom, $baris, "{$peran->value} harus menerima {$kolom}");
+            }
+            $this->assertSame($pemasok->id, $baris['pemasok_id']);
+            $this->assertEquals(25, $baris['jumlah_awal']);
+        }
+
+        foreach ([Role::AhliGizi, Role::Investor] as $peran) {
+            $this->loginBaca($peran, $this->sppgA);
+            $baris = $this->getJson($url)->assertOk()->assertJsonCount(1, 'data')
+                ->assertJsonPath('data.0.sisa', 25)
+                ->assertJsonPath('data.0.tanggal_kedaluwarsa', $kedaluwarsa)
+                ->assertJsonPath('data.0.sisa_hari', 7)
+                ->json('data.0');
+            $this->assertArrayHasKey('tanggal_masuk', $baris);
+            foreach ($kolomMutasi as $kolom) {
+                $this->assertArrayNotHasKey($kolom, $baris, "{$peran->value} tidak boleh menerima {$kolom}");
+            }
+        }
+    }
+
+    public function test_batch_lintas_sppg_404(): void
+    {
+        $milikB = BahanBaku::factory()->create(['sppg_id' => $this->sppgB->id]);
+
+        foreach ([Role::StafGudang, Role::AhliGizi, Role::Investor] as $peran) {
+            $this->loginBaca($peran, $this->sppgA);
+            $this->getJson("/api/v1/bahan-baku/{$milikB->id}/batch")->assertNotFound();
+        }
+    }
+
     public function test_stok_menipis_dan_kedaluwarsa_dekat(): void
     {
         BahanBaku::factory()->stokMenipis()->create(['sppg_id' => $this->sppgA->id, 'nama' => 'Garam', 'kedaluwarsa_terdekat' => null]);
@@ -257,7 +323,7 @@ class BahanBakuTest extends GrupBTestCase
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'bahan-baku']);
         $drafLain = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'module' => 'bahan-baku']);
         $drafKedaluwarsa = AiDraft::factory()->kedaluwarsa()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'bahan-baku']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         $this->postJson('/api/v1/bahan-baku', $this->payload(['ai_draft_id' => $drafLain->uuid]))->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);
         $this->postJson('/api/v1/bahan-baku', $this->payload(['ai_draft_id' => $drafKedaluwarsa->uuid]))->assertUnprocessable()->assertJsonValidationErrors(['ai_draft_id']);

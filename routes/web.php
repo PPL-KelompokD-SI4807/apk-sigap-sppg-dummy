@@ -2,9 +2,10 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+/*
+| Rute "/" dipensiunkan: akar domain dilayani nginx dari klien web (public/web/index.html, ADR 2026-11-09-akses-web
+| Keputusan 9). Bila diminta ke Laravel (mis. php artisan serve), "/" menghasilkan 404.
+*/
 
 /*
 | Mini App (hasil `npm run build` di public/miniapp). Berkas statis (assets/*) disajikan langsung

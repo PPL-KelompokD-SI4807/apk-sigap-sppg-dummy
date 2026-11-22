@@ -1,0 +1,122 @@
+schemas:
+  StatusPersetujuanMenu:
+    type: string
+    enum: [draf, diajukan, disetujui, ditolak, perlu_revisi]
+    description: 'Status persetujuan pada menu. Hanya `disetujui` yang dapat dipakai Jadwal Produksi.'
+  StatusPengajuanMenu:
+    type: string
+    enum: [diajukan, disetujui, ditolak, perlu_revisi, dibatalkan]
+  HargaPemasok:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      pemasok_id: { type: integer }
+      bahan_baku_id: { type: integer }
+      bahan_baku_nama: { type: [string, 'null'] }
+      satuan: { type: [string, 'null'] }
+      harga: { type: number, description: 'Rupiah per satuan bahan.' }
+      gram_per_satuan: { type: [number, 'null'] }
+      berlaku_mulai: { type: string, format: date }
+      sudah_berlaku: { type: boolean }
+      catatan: { type: [string, 'null'] }
+      dicatat_oleh: { type: [integer, 'null'] }
+      created_at: { type: string, format: date-time }
+  HargaPemasokInput:
+    type: object
+    required: [bahan_baku_id, harga, berlaku_mulai]
+    properties:
+      bahan_baku_id: { type: integer, description: 'Wajib bahan SPPG yang sama dengan pemasok.' }
+      harga: { type: number, exclusiveMinimum: 0 }
+      gram_per_satuan: { type: [number, 'null'], minimum: 0.001, maximum: 1000000, multipleOf: 0.001, description: 'Wajib bila satuan bahan bukan kg/g/gram/liter/l/ml. Minimal 0,001 dan maksimal 3 desimal.' }
+      berlaku_mulai: { type: string, format: date, description: 'Hari ini -1 tahun s.d. +1 tahun.' }
+      catatan: { type: [string, 'null'], maxLength: 255 }
+  RincianBiayaBahan:
+    type: object
+    properties:
+      bahan_baku_id: { type: integer }
+      nama: { type: string }
+      satuan: { type: string }
+      gram_per_porsi: { type: number }
+      gram_per_satuan: { type: [number, 'null'] }
+      harga_per_satuan: { type: [number, 'null'] }
+      pemasok_id: { type: [integer, 'null'] }
+      pemasok_nama: { type: [string, 'null'] }
+      pemasok_utama: { type: boolean }
+      berlaku_mulai: { type: [string, 'null'], format: date }
+      biaya_per_porsi: { type: [number, 'null'] }
+      masalah: { type: [string, 'null'], description: 'null bila lengkap; selain itu tanpa harga berlaku atau tanpa konversi satuan.' }
+  RincianBiayaMenu:
+    type: object
+    properties:
+      menu_id: { type: integer }
+      menu_versi: { type: integer }
+      bahan:
+        type: array
+        items: { $ref: '#/components/schemas/RincianBiayaBahan' }
+      biaya_per_porsi: { type: number }
+      jumlah_porsi: { type: integer }
+      sumber_porsi: { type: string, enum: [jadwal_produksi, penerima_manfaat_kelompok, penerima_manfaat_total] }
+      keterangan_asumsi: { type: string }
+      total_biaya: { type: number }
+      lengkap: { type: boolean, description: 'false = ada bahan bermasalah; pengajuan akan ditolak 422.' }
+      bahan_bermasalah:
+        type: array
+        items:
+          type: object
+          properties:
+            bahan_baku_id: { type: integer }
+            nama: { type: string }
+            masalah: { type: string }
+      tanggal_acuan: { type: string, format: date }
+  AjukanMenuInput:
+    type: object
+    required: [versi]
+    description: 'Hanya versi dan catatan; harga, biaya, dan porsi dihitung server.'
+    properties:
+      versi: { type: integer, minimum: 1, description: 'Harus sama dengan `versi` menu di server (409 bila beda).' }
+      catatan_pengaju: { type: [string, 'null'], maxLength: 1000 }
+  KeputusanInput:
+    type: object
+    required: [keputusan, versi_menu]
+    properties:
+      keputusan: { type: string, enum: [disetujui, ditolak, perlu_revisi] }
+      catatan: { type: [string, 'null'], minLength: 5, maxLength: 1000, description: 'Wajib untuk ditolak dan perlu_revisi.' }
+      versi_menu: { type: integer, minimum: 1, description: 'Isi dengan `menu_versi` pengajuan yang dilihat.' }
+  PengajuanMenu:
+    type: object
+    properties:
+      id: { type: integer }
+      sppg_id: { type: integer }
+      menu_id: { type: integer }
+      nama_menu: { type: [string, 'null'] }
+      kelompok_sasaran: { type: [string, 'null'] }
+      nomor: { type: integer, description: 'Urut pengajuan per menu.' }
+      menu_versi: { type: integer }
+      status: { $ref: '#/components/schemas/StatusPengajuanMenu' }
+      status_label: { type: string }
+      biaya_per_porsi: { type: number }
+      jumlah_porsi: { type: integer }
+      sumber_porsi: { type: string }
+      keterangan_asumsi: { type: [string, 'null'] }
+      total_biaya: { type: number }
+      catatan_pengaju: { type: [string, 'null'] }
+      diajukan_oleh: { type: [string, 'null'], description: 'Nama pengaju.' }
+      diajukan_pada: { type: [string, 'null'], format: date-time }
+      diputuskan_oleh: { type: [string, 'null'], description: 'Nama pemutus; null bila dibatalkan sistem.' }
+      diputuskan_pada: { type: [string, 'null'], format: date-time }
+      catatan_keputusan: { type: [string, 'null'] }
+      menu_versi_sekarang: { type: [integer, 'null'], description: 'Hanya pada detail.' }
+      kedaluwarsa: { type: boolean, description: 'Hanya pada detail. true = menu sudah berubah/dihapus sejak diajukan.' }
+      rincian:
+        type: object
+        description: 'Hanya pada detail. Snapshot beku: menu (nama, kelompok, gizi), bahan (lihat RincianBiayaBahan), tanggal_acuan.'
+responses:
+  KonflikPersetujuan:
+    description: |
+      Konflik status/versi. Body berisi `alasan`: `status_menu_tidak_valid`, `versi_menu_tidak_cocok`
+      (+ `versi_server`), `pengajuan_sudah_diputuskan`, atau `menu_berubah_setelah_diajukan`.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/Error' }
+        example: { message: 'Pengajuan ini sudah diputuskan atau dibatalkan.', alasan: pengajuan_sudah_diputuskan, status: disetujui }

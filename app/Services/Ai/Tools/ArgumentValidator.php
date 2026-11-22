@@ -69,6 +69,42 @@ final class ArgumentValidator
     }
 
     /**
+     * Argumen terlindungi yang PALING JAUH dapat diizinkan oleh satu tool (MenerimaArgumenTerlindungi), hanya di
+     * tingkat atas. Kunci lain (user_id, id, created_by, ai_draft_id, telegram_id, ...) tidak pernah dapat diizinkan.
+     */
+    public const DAPAT_DIIZINKAN = ['role', 'unit', 'sppg_id'];
+
+    /**
+     * Buang argumen terlindungi untuk tool tertentu. Tool biasa: sama dengan stripProtected(). Tool yang secara
+     * eksplisit menerima sebagian argumen terlindungi (mis. tool undangan/peran pengguna menerima `role`, `unit`,
+     * `sppg_id` sebagai isian sah yang divalidasi enum + Form Request) hanya mempertahankan kunci itu di TINGKAT ATAS
+     * dan hanya bila termasuk DAPAT_DIIZINKAN; di level bersarang dan untuk tool lain kunci tetap dibuang.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return array{0: array<string, mixed>, 1: list<string>}
+     */
+    public static function stripProtectedFor(AiTool $tool, array $arguments): array
+    {
+        $protected = array_map('strtolower', (array) config('ai.protected_arguments', []));
+        $izin = $tool instanceof MenerimaArgumenTerlindungi
+            ? array_values(array_intersect(array_map('strtolower', $tool->argumenTerlindungiSah()), self::DAPAT_DIIZINKAN))
+            : [];
+
+        $dipertahankan = [];
+
+        foreach ($izin as $kunci) {
+            if (array_key_exists($kunci, $arguments)) {
+                $dipertahankan[$kunci] = $arguments[$kunci];
+                unset($arguments[$kunci]);
+            }
+        }
+
+        [$bersih, $dibuang] = self::stripProtected($arguments, $protected);
+
+        return [$bersih + $dipertahankan, $dibuang];
+    }
+
+    /**
      * Buang argumen terlindungi (sppg_id, user_id, role, created_by, ...) di semua level.
      *
      * @param  array<string, mixed>  $arguments

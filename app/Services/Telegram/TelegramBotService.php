@@ -98,7 +98,8 @@ class TelegramBotService
     // ------------------------------------------------------------------ metode Bot API
 
     /**
-     * @param  array<string, mixed>  $options  parse_mode, reply_markup, disable_notification, ...
+     * @param  array<string, mixed>  $options  parse_mode, reply_markup, disable_notification, protect_content (bool:
+     *                                         cegah forward/simpan; hanya berlaku saat kirim, tidak untuk edit), ...
      * @return array<string, mixed> objek Message
      */
     public function sendMessage(int|string $chatId, string $text, array $options = []): array
@@ -109,10 +110,41 @@ class TelegramBotService
             'parse_mode' => $options['parse_mode'] ?? null,
             'reply_markup' => isset($options['reply_markup']) ? json_encode($options['reply_markup'], JSON_UNESCAPED_UNICODE) : null,
             'disable_notification' => $options['disable_notification'] ?? null,
+            'protect_content' => ($options['protect_content'] ?? false) === true ? 'true' : null,
             'link_preview_options' => json_encode(['is_disabled' => true]),
         ], fn ($v) => $v !== null);
 
         return (array) $this->call('sendMessage', $payload);
+    }
+
+    /**
+     * Kirim berkas lokal sebagai dokumen (multipart). Isi dibaca ke memori (berkas laporan kecil, batas Telegram 50 MB)
+     * agar percobaan ulang HTTP tidak membaca aliran yang sudah habis. $caption teks polos, maks 1024 karakter.
+     *
+     * @return array<string, mixed> objek Message
+     */
+    public function sendDocument(int|string $chatId, string $berkas, string $namaBerkas, ?string $caption = null): array
+    {
+        $isi = is_file($berkas) && is_readable($berkas) ? file_get_contents($berkas) : false;
+
+        if ($isi === false) {
+            throw new TelegramApiException('Berkas dokumen tidak dapat dibaca.');
+        }
+
+        $url = rtrim((string) config('telegram.api_base_url'), '/').'/bot'.$this->token().'/sendDocument';
+
+        try {
+            $response = $this->http()->timeout(max(30, (int) config('telegram.http_timeout', 10)))
+                ->attach('document', $isi, $namaBerkas)
+                ->post($url, array_filter([
+                    'chat_id' => $chatId,
+                    'caption' => $caption === null ? null : mb_substr($caption, 0, 1024),
+                ], fn ($v) => $v !== null));
+        } catch (Throwable $e) {
+            throw $this->sanitize($e);
+        }
+
+        return (array) $this->result($response, 'sendDocument');
     }
 
     /** Teks polos (tanpa parse_mode): aman untuk keluaran model/isi pengguna. */
@@ -136,16 +168,60 @@ class TelegramBotService
         ]));
     }
 
+    /**
+     * Ubah teks (+ keyboard inline) pesan bot yang sudah terkirim. $options: parse_mode, reply_markup
+     * (null = hapus keyboard, array = keyboard baru). Melempar TelegramApiException bila ditolak Telegram
+     * (mis. pesan terlalu lama/tidak berubah); pemanggil memutuskan fallback.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>|bool
+     */
+    public function editMessageText(int|string $chatId, int $messageId, string $text, array $options = []): array|bool
+    {
+        $payload = array_filter([
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'text' => self::limit($text),
+            'parse_mode' => $options['parse_mode'] ?? null,
+            // Tanpa keyboard baru, keyboard lama dihapus (keyboard kosong eksplisit).
+            'reply_markup' => json_encode($options['reply_markup'] ?? ['inline_keyboard' => []], JSON_UNESCAPED_UNICODE),
+            'link_preview_options' => json_encode(['is_disabled' => true]),
+        ], fn ($v) => $v !== null);
+
+        return $this->call('editMessageText', $payload);
+    }
+
+    /** Ganti/hapus keyboard inline pesan tanpa mengubah teksnya ($replyMarkup null = hapus). */
+    public function editMessageReplyMarkup(int|string $chatId, int $messageId, ?array $replyMarkup = null): array|bool
+    {
+        return $this->call('editMessageReplyMarkup', [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'reply_markup' => json_encode($replyMarkup ?? ['inline_keyboard' => []], JSON_UNESCAPED_UNICODE),
+        ]);
+    }
+
+    /** reply_markup ForceReply: klien Telegram membuka balasan ke pesan ini (placeholder maks. 64 karakter). */
+    public static function forceReply(?string $placeholder = null): array
+    {
+        return array_filter([
+            'force_reply' => true,
+            'input_field_placeholder' => $placeholder === null ? null : mb_substr($placeholder, 0, 64),
+            'selective' => true,
+        ], fn ($v) => $v !== null);
+    }
+
     public function sendChatAction(int|string $chatId, string $action = 'typing'): void
     {
         $this->call('sendChatAction', ['chat_id' => $chatId, 'action' => $action]);
     }
 
-    public function answerCallbackQuery(string $callbackQueryId, ?string $text = null): void
+    public function answerCallbackQuery(string $callbackQueryId, ?string $text = null, bool $alert = false): void
     {
         $this->call('answerCallbackQuery', array_filter([
             'callback_query_id' => $callbackQueryId,
             'text' => $text === null ? null : mb_substr($text, 0, 200),
+            'show_alert' => $alert && $text !== null ? 'true' : null,
         ], fn ($v) => $v !== null));
     }
 
@@ -226,6 +302,46 @@ class TelegramBotService
         ], fn ($v) => $v !== null));
     }
 
+    /**
+     * Tombol menu bot bertipe `commands` (menampilkan daftar perintah setMyCommands). Null chat = default semua chat.
+     * R-02 keputusan #3: menggantikan tombol web_app; Mini App dibuka lewat /start dan tombol "Buka Mini App".
+     */
+    public function setChatMenuButtonCommands(int|string|null $chatId = null): bool
+    {
+        return (bool) $this->call('setChatMenuButton', array_filter([
+            'chat_id' => $chatId,
+            'menu_button' => json_encode(['type' => 'commands']),
+        ], fn ($v) => $v !== null));
+    }
+
+    /**
+     * Daftar perintah GLOBAL bot (scope default, tanpa per-pengguna). Perintah: huruf kecil/angka/_ 1-32 karakter;
+     * deskripsi 1-256 karakter. Hanya dipanggil dari CLI (sigap:telegram-set-webhook), tidak pernah dari pengguna.
+     *
+     * @param  array<string, string>  $perintah  perintah => deskripsi
+     */
+    public function setMyCommands(array $perintah, ?string $bahasa = null): bool
+    {
+        $daftar = [];
+
+        foreach ($perintah as $nama => $deskripsi) {
+            if (preg_match('/^[a-z0-9_]{1,32}$/D', (string) $nama) !== 1 || trim($deskripsi) === '') {
+                throw new TelegramApiException('Daftar perintah bot tidak valid.');
+            }
+
+            $daftar[] = ['command' => (string) $nama, 'description' => mb_substr($deskripsi, 0, 256)];
+        }
+
+        if ($daftar === [] || count($daftar) > 100) {
+            throw new TelegramApiException('Daftar perintah bot tidak valid.');
+        }
+
+        return (bool) $this->call('setMyCommands', array_filter([
+            'commands' => json_encode($daftar, JSON_UNESCAPED_UNICODE),
+            'language_code' => $bahasa,
+        ], fn ($v) => $v !== null));
+    }
+
     // ------------------------------------------------------------------ internal
 
     /**
@@ -260,7 +376,12 @@ class TelegramBotService
         $description = is_array($json) && is_string($json['description'] ?? null) ? mb_substr($json['description'], 0, 200) : 'tanpa keterangan';
         $retryAfter = is_array($json) && isset($json['parameters']['retry_after']) ? (int) $json['parameters']['retry_after'] : null;
 
-        throw new TelegramApiException("Bot API {$method} gagal ({$code}): ".$this->redact($description), $code, $retryAfter);
+        // Deskripsi galat Telegram bersifat tetap (bukan isi pesan pengguna); hanya dipakai untuk menentukan jenis.
+        $jenis = $code === 400 && stripos($description, 'message is not modified') !== false
+            ? TelegramApiException::JENIS_TIDAK_BERUBAH
+            : null;
+
+        throw new TelegramApiException("Bot API {$method} gagal ({$code}): ".$this->redact($description), $code, $retryAfter, $jenis);
     }
 
     private function http(): PendingRequest

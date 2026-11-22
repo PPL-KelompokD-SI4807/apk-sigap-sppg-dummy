@@ -16,11 +16,15 @@ use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
 use App\Enums\StatusKeluhan;
 use App\Enums\StatusKirim;
+use App\Enums\StatusPembelianBahan;
+use App\Enums\StatusPengajuanPengeluaran;
+use App\Enums\StatusPersetujuanPengeluaran;
 use App\Enums\SumberKeluhan;
 use App\Models\Armada;
 use App\Models\BahanBaku;
 use App\Models\BuktiDistribusi;
 use App\Models\FeedbackKeluhan;
+use App\Models\HargaPemasok;
 use App\Models\JadwalDistribusi;
 use App\Models\JadwalProduksi;
 use App\Models\LogProduksi;
@@ -28,16 +32,20 @@ use App\Models\Menu;
 use App\Models\MutasiStok;
 use App\Models\NotifikasiPerjalanan;
 use App\Models\Pemasok;
+use App\Models\PembelianBahan;
 use App\Models\PemeriksaanMutu;
 use App\Models\PencairanDana;
 use App\Models\PenerimaManfaat;
+use App\Models\PengajuanMenu;
 use App\Models\Pengeluaran;
 use App\Models\Pengemudi;
+use App\Models\PersetujuanPengeluaran;
 use App\Models\RekapHarian;
 use App\Models\Sppg;
 use App\Models\StandarGizi;
 use App\Models\TitikLayanan;
 use App\Models\User;
+use App\Services\Persetujuan\BiayaMenuService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -60,6 +68,43 @@ class DemoSeeder extends Seeder
             }
 
             DB::transaction(fn () => $this->buatSppg($indeks + 1, $profil));
+        }
+
+        DB::transaction(fn () => $this->investorDemo());
+    }
+
+    /**
+     * R-06a: investor fiktif. "Investor Satu" memiliki SPPG-DEMO-01 dan -02; "Investor Dua" hanya
+     * memiliki SPPG-DEMO-03 (SPPG ringkas tanpa data operasional) untuk uji akses lintas investor.
+     * Investor selalu sppg_id null; kepemilikan hanya lewat pivot investor_sppg.
+     */
+    private function investorDemo(): void
+    {
+        $ketiga = Sppg::firstOrCreate(['kode' => 'SPPG-DEMO-03'], [
+            'nama' => 'SPPG Anggrek Demo',
+            'alamat' => 'Jl. Uji Coba No. 3, Kota Contoh',
+            'mitra_yayasan' => 'Yayasan Contoh Lestari',
+            'telepon' => '0812-0000-0300',
+            'kapasitas_porsi_harian' => 1000,
+            'status_operasional' => 'aktif',
+        ]);
+
+        $milik = [
+            [9_000_000_901, 'investor_satu_demo', 'Investor Satu (Demo)', '0812-0000-0901', ['SPPG-DEMO-01', 'SPPG-DEMO-02']],
+            [9_000_000_902, 'investor_dua_demo', 'Investor Dua (Demo)', '0812-0000-0902', [$ketiga->kode]],
+        ];
+
+        foreach ($milik as [$telegramId, $username, $nama, $telepon, $kode]) {
+            $investor = User::withoutGlobalScopes()->where('telegram_id', $telegramId)->first()
+                ?? User::factory()->role(Role::Investor)->create([
+                    'sppg_id' => null,
+                    'telegram_id' => $telegramId,
+                    'telegram_username' => $username,
+                    'name' => $nama,
+                    'phone' => $telepon,
+                ]);
+
+            $investor->sppgDimiliki()->syncWithoutDetaching(Sppg::whereIn('kode', $kode)->pluck('id')->all());
         }
     }
 
@@ -124,9 +169,11 @@ class DemoSeeder extends Seeder
         $bahan = $this->buatBahanDanStok($sppg, $pemasoks, $users['staf_gudang']);
         $this->buatStandarGizi($sppg);
         $menus = $this->buatMenu($sppg, $bahan);
+        $this->buatHargaDanPengajuan($sppg, $pemasoks, $bahan, $users);
         [$armadas, $pengemudis] = $this->buatArmada($sppg);
         $this->buatOperasional($sppg, $p, $users, $titik, $menus, $armadas, $pengemudis);
         $this->buatKeuangan($sppg, $p['pencairan'], $users['akuntan'], $pemasoks);
+        $this->buatPembelianDanPersetujuan($sppg, $users, $bahan);
     }
 
     /**
@@ -220,6 +267,7 @@ class DemoSeeder extends Seeder
             ['Peternakan Ayam Makmur (Demo)', JenisPemasok::Peternak, 'Ayam dan telur'],
             ['Nelayan Bahari (Demo)', JenisPemasok::Nelayan, 'Ikan'],
             ['UMKM Tahu Tempe Sari (Demo)', JenisPemasok::Umkm, 'Tahu dan tempe'],
+            ['Koperasi Desa Sejahtera (Demo)', JenisPemasok::Koperasi, 'Beras dan minyak goreng'],
         ];
 
         return array_map(fn ($d, $i) => Pemasok::factory()->create([
@@ -345,6 +393,71 @@ class DemoSeeder extends Seeder
         }
 
         return $menus;
+    }
+
+    /**
+     * R-06b-1: riwayat harga pemasok (termasuk koperasi) dan satu menu draf yang diajukan ke investor.
+     * Pemasok utama bahan diutamakan; koperasi menyediakan harga beras dan minyak (lebih murah, entri terbaru).
+     *
+     * @param  list<Pemasok>  $pemasoks
+     * @param  array<string, BahanBaku>  $bahan
+     * @param  array<string, User>  $users
+     */
+    private function buatHargaDanPengajuan(Sppg $sppg, array $pemasoks, array $bahan, array $users): void
+    {
+        $harga = [
+            'Beras' => 13000, 'Ayam' => 38000, 'Telur' => 28000, 'Ikan Lele' => 32000, 'Tahu' => 12000,
+            'Tempe' => 14000, 'Bayam' => 9000, 'Wortel' => 11000, 'Pisang' => 15000, 'Minyak Goreng' => 18000,
+        ];
+
+        foreach ($bahan as $nama => $b) {
+            HargaPemasok::factory()->create([
+                'sppg_id' => $sppg->id,
+                'pemasok_id' => $b->pemasok_id,
+                'bahan_baku_id' => $b->id,
+                'harga' => $harga[$nama],
+                'berlaku_mulai' => now()->subDays(20)->toDateString(),
+                'dicatat_oleh' => $users['staf_gudang']->id,
+            ]);
+        }
+
+        $koperasi = end($pemasoks);
+        foreach (['Beras' => 12500, 'Minyak Goreng' => 17500] as $nama => $nilai) {
+            HargaPemasok::factory()->create([
+                'sppg_id' => $sppg->id,
+                'pemasok_id' => $koperasi->id,
+                'bahan_baku_id' => $bahan[$nama]->id,
+                'harga' => $nilai,
+                'berlaku_mulai' => now()->subDays(3)->toDateString(),
+                'catatan' => 'Harga koperasi (contoh)',
+                'dicatat_oleh' => $users['staf_gudang']->id,
+            ]);
+        }
+
+        $menu = Menu::factory()->gizi(630, 23, 18, 91, 8)->diajukan()->create([
+            'sppg_id' => $sppg->id,
+            'nama_menu' => 'Nasi, Ayam Panggang, Sup Wortel (Diajukan)',
+            'kelompok_sasaran' => KelompokSasaran::Siswa,
+            'siklus' => 'Siklus 2',
+        ]);
+        foreach (['Beras' => 90, 'Ayam' => 60, 'Wortel' => 45, 'Minyak Goreng' => 6] as $nama => $gram) {
+            $menu->bahanBakus()->attach($bahan[$nama]->id, ['gram_per_porsi' => $gram]);
+        }
+
+        $hitung = app(BiayaMenuService::class)->hitung($menu->fresh());
+        PengajuanMenu::factory()->create([
+            'sppg_id' => $sppg->id,
+            'menu_id' => $menu->id,
+            'menu_versi' => $menu->versi,
+            'rincian' => ['menu' => ['nama_menu' => $menu->nama_menu, 'kelompok_sasaran' => 'siswa', 'gizi_per_porsi' => []], 'bahan' => $hitung['bahan'], 'tanggal_acuan' => $hitung['tanggal_acuan']],
+            'biaya_per_porsi' => $hitung['biaya_per_porsi'],
+            'jumlah_porsi' => $hitung['jumlah_porsi'],
+            'sumber_porsi' => $hitung['sumber_porsi'],
+            'keterangan_asumsi' => $hitung['keterangan_asumsi'],
+            'total_biaya' => $hitung['total_biaya'],
+            'catatan_pengaju' => 'Contoh pengajuan untuk demo persetujuan investor.',
+            'diajukan_oleh' => $users['ahli_gizi']->id,
+        ]);
     }
 
     /** @return array{0: list<Armada>, 1: list<Pengemudi>} */
@@ -612,5 +725,88 @@ class DemoSeeder extends Seeder
             'uraian' => 'Bahan bakar armada distribusi (demo)',
             'nominal' => $sisa,
         ]);
+    }
+
+    /**
+     * R-06b-2: contoh pembelian bahan (diajukan/terverifikasi/ditolak) dari pemasok fiktif, serta pengeluaran
+     * non-menu berstatus diajukan dan ditolak investor lengkap dengan riwayat persetujuan. Semua fiktif.
+     *
+     * @param  array<string, User>  $users
+     * @param  array<string, BahanBaku>  $bahan
+     */
+    private function buatPembelianDanPersetujuan(Sppg $sppg, array $users, array $bahan): void
+    {
+        $pemasok = Pemasok::factory()->create([
+            'sppg_id' => $sppg->id,
+            'nama' => 'UD Sumber Pangan Fiktif (Demo)',
+            'jenis' => JenisPemasok::Umkm,
+            'jenis_bahan' => 'Beras dan telur',
+            'kontak' => sprintf('0812-0000-7%03d', $sppg->id),
+        ]);
+
+        $contoh = [
+            [$bahan['Beras'], 50, 12500, StatusPembelianBahan::Diajukan, 0, null],
+            [$bahan['Telur'], 20, 28000, StatusPembelianBahan::Terverifikasi, 1, null],
+            [$bahan['Beras'], 30, 21000, StatusPembelianBahan::Ditolak, 2, 'Harga melebihi harga pemasok (demo)'],
+        ];
+
+        foreach ($contoh as [$b, $jumlah, $harga, $status, $hariLalu, $alasan]) {
+            $pembelian = PembelianBahan::factory()->create([
+                'sppg_id' => $sppg->id,
+                'bahan_baku_id' => $b->id,
+                'pemasok_id' => $pemasok->id,
+                'tanggal_beli' => now()->subDays($hariLalu)->toDateString(),
+                'jumlah' => $jumlah,
+                'satuan' => $b->satuan,
+                'harga_satuan' => $harga,
+                'total' => $jumlah * $harga,
+                'catatan' => 'Pembelian contoh (demo)',
+                'status' => $status,
+                'dicatat_oleh' => $users['staf_gudang']->id,
+                'diverifikasi_oleh' => $status === StatusPembelianBahan::Diajukan ? null : $users['akuntan']->id,
+                'diverifikasi_pada' => $status === StatusPembelianBahan::Diajukan ? null : now(),
+                'alasan_penolakan' => $alasan,
+            ]);
+
+            if ($status === StatusPembelianBahan::Terverifikasi) {
+                $pengeluaran = Pengeluaran::factory()->create([
+                    'sppg_id' => $sppg->id,
+                    'pemasok_id' => $pemasok->id,
+                    'dicatat_oleh' => $users['akuntan']->id,
+                    'tanggal' => $pembelian->tanggal_beli->toDateString(),
+                    'kategori' => KategoriPengeluaran::BahanBaku,
+                    'uraian' => 'Pembelian '.$b->nama.' '.$jumlah.' '.$b->satuan,
+                    'nominal' => $jumlah * $harga,
+                ]);
+                $pengeluaran->forceFill(['pembelian_bahan_id' => $pembelian->id])->save();
+                $pembelian->forceFill(['pengeluaran_id' => $pengeluaran->id])->save();
+            }
+        }
+
+        // Pengeluaran non-menu: satu menunggu investor, satu ditolak investor (riwayat lengkap).
+        $nonMenu = [
+            [KategoriPengeluaran::Energi, 'Isi ulang gas elpiji (demo)', 750_000, StatusPersetujuanPengeluaran::Diajukan, StatusPengajuanPengeluaran::Diajukan, null],
+            [KategoriPengeluaran::Transportasi, 'Servis mobil distribusi (demo)', 2_400_000, StatusPersetujuanPengeluaran::Ditolak, StatusPengajuanPengeluaran::Ditolak, 'Tunda sampai bulan depan (demo)'],
+        ];
+
+        foreach ($nonMenu as [$kategori, $uraian, $nominal, $statusPengeluaran, $statusPengajuan, $catatan]) {
+            $pengeluaran = Pengeluaran::factory()->status($statusPengeluaran)->create([
+                'sppg_id' => $sppg->id,
+                'dicatat_oleh' => $users['akuntan']->id,
+                'tanggal' => now()->toDateString(),
+                'kategori' => $kategori,
+                'uraian' => $uraian,
+                'nominal' => $nominal,
+            ]);
+
+            PersetujuanPengeluaran::factory()->status($statusPengajuan, $catatan)->create([
+                'sppg_id' => $sppg->id,
+                'pengeluaran_id' => $pengeluaran->id,
+                'kategori' => $kategori->value,
+                'nominal' => $nominal,
+                'tanggal' => $pengeluaran->tanggal->toDateString(),
+                'diajukan_oleh' => $users['akuntan']->id,
+            ]);
+        }
     }
 }

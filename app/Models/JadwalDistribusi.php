@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\StatusJadwalDistribusi;
 use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
+use App\Models\Concerns\Berversi;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class JadwalDistribusi extends Model
 {
-    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, Berversi, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'jadwal_distribusis';
 

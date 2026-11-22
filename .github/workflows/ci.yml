@@ -82,6 +82,10 @@ jobs:
         if: hashFiles('package.json') != ''
         run: npm run build
 
+      - name: Test frontend (node --test)
+        if: hashFiles('package.json') != ''
+        run: node --test resources/miniapp/tests/*.test.js
+
       - name: Lewati (package.json belum ada)
         if: hashFiles('package.json') == ''
         run: echo "package.json tidak ditemukan, job frontend dilewati."

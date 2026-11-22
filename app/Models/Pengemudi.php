@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,9 +11,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Pengemudi extends Model
 {
-    use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'pengemudis';
+
+    /**
+     * Nomor HP dan SIM tidak masuk audit (data pribadi).
+     *
+     * @var list<string>
+     */
+    protected array $auditExclude = ['no_hp', 'no_sim'];
 
     /** @var list<string> */
     protected array $searchable = ['nama', 'no_hp'];

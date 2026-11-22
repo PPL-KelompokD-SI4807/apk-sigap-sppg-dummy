@@ -1,7 +1,8 @@
 schemas:
   Role:
     type: string
-    enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan]
+    enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan, investor]
+    description: 'investor (R-06a) = pemilik SPPG, baca saja, dapat memiliki banyak SPPG (sppg_id selalu null).'
   RelawanUnit:
     type: [string, 'null']
     enum: [dapur, distribusi, null]
@@ -24,17 +25,30 @@ schemas:
       - keuangan
       - keluhan
       - rekap-harian
+      - persetujuan-menu
   AuthUser:
     type: object
-    required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions]
+    required: [id, name, role, unit, sppg_id, sppg_name, modules, permissions, unit_scope, aksi]
     properties:
       id: { type: integer, examples: [12] }
       name: { type: string, examples: ['Siti Rahayu'] }
+      username: { type: [string, 'null'], examples: ['siti.dapur'], description: 'Username login (huruf kecil).' }
       role: { $ref: '#/components/schemas/Role' }
       role_label: { type: string, examples: ['Kepala SPPG'] }
       unit: { $ref: '#/components/schemas/RelawanUnit' }
-      sppg_id: { type: [integer, 'null'], description: 'null untuk Admin (lintas SPPG)' }
-      sppg_name: { type: [string, 'null'], examples: ['SPPG Sukamaju'] }
+      sppg_id: { type: [integer, 'null'], description: 'null untuk Admin (lintas SPPG) dan Investor (SPPG dari kepemilikan)' }
+      sppg_name: { type: [string, 'null'], examples: ['SPPG Sukamaju'], description: 'Nama SPPG aktif.' }
+      sppg_aktif_id: { type: [integer, 'null'], description: 'SPPG aktif permintaan ini (investor: header X-SPPG-Id / SPPG satu-satunya; null = belum dipilih atau Admin).' }
+      multi_sppg: { type: boolean, description: 'true = investor; Mini App wajib menampilkan pemilih SPPG (GET /sppg-saya) dan mengirim X-SPPG-Id.' }
+      baca_saja: { type: boolean, description: 'true = tidak punya hak C/U/D di modul mana pun (sembunyikan semua tombol tulis).' }
+      agregat:
+        type: array
+        description: Modul yang hanya boleh dibaca agregatnya (mis. investor -> penerima-manfaat lewat GET /penerima-manfaat/agregat).
+        items: { $ref: '#/components/schemas/ModuleSlug' }
+      keputusan:
+        type: array
+        description: 'Modul yang boleh diputuskan peran ini (bukan huruf C/U/D). Investor: [persetujuan-menu]; peran lain kosong.'
+        items: { $ref: '#/components/schemas/ModuleSlug' }
       telegram_username: { type: [string, 'null'] }
       last_login_at: { type: [string, 'null'], format: date-time }
       modules:
@@ -49,11 +63,321 @@ schemas:
         additionalProperties: { type: string, pattern: '^C?R?\*?U?D?$' }
         examples:
           - { sppg: RU, jadwal: CRUD, keuangan: R, pengguna: R }
-  LoginResponse:
+      unit_scope:
+        type: object
+        description: |
+          Peta modul -> sub-jenis data yang boleh dikelola (Rbac::unitScope), hanya modul yang masih punya hak.
+          Relawan dapur: `{jadwal: produksi}`; relawan distribusi: `{jadwal: distribusi}`; peran lain dan relawan tanpa
+          unit: `{}`. Menggantikan salinan aturan unit di klien. Selalu objek JSON.
+        additionalProperties: { type: string }
+        examples:
+          - { jadwal: produksi }
+      aksi: { $ref: '#/components/schemas/AksiHak' }
+  AksiHak:
     type: object
-    required: [token, token_type, expires_at, user]
+    required: [undang_pengguna, reset_password_pengguna, kelola_kepemilikan_sppg, undang_pic, ajukan_menu, lihat_rincian_biaya, picu_perjalanan, susun_rekap, kirim_ulang_rekap, tindak_lanjut_keluhan, catat_mutasi_stok, catat_harga_pemasok, lihat_ringkasan_jadwal_produksi, lihat_mutasi_stok, lihat_laporan_bgn, lihat_laporan_bgn_agregat, terbitkan_nomor_laporan_bgn, dashboard]
+    description: |
+      Peta hak aksi di luar CRUD (docs/api/peta-hak.md). Setiap nilai = hasil Rbac/Policy yang SAMA dengan endpoint
+      terkait (tidak ada aturan baru). true = endpoint tidak akan menolak dengan 403 (tetap bisa 422/409 karena data);
+      false = endpoint menjawab 403. Pengguna nonaktif: semua false. Klien yang tidak menerima kunci ini menampilkan
+      TIDAK ADA tombol aksi (gagal tertutup). Hak "putuskan" tetap di `keputusan` dan `izin.putuskan`/`izin.verifikasi`.
     properties:
-      token: { type: string, examples: ['1|q8Vx...'] }
+      undang_pengguna: { type: boolean, description: 'POST /pengguna/undangan (UserPolicy::create; Admin).' }
+      reset_password_pengguna: { type: boolean, description: 'POST /pengguna/{id}/reset-password (UserPolicy::update).' }
+      kelola_kepemilikan_sppg: { type: boolean, description: 'GET/PUT/POST/DELETE /pengguna/{id}/kepemilikan-sppg (UserPolicy::kelolaKepemilikan; Admin).' }
+      undang_pic: { type: boolean, description: 'POST /titik-layanan/{id}/undangan-pic (TitikLayananPolicy::update).' }
+      ajukan_menu: { type: boolean, description: 'POST /menu-gizi/{id}/ajukan (MenuPolicy::ajukan; hak C persetujuan-menu pada SPPG sendiri, bukan Admin).' }
+      lihat_rincian_biaya: { type: boolean, description: 'GET /menu-gizi/{id}/rincian-biaya (MenuPolicy::lihatRincianBiaya; memuat harga pemasok).' }
+      picu_perjalanan: { type: boolean, description: 'POST /notifikasi-perjalanan dan /pratinjau (NotifikasiPerjalananPolicy::create).' }
+      susun_rekap: { type: boolean, description: 'POST /rekap-harian (RekapHarianPolicy::create).' }
+      kirim_ulang_rekap: { type: boolean, description: 'POST /rekap-harian/{id}/kirim-ulang (RekapHarianPolicy::update).' }
+      tindak_lanjut_keluhan: { type: boolean, description: 'PATCH /keluhan/{id}: ubah status dan catatan tindak lanjut (FeedbackKeluhanPolicy::update).' }
+      catat_mutasi_stok: { type: boolean, description: 'POST /bahan-baku/{id}/mutasi (BahanBakuPolicy::update).' }
+      catat_harga_pemasok: { type: boolean, description: 'POST /pemasok/{id}/harga (PemasokPolicy::catatHarga).' }
+      lihat_ringkasan_jadwal_produksi: { type: boolean, description: 'GET /jadwal/produksi-ringkas (JadwalProduksiPolicy::viewRingkas): dropdown jadwal produksi di form distribusi/keluhan.' }
+      lihat_mutasi_stok: { type: boolean, description: 'GET /bahan-baku/{id}/mutasi (BahanBakuPolicy::lihatMutasi): true untuk admin, kepala_sppg, staf_gudang, akuntan (R bahan-baku + SPPG sama); false untuk ahli_gizi, investor, relawan. Daftar/detail bahan baku tetap mengikuti R.' }
+      lihat_laporan_bgn: { type: boolean, description: 'GET /laporan-bgn/* jenis non-agregat (30b harian, 30d-C) dan PDF-nya (LaporanBgnPolicy::lihat, aksi `lihat-laporan-bgn` + R keuangan + SPPG aktif): admin, kepala_sppg, akuntan. Investor, ahli_gizi, staf_gudang, relawan = false (403).' }
+      lihat_laporan_bgn_agregat: { type: boolean, description: 'GET /laporan-bgn/* jenis agregat (30a porsi, 30c dua-mingguan, 30d-A, 30d-B) dan PDF-nya (aksi `lihat-laporan-bgn-agregat`): admin, kepala_sppg, akuntan, dan investor (SPPG miliknya; satu-satunya aksi true bagi investor, hanya baca). ahli_gizi, staf_gudang, relawan = false.' }
+      terbitkan_nomor_laporan_bgn: { type: boolean, description: 'POST /laporan-bgn/{harian|dua-mingguan|bulanan}/nomor (LaporanBgnPolicy::terbitkanNomor): admin, kepala_sppg, akuntan. Investor hanya membaca nomor yang sudah terbit (false).' }
+      dashboard:
+        type: object
+        required: [tersedia, profil]
+        description: Konsisten dengan DashboardPolicy::lihat dan tombol bot `db` (RingkasanDashboard::tersediaUntuk).
+        properties:
+          tersedia: { type: boolean, description: 'false untuk relawan tanpa unit, pengguna nonaktif, dan siapa pun yang ditolak DashboardPolicy::lihat.' }
+          profil: { type: [string, 'null'], enum: [admin, investor, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan_dapur, relawan_distribusi, null], description: 'Kunci profil dashboard (sama dengan data.profil di GET /dashboard); null bila tidak tersedia.' }
+  AuthError:
+    type: object
+    required: [message, alasan]
+    description: Galat autentikasi R-03 (format standar + kode mesin `alasan`).
+    properties:
+      message: { type: string }
+      errors:
+        type: object
+        additionalProperties: { type: array, items: { type: string } }
+      alasan:
+        type: string
+        enum:
+          - perlu_login_penuh
+          - bukan_pra_login
+          - kredensial_salah
+          - terkunci
+          - perlu_aktivasi
+          - sudah_aktivasi
+          - telegram_belum_terhubung
+          - terlalu_sering
+          - gagal_kirim
+          - token_tidak_valid
+          - token_salah
+          - token_kedaluwarsa
+          - token_dipakai
+          - token_hangus
+          - dev_bypass
+          - csrf_ditolak
+          - kode_tidak_valid
+      sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah' }
+      terkunci_sampai: { type: string, format: date-time, description: 'terkunci' }
+      langkah: { type: string, enum: [aktivasi, masuk], description: 'perlu_aktivasi / sudah_aktivasi' }
+  PraLoginResponse:
+    type: object
+    required: [langkah, token, token_type, token_jenis, expires_at, akun]
+    properties:
+      langkah: { type: string, enum: [masuk, aktivasi] }
+      token: { type: string, description: 'Token PRA-LOGIN (ability auth:pra-login). Simpan di memori saja.' }
       token_type: { type: string, const: Bearer }
-      expires_at: { type: [string, 'null'], format: date-time }
+      token_jenis: { type: string, const: pra_login }
+      expires_at: { type: string, format: date-time, description: '15 menit.' }
+      akun:
+        type: object
+        required: [nama, perlu_username]
+        properties:
+          nama: { type: string }
+          perlu_username: { type: boolean, description: 'true = field username wajib saat aktivasi.' }
+  SesiAktifResponse:
+    type: object
+    required: [langkah, user]
+    properties:
+      langkah: { type: string, const: sesi_aktif }
+      expires_at: { type: string, format: date-time, description: 'Akhir masa sesi setelah digeser oleh pembukaan Mini App ini.' }
       user: { $ref: '#/components/schemas/AuthUser' }
+  LoginPenuhResponse:
+    type: object
+    required: [langkah, tujuan, token, token_type, token_jenis, expires_at, user]
+    properties:
+      langkah: { type: string, const: selesai }
+      tujuan: { type: string, enum: [masuk, perangkat_baru, aktivasi, reset_password] }
+      token: { type: string, description: 'Token LOGIN PENUH (ability auth:penuh). Rahasia; jangan dicatat/dikirim ke pihak lain. Klien Mini App saat ini menyimpannya di sessionStorage (resources/miniapp/core/api.js), sehingga hilang saat Mini App ditutup; device_id disimpan di localStorage.' }
+      token_type: { type: string, const: Bearer }
+      token_jenis: { type: string, const: penuh }
+      expires_at:
+        type: string
+        format: date-time
+        description: |
+          Akhir masa sesi awal = sekarang + 90 hari (Admin 30). Bergeser setiap kali token dipakai (ditulis
+          maks sekali per jam), tidak pernah melewati login + 180 hari maupun akhir kepercayaan perangkat
+          (token bot terakhir + 180 hari). Tetap dicabut seketika oleh logout,
+          perubahan peran/SPPG/status, hapus/pulih akun, perubahan password, atau batas 5 sesi.
+      user: { $ref: '#/components/schemas/AuthUser' }
+    example:
+      langkah: selesai
+      tujuan: perangkat_baru
+      token: '52|penuhQ8Vx...'
+      token_type: Bearer
+      token_jenis: penuh
+      expires_at: '2027-01-24T07:30:00+07:00'
+      user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 1, sppg_name: SPPG Sukamaju, telegram_username: siti_rahayu, last_login_at: '2026-10-26T07:30:00+07:00', modules: [sppg, jadwal], permissions: { sppg: RU, jadwal: CRUD } }
+  TantanganResponse:
+    type: object
+    required: [langkah, message, tantangan]
+    properties:
+      langkah: { type: string, const: verifikasi_token }
+      message: { type: string }
+      tantangan:
+        type: object
+        required: [id, tujuan, kedaluwarsa_pada, kirim_ulang_tersedia_pada, sisa_kirim_ulang, maks_percobaan]
+        properties:
+          id: { type: string, format: ulid }
+          tujuan: { type: string, enum: [perangkat_baru, aktivasi, reset_password] }
+          kedaluwarsa_pada: { type: string, format: date-time }
+          kirim_ulang_tersedia_pada: { type: [string, 'null'], format: date-time, description: 'null = batas kirim ulang habis.' }
+          sisa_kirim_ulang: { type: integer }
+          maks_percobaan: { type: integer }
+    example:
+      langkah: verifikasi_token
+      message: Token 6 digit telah dikirim bot SiGAP ke chat Telegram Anda.
+      tantangan: { id: '01JBDQ6V9X8Y7Z6W5V4U3T2S1R', tujuan: perangkat_baru, kedaluwarsa_pada: '2026-10-26T08:05:00+07:00', kirim_ulang_tersedia_pada: '2026-10-26T08:01:00+07:00', sisa_kirim_ulang: 3, maks_percobaan: 5 }
+  PermintaanReset:
+    type: object
+    required: [id, status, dibuat_pada, kedaluwarsa_pada]
+    properties:
+      id: { type: string, format: ulid }
+      status: { type: string, enum: [menunggu, disetujui, ditolak, selesai, kedaluwarsa] }
+      dibuat_pada: { type: string, format: date-time }
+      kedaluwarsa_pada: { type: string, format: date-time, description: '24 jam sejak dibuat.' }
+      diputuskan_pada: { type: [string, 'null'], format: date-time }
+      selesai_pada: { type: [string, 'null'], format: date-time }
+      pengguna:
+        type: object
+        description: Hanya pada daftar Admin. Tanpa no telepon/identitas Telegram.
+        properties:
+          id: { type: integer }
+          name: { type: string }
+          username: { type: [string, 'null'] }
+          role: { $ref: '#/components/schemas/Role' }
+          role_label: { type: string }
+          sppg_id: { type: [integer, 'null'] }
+  Sesi:
+    type: object
+    required: [id, jenis, perangkat, dibuat_pada, terakhir_dipakai_pada, berlaku_sampai, diverifikasi_pada, browser_tepercaya_id, sesi_ini]
+    properties:
+      id: { type: integer }
+      jenis: { type: string, enum: [miniapp, web], description: 'miniapp = token Bearer Mini App; web = cookie __Host-sigap_sesi (R-04).' }
+      perangkat: { type: [string, 'null'], description: 'label_perangkat saat login (Mini App) atau label browser ringkas (web).' }
+      dibuat_pada: { type: [string, 'null'], format: date-time }
+      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time, description: 'Presisi maks 1 jam untuk Mini App, maks 15 menit untuk web.' }
+      berlaku_sampai: { type: string, format: date-time, description: 'Akhir masa sesi efektif (bergeser + batas absolut + akhir kepercayaan perangkat; web: + idle 12 jam).' }
+      diverifikasi_pada: { type: [string, 'null'], format: date-time, description: 'Token bot terakhir untuk perangkat ini; kepercayaan berakhir 180 hari sesudahnya. Selalu null untuk web.' }
+      browser_tepercaya_id: { type: [integer, 'null'], description: 'R04-3: id browser tepercaya tempat sesi web ini terbit (bebas idle 12 jam, berakhir paling lambat bersama browser itu). Null untuk Mini App dan sesi web biasa.' }
+      sesi_ini: { type: boolean }
+  BrowserTepercaya:
+    type: object
+    required: [id, label, diverifikasi_pada, berlaku_sampai, terakhir_dipakai_pada, browser_ini]
+    description: Browser web tepercaya (R04-3). Selektor/validator cookie tidak pernah dikirim.
+    properties:
+      id: { type: integer }
+      label: { type: [string, 'null'], description: 'Browser + OS ringkas dari User-Agent, mis. "Firefox · Linux".' }
+      diverifikasi_pada: { type: string, format: date-time, description: 'Kode Telegram terakhir + "Ingat browser ini".' }
+      berlaku_sampai: { type: string, format: date-time, description: 'diverifikasi_pada + 30 hari, TETAP.' }
+      terakhir_dipakai_pada: { type: [string, 'null'], format: date-time }
+      browser_ini: { type: boolean, description: 'Browser sesi web yang sedang dipakai.' }
+  WebCsrfResponse:
+    type: object
+    required: [csrf, berlaku_sampai]
+    description: |
+      Token CSRF PRA-LOGIN (R04-2), terikat id pra-login di cookie `__Host-sigap_pra` (HttpOnly, Secure,
+      SameSite=Strict, Path=/, 15 menit). Simpan HANYA di memori JS; kirim sebagai `X-CSRF-Token` pada
+      POST /web/auth/*. Tidak berlaku untuk rute login penuh.
+    properties:
+      csrf: { type: string, pattern: '^[0-9a-f]{64}$' }
+      berlaku_sampai: { type: string, format: date-time, description: 'Akhir umur cookie pra-login (15 menit).' }
+  WebTantanganResponse:
+    type: object
+    required: [langkah, message, tantangan]
+    description: |
+      Respons SERAGAM langkah masuk dan kirim ulang (anti-enumerasi): status, bentuk, dan header sama untuk akun
+      tidak ada, sandi salah, akun nonaktif/belum aktivasi/tanpa Telegram, kanal web terkunci, dan sandi benar.
+      Waktu dihitung dari jam server saat respons. Kode hanya benar-benar dikirim bot bila sandi benar.
+    properties:
+      langkah: { type: string, const: kode }
+      message: { type: string }
+      tantangan:
+        type: object
+        required: [id, kedaluwarsa_pada, kirim_ulang_tersedia_pada, maks_kirim_ulang, maks_percobaan]
+        properties:
+          id: { type: string, pattern: '^[0-9a-z]{26}$', description: 'ULID huruf kecil. Bisa tiruan; klien tidak dapat membedakannya.' }
+          kedaluwarsa_pada: { type: string, format: date-time, description: 'Sekarang + 5 menit.' }
+          kirim_ulang_tersedia_pada: { type: string, format: date-time, description: 'Sekarang + 60 detik (jeda kirim ulang).' }
+          maks_kirim_ulang: { type: integer, examples: [3], description: 'Klien menghitung sendiri sisa kirim ulang.' }
+          maks_percobaan: { type: integer, examples: [5] }
+  WebLoginResponse:
+    type: object
+    required: [langkah, jenis_sesi, expires_at, csrf, browser_tepercaya, user]
+    description: |
+      Login web selesai. Token sesi TIDAK PERNAH ada di badan (issue #76); hanya di `Set-Cookie: __Host-sigap_sesi`.
+      `csrf` = token CSRF SESI baru (terikat sesi ini) untuk `X-CSRF-Token` di rute login penuh; CSRF pra-login tidak
+      berlaku lagi dan cookie `__Host-sigap_pra` dihapus (Max-Age=0).
+    properties:
+      langkah: { type: string, const: selesai }
+      jenis_sesi: { type: string, const: web }
+      expires_at: { type: string, format: date-time, description: 'Akhir masa sesi (idle 12 jam untuk sesi web biasa; digeser saat dipakai).' }
+      csrf: { type: string, pattern: '^[0-9a-f]{64}$' }
+      browser_tepercaya:
+        type: object
+        required: [dipakai, diingat, berlaku_sampai]
+        description: |
+          R04-3. `dipakai` = login ini melewati kode karena browser tepercaya (POST /web/auth/masuk). `diingat` =
+          browser ini tepercaya setelah login ini. `alasan: admin_selalu_kode` bila Admin mencentang "Ingat browser
+          ini" (diabaikan; UI menampilkan "Admin selalu memakai kode").
+        properties:
+          dipakai: { type: boolean }
+          diingat: { type: boolean }
+          berlaku_sampai: { type: [string, 'null'], format: date-time, description: 'Akhir 30 hari browser tepercaya (tetap).' }
+          alasan: { type: string, const: admin_selalu_kode }
+      user: { $ref: '#/components/schemas/AuthUser' }
+responses:
+  WebCsrfDitolak:
+    description: |
+      Rute web/auth/* tanpa `X-Sigap-Klien: web` (semua metode), atau metode pengubah tanpa cookie `__Host-sigap_pra`,
+      dengan `Origin` yang tidak persis origin APP_URL (kosong/`null` ditolak), atau `X-CSRF-Token` yang bukan CSRF
+      pra-login cookie itu. Pesan seragam tanpa menyebut syarat yang gagal. Klien: GET /web/auth/csrf lagi lalu ulangi.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.', alasan: csrf_ditolak }
+  WebKodeTidakValid:
+    description: |
+      Kode salah, kedaluwarsa (5 menit), sudah dipakai, tantangan hangus (5 kali salah, tombol "Bukan saya", sandi
+      diubah), tantangan tiruan atau milik browser lain, atau kanal web terkunci. SATU galat seragam tanpa sisa percobaan.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Kode salah atau kedaluwarsa.', errors: { kode: ['Kode salah atau kedaluwarsa.'] }, alasan: kode_tidak_valid }
+  AuthForbidden:
+    description: |
+      Token tidak memegang ability yang diwajibkan rute (`alasan: perlu_login_penuh` untuk token
+      pra-login/lama di rute data; `bukan_pra_login` untuk token penuh di rute masuk; `dev_bypass`),
+      atau akun nonaktif. Jalur cookie web (R-04, dengan `X-Sigap-Klien: web`): metode pengubah tanpa `Origin`
+      persis atau `X-CSRF-Token` sah -> `alasan: csrf_ditolak` (diperiksa sebelum autentikasi). Tanpa
+      `X-Sigap-Klien: web` cookie diabaikan sehingga hasilnya 401, bukan 403.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        examples:
+          perlu_login_penuh: { value: { message: 'Silakan masuk dengan username/no telepon dan password terlebih dahulu.', alasan: perlu_login_penuh } }
+          csrf_ditolak: { value: { message: 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.', alasan: csrf_ditolak } }
+  AuthTooManyRequests:
+    description: Akun terkunci sementara (`terkunci`), terlalu sering meminta/kirim ulang token (`terlalu_sering`), atau throttle rute.
+    headers:
+      Retry-After:
+        schema: { type: integer }
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Terlalu banyak percobaan masuk yang salah. Akun dikunci sementara, coba lagi dalam 15 menit.', alasan: terkunci, terkunci_sampai: '2026-10-26T08:20:00+07:00' }
+  TokenGagalKirim:
+    description: Bot gagal mengirim token (mis. pengguna memblokir bot). Tantangan dibatalkan.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/AuthError' }
+        example: { message: 'Token tidak dapat dikirim. Buka chat bot SiGAP di Telegram, tekan Mulai (/start), lalu coba lagi.', alasan: gagal_kirim }
+parameters:
+  WebKlien:
+    in: header
+    name: X-Sigap-Klien
+    required: true
+    description: 'Wajib persis `web` pada semua rute web/auth/* dan semua permintaan jalur cookie.'
+    schema: { type: string, const: web }
+  WebOrigin:
+    in: header
+    name: Origin
+    required: true
+    description: 'Dikirim otomatis oleh browser; wajib persis origin APP_URL (mis. https://sigapsppg.app).'
+    schema: { type: string }
+  WebCsrfPra:
+    in: header
+    name: X-CSRF-Token
+    required: true
+    description: 'Nilai `csrf` dari GET /web/auth/csrf (CSRF pra-login, simpan di memori JS).'
+    schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+  WebCookiePra:
+    in: cookie
+    name: __Host-sigap_pra
+    required: true
+    description: 'Id pra-login dari GET /web/auth/csrf (HttpOnly; dikirim otomatis browser, tidak dibaca JS).'
+    schema: { type: string }
+  WebCookieTb:
+    in: cookie
+    name: __Host-sigap_tb
+    required: false
+    description: 'R04-3 browser tepercaya `selektor.validator` (HttpOnly, 30 hari tetap; dikirim otomatis browser, tidak dibaca JS). Hanya melewati kode Telegram; sandi tetap wajib.'
+    schema: { type: string }

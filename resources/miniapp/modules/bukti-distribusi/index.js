@@ -4,14 +4,15 @@ import { rowCard } from '../../components/row-card.js';
 import { createAuthImage } from '../../components/photo-upload.js';
 import { createLampiranPanel } from '../../components/lampiran-field.js';
 import { h } from '../../core/dom.js';
-import { api, fetchList } from '../../core/api.js';
 import { getUser } from '../../core/auth.js';
+import { jadwalTabBoleh } from '../../core/permissions.js';
+import { api, fetchList } from '../../core/transport.js';
 import { resolve } from '../../core/router.js';
 import { todayWIB, jamWIB, tanggalJamWIB } from '../../core/waktu.js';
 import { errorMessage } from '../../core/errors.js';
 import {
-  unitDistribusiBoleh, jadwalDapatDipilih, jadwalOptionLabel, peringatanJadwal, statusJadwalLabel,
-  terlambatLabel, terlambatBadge, selisihLabel, rowPermsBukti, buktiFields, buktiDetailFields, buktiPayload,
+  jadwalDapatDipilih, PESAN_TANPA_JADWAL_BUKTI, jadwalOptionLabel, peringatanJadwal, statusJadwalLabel,
+  terlambatLabel, terlambatBadge, selisihLabel, buktiFields, buktiDetailFields, buktiPayload,
 } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
@@ -48,15 +49,14 @@ function jadwalPicker(initialId) {
 
       (async () => {
         try {
-          const user = getUser();
           const { items } = await fetchList('/jadwal/distribusi', { perPage: 100, extra: { tanggal: todayWIB() } });
-          list = items.filter((j) => jadwalDapatDipilih(j, user));
+          list = items.filter(jadwalDapatDipilih);
           const want = value ?? initialId;
           if (want && !list.some((x) => String(x.id) === String(want))) {
-            try { const one = unwrap(await api.get(`/jadwal/distribusi/${encodeURIComponent(want)}`, null, { silent: true })); if (one) list.unshift(one); } catch { /* abaikan */ }
+            try { const one = unwrap(await api.get(`/jadwal/distribusi/${encodeURIComponent(want)}`, null, { silent: true })); if (jadwalDapatDipilih(one)) list.unshift(one); } catch { /* abaikan */ }
           }
-          sel.replaceChildren(h('option', { value: '' }, list.length ? '- Pilih jadwal -' : 'Tidak ada jadwal yang dapat dipilih'), ...list.map((j) => h('option', { value: j.id }, jadwalOptionLabel(j))));
-          if (!list.length) info.append(h('div', { class: 'notice' }, user?.role === 'relawan' ? 'Tidak ada jadwal distribusi hari ini yang ditugaskan kepada Anda atau belum memiliki petugas.' : 'Tidak ada jadwal distribusi aktif hari ini.'), h('a', { class: 'btn', href: '#/jadwal/distribusi' }, 'Lihat jadwal distribusi'));
+          sel.replaceChildren(h('option', { value: '' }, list.length ? '- Pilih jadwal -' : PESAN_TANPA_JADWAL_BUKTI), ...list.map((j) => h('option', { value: j.id }, jadwalOptionLabel(j))));
+          if (!list.length) info.append(...[h('div', { class: 'notice' }, `${PESAN_TANPA_JADWAL_BUKTI}.`), jadwalTabBoleh(getUser(), 'distribusi') ? h('a', { class: 'btn', href: '#/jadwal/distribusi' }, 'Lihat jadwal distribusi') : null].filter(Boolean));
           if (want && list.some((x) => String(x.id) === String(want))) { sel.value = String(want); render(); }
         } catch (e) {
           sel.replaceChildren(h('option', { value: '' }, 'Gagal memuat jadwal'));
@@ -133,10 +133,16 @@ function listTop() {
   }).catch(() => { /* filter opsional */ });
   titik.addEventListener('change', () => setF('titik_layanan_id', titik.value));
   const chip = (value, label) => h('button', { type: 'button', class: `seg-btn${listQuery.terlambat === value ? ' active' : ''}`, 'aria-pressed': listQuery.terlambat === value ? 'true' : 'false', onclick: () => setF('terlambat', value) }, label);
-  return h('div', { class: 'stack' },
+  const root = h('div', { class: 'stack' },
     h('div', { class: 'filter-row' }, tgl, titik),
     h('div', { class: 'seg', role: 'group', 'aria-label': 'Ketepatan waktu' }, chip('', 'Semua'), chip('1', 'Terlambat')),
     listQuery.tanggal ? null : h('p', { class: 'muted small' }, 'Menampilkan semua tanggal.'));
+  // Sembunyikan "+ Bukti" bila tak ada jadwal ber-izin (agar tidak menuju 403/formulir kosong). Gagal muat = biarkan.
+  fetchList('/jadwal/distribusi', { perPage: 100, extra: { tanggal: todayWIB() } }).then(({ items }) => {
+    if (items.some(jadwalDapatDipilih)) return;
+    root.parentElement?.querySelector('.list-head a[href$="/baru"]')?.remove();
+  }).catch(() => { /* biarkan tombol; formulir menampilkan kesalahan */ });
+  return root;
 }
 
 export default defineCrudModule({
@@ -147,15 +153,18 @@ export default defineCrudModule({
   endpoint: '/bukti-distribusi',
   createLabel: '+ Bukti',
   columns: [{ key: 'titik', primary: true, format: (r) => r.jadwal_distribusi?.titik_layanan?.nama ?? `Bukti #${r.id}` }],
-  extraGuard: unitDistribusiBoleh,
+  izin: true, // Ubah/Hapus mengikuti izin per record dari server (relawan: hanya milik sendiri di hari yang sama)
   fields,
   mapPayload: buktiPayload,
   itemTitle: (r) => `Bukti ${r.jadwal_distribusi?.titik_layanan?.nama ?? `#${r.id}`}`,
   searchPlaceholder: 'Cari penerima atau titik layanan...',
   listQuery,
   listTop,
+  listTopWeb: listTop,
+  // Web (R04-8 PR5): Tambah aktif (foto serah terima lewat multipart jalur cookie); foto + lampiran lain tampil lewat cookie sesi.
+  // Hak unggah lampiran = izin.ubah record dari server (perms dari registerWeb).
+  detailExtrasWeb: (rec, ctx, p) => detailBukti(rec, p),
   prefill: (q) => (q.get('jadwal') ? { jadwal_distribusi_id: q.get('jadwal') } : {}),
-  rowPerms: (rec, p) => rowPermsBukti(getUser(), rec, p),
   renderCard: (r, href) => rowCard({
     href,
     title: r.jadwal_distribusi?.titik_layanan?.nama ?? `Bukti #${r.id}`,
@@ -165,17 +174,20 @@ export default defineCrudModule({
       ...(r.selisih_porsi ? [{ text: selisihLabel(r), cls: 'badge-warn' }] : []),
     ],
   }),
-  detailExtras: (rec, p) => {
-    const nodes = [];
-    if (rec.terlambat) nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, `${terlambatLabel(rec)} dari acuan ${rec.acuan_tiba ? jamWIB(rec.acuan_tiba) : '-'}.`));
-    if (rec.selisih_porsi) nodes.push(h('div', { class: 'notice' }, `Selisih porsi: ${selisihLabel(rec)}.${rec.catatan_selisih ? ` Catatan: ${rec.catatan_selisih}` : ''}`));
-    const gambar = h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Foto serah terima'),
-      rec.foto ? createAuthImage(rec.foto, { alt: 'Foto serah terima' }) : h('p', { class: 'muted small' }, 'Tidak ada foto.'));
-    if (rec.berita_acara) gambar.append(h('h2', { class: 'panel-title' }, 'Berita acara'), createAuthImage(rec.berita_acara, { alt: 'Foto berita acara' }));
-    nodes.push(gambar);
-    const utama = new Set([rec.foto?.lampiran_id, rec.berita_acara?.lampiran_id].filter((x) => x != null));
-    const lain = (rec.lampiran || []).filter((l) => !utama.has(l.id));
-    if (lain.length || p.U) nodes.push(createLampiranPanel({ modul: 'bukti-distribusi', recordId: rec.id, kategori: 'foto', lampiran: lain, canAdd: !!p.U, title: 'Lampiran lain' }));
-    return nodes;
-  },
+  detailExtras: (rec, p) => detailBukti(rec, p),
 });
+
+/** Bagian detail bersama Mini App dan web: peringatan terlambat/selisih, foto serah terima + berita acara, lampiran lain. */
+function detailBukti(rec, p) {
+  const nodes = [];
+  if (rec.terlambat) nodes.push(h('div', { class: 'alert-danger', role: 'alert' }, `${terlambatLabel(rec)} dari acuan ${rec.acuan_tiba ? jamWIB(rec.acuan_tiba) : '-'}.`));
+  if (rec.selisih_porsi) nodes.push(h('div', { class: 'notice' }, `Selisih porsi: ${selisihLabel(rec)}.${rec.catatan_selisih ? ` Catatan: ${rec.catatan_selisih}` : ''}`));
+  const gambar = h('div', { class: 'panel stack-tight' }, h('h2', { class: 'panel-title' }, 'Foto serah terima'),
+    rec.foto ? createAuthImage(rec.foto, { alt: 'Foto serah terima' }) : h('p', { class: 'muted small' }, 'Tidak ada foto.'));
+  if (rec.berita_acara) gambar.append(h('h2', { class: 'panel-title' }, 'Berita acara'), createAuthImage(rec.berita_acara, { alt: 'Foto berita acara' }));
+  nodes.push(gambar);
+  const utama = new Set([rec.foto?.lampiran_id, rec.berita_acara?.lampiran_id].filter((x) => x != null));
+  const lain = (rec.lampiran || []).filter((l) => !utama.has(l.id));
+  if (lain.length || p?.U) nodes.push(createLampiranPanel({ modul: 'bukti-distribusi', recordId: rec.id, kategori: 'foto', lampiran: lain, canAdd: !!p?.U, title: 'Lampiran lain' }));
+  return nodes;
+}

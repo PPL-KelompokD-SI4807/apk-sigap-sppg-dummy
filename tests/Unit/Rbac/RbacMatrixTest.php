@@ -14,35 +14,36 @@ class RbacMatrixTest extends TestCase
 {
     /**
      * Salinan literal Tabel 5 proposal (urutan kolom: admin, kepala_sppg, ahli_gizi, akuntan,
-     * staf_gudang, relawan). "-" = tanpa akses. Menjaga config/rbac.php tidak bergeser diam-diam.
+     * staf_gudang, relawan) + kolom investor (R-06a, keputusan pengguna 2026-10-26: baca saja).
+     * "-" = tanpa akses. Menjaga config/rbac.php tidak bergeser diam-diam.
      */
     private const TABEL_5 = [
-        'pengguna' => ['CRUD', 'R', 'R*', 'R*', 'R*', 'R*'],
-        'notifikasi-perjalanan' => ['R', 'CR', '-', '-', '-', 'CR'],
-        'sppg' => ['CRUD', 'RU', 'R', 'R', 'R', 'R'],
-        'titik-layanan' => ['CRUD', 'CRUD', 'R', 'R', 'R', 'R'],
-        'penerima-manfaat' => ['CRUD', 'CRU', 'R', '-', '-', '-'],
-        'bahan-baku' => ['CRUD', 'R', 'R', 'R', 'CRUD', '-'],
-        'pemasok' => ['CRUD', 'R', 'R', 'R', 'CRU', '-'],
-        'menu-gizi' => ['R', 'R', 'CRUD', '-', 'R', 'R'],
-        'jadwal' => ['R', 'CRUD', 'CRU', '-', 'R', 'CRU'],
-        'log-produksi' => ['R', 'RUD', 'R', 'R', 'R', 'CRU'],
-        'mutu' => ['R', 'R', 'CRUD', '-', '-', 'R'],
-        'armada' => ['CRUD', 'CRUD', '-', 'R', '-', 'R'],
-        'bukti-distribusi' => ['R', 'CRUD', 'R', 'R', '-', 'CRU'],
-        'keuangan' => ['R', 'R', '-', 'CRUD', '-', '-'],
-        'keluhan' => ['CRUD', 'RU', 'RU', '-', '-', 'CR'],
-        'rekap-harian' => ['R', 'CRU', 'R', 'R', '-', '-'],
+        'pengguna' => ['CRUD', 'R', 'R*', 'R*', 'R*', 'R*', 'R*'],
+        'notifikasi-perjalanan' => ['R', 'CR', '-', '-', '-', 'CR', '-'],
+        'sppg' => ['CRUD', 'RU', 'R', 'R', 'R', 'R', 'R'],
+        'titik-layanan' => ['CRUD', 'CRUD', 'R', 'R', 'R', 'R', '-'],
+        'penerima-manfaat' => ['CRUD', 'CRU', 'R', '-', '-', '-', '-'],
+        'bahan-baku' => ['CRUD', 'R', 'R', 'R', 'CRUD', '-', 'R'],
+        'pemasok' => ['CRUD', 'R', 'R', 'R', 'CRU', '-', '-'],
+        'menu-gizi' => ['R', 'R', 'CRUD', '-', 'R', 'R', '-'],
+        'jadwal' => ['R', 'CRUD', 'CRU', '-', 'R', 'CRU', '-'],
+        'log-produksi' => ['R', 'RUD', 'R', 'R', 'R', 'CRU', '-'],
+        'mutu' => ['R', 'R', 'CRUD', '-', '-', 'R', 'R'],
+        'armada' => ['CRUD', 'CRUD', '-', 'R', '-', 'R', '-'],
+        'bukti-distribusi' => ['R', 'CRUD', 'R', 'R', '-', 'CRU', '-'],
+        'keuangan' => ['R', 'R', '-', 'CRUD', '-', '-', 'R'],
+        'keluhan' => ['CRUD', 'RU', 'RU', '-', '-', 'CR', 'R'],
+        'rekap-harian' => ['R', 'CRU', 'R', 'R', '-', '-', 'R'],
     ];
 
-    private const ROLES = ['admin', 'kepala_sppg', 'ahli_gizi', 'akuntan', 'staf_gudang', 'relawan'];
+    private const ROLES = ['admin', 'kepala_sppg', 'ahli_gizi', 'akuntan', 'staf_gudang', 'relawan', 'investor'];
 
     /** Modul relawan yang dibatasi unit: modul => unit yang boleh. */
     private const RELAWAN_UNIT = [
-        'notifikasi-perjalanan' => ['distribusi'],
-        'bukti-distribusi' => ['distribusi'],
-        'log-produksi' => ['dapur'],
-        'jadwal' => ['dapur', 'distribusi'],
+        'notifikasi-perjalanan' => ['distribusi', '-'],
+        'bukti-distribusi' => ['distribusi', '-'],
+        'log-produksi' => ['dapur', '-'],
+        'jadwal' => ['dapur', 'distribusi', '-'],
     ];
 
     private function user(Role $role, ?RelawanUnit $unit = null, bool $active = true): User
@@ -54,7 +55,8 @@ class RbacMatrixTest extends TestCase
 
     public function test_config_identik_dengan_tabel_5_dan_urutan_fitur(): void
     {
-        $this->assertSame(array_keys(self::TABEL_5), Rbac::modules());
+        // 16 fitur resmi (urutan tetap) + modul tambahan R-06b-1 dan R-06b-2 di akhir (matriks dicek terpisah).
+        $this->assertSame([...array_keys(self::TABEL_5), 'persetujuan-menu', 'pembelian-bahan'], Rbac::modules());
 
         foreach (self::TABEL_5 as $module => $cells) {
             foreach (self::ROLES as $i => $role) {
@@ -172,5 +174,25 @@ class RbacMatrixTest extends TestCase
         $this->assertContains('keuangan:D', $abilities);
         $this->assertContains('pengguna:R', $abilities);
         $this->assertNotContains('bahan-baku:C', $abilities);
+    }
+
+    public function test_investor_baca_saja_dan_agregat_penerima(): void
+    {
+        $investor = $this->user(Role::Investor);
+        $abilities = Rbac::abilities($investor);
+
+        $this->assertContains('role:investor', $abilities);
+        $this->assertContains('keuangan:R', $abilities);
+        $this->assertSame([], array_values(array_filter($abilities, fn ($a) => preg_match('/:[CUD]$/', $a) === 1)));
+        $this->assertFalse(Rbac::can($investor, 'penerima-manfaat', 'R'));
+        $this->assertTrue(Rbac::canAggregate($investor, 'penerima-manfaat'));
+        $this->assertSame(['penerima-manfaat'], Rbac::aggregateOnlyModules($investor));
+        $this->assertTrue(Rbac::canAggregate($this->user(Role::AhliGizi), 'penerima-manfaat'));
+        $this->assertFalse(Rbac::canAggregate($this->user(Role::Akuntan), 'penerima-manfaat'));
+        $this->assertSame([], Rbac::aggregateOnlyModules($this->user(Role::AhliGizi)));
+
+        // Huruf tulis di matriks untuk investor selalu dibuang (pertahanan berlapis).
+        config(['rbac.modules.keluhan.investor' => 'CRUD']);
+        $this->assertSame('R', Rbac::letters($investor, 'keluhan'));
     }
 }

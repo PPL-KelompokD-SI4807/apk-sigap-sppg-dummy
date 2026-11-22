@@ -3,7 +3,7 @@
 import { defineCrudModule } from '../../components/crud-module.js';
 
 export default defineCrudModule({
-  slug: 'titik-layanan', // kunci di permissions.js + rute #/titik-layanan
+  slug: 'titik-layanan', // kunci user.permissions (peta hak server) + rute #/titik-layanan
   title: 'Titik Layanan',
   icon: '📍',
   description: 'Sekolah, posyandu, dan lokasi penerima MBG',

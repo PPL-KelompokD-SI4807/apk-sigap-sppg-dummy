@@ -33,6 +33,9 @@
     description: |
       Hak: C (admin, staf_gudang). `sppg_id` hanya dipakai Admin (wajib); diabaikan untuk peran lain.
       Menerima `ai_draft_id` opsional (draf Agen AI ditandai confirmed setelah sukses).
+      Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama tidak membuat bahan baku ganda.
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
     requestBody:
       required: true
       content:
@@ -157,6 +160,8 @@
       '404': { $ref: '#/components/responses/NotFound' }
       '422': { $ref: '#/components/responses/ValidationFailed' }
   delete:
+    parameters:
+      - $ref: '#/components/parameters/AiDraftIdQuery'
     tags: [Bahan Baku]
     summary: Hapus lunak bahan baku
     description: Ditolak (422) bila bahan masih dipakai komposisi menu aktif.
@@ -172,7 +177,10 @@
   get:
     tags: [Bahan Baku]
     summary: Riwayat mutasi stok bahan
-    description: Hak R. Filter `jenis`, `from`/`to` (tanggal_mutasi).
+    description: |
+      Hak aksi `aksi.lihat_mutasi_stok` (BahanBakuPolicy::lihatMutasi): admin, kepala_sppg, staf_gudang, akuntan
+      (R modul bahan-baku + SPPG sama). ahli_gizi dan investor 403 walau boleh R daftar/detail bahan baku; relawan 403.
+      Filter `jenis`, `from`/`to` (tanggal_mutasi).
     parameters:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PerPage'
@@ -203,6 +211,10 @@
       (boleh negatif, bukan 0) dan `catatan` (alasan) wajib. `keluar` wajib `jadwal_produksi_id` atau
       `catatan`. `pemasok_id` dan `tanggal_kedaluwarsa` hanya untuk `masuk`. Stok per batch dihitung FEFO
       dari mutasi masuk bertanggal kedaluwarsa (lihat /bahan-baku/{id}/batch). Pencatat = pengguna login.
+      Mendukung header `Idempotency-Key` (NFR-07): kirim ulang dengan kunci dan payload sama mengembalikan
+      respons semula (`Idempotent-Replayed: true`) tanpa mencatat mutasi lagi, sehingga stok tidak berubah dua kali.
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
     requestBody:
       required: true
       content:
@@ -235,6 +247,10 @@
   get:
     tags: [Bahan Baku]
     summary: Stok per batch (FEFO: kedaluwarsa terdekat habis lebih dulu)
+    description: |
+      Gerbang: hak R modul bahan-baku (relawan 403). Kolom `mutasi_stok_id`, `jumlah_awal`, `pemasok_id` hanya
+      disertakan untuk pemegang `BahanBakuPolicy::lihatMutasi` (`aksi.lihat_mutasi_stok`: admin, kepala_sppg,
+      staf_gudang, akuntan); untuk ahli_gizi dan investor kunci itu dihilangkan, sisa/tanggal masuk/kedaluwarsa tetap ada.
     responses:
       '200':
         description: OK

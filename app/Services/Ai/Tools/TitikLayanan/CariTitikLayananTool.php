@@ -6,12 +6,15 @@ use App\Enums\JenisTitikLayanan;
 use App\Models\TitikLayanan;
 use App\Models\User;
 use App\Services\Ai\Catalog\RecordPresenter;
+use App\Services\Ai\Catalog\SppgBound;
 use App\Services\Ai\Tools\ReadTool;
 
 /**
  * Contoh tool BACA (pola ReadTool). Tersedia bagi peran dengan R pada modul titik-layanan.
  * Query biasa (SppgScope aktif lewat ActingUser) + Policy viewAny; data PIC diminimalkan
- * (nomor telepon dan chat id tidak dikirim ke LLM).
+ * (nomor telepon dan chat id tidak dikirim ke LLM). Nama/alamat adalah DATA tak tepercaya: kontak/NIK yang
+ * tersisip disamarkan (RecordPresenter::redactContact(), tanpa inisial agar nama lembaga tetap terbaca) lalu
+ * dibersihkan dan dipotong (text()); hasil membawa `catatan` RecordPresenter::NOTE seperti CatalogReadTool.
  */
 class CariTitikLayananTool extends ReadTool
 {
@@ -40,7 +43,7 @@ class CariTitikLayananTool extends ReadTool
 
     protected function handle(User $user, array $arguments): array
     {
-        $query = TitikLayanan::query()
+        $query = SppgBound::apply(TitikLayanan::query(), $user)
             ->search($arguments['q'] ?? null)
             ->orderBy('nama')
             ->orderBy('id');
@@ -60,15 +63,16 @@ class CariTitikLayananTool extends ReadTool
             'total' => $total,
             'hasil' => $items->map(fn (TitikLayanan $t) => [
                 'id' => $t->id,
-                'nama' => $t->nama,
+                'nama' => RecordPresenter::text(RecordPresenter::redactContact((string) $t->nama)),
                 'jenis' => $t->jenis->value,
-                'alamat' => $t->alamat,
+                'alamat' => $t->alamat === null ? null : RecordPresenter::text(RecordPresenter::redactContact($t->alamat)),
                 'jarak_km' => $t->jarak_km === null ? null : (float) $t->jarak_km,
                 'jumlah_sasaran' => $t->jumlah_sasaran,
                 'pic_nama' => RecordPresenter::initials($t->pic_nama),
                 'pic_terhubung' => $t->picTerhubung(),
                 'aktif' => $t->is_active,
             ])->all(),
+            'catatan' => RecordPresenter::NOTE,
         ];
     }
 }

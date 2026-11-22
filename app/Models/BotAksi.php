@@ -1,0 +1,107 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * Status satu tombol aksi Bot Telegram (R-02). Makna aksi (jenis, subjek, SPPG, versi yang dilihat
+ * pengguna) HANYA ada di baris ini; callback_data hanya membawa kode acak ber-HMAC (BotKodeCodec).
+ * Dibuat/diubah hanya lewat BotAksiService ($fillable kosong). Tanpa data pribadi atau isi catatan.
+ *
+ * @property int $id
+ * @property string $kode
+ * @property int $user_id
+ * @property int $telegram_id
+ * @property int $chat_id
+ * @property int|null $sppg_id
+ * @property string $jenis
+ * @property string|null $subjek_tipe
+ * @property int|null $subjek_id
+ * @property int|null $subjek_versi
+ * @property string $status
+ */
+class BotAksi extends Model
+{
+    public const JENIS_PILIH_SPPG = 'pilih_sppg';
+
+    public const JENIS_DAFTAR = 'daftar_persetujuan';
+
+    public const JENIS_TINJAU = 'tinjau';
+
+    public const JENIS_SETUJU = 'setuju';
+
+    public const JENIS_TOLAK = 'tolak';
+
+    // R-02 PR-3 (aksi tulis berkonfirmasi dua langkah): tombol aksi -> layar konfirmasi -> token "Ya" sekali pakai.
+    public const JENIS_KIRIM_ULANG_REKAP = 'kirim_ulang_rekap';
+
+    public const JENIS_PICU_PERJALANAN = 'picu_perjalanan';
+
+    public const JENIS_TINDAK_KELUHAN = 'tindak_keluhan';
+
+    public const JENIS_YA_KIRIM_ULANG_REKAP = 'ya_kirim_ulang_rekap';
+
+    public const JENIS_YA_PICU_PERJALANAN = 'ya_picu_perjalanan';
+
+    public const JENIS_YA_TINDAK_KELUHAN = 'ya_tindak_keluhan';
+
+    public const JENIS_BATAL_AKSI = 'batal_aksi';
+
+    // Konfirmasi draf Agen AI di chat (Tahap 1): Lanjutkan / "Ya, yakin" (langkah 2 aksi berbahaya) / Batal.
+    // subjek = ai_draft (id baris ai_drafts); token berlaku sampai draf kedaluwarsa (ai.drafts.ttl_minutes).
+    public const JENIS_AI_LANJUT = 'ai_lanjut';
+
+    public const JENIS_AI_YAKIN = 'ai_yakin';
+
+    public const JENIS_AI_BATAL = 'ai_batal';
+
+    // Pilihan rujukan ambigu pada draf Agen AI (mis. dua bahan "Ayam"): subjek = ai_draft, subjek_versi = kode slot +
+    // posisi kandidat (PilihanReferensiDraf::kode; ID kandidat diambil ulang dari draf, dicek SPPG pengguna). Hanya
+    // mengubah payload draf.
+    public const JENIS_AI_PILIH = 'ai_pilih';
+
+    public const SUBJEK_AI_DRAFT = 'ai_draft';
+
+    public const SUBJEK_MENU = 'pengajuan_menu';
+
+    public const SUBJEK_PENGELUARAN = 'pengeluaran';
+
+    public const SUBJEK_REKAP = 'rekap_harian';
+
+    public const SUBJEK_JADWAL_DISTRIBUSI = 'jadwal_distribusi';
+
+    public const SUBJEK_KELUHAN = 'keluhan';
+
+    public const STATUS_AKTIF = 'aktif';
+
+    public const STATUS_DIPAKAI = 'dipakai';
+
+    public const STATUS_MENUNGGU_CATATAN = 'menunggu_catatan';
+
+    public const STATUS_SELESAI = 'selesai';
+
+    public const STATUS_KEDALUWARSA = 'kedaluwarsa';
+
+    protected $table = 'bot_aksi';
+
+    /** @var list<string> */
+    protected $fillable = [];
+
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return [
+            'user_id' => 'integer',
+            'telegram_id' => 'integer',
+            'chat_id' => 'integer',
+            'sppg_id' => 'integer',
+            'subjek_id' => 'integer',
+            'subjek_versi' => 'integer',
+            'prompt_message_id' => 'integer',
+            'expires_at' => 'datetime',
+            'used_at' => 'datetime',
+            'catatan_expires_at' => 'datetime',
+        ];
+    }
+}

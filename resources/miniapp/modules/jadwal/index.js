@@ -4,30 +4,30 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { navTabs } from '../../components/nav-tabs.js';
 import { h, formatValue } from '../../core/dom.js';
-import { api, request, newKey } from '../../core/api.js';
+import { api, request, newKey } from '../../core/transport.js';
 import { getUser } from '../../core/auth.js';
-import { userPerms } from '../../core/permissions.js';
-import { route, resolve } from '../../core/router.js';
+import { userPerms, jadwalTabBoleh } from '../../core/permissions.js';
+import { route, resolve, navigate } from '../../core/router.js';
 import { showConfirm, toast } from '../../core/ui.js';
-import { errorMessage } from '../../core/errors.js';
+import { errorMessage, ringkasGalatAksi } from '../../core/errors.js';
 import {
   STATUS_PRODUKSI, STATUS_DISTRIBUSI, statusProduksiLabel, statusDistribusiLabel, statusBadge, transisiValid, aksiLabel,
-  unitBoleh, rowPermsJadwal, hitungKapasitas, sisaPorsiDistribusi,
+  distribusiBisaDibuat, hitungKapasitas, sisaPorsiDistribusi,
   produksiFields, produksiDetailFields, produksiPayload, distribusiFields, distribusiDetailFields, distribusiPayload,
-  statusKebutuhan, ringkasKebutuhan, catatanTidakDapat,
+  statusKebutuhan, ringkasKebutuhan, catatanTidakDapat, menuBelumDisetujui, masakDitahanMenu, pesanGagalStatus,
 } from './schema.js';
+import { statusLabel as statusMenuLabel } from '../persetujuan-menu/logika.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 const SLUG = 'jadwal';
-const me = () => userPerms(getUser(), SLUG);
 const jam = (v) => (v ? String(v).slice(0, 5) : null);
 const porsi = (n) => `${Number(n ?? 0).toLocaleString('id-ID')} porsi`;
 
 export function jadwalTabs(active) {
   const u = getUser();
   const items = [];
-  if (unitBoleh(u, 'produksi')) items.push({ key: 'produksi', href: '#/jadwal', label: 'Produksi' });
-  if (unitBoleh(u, 'distribusi')) items.push({ key: 'distribusi', href: '#/jadwal/distribusi', label: 'Distribusi' });
+  if (jadwalTabBoleh(u, 'produksi')) items.push({ key: 'produksi', href: '#/jadwal', label: 'Produksi' });
+  if (jadwalTabBoleh(u, 'distribusi')) items.push({ key: 'distribusi', href: '#/jadwal/distribusi', label: 'Distribusi' });
   return items.length > 1 ? navTabs(items, active, 'Jadwal') : null;
 }
 
@@ -37,27 +37,45 @@ function aksiStatus(kind, rec, base, p) {
   if (!p.U || !next.length) return null;
   const box = h('div', { class: 'stack-tight' }, h('h2', { class: 'panel-title' }, 'Ubah status'));
   const row = h('div', { class: 'row-actions' });
+  const peringatan = h('div', { 'aria-live': 'assertive' });
   for (const to of next) {
     const gagal = to === 'dibatalkan';
-    const ditahan = kind === 'distribusi' && to === 'berangkat' && rec.layak_distribusi === false;
+    const ditahan = (kind === 'distribusi' && to === 'berangkat' && rec.layak_distribusi === false) || masakDitahanMenu(kind, rec, to);
     const btn = h('button', { class: `btn ${gagal ? 'btn-danger' : 'btn-primary'}`, type: 'button', disabled: ditahan }, aksiLabel(kind, to));
     btn.addEventListener('click', async () => {
       const nama = kind === 'produksi' ? statusProduksiLabel(to) : statusDistribusiLabel(to);
       if (!(await showConfirm({ title: aksiLabel(kind, to), message: `Ubah status jadwal menjadi "${nama}"?`, okText: 'Ya, ubah', destructive: gagal }))) return;
       btn.disabled = true;
       try {
-        await request('PATCH', `${base}/${rec.id}`, { body: { status: to }, key: newKey(), silent: true });
+        const res = await request('PATCH', `${base}/${rec.id}`, { body: { status: to, ...(rec.versi != null ? { versi: Math.trunc(Number(rec.versi)) } : {}) }, key: newKey(), silent: true });
         toast(`Status menjadi ${nama}.`, 'success');
+        // Diterima -> lanjut ke form Bukti Distribusi (jadwal terisi). Hanya bila server menandai izin.catat_bukti pada respons PATCH
+        // (gagal tertutup) dan peta hak memberi C; selain itu tetap di detail.
+        if (kind === 'distribusi' && to === 'diterima' && unwrap(res)?.izin?.catat_bukti === true && userPerms(getUser(), 'bukti-distribusi').C) {
+          navigate(`/bukti-distribusi/baru?jadwal=${encodeURIComponent(rec.id)}`);
+          return;
+        }
         resolve();
       } catch (e) {
         if (e?.status === 401) throw e;
-        toast(errorMessage(e, 'Status gagal diubah.'), 'error', 5000);
+        // 422 pada `status` (mis. menu belum disetujui): tampilkan pesan server lalu muat ulang agar penanda terbaru terlihat.
+        toast(pesanGagalStatus(e) || errorMessage(e, 'Status gagal diubah.'), 'error', 7000);
+        if (e?.status === 409 && e?.data?.alasan === 'versi_tidak_cocok') {
+          // Data basi: jangan menimpa diam-diam. Tampilkan pesan dan biarkan pengguna memuat ulang sendiri.
+          peringatan.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, ringkasGalatAksi(e).pesan, ' ',
+            h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang')));
+          return;
+        }
+        if (e?.status === 422 || e?.status === 409) { resolve(); return; }
         btn.disabled = false;
       }
     });
     row.append(btn);
   }
-  box.append(row);
+  box.append(row, peringatan);
+  if (next.some((to) => masakDitahanMenu(kind, rec, to))) {
+    box.append(h('div', { class: 'alert-danger' }, 'Mulai masak ditahan: menu belum disetujui investor. Ajukan ulang menu terlebih dahulu.'));
+  }
   if (kind === 'distribusi' && next.includes('berangkat') && rec.layak_distribusi === false) {
     box.append(h('div', { class: 'alert-danger' }, 'Keberangkatan ditahan: pemeriksaan mutu terbaru belum berstatus Layak.'));
   }
@@ -66,7 +84,7 @@ function aksiStatus(kind, rec, base, p) {
 
 // ---- Layar kebutuhan bahan ----
 async function kebutuhanScreen(ctx) {
-  const d = unwrap(await api.get(`/jadwal/${ctx.params.id}/kebutuhan-bahan`));
+  const d = unwrap(await api.get(`/jadwal/${encodeURIComponent(ctx.params.id)}/kebutuhan-bahan`));
   if (ctx.isStale()) return;
   ctx.setTitle('Kebutuhan Bahan');
   const r = ringkasKebutuhan(d);
@@ -126,7 +144,8 @@ function distribusiFormTop({ record, form, collect, values }) {
   async function refresh() {
     const my = ++tick;
     const id = record?.jadwal_produksi_id ?? collect().jadwal_produksi_id;
-    if (!id) return box.replaceChildren();
+    // Detail jadwal produksi hanya boleh dibaca yang berhak jadwal produksi (relawan distribusi tidak): lewati tanpa 403.
+    if (!id || !jadwalTabBoleh(getUser(), 'produksi')) return box.replaceChildren();
     let j = null;
     try { j = unwrap(await api.get(`/jadwal/${id}`, null, { silent: true })); } catch { /* abaikan */ }
     if (my !== tick || !j) return;
@@ -143,6 +162,13 @@ function distribusiFormTop({ record, form, collect, values }) {
   return box;
 }
 
+// Peringatan jam berangkat dari server (string/null): informasi saja, tidak memblokir simpan. Teks dirender sebagai teks.
+export const bannerPeringatan = (rec) => (rec?.peringatan ? h('div', { class: 'notice', role: 'status' }, `⚠ ${rec.peringatan}`) : null);
+function peringatanSetelahSimpan({ res }) {
+  const w = unwrap(res?.data)?.peringatan;
+  if (w) toast(`Peringatan: ${w}`, 'info', 6000);
+}
+
 // ---- Modul distribusi (didaftarkan lebih dulu agar /jadwal/distribusi tidak ditangkap /jadwal/:id) ----
 const distribusiModule = defineCrudModule({
   slug: 'jadwal/distribusi',
@@ -151,14 +177,31 @@ const distribusiModule = defineCrudModule({
   icon: '🚚',
   description: 'Pengantaran ke titik layanan',
   endpoint: '/jadwal/distribusi',
+  sertakanVersi: true,
   columns: [{ key: 'titik_layanan', primary: true, format: (r) => r.titik_layanan?.nama ?? `#${r.id}` }],
-  fields: ({ mode, record }) => (mode === 'detail' ? distribusiDetailFields : distribusiFields({ mode, record })),
+  fields: ({ mode, record, user }) => (mode === 'detail' ? distribusiDetailFields : distribusiFields({ mode, record, user })),
   mapPayload: (v, { mode }) => { const o = distribusiPayload(v); if (mode === 'update') delete o.jadwal_produksi_id; return o; },
   itemTitle: (r) => `Distribusi ${r.titik_layanan?.nama ?? `#${r.id}`}`,
   searchPlaceholder: 'Cari titik layanan...',
   filters: { param: 'status', label: 'Status distribusi', options: [{ value: '', label: 'Semua' }, ...STATUS_DISTRIBUSI] },
-  listRedirect: (u) => (unitBoleh(u, 'distribusi') ? null : '/jadwal'),
+  listRedirect: (u) => (jadwalTabBoleh(u, 'distribusi') ? null : '/jadwal'),
+  akses: (u) => jadwalTabBoleh(u, 'distribusi'),
+  izin: true,
+  // Form hanya dapat diselesaikan bila dropdown wajib terbaca; selain itu tombol Tambah disembunyikan.
+  bolehTambah: (u) => jadwalTabBoleh(u, 'distribusi') && distribusiBisaDibuat(u),
   listTop: () => jadwalTabs('distribusi'),
+  listTopWeb: () => jadwalTabs('distribusi'),
+  formTopWeb: distribusiFormTop,
+  onSaved: peringatanSetelahSimpan,
+  onSavedWeb: peringatanSetelahSimpan,
+  detailExtrasWeb: (rec, ctx, p) => [
+    bannerPeringatan(rec),
+    rec.status === 'siap' && rec.layak_distribusi === false ? h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.') : null,
+    aksiStatus('distribusi', rec, '/jadwal/distribusi', p), // PATCH /jadwal/distribusi/{id} {status}; hanya bila izin U dari server
+    // Formulir bukti web (foto + lampiran, PR5) ada; tampil bila flag server DAN peta hak bukti-distribusi mengizinkan Tambah.
+    rec.izin?.catat_bukti === true && userPerms(getUser(), 'bukti-distribusi').C
+      ? h('a', { class: 'btn btn-block', href: `#/bukti-distribusi/baru?jadwal=${rec.id}` }, 'Catat bukti') : null,
+  ].filter(Boolean),
   prefill: (q) => (q.get('jadwal') ? { jadwal_produksi_id: q.get('jadwal') } : {}),
   formTop: distribusiFormTop,
   renderCard: (r, href) => rowCard({
@@ -169,31 +212,66 @@ const distribusiModule = defineCrudModule({
     asideSub: 'porsi',
     badge: { text: r.status_label || statusDistribusiLabel(r.status), cls: statusBadge(r.status) },
   }),
-  rowPerms: (rec, p) => rowPermsJadwal('distribusi', getUser(), rec, p),
   detailExtras: (rec, p) => {
-    const nodes = [];
+    const nodes = [bannerPeringatan(rec)];
     if (rec.status === 'siap' && rec.layak_distribusi === false) nodes.push(h('div', { class: 'alert-danger' }, 'Distribusi ditahan: pemeriksaan mutu belum Layak.'));
     nodes.push(aksiStatus('distribusi', rec, '/jadwal/distribusi', p));
+    // Tautan memakai flag server (fail closed); aturan status/tanggal/petugas tidak dihitung di klien.
+    if (rec.izin?.catat_bukti === true) nodes.push(h('a', { class: 'btn btn-block', href: `#/bukti-distribusi/baru?jadwal=${rec.id}` }, 'Catat bukti'));
     return nodes.filter(Boolean);
   },
 });
 distribusiModule.hidden = true;
 
 // ---- Modul produksi ----
+/** Tombol "+ Distribusi" di detail jadwal produksi (Mini App dan web): hanya bila peta hak server mengizinkan. */
+const bolehTambahDistribusi = (rec) => userPerms(getUser(), 'jadwal').C && jadwalTabBoleh(getUser(), 'distribusi') && distribusiBisaDibuat(getUser()) && rec.status !== 'dibatalkan';
+const produksiQuery = { menu_belum_disetujui: '' };
+function listTopProduksi() {
+  const on = produksiQuery.menu_belum_disetujui === '1';
+  const chip = h('button', { type: 'button', class: `seg-btn${on ? ' active' : ''}`, 'aria-pressed': on ? 'true' : 'false', onclick: () => { produksiQuery.menu_belum_disetujui = on ? '' : '1'; resolve(); } },
+    on ? 'Menu belum disetujui (aktif)' : 'Menu belum disetujui');
+  return h('div', { class: 'stack' }, jadwalTabs('produksi'), h('div', { class: 'seg' }, chip));
+}
+
 const produksiBase = defineCrudModule({
   slug: SLUG,
   title: 'Jadwal',
   icon: '📅',
   description: 'Produksi dan distribusi harian',
   endpoint: '/jadwal',
+  sertakanVersi: true,
   columns: [{ key: 'menu', primary: true, format: (r) => r.menu?.nama_menu ?? `#${r.id}` }],
   fields: ({ mode, record }) => (mode === 'detail' ? produksiDetailFields : produksiFields({ mode, record })),
   mapPayload: produksiPayload,
   itemTitle: (r) => `Produksi ${r.menu?.nama_menu ?? `#${r.id}`}`,
   searchPlaceholder: 'Cari menu atau catatan...',
   filters: { param: 'status', label: 'Status produksi', options: [{ value: '', label: 'Semua' }, ...STATUS_PRODUKSI] },
-  listRedirect: (u) => (unitBoleh(u, 'produksi') ? null : '/jadwal/distribusi'),
-  listTop: () => jadwalTabs('produksi'),
+  listRedirect: (u) => (jadwalTabBoleh(u, 'produksi') ? null : '/jadwal/distribusi'),
+  akses: (u) => jadwalTabBoleh(u, 'produksi'),
+  izin: true,
+  bolehTambah: (u) => jadwalTabBoleh(u, 'produksi'),
+  listQuery: produksiQuery,
+  listTop: listTopProduksi,
+  listTopWeb: listTopProduksi,
+  formTopWeb: produksiFormTop,
+  detailExtrasWeb: (rec, ctx, p) => {
+    const aktif = rec.status !== 'dibatalkan';
+    const links = [];
+    // Tautan ke layar/formulir web (kebutuhan bahan, log-produksi, mutu); hak dari peta server. Distribusi menyusul.
+    if (jadwalTabBoleh(getUser(), 'produksi')) links.push(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
+    // "+ Distribusi": syarat sama dengan Mini App, seluruhnya dari peta hak server (C jadwal, tab distribusi, dropdown wajib terbaca).
+    if (aktif && bolehTambahDistribusi(rec)) links.push(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
+    if (aktif && userPerms(getUser(), 'log-produksi').C) links.push(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
+    if (aktif && userPerms(getUser(), 'mutu').C) links.push(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
+    return [
+      menuBelumDisetujui(rec) && rec.status !== 'selesai' && rec.status !== 'dibatalkan'
+        ? h('div', { class: 'alert-danger', role: 'alert' }, `Menu jadwal ini belum disetujui investor (status menu: ${statusMenuLabel(rec.menu?.status_persetujuan)}).`) : null,
+      rec.status_mutu === 'tidak_layak' ? h('div', { class: 'alert-danger' }, 'Hasil mutu terbaru TIDAK LAYAK: distribusi ditahan sampai pemeriksaan ulang Layak.') : null,
+      aksiStatus('produksi', rec, '/jadwal', p), // PATCH /jadwal/{id} {status}; hanya bila izin U dari server
+      links.length ? h('div', { class: 'row-actions' }, links) : null,
+    ].filter(Boolean);
+  },
   formTop: produksiFormTop,
   onSaved: ({ mode, res }) => {
     const kurang = res?.data?.kekurangan_bahan;
@@ -206,16 +284,22 @@ const produksiBase = defineCrudModule({
     aside: Number(r.target_porsi ?? 0).toLocaleString('id-ID'),
     asideSub: 'porsi',
     badge: { text: r.status_label || statusProduksiLabel(r.status), cls: statusBadge(r.status) },
+    badges: menuBelumDisetujui(r) ? [{ text: 'Menu belum disetujui', cls: 'badge-warn' }] : [],
   }),
-  rowPerms: (rec, p) => rowPermsJadwal('produksi', getUser(), rec, p),
   detailExtras: (rec, p) => {
     const nodes = [];
+    if (menuBelumDisetujui(rec) && rec.status !== 'selesai' && rec.status !== 'dibatalkan') {
+      nodes.push(h('div', { class: 'alert-danger', role: 'alert' },
+        `Menu jadwal ini belum disetujui investor (status menu: ${statusMenuLabel(rec.menu?.status_persetujuan)}). `,
+        rec.status === 'direncanakan' ? 'Jadwal tidak dapat dimasak sebelum menu disetujui kembali. ' : '',
+        rec.menu?.id && userPerms(getUser(), 'menu-gizi').R ? h('a', { class: 'link', href: `#/menu-gizi/${rec.menu.id}` }, 'Buka menu') : null));
+    }
     if (rec.status_mutu === 'tidak_layak') nodes.push(h('div', { class: 'alert-danger' }, 'Hasil mutu terbaru TIDAK LAYAK: distribusi ditahan sampai pemeriksaan ulang Layak.'));
     nodes.push(aksiStatus('produksi', rec, '/jadwal', p));
     const aktif = rec.status !== 'dibatalkan';
     const links = h('div', { class: 'row-actions' });
     links.append(h('a', { class: 'btn', href: `#/jadwal/${rec.id}/kebutuhan` }, 'Kebutuhan bahan'));
-    if (aktif && userPerms(getUser(), 'jadwal').C && unitBoleh(getUser(), 'distribusi')) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
+    if (aktif && bolehTambahDistribusi(rec)) links.append(h('a', { class: 'btn', href: `#/jadwal/distribusi/baru?jadwal=${rec.id}` }, '+ Distribusi'));
     if (aktif && userPerms(getUser(), 'log-produksi').C) links.append(h('a', { class: 'btn', href: `#/log-produksi/baru?jadwal=${rec.id}` }, 'Catat log produksi'));
     if (aktif && userPerms(getUser(), 'mutu').C) links.append(h('a', { class: 'btn', href: `#/mutu/baru?jadwal=${rec.id}` }, 'Periksa mutu'));
     nodes.push(links);
@@ -226,8 +310,13 @@ const produksiBase = defineCrudModule({
 const produksiModule = {
   ...produksiBase,
   register() {
-    route('/jadwal/:id/kebutuhan', kebutuhanScreen, { title: 'Kebutuhan Bahan', guard: () => me().R });
+    route('/jadwal/:id/kebutuhan', kebutuhanScreen, { title: 'Kebutuhan Bahan', guard: () => jadwalTabBoleh(getUser(), 'produksi') });
     produksiBase.register();
+  },
+  registerWeb(opsi) {
+    // Rute ekstra lebih dulu agar tidak tertangkap /jadwal/:id. Layar kebutuhan hanya GET (aman di web).
+    route('/jadwal/:id/kebutuhan', kebutuhanScreen, { title: 'Kebutuhan Bahan', guard: () => jadwalTabBoleh(getUser(), 'produksi') });
+    produksiBase.registerWeb(opsi);
   },
 };
 

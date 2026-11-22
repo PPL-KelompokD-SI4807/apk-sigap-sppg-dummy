@@ -51,8 +51,15 @@ return [
     |
     */
 
-    // FR-01/NFR-04: token sesi berlaku 8 jam (480 menit).
-    'expiration' => (int) env('SANCTUM_EXPIRATION', 480),
+    // null = tanpa kedaluwarsa GLOBAL berbasis created_at. Masa sesi diatur per token oleh
+    // SesiService (config('kredensial.sesi')): bergeser 90 hari (Admin 30) sejak terakhir dipakai,
+    // batas absolut 180 hari sejak login, dicek di Sanctum::authenticateAccessTokensUsing. Token
+    // pra-login membawa expires_at sendiri (config('kredensial.pra_login_menit')). Sengaja tidak dari env.
+    'expiration' => null,
+
+    // Sanctum TIDAK menulis last_used_at di setiap request. SesiService::catatPemakaian menulis
+    // last_used_at (+ perpanjangan expires_at) maksimal sekali per config('kredensial.sesi.perpanjang_tiap_menit').
+    'last_used_at' => false,
 
     /*
     |--------------------------------------------------------------------------

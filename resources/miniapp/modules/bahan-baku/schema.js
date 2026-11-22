@@ -48,6 +48,9 @@ export function penandaBahan(rec) {
 
 export const fmtQty = (v, satuan = '') => (v == null || v === '' ? '-' : `${Number(v).toLocaleString('id-ID', { maximumFractionDigits: 3 })}${satuan ? ` ${satuan}` : ''}`);
 
+/** Teks "dari …" batch; null bila jumlah_awal tidak dikirim server (Ahli Gizi/Investor). */
+export const batchDariText = (b) => (b?.jumlah_awal == null ? null : `dari ${fmtQty(b.jumlah_awal)}`);
+
 /** Teks status kedaluwarsa dari sisa_hari (batch): negatif = lewat. */
 export function sisaHariText(d) {
   if (d == null) return 'Tanpa tanggal kedaluwarsa';
@@ -68,6 +71,19 @@ export const mutasiFields = ({ pemasokId } = {}) => [
   { name: 'jadwal_produksi_id', label: 'Untuk jadwal produksi', type: 'relasi', relation: { endpoint: '/jadwal', filter: (j) => ['direncanakan', 'dimasak'].includes(j.status), format: (j) => `${j.tanggal_produksi} · ${j.menu?.nama_menu ?? 'Menu'} (${j.target_porsi} porsi)` }, showIf: (v) => v.jenis === 'keluar', help: 'Isi jadwal atau catatan alasan.' },
   { name: 'catatan', label: 'Catatan / alasan', type: 'textarea', maxlength: 500 },
 ];
+
+/** Kolom form mutasi yang boleh diisi dari payload draf `catat_mutasi_stok` (selain itu, mis. `id`/`_resource`, dibuang). */
+export const KUNCI_MUTASI_DRAF = ['jenis', 'jumlah', 'tanggal_mutasi', 'pemasok_id', 'harga_satuan', 'tanggal_kedaluwarsa', 'jadwal_produksi_id', 'catatan'];
+
+/** Nilai awal form mutasi dari payload draf AI: hanya kolom dikenal yang tidak null/kosong. */
+export function isianMutasiDariDraf(payload) {
+  const out = {};
+  for (const k of KUNCI_MUTASI_DRAF) {
+    const v = payload?.[k];
+    if (v !== undefined && v !== null && v !== '') out[k] = v;
+  }
+  return out;
+}
 
 /**
  * Validasi bantu sisi klien (server otoritas): kembalikan {field: pesan}.
@@ -105,3 +121,11 @@ export function mutasiPayload(v) {
   if (base.jenis !== 'keluar') delete base.jadwal_produksi_id;
   return base;
 }
+
+/**
+ * Gating riwayat mutasi stok: kunci final `aksi.lihat_mutasi_stok` dari /auth/me (boleh: Admin, Kepala SPPG, Staf Gudang, Akuntan).
+ * FAIL CLOSED: panel Riwayat dirender hanya bila flag === true; tidak ada/bukan boolean true = tidak dirender.
+ * Aturan peran TIDAK dihitung di klien.
+ */
+export const KUNCI_RIWAYAT_MUTASI = 'lihat_mutasi_stok';
+export const bolehRiwayatMutasi = (user, aksiOpsionalFn) => aksiOpsionalFn(user, KUNCI_RIWAYAT_MUTASI) === true;

@@ -4,6 +4,7 @@ namespace App\Http\Resources\LogProduksi;
 
 use App\Http\Resources\LampiranResource;
 use App\Models\LogProduksi;
+use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -34,6 +35,8 @@ class LogProduksiResource extends JsonResource
             ]),
             'kode_batch' => $l->kode_batch,
             'realisasi_porsi' => $l->realisasi_porsi,
+            'porsi_food_sample' => $l->porsi_food_sample,
+            'porsi_uji_organoleptik' => $l->porsi_uji_organoleptik,
             'target_porsi' => $target,
             'selisih_porsi' => $selisih,
             'persentase_capaian' => $target ? round($l->realisasi_porsi / $target * 100, 1) : null,
@@ -49,6 +52,8 @@ class LogProduksiResource extends JsonResource
             'lampiran' => LampiranResource::collection($this->whenLoaded('lampirans', fn () => $l->lampirans, [])),
             'dicatat_oleh' => $l->dicatat_oleh,
             'pencatat' => $this->whenLoaded('pencatat', fn () => $l->pencatat?->name),
+            'izin' => PetaHak::izin($request->user(), $l, ['ubah' => 'update', 'hapus' => 'delete']),
+            'versi' => (int) $l->versi,
             'created_at' => $l->created_at?->toIso8601String(),
             'updated_at' => $l->updated_at?->toIso8601String(),
         ];

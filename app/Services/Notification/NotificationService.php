@@ -7,6 +7,7 @@ use App\Jobs\SendTelegramNotification;
 use App\Models\User;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -108,15 +109,39 @@ class NotificationService
      */
     private function usersWithRoles(array $roles, ?int $sppgId): iterable
     {
+        $nilai = array_map(fn (Role $r) => $r->value, $roles);
         $query = User::query()->withoutGlobalScopes()
             ->whereNull('deleted_at')
             ->where('is_active', true)
             ->whereNotNull('telegram_id')
-            ->whereIn('role', array_map(fn (Role $r) => $r->value, $roles))
             ->orderBy('id')
             ->limit(200);
 
-        $sppgId === null ? $query->whereNull('sppg_id') : $query->where('sppg_id', $sppgId);
+        if ($sppgId === null) {
+            $query->whereIn('role', $nilai)->whereNull('sppg_id');
+        } else {
+            $investor = Role::Investor->value;
+            $lain = array_values(array_diff($nilai, [$investor]));
+
+            // Peran satu-SPPG lewat users.sppg_id; investor (sppg_id null) lewat pivot investor_sppg.
+            $query->where(function ($q) use ($lain, $nilai, $investor, $sppgId): void {
+                if ($lain !== []) {
+                    $q->orWhere(fn ($w) => $w->whereIn('role', $lain)->where('sppg_id', $sppgId));
+                }
+
+                if (in_array($investor, $nilai, true)) {
+                    $q->orWhere(fn ($w) => $w->where('role', $investor)->whereIn(
+                        'id',
+                        // Sejalan SppgAktif::milik(): SPPG yang sudah dihapus lunak tidak dihitung.
+                        DB::table('investor_sppg')
+                            ->join('sppgs', 'sppgs.id', '=', 'investor_sppg.sppg_id')
+                            ->where('investor_sppg.sppg_id', $sppgId)
+                            ->whereNull('sppgs.deleted_at')
+                            ->select('investor_sppg.user_id'),
+                    ));
+                }
+            });
+        }
 
         return $query->get(['id', 'telegram_id', 'role', 'sppg_id', 'is_active']);
     }

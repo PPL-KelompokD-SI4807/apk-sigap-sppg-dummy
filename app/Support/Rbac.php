@@ -52,6 +52,12 @@ final class Rbac
         }
 
         $cell = self::cell($user->role, $module);
+
+        // Investor baca saja (R-06a): huruf tulis dibuang walau matriks salah isi.
+        if ($user->role === Role::Investor) {
+            $cell = (string) preg_replace('/[CUD]/', '', $cell);
+        }
+
         $rule = config("rbac.unit_rules.{$user->role->value}.{$module}");
 
         if (is_array($rule)) {
@@ -82,6 +88,86 @@ final class Rbac
         $pos = strpos($letters, $letter);
 
         return $pos !== false && ($letters[$pos + 1] ?? '') === '*';
+    }
+
+    /** True bila pengguna tidak punya hak C/U/D di modul mana pun (mis. investor, R-06a). */
+    public static function readOnly(?User $user): bool
+    {
+        return preg_match('/[CUD]/', implode('', self::permissions($user))) !== 1;
+    }
+
+    /**
+     * Hak memutuskan (config('rbac.keputusan')), terpisah dari huruf C/U/D. Pengguna nonaktif/
+     * terhapus tidak pernah boleh. Tidak memengaruhi readOnly().
+     */
+    public static function canDecide(?User $user, string $module): bool
+    {
+        self::assertModule($module);
+
+        if ($user === null || ! $user->canAuthenticate() || ! $user->role instanceof Role) {
+            return false;
+        }
+
+        return in_array($user->role->value, (array) config("rbac.keputusan.{$module}", []), true);
+    }
+
+    /**
+     * Hak aksi khusus per peran (config('rbac.aksi_peran')). Pengguna nonaktif/terhapus tidak pernah boleh;
+     * aksi yang tidak dikenal ditolak (fail closed).
+     */
+    public static function canAction(?User $user, string $aksi): bool
+    {
+        if ($user === null || ! $user->canAuthenticate() || ! $user->role instanceof Role) {
+            return false;
+        }
+
+        return in_array($user->role->value, (array) config("rbac.aksi_peran.{$aksi}", []), true);
+    }
+
+    /**
+     * Modul tempat pengguna berhak memutuskan, mis. investor -> ['persetujuan-menu'].
+     *
+     * @return list<string>
+     */
+    public static function decisionModules(?User $user): array
+    {
+        return array_values(array_filter(
+            array_keys((array) config('rbac.keputusan', [])),
+            fn (string $module) => self::hasModule($module) && self::canDecide($user, $module),
+        ));
+    }
+
+    /**
+     * True bila pengguna boleh membaca AGREGAT modul (hitungan per kategori tanpa data pribadi):
+     * punya hak R penuh (bukan R*) atau perannya tercantum di config('rbac.agregat.<modul>').
+     */
+    public static function canAggregate(?User $user, string $module): bool
+    {
+        self::assertModule($module);
+
+        if (self::can($user, $module, 'R') && ! self::isSelfOnly($user, $module, 'R')) {
+            return true;
+        }
+
+        if ($user === null || ! $user->canAuthenticate() || ! $user->role instanceof Role) {
+            return false;
+        }
+
+        return in_array($user->role->value, (array) config("rbac.agregat.{$module}", []), true);
+    }
+
+    /**
+     * Modul yang hanya boleh dibaca agregatnya oleh pengguna (tanpa hak R), mis. investor ->
+     * ['penerima-manfaat']. Dipakai Mini App untuk menu agregat.
+     *
+     * @return list<string>
+     */
+    public static function aggregateOnlyModules(?User $user): array
+    {
+        return array_values(array_filter(
+            array_keys((array) config('rbac.agregat', [])),
+            fn (string $module) => self::hasModule($module) && self::letters($user, $module) === '' && self::canAggregate($user, $module),
+        ));
     }
 
     /**
@@ -176,6 +262,10 @@ final class Rbac
             foreach (str_split(str_replace('*', '', $letters)) as $letter) {
                 $abilities[] = "{$module}:{$letter}";
             }
+        }
+
+        foreach (self::decisionModules($user) as $module) {
+            $abilities[] = "{$module}:putuskan";
         }
 
         return $abilities;

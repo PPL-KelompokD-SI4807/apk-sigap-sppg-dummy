@@ -7,6 +7,7 @@ use App\Enums\Role;
 use App\Http\Requests\Concerns\HasAiDraftId;
 use App\Models\User;
 use App\Rules\NomorTelepon;
+use App\Rules\TeleponUnik;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -37,7 +38,8 @@ abstract class PenggunaRequest extends FormRequest
             'role' => [$req, Rule::enum(Role::class)],
             'unit' => ['nullable', Rule::enum(RelawanUnit::class)],
             'sppg_id' => ['nullable', 'integer', Rule::exists('sppgs', 'id')->whereNull('deleted_at')],
-            'phone' => ['nullable', new NomorTelepon],
+            // Unik dalam bentuk normal E.164: no telepon adalah identitas login (R-03).
+            'phone' => ['nullable', new NomorTelepon, new TeleponUnik($this->target()?->getKey())],
             'is_active' => ['sometimes', 'boolean'],
         ] + $this->aiDraftRules();
     }
@@ -59,7 +61,7 @@ abstract class PenggunaRequest extends FormRequest
             }
 
             $unit = $this->has('unit') ? $this->input('unit') : ($roleChanged ? null : $target?->unit?->value);
-            $sppgId = $this->has('sppg_id') ? $this->input('sppg_id') : ($role === Role::Admin ? null : $target?->sppg_id);
+            $sppgId = $this->has('sppg_id') ? $this->input('sppg_id') : ($role->tanpaSppgId() ? null : $target?->sppg_id);
 
             if ($role === Role::Relawan && $unit === null) {
                 $validator->errors()->add('unit', 'Unit tugas (dapur/distribusi) wajib untuk relawan.');
@@ -73,7 +75,11 @@ abstract class PenggunaRequest extends FormRequest
                 $validator->errors()->add('sppg_id', 'Admin bersifat lintas SPPG; sppg_id harus kosong.');
             }
 
-            if ($role !== Role::Admin && $sppgId === null) {
+            if ($role === Role::Investor && $this->filled('sppg_id')) {
+                $validator->errors()->add('sppg_id', 'Investor tidak terikat satu SPPG; sppg_id harus kosong (atur lewat kepemilikan SPPG).');
+            }
+
+            if (! $role->tanpaSppgId() && $sppgId === null) {
                 $validator->errors()->add('sppg_id', 'SPPG wajib diisi untuk peran selain admin.');
             }
         }];

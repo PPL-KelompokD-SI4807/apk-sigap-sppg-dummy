@@ -13,7 +13,6 @@ use App\Models\PemeriksaanMutu;
 use App\Models\Pengemudi;
 use App\Models\TitikLayanan;
 use App\Models\User;
-use Laravel\Sanctum\Sanctum;
 
 class JadwalDistribusiTest extends GrupBTestCase
 {
@@ -66,6 +65,47 @@ class JadwalDistribusiTest extends GrupBTestCase
         $this->deleteJson("/api/v1/jadwal/distribusi/{$id}")->assertNoContent();
         $this->assertSoftDeleted('jadwal_distribusis', ['id' => $id]);
         $this->getJson("/api/v1/jadwal/distribusi/{$id}")->assertNotFound();
+    }
+
+    public function test_peringatan_bila_berangkat_lebih_awal_dari_mulai_masak(): void
+    {
+        $this->produksi->forceFill(['jam_mulai_masak' => '05:00:00'])->save();
+        $this->login(Role::KepalaSppg);
+
+        // Buat: peringatan, bukan 422; data tetap tersimpan.
+        $id = $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['jam_berangkat' => '04:30', 'jam_rencana_tiba' => '05:15']))
+            ->assertCreated()
+            ->assertJsonPath('data.jam_berangkat', '04:30')
+            ->assertJsonPath('data.peringatan', 'Jam berangkat 04:30 lebih awal dari jam mulai masak 05:00 pada jadwal produksi terkait (hari yang sama).')
+            ->json('data.id');
+        $this->assertDatabaseHas('jadwal_distribusis', ['id' => $id, 'status' => 'menunggu']);
+
+        // Ubah ke jam yang wajar: peringatan hilang. Ubah kembali lebih awal: peringatan muncul lagi (tetap 200).
+        $this->patchJson("/api/v1/jadwal/distribusi/{$id}", ['jam_berangkat' => '08:00', 'jam_rencana_tiba' => '08:45'])
+            ->assertOk()->assertJsonPath('data.peringatan', null);
+        $this->patchJson("/api/v1/jadwal/distribusi/{$id}", ['jam_berangkat' => '02:00', 'jam_rencana_tiba' => '02:30'])
+            ->assertOk()->assertJsonPath('data.peringatan', 'Jam berangkat 02:00 lebih awal dari jam mulai masak 05:00 pada jadwal produksi terkait (hari yang sama).');
+        $this->getJson("/api/v1/jadwal/distribusi/{$id}")->assertOk()->assertJsonPath('data.peringatan', fn ($v) => $v !== null);
+
+        // Tepat sama dengan jam mulai masak bukan "lebih awal".
+        $this->patchJson("/api/v1/jadwal/distribusi/{$id}", ['jam_berangkat' => '05:00', 'jam_rencana_tiba' => '05:45'])
+            ->assertOk()->assertJsonPath('data.peringatan', null);
+    }
+
+    public function test_tanpa_peringatan_bila_jam_mulai_masak_kosong_atau_tanggal_berbeda(): void
+    {
+        $this->login(Role::KepalaSppg);
+
+        $this->produksi->forceFill(['jam_mulai_masak' => null])->save();
+        $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['jam_berangkat' => '01:00', 'jam_rencana_tiba' => '01:30']))
+            ->assertCreated()->assertJsonPath('data.peringatan', null);
+
+        // Distribusi hari berikutnya: tidak sehari dengan produksi, jadi tidak dibandingkan.
+        $this->produksi->forceFill(['jam_mulai_masak' => '05:00:00'])->save();
+        $this->postJson('/api/v1/jadwal/distribusi', $this->payload([
+            'tanggal_distribusi' => $this->produksi->tanggal_produksi->copy()->addDay()->toDateString(),
+            'jam_berangkat' => '01:00', 'jam_rencana_tiba' => '01:30', 'jumlah_porsi' => 100,
+        ]))->assertCreated()->assertJsonPath('data.peringatan', null);
     }
 
     public function test_validasi_422(): void
@@ -234,7 +274,7 @@ class JadwalDistribusiTest extends GrupBTestCase
         $this->getJson('/api/v1/jadwal/distribusi')->assertForbidden();
         $this->postJson('/api/v1/jadwal/distribusi', $this->payload())->assertForbidden();
 
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
         $this->getJson('/api/v1/jadwal/distribusi')->assertOk();
         $id = $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['jumlah_porsi' => 50]))->assertCreated()
             ->assertJsonPath('data.petugas_id', $relawan->id)->assertJsonPath('data.dibuat_oleh', $relawan->id)->json('data.id');
@@ -323,7 +363,7 @@ class JadwalDistribusiTest extends GrupBTestCase
         $user = $this->user(Role::KepalaSppg);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal', 'payload' => ['_resource' => 'distribusi']]);
         $drafProduksi = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         // Draf jadwal PRODUKSI (tanpa penanda) tidak dapat dikonfirmasi lewat endpoint distribusi.
         $this->postJson('/api/v1/jadwal/distribusi', $this->payload(['ai_draft_id' => $drafProduksi->uuid]))

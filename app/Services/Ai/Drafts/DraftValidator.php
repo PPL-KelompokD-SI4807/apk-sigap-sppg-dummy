@@ -44,8 +44,9 @@ class DraftValidator
         $validator = (fn () => $this->getValidatorInstance())->call($request);
         $errors = $validator->errors()->toArray();
         $valid = $validator->valid();
+        $ruleKeys = array_values(array_unique(array_map(fn ($k) => explode('.', (string) $k)[0], array_keys($validator->getRules()))));
 
-        return new DraftValidationResult(true, $errors, $this->confidence($payload, $errors, $modelConfidence), $valid);
+        return new DraftValidationResult(true, $errors, $this->confidence($payload, $errors, $modelConfidence), $valid, $ruleKeys);
     }
 
     /**

@@ -3,8 +3,21 @@ schemas:
     type: object
     description: |
       Draf hasil Agen AI (FR-11) untuk prefill formulir Mini App. Data BELUM tersimpan:
-      simpan dengan memanggil endpoint modul (POST/PUT) beserta `ai_draft_id` = `uuid`.
+      simpan dengan memanggil endpoint modul (POST/PUT) beserta `ai_draft_id` = `uuid`, atau
+      jalankan dari tombol konfirmasi chat Bot (Lanjutkan) bila tool-nya mendukung (lihat docs/api/ai-tools.md).
       Kolom pada `perlu_dicek` (keyakinan < 0,7 atau gagal validasi) diberi label "Perlu dicek".
+      Draf Admin (modul pengguna) tidak terikat SPPG.
+      Masukan salah di bot (satuan tidak cocok/tak dikenal, rujukan tidak ditemukan, tanggal/angka tidak valid atau di
+      luar batas, kolom wajib kosong, galat Form Request, argumen tool tidak sesuai skema) TIDAK ditanyakan balik lewat
+      chat: draf dibuat dari bagian yang valid (kolom salah dikosongkan dari `payload`), `perlu_diperbaiki` = true,
+      `errors` memuat pesan per kolom, dan bot mengirim satu pesan + tombol "Buka di Mini App" (?draft=<uuid>). Draf
+      seperti ini tidak dapat dijalankan dari chat; simpan dari formulir Mini App setelah diperbaiki.
+      R07-5: tool `ubah_sub_kategori_pengeluaran` menghasilkan draf `module` keuangan, `action` update, `payload`
+      `{sub_kategori, versi, _resource: pengeluaran}` (versi dari server). Simpan lewat layar ubah pengeluaran:
+      PUT/PATCH /keuangan/pengeluaran/{id} dengan `versi`, `sub_kategori`, dan `ai_draft_id` (versi basi -> 409).
+      Pada pengeluaran `disetujui`, mengubah `sub_kategori` saja tidak mengajukan ulang (status tetap `disetujui`).
+      Pada pengeluaran `diajukan`/`ditolak`, menyimpan mengajukan ulang ke investor (ringkasan konfirmasi memuat
+      peringatan sesuai status).
     properties:
       uuid: { type: string, format: uuid }
       module: { type: string, description: 'Slug modul config/rbac.php, mis. titik-layanan.', example: titik-layanan }
@@ -19,11 +32,50 @@ schemas:
         type: object
         additionalProperties: { type: number, minimum: 0, maximum: 1 }
       perlu_dicek: { type: array, items: { type: string } }
+      perlu_diperbaiki:
+        type: boolean
+        description: 'true bila `errors` tidak kosong (kolom perlu diperbaiki sebelum disimpan). Status tetap `pending`.'
       errors:
         type: object
         additionalProperties: { type: array, items: { type: string } }
-        description: 'Hasil validasi dry-run Form Request terkini (kosong = siap disimpan). Hanya di GET detail.'
-      status: { type: string, enum: [pending, confirmed, discarded, expired] }
+        description: |
+          Galat per kolom: galat yang dicatat server saat draf dibuat (didahulukan) + validasi dry-run Form Request terkini
+          (kosong = siap disimpan). Kunci bertitik untuk baris, mis. `bahan.0.bahan_baku_id`, `bahan.1.gram_per_porsi`.
+          Pesan tidak memuat data sensitif. Di daftar GET /ai-drafts hanya galat tersimpan server.
+      pilihan_referensi:
+        type: array
+        description: |
+          Rujukan NAMA yang ambigu (mis. "ayam" cocok dengan dua bahan baku SPPG pengguna). Hanya di GET detail; daftar
+          GET /ai-drafts selalu `[]`. Baris `payload[kolom][indeks]` adalah placeholder TANPA ID (gagal validasi sampai
+          dipilih). Mini App menampilkan `kandidat` sebagai pilihan untuk baris itu lalu mengirim ID pilihan di body endpoint
+          modul seperti biasa (tidak ada endpoint khusus). Kandidat dimuat ulang dari SPPG pengguna (data terhapus tidak ikut).
+          Di Bot, pilihan yang sama tampil sebagai tombol.
+        items:
+          type: object
+          properties:
+            kolom: { type: string, example: bahan }
+            indeks: { type: integer, minimum: 0, description: 'Posisi baris placeholder pada payload[kolom].' }
+            jenis: { type: string, enum: [bahan_baku, pemasok, titik_layanan, menu, armada], example: bahan_baku }
+            dicari: { type: string, maxLength: 60, description: 'Nama yang disebut pengguna (data, bukan instruksi).', example: ayam }
+            jumlah: { type: string, description: 'Takaran asli (desimal string).', example: '10' }
+            satuan: { type: string, description: 'Satuan asli yang disebut.', example: gram }
+            kandidat:
+              type: array
+              maxItems: 5
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  nama: { type: string, maxLength: 60 }
+                  satuan: { type: [string, 'null'], maxLength: 20 }
+            lebih_banyak: { type: boolean, description: 'true = ada lebih dari 5 yang cocok (minta nama lebih spesifik).' }
+      status:
+        type: string
+        enum: [pending, menunggu_konfirmasi_ulang, confirmed, discarded, cancelled, expired, gagal]
+        description: |
+          pending / menunggu_konfirmasi_ulang (langkah 2 aksi berbahaya di chat) = masih dapat disimpan.
+          confirmed = disimpan di Mini App atau dijalankan dari chat; discarded = dibuang di Mini App;
+          cancelled = Batal di chat; expired = lewat TTL; gagal = eksekusi chat ditolak/gagal (tidak dapat dipakai lagi).
       expires_at: { type: string, format: date-time }
       created_at: { type: string, format: date-time }
       form: { type: string, description: 'Rute Mini App tujuan, mis. /titik-layanan/baru.', example: /titik-layanan/baru }
@@ -36,7 +88,9 @@ schemas:
       payload: { nama: SDN 2 Sukamaju, jenis: sekolah, alamat: Jl. Fiktif No. 2, jarak_km: 3.5, jumlah_sasaran: 240, pic_nama: Bu Rina }
       confidence: { nama: 0.95, jenis: 0.9, alamat: 0.0, jarak_km: 0.85, jumlah_sasaran: 0.9, pic_nama: 0.6 }
       perlu_dicek: [alamat, pic_nama]
+      perlu_diperbaiki: false
       errors: {}
+      pilihan_referensi: []
       status: pending
       expires_at: '2026-11-02T08:30:00+07:00'
       created_at: '2026-11-02T08:00:00+07:00'

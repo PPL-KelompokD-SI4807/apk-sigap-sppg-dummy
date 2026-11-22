@@ -1,0 +1,12 @@
+# SiGAP SPPG - jadwal cadangan harian 02:30 WIB. Persistent=true: tugas yang terlewat saat VM mati
+# dijalankan segera setelah VM menyala.
+[Unit]
+Description=SiGAP SPPG - jadwal cadangan harian
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Jakarta
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

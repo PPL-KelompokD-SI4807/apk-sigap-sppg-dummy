@@ -88,7 +88,7 @@ class LogProduksiController extends ApiController
         $data = $request->validated();
 
         $log = DB::transaction(function () use ($request, $logProduksi, $data): LogProduksi {
-            $log = $this->service->perbarui($logProduksi, $data);
+            $log = $this->service->perbarui($logProduksi, $data, $this->versi($data));
             $this->lampiran->ikat($data['lampiran_ids'] ?? [], $log, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $log->id);
 
@@ -98,10 +98,10 @@ class LogProduksiController extends ApiController
         return new LogProduksiResource($log->load(self::RELASI));
     }
 
-    public function destroy(LogProduksi $logProduksi): Response
+    public function destroy(Request $request, LogProduksi $logProduksi): Response
     {
         $this->authorize('delete', $logProduksi);
-        $logProduksi->delete();
+        $this->hapusDenganDraf($request, 'log-produksi', (int) $logProduksi->getKey(), fn () => $logProduksi->delete());
 
         return response()->noContent();
     }

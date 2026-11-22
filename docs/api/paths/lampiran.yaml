@@ -11,7 +11,15 @@
       1. Terikat: `lampiranable_id` diisi. Hak `update` pada record induk menurut Policy modulnya (mis. akuntan
          untuk keuangan-pengeluaran). Record induk SPPG lain -> 404. Semua modul: total lampiran maks 5 per data
          (422 pada `lampiranable_id`).
-      2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`. Berkas disimpan belum
+         Modul berversi (R-06b-2): hak Policy `lampirkan` (bukan `update`) dan penjaga di bawah kunci baris:
+         - `pembelian-bahan`: hanya bila status `diajukan`/`ditolak`; pembelian `terverifikasi` -> 403
+           (409 `pembelian_sudah_diverifikasi` bila berubah di antara pemeriksaan hak dan kunci). Tiap lampiran terikat yang
+           berhasil MENAIKKAN `versi` pembelian sehingga verifikasi dari layar lama -> 409 `versi_tidak_cocok`.
+         - `keuangan-pengeluaran`: pengeluaran hasil pembelian (`pembelian_bahan_id` terisi) -> 403 (409
+           `pengeluaran_dari_pembelian`); pengeluaran `disetujui` -> 409 `pengeluaran_sudah_disetujui` (ubah lewat
+           PATCH agar diajukan ulang); `diajukan`/`ditolak` diizinkan dan menaikkan `versi` (pengajuan yang menunggu
+           ikut versi baru; keputusan investor dari layar lama -> 409 `versi_tidak_cocok`).
+      2. Tertunda: TANPA `lampiranable_id`, hanya modul `keluhan`, `mutu`, `log-produksi`, `pembelian-bahan` (kategori `nota`, maks 3; hak staf_gudang; disembunyikan dari investor). Berkas disimpan belum
          terikat; kirim `id`-nya pada `lampiran_ids` di POST/PATCH modul. Hak: C atau U modul tersebut (Tabel 5)
          -> selain itu 403; modul lain tanpa `lampiranable_id` -> 422. Lampiran yang belum terikat hanya dapat
          dibaca pengunggahnya (GET /lampiran/{id}, selain itu 404). Maks 10 unggahan tertunda aktif (belum diikat)
@@ -50,6 +58,8 @@
       record induk (Policy modul induk); lampiran belum terikat: hanya pengunggah (lainnya 404);
       lampiran/induk SPPG lain atau induk terhapus -> 404;
       berkas yang berubah di luar aplikasi (sha256 tidak cocok) -> 404.
+      Foto keluhan/mutu untuk investor (R06a-S-05) -> 403 dengan `alasan: lampiran_disembunyikan`
+      (Mini App tidak perlu memanggilnya: resource induk memuat `lampiran: []` + `lampiran_disembunyikan: true`).
       Header: `Content-Type` dari MIME tersimpan, `X-Content-Type-Options: nosniff`,
       `Content-Disposition: inline; filename="lampiran.<ext>"`, `Cache-Control: private, no-store`,
       `Content-Security-Policy: default-src 'none'; sandbox`.
@@ -77,5 +87,15 @@
           image/webp:
             schema: { type: string, format: binary }
       '401': { $ref: '#/components/responses/Unauthorized' }
-      '403': { $ref: '#/components/responses/Forbidden' }
+      '403':
+        description: Tanpa hak `view` pada record induk, atau foto keluhan/mutu untuk investor (`lampiran_disembunyikan`).
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string }
+                alasan: { type: string, enum: [lampiran_disembunyikan] }
+            example: { message: 'Foto lampiran tidak ditampilkan untuk peran Anda.', alasan: lampiran_disembunyikan }
       '404': { $ref: '#/components/responses/NotFound' }

@@ -38,6 +38,8 @@ class UndanganResource extends JsonResource
             'created_by' => $inv->created_by,
             'expires_at' => $inv->expires_at->toIso8601String(),
             'used_at' => $inv->used_at?->toIso8601String(),
+            // Akun yang memakai undangan. Pada daftar ulang akun terhapus, berbeda dari user_id (placeholder).
+            'used_by' => $inv->used_by === null ? null : (int) $inv->used_by,
             'revoked_at' => $inv->revoked_at?->toIso8601String(),
             'created_at' => $inv->created_at?->toIso8601String(),
         ];

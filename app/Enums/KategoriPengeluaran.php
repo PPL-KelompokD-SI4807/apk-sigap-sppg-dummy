@@ -10,6 +10,8 @@ enum KategoriPengeluaran: string
     case Transportasi = 'transportasi';
     case Peralatan = 'peralatan';
     case Lainnya = 'lainnya';
+    /** R07-1: kelompok BGN "Insentif Fasilitas SPPG" (Lampiran 30b-C); data lama tidak diubah. */
+    case InsentifFasilitas = 'insentif_fasilitas';
 
     public function label(): string
     {
@@ -20,6 +22,7 @@ enum KategoriPengeluaran: string
             self::Transportasi => 'Transportasi',
             self::Peralatan => 'Peralatan',
             self::Lainnya => 'Lainnya',
+            self::InsentifFasilitas => 'Insentif Fasilitas SPPG',
         };
     }
 

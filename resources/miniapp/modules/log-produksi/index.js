@@ -3,9 +3,8 @@ import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
 import { lampiranField, createLampiranPanel } from '../../components/lampiran-field.js';
 import { h, formatValue } from '../../core/dom.js';
-import { api } from '../../core/api.js';
-import { getUser } from '../../core/auth.js';
-import { logFields, logDetailFields, logPayload, hitungCapaian, selisihText, rowPermsLog } from './schema.js';
+import { api } from '../../core/transport.js';
+import { logFields, logDetailFields, logPayload, hitungCapaian, selisihText } from './schema.js';
 
 const unwrap = (r) => (r && r.data !== undefined && !Array.isArray(r) ? r.data : r);
 
@@ -38,6 +37,7 @@ export default defineCrudModule({
   icon: '👨‍🍳',
   description: 'Realisasi porsi, sisa makanan, dan kendala harian',
   endpoint: '/log-produksi',
+  sertakanVersi: true,
   columns: [{ key: 'kode_batch', primary: true }],
   fields: ({ mode, record }) => (mode === 'detail' ? logDetailFields : [...logFields({ mode, record }), lampiranField({
     modul: 'log-produksi', label: 'Foto produksi', existing: record?.lampiran || [],
@@ -48,6 +48,7 @@ export default defineCrudModule({
   searchPlaceholder: 'Cari kode batch atau kendala...',
   prefill: (q) => (q.get('jadwal') ? { jadwal_produksi_id: q.get('jadwal') } : {}),
   formTop,
+  formTopWeb: formTop,
   renderCard: (r, href) => rowCard({
     href,
     title: r.jadwal?.menu?.nama_menu ?? r.kode_batch ?? `Log #${r.id}`,
@@ -56,10 +57,13 @@ export default defineCrudModule({
     asideSub: r.persentase_capaian != null ? `${Number(r.persentase_capaian).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%` : 'porsi',
     badge: r.peringatan ? { text: 'Beda target', cls: 'badge-warn' } : null,
   }),
-  rowPerms: (rec, p) => rowPermsLog(getUser(), rec, p),
-  detailExtras: (rec, p) => {
-    const nodes = rec.peringatan ? [h('div', { class: 'notice' }, `⚠ ${rec.peringatan}`)] : [];
-    if ((rec.lampiran || []).length || p.U) nodes.push(createLampiranPanel({ modul: 'log-produksi', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p.U, title: 'Foto produksi' }));
-    return nodes;
-  },
+  izin: true, // Ubah/Hapus mengikuti izin per record dari server
+  detailExtrasWeb: (rec, ctx, p) => detailLog(rec, p), // foto lewat cookie sesi (R04-8 PR5); hak unggah = izin.ubah server
+  detailExtras: (rec, p) => detailLog(rec, p),
 });
+
+function detailLog(rec, p) {
+  const nodes = rec.peringatan ? [h('div', { class: 'notice' }, `⚠ ${rec.peringatan}`)] : [];
+  if ((rec.lampiran || []).length || p?.U) nodes.push(createLampiranPanel({ modul: 'log-produksi', recordId: rec.id, kategori: 'foto', lampiran: rec.lampiran || [], canAdd: !!p?.U, title: 'Foto produksi' }));
+  return nodes;
+}

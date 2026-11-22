@@ -8,6 +8,7 @@ import {
 } from '../core/lampiran-uploader.js';
 import { uploadLampiran, lampiranField } from '../components/lampiran-field.js';
 import { PESAN_413, PESAN_429, PESAN_409 } from '../core/errors.js';
+import { PROFIL } from './fixtures/peta.js';
 import * as keluhan from '../modules/keluhan/schema.js';
 import * as mutu from '../modules/mutu/schema.js';
 import * as log from '../modules/log-produksi/schema.js';
@@ -168,10 +169,10 @@ test('lampiranIdsPayload: kosong -> tidak dikirim, duplikat dibuang', () => {
 
 test('payload keluhan/mutu/log produksi menyertakan lampiran_ids hanya bila ada foto terunggah', () => {
   const k = { sumber: 'guru', kategori: 'rasa', deskripsi: 'Sayur lembek', lampiran_ids: [11, 12] };
-  assert.deepEqual(keluhan.keluhanPayload(k, { mode: 'create', user: { role: 'relawan' } }).lampiran_ids, [11, 12]);
-  assert.equal('lampiran_ids' in keluhan.keluhanPayload({ ...k, lampiran_ids: [] }, { mode: 'create', user: { role: 'relawan' } }), false);
-  assert.equal('lampiran_ids' in keluhan.keluhanPayload({ ...k, status: 'diproses' }, { mode: 'update', user: { role: 'kepala_sppg' } }), false, 'form tindak lanjut tanpa foto');
-  assert.deepEqual(keluhan.keluhanPayload(k, { mode: 'update', user: { role: 'admin' } }).lampiran_ids, [11, 12]);
+  assert.deepEqual(keluhan.keluhanPayload(k, { mode: 'create', user: PROFIL.relawan_dapur }).lampiran_ids, [11, 12]);
+  assert.equal('lampiran_ids' in keluhan.keluhanPayload({ ...k, lampiran_ids: [] }, { mode: 'create', user: PROFIL.relawan_dapur }), false);
+  assert.equal('lampiran_ids' in keluhan.keluhanPayload({ ...k, status: 'diproses' }, { mode: 'update', user: PROFIL.kepala_sppg }), false, 'form tindak lanjut tanpa foto');
+  assert.deepEqual(keluhan.keluhanPayload(k, { mode: 'update', user: PROFIL.admin }).lampiran_ids, [11, 12]);
 
   const m = { jadwal_produksi_id: '3', kebersihan_dapur: 'true', kebersihan_petugas: 'true', rasa_baik: 'true', aroma_baik: 'true', tampilan_baik: 'true', hasil: 'layak', lampiran_ids: [8] };
   assert.deepEqual(mutu.mutuPayload(m, { mode: 'create' }).lampiran_ids, [8]);

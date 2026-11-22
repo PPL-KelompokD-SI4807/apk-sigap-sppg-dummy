@@ -51,7 +51,15 @@ class PemeriksaanMutuController extends ApiController
             $query->where('sppg_id', (int) $request->query('sppg_id'));
         }
 
-        return PemeriksaanMutuResource::collection($this->paginate($query->orderByDesc('waktu_pemeriksaan')->orderByDesc('id'), $request));
+        $halaman = $this->paginate($query->orderByDesc('waktu_pemeriksaan')->orderByDesc('id'), $request);
+
+        // Satu perhitungan agregat untuk seluruh halaman (bukan per baris), aturan yang sama dengan detail.
+        $peta = $this->service->memengaruhiDistribusiBanyak($halaman->getCollection());
+        $halaman->getCollection()->each(
+            fn (PemeriksaanMutu $p) => $p->setAttribute('memengaruhi_distribusi', $peta[$p->id] ?? false)
+        );
+
+        return PemeriksaanMutuResource::collection($halaman);
     }
 
     public function store(StorePemeriksaanMutuRequest $request): JsonResponse
@@ -83,7 +91,7 @@ class PemeriksaanMutuController extends ApiController
         $data = $request->validated();
 
         $diubah = DB::transaction(function () use ($request, $pemeriksaanMutu, $data): PemeriksaanMutu {
-            $diubah = $this->service->perbarui($pemeriksaanMutu, $request->user(), $data);
+            $diubah = $this->service->perbarui($pemeriksaanMutu, $request->user(), $data, $this->versi($data));
             $this->lampiran->ikat($data['lampiran_ids'] ?? [], $diubah, self::MODULE, $request->user());
             $this->draf->confirm($data['ai_draft_id'] ?? null, $request->user(), self::MODULE, $diubah->id);
 
@@ -93,10 +101,10 @@ class PemeriksaanMutuController extends ApiController
         return new PemeriksaanMutuResource($this->muat($diubah));
     }
 
-    public function destroy(PemeriksaanMutu $pemeriksaanMutu): Response
+    public function destroy(Request $request, PemeriksaanMutu $pemeriksaanMutu): Response
     {
         $this->authorize('delete', $pemeriksaanMutu);
-        $this->service->hapus($pemeriksaanMutu);
+        $this->hapusDenganDraf($request, 'mutu', (int) $pemeriksaanMutu->getKey(), fn () => $this->service->hapus($pemeriksaanMutu));
 
         return response()->noContent();
     }

@@ -53,7 +53,11 @@ class StoreUndanganRequest extends FormRequest
                 $validator->errors()->add('sppg_id', 'Admin bersifat lintas SPPG; sppg_id harus kosong.');
             }
 
-            if ($role !== Role::Admin && ! $this->filled('sppg_id')) {
+            if ($role === Role::Investor && $this->filled('sppg_id')) {
+                $validator->errors()->add('sppg_id', 'Investor tidak terikat satu SPPG; sppg_id harus kosong (atur lewat kepemilikan SPPG).');
+            }
+
+            if (! $role->tanpaSppgId() && ! $this->filled('sppg_id')) {
                 $validator->errors()->add('sppg_id', 'SPPG wajib untuk peran selain admin.');
             }
         }];

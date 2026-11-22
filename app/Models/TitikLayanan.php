@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\JenisTitikLayanan;
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,9 +12,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class TitikLayanan extends Model
 {
-    use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'titik_layanans';
+
+    /**
+     * Data kontak PIC tidak masuk audit (data pribadi).
+     *
+     * @var list<string>
+     */
+    protected array $auditExclude = ['pic_nama', 'pic_telepon', 'pic_telegram_chat_id'];
 
     /** @var list<string> */
     protected array $searchable = ['nama', 'alamat', 'pic_nama'];

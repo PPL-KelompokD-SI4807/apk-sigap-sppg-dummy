@@ -6,7 +6,10 @@ use App\Models\AiDraft;
 
 /**
  * Hasil eksekusi tool. Konten untuk model selalu JSON (diperlakukan model sebagai data).
- * status: ok | draft | invalid | ditolak | gagal.
+ * status: ok | draft | perbaiki | invalid | ditolak | gagal.
+ *
+ * `perbaiki` = draf dibuat dari bagian masukan yang valid, tetapi ada kolom yang perlu diperbaiki pengguna (GalatDraf).
+ * Loop agen BERHENTI pada hasil ini (tanpa panggilan LLM lagi) dan bot membalas satu pesan server + tombol Mini App.
  */
 final class ToolResult
 {
@@ -19,6 +22,8 @@ final class ToolResult
     public const DITOLAK = 'ditolak';
 
     public const GAGAL = 'gagal';
+
+    public const PERBAIKI = 'perbaiki';
 
     /**
      * @param  array<string, mixed>  $data
@@ -37,17 +42,44 @@ final class ToolResult
     }
 
     /**
-     * @param  array<string, list<string>>  $errors
+     * @param  array<string, list<string>>  $errors  galat untuk model (tanpa galat baris slot pilihan tertunda)
+     * @param  bool  $konfirmasiChat  draf dapat dijalankan dari tombol konfirmasi di chat (bukan hanya Mini App)
+     * @param  list<array<string, mixed>>  $perluDipilih  rujukan ambigu (nama dicari + pilihan nama/satuan, TANPA ID)
+     *                                                    yang dipilih pengguna lewat tombol sistem
      */
-    public static function draft(AiDraft $draft, array $errors = []): self
+    public static function draft(AiDraft $draft, array $errors = [], bool $konfirmasiChat = false, array $perluDipilih = []): self
     {
-        return new self(self::DRAFT, [
+        $data = [
             'draf_dibuat' => true,
             'modul' => $draft->module,
             'aksi' => $draft->action->value,
             'perlu_dicek' => array_values(array_unique(array_map(fn ($k) => explode('.', (string) $k)[0], array_keys($errors)))),
-            'catatan' => 'Data BELUM disimpan. Pengguna harus memeriksa dan menekan Simpan di Mini App.',
-        ], null, $draft);
+            'catatan' => $konfirmasiChat
+                ? 'Data BELUM disimpan. Sistem menampilkan ringkasan dengan tombol Lanjutkan/Batal; aksi hanya berjalan bila pengguna menekan tombol itu. Jangan meminta pengguna mengetik "ya".'
+                : 'Data BELUM disimpan. Pengguna harus memeriksa dan menekan Simpan di Mini App.',
+        ];
+
+        if ($perluDipilih !== []) {
+            $data['perlu_dipilih'] = $perluDipilih;
+            $data['catatan'] = 'Data BELUM disimpan. Beberapa nama cocok dengan lebih dari satu data; sistem sudah menampilkan tombol pilihan kepada pengguna. Minta pengguna memilih lewat tombol itu. Jangan menebak, jangan meminta ID, dan jangan memanggil tool lagi untuk nama ini.';
+        }
+
+        return new self(self::DRAFT, $data, null, $draft);
+    }
+
+    /**
+     * Draf "perlu diperbaiki": galat per kolom sudah tersimpan di draf (payload `_galat`). Tidak dikirim ke LLM.
+     *
+     * @param  array<string, list<string>>  $galat
+     */
+    public static function perbaiki(AiDraft $draft, array $galat): self
+    {
+        return new self(self::PERBAIKI, ['draf_dibuat' => true, 'modul' => $draft->module, 'perlu_diperbaiki' => array_keys($galat)], null, $draft);
+    }
+
+    public function perluDiperbaiki(): bool
+    {
+        return $this->status === self::PERBAIKI && $this->draft !== null;
     }
 
     public static function invalid(string $message): self
@@ -67,7 +99,7 @@ final class ToolResult
 
     public function isError(): bool
     {
-        return ! in_array($this->status, [self::OK, self::DRAFT], true);
+        return ! in_array($this->status, [self::OK, self::DRAFT, self::PERBAIKI], true);
     }
 
     /** JSON untuk model, dipotong ke $maxChars agar konteks tidak membengkak. */

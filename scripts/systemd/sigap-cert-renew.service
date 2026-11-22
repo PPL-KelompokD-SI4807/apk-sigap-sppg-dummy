@@ -1,0 +1,28 @@
+# SiGAP SPPG - pembaruan sertifikat Let's Encrypt (certbot kontainer sesaat + reload nginx).
+# Log: journalctl -u sigap-cert-renew
+[Unit]
+Description=SiGAP SPPG - pembaruan sertifikat TLS
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+# Percobaan ulang terbatas: maks 3 kali dalam 3 jam.
+StartLimitIntervalSec=3h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/sigap/app
+ExecStart=/bin/bash /opt/sigap/app/scripts/renew-cert.sh
+UMask=0077
+TimeoutStartSec=15min
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+Environment=NO_COLOR=1
+# Tunggu kunci operasi (deploy/backup/restore lain) hingga 30 menit, bukan langsung gagal.
+Environment=SIGAP_LOCK_WAIT=1800
+Restart=on-failure
+RestartSec=10min

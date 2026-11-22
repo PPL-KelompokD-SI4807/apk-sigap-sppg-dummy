@@ -62,8 +62,11 @@ schemas:
       tindak_lanjut: { type: [string, 'null'] }
       lampiran:
         type: array
-        description: 'Foto keluhan terlampir (urut id). Ambil isinya lewat `url` + Authorization.'
+        description: 'Foto keluhan terlampir (urut id). Ambil isinya lewat `url` + Authorization. Selalu `[]` untuk investor (R06a-S-05).'
         items: { $ref: '#/components/schemas/Lampiran' }
+      lampiran_disembunyikan:
+        type: boolean
+        description: 'true = foto tidak ditampilkan untuk peran pengguna (investor); teks keluhan tetap terlihat. GET /lampiran/{id} -> 403 `lampiran_disembunyikan`.'
       dicatat_oleh:
         type: [object, 'null']
         properties:

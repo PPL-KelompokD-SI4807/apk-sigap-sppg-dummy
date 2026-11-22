@@ -2,6 +2,7 @@
 
 namespace App\Services\Perjalanan;
 
+use App\Enums\Role;
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusKirim;
 use App\Enums\StatusPerjalanan;
@@ -15,6 +16,7 @@ use App\Models\TitikLayanan;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -40,6 +42,21 @@ class TripNotificationService
     public const SUMBER_JADWAL = 'jadwal';
 
     public const SUMBER_DEFAULT = 'default';
+
+    public const PESAN_PETUGAS_LAIN = 'Jadwal distribusi ini ditugaskan kepada petugas lain.';
+
+    /**
+     * Aturan penugasan pemicu (F-02): relawan hanya boleh memicu jadwal yang ditugaskan kepadanya atau yang belum
+     * punya petugas; peran lain (Kepala SPPG, Admin, dst.) tidak dibatasi penugasan, hanya Policy create.
+     */
+    public static function bolehMemicu(User $pemicu, JadwalDistribusi $jadwal): bool
+    {
+        if ($pemicu->role !== Role::Relawan) {
+            return true;
+        }
+
+        return $jadwal->petugas_id === null || (int) $jadwal->petugas_id === (int) $pemicu->getKey();
+    }
 
     public function zona(): string
     {
@@ -106,12 +123,20 @@ class TripNotificationService
 
     /**
      * Mulai perjalanan: catat notifikasi berstatus "berangkat" lalu pancarkan PerjalananDimulai.
+     *
+     * @param  (Closure(NotifikasiPerjalanan): void)|null  $setelahSimpan  dijalankan setelah baris disimpan dan SEBELUM event
+     *                                                                     dipancarkan, di transaksi yang sama (mis. jejak audit Bot); galat di sini membatalkan
+     *                                                                     seluruh perjalanan tanpa event/notifikasi. REST tidak memakainya.
      */
-    public function mulai(User $pemicu, JadwalDistribusi $jadwal, ?CarbonInterface $berangkat = null, ?int $manualMenit = null): NotifikasiPerjalanan
+    public function mulai(User $pemicu, JadwalDistribusi $jadwal, ?CarbonInterface $berangkat = null, ?int $manualMenit = null, ?Closure $setelahSimpan = null): NotifikasiPerjalanan
     {
-        return DB::transaction(function () use ($pemicu, $jadwal, $berangkat, $manualMenit) {
+        return DB::transaction(function () use ($pemicu, $jadwal, $berangkat, $manualMenit, $setelahSimpan) {
             // Kunci baris jadwal agar dua pemicu bersamaan tidak membuat perjalanan ganda.
             $jadwal = JadwalDistribusi::query()->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
+            // Jaring pengaman jalur non-REST (bot/AI): penugasan diperiksa pada baris yang sudah dikunci.
+            if (! self::bolehMemicu($pemicu, $jadwal)) {
+                throw ValidationException::withMessages(['jadwal_distribusi_id' => [self::PESAN_PETUGAS_LAIN]]);
+            }
             $this->pastikanBisaBerangkat($jadwal);
 
             $titik = $jadwal->titikLayanan;
@@ -137,6 +162,10 @@ class TripNotificationService
                 'pesan' => $this->susunPesan($jadwal, $titik, $berangkat, $estimasi['tiba'], $estimasi['menit']),
             ]);
             $notifikasi->save();
+
+            if ($setelahSimpan !== null) {
+                $setelahSimpan($notifikasi);
+            }
 
             event(PerjalananDimulai::dari($notifikasi));
 

@@ -5,7 +5,7 @@ schemas:
       id: { type: integer }
       sppg_id: { type: integer }
       nama: { type: string }
-      jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+      jenis: { type: string, enum: [umkm, petani, peternak, nelayan, koperasi] }
       kontak: { type: [string, 'null'] }
       alamat: { type: [string, 'null'] }
       jenis_bahan: { type: [string, 'null'] }
@@ -19,7 +19,7 @@ schemas:
     properties:
       sppg_id: { type: integer, description: 'Wajib untuk Admin; diabaikan untuk peran lain.' }
       nama: { type: string, maxLength: 255 }
-      jenis: { type: string, enum: [umkm, petani, peternak, nelayan] }
+      jenis: { type: string, enum: [umkm, petani, peternak, nelayan, koperasi] }
       kontak: { type: [string, 'null'], maxLength: 30, description: 'Nomor telepon 8-15 digit.' }
       alamat: { type: [string, 'null'], maxLength: 255 }
       jenis_bahan: { type: [string, 'null'], maxLength: 255 }

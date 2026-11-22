@@ -9,6 +9,7 @@ use App\Services\Ai\Llm\NullLlmClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 class AnthropicLlmClientTest extends TestCase
@@ -86,6 +87,30 @@ class AnthropicLlmClientTest extends TestCase
         } catch (LlmException $e) {
             $this->assertStringNotContainsString(self::KEY, $e->getMessage());
         }
+    }
+
+    public function test_tanpa_ulang_tidak_mengulang_429_sedangkan_pesan_biasa_diulang_sekali(): void
+    {
+        Sleep::fake();
+        $client = new AnthropicLlmClient(self::KEY, 'model-uji', 'https://llm.test', retries: 1, retrySleepMs: 1);
+        $ok = ['model' => 'model-uji', 'stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => 'siap']]];
+
+        // Pesan foto (tanpa_ulang): satu permintaan saja, 429 langsung menjadi galat "sibuk".
+        Http::fakeSequence('llm.test/*')->push(['error' => ['type' => 'rate_limit_error']], 429)->push($ok);
+
+        try {
+            $client->chat([['role' => 'user', 'content' => 'x', 'images' => [['media_type' => 'image/jpeg', 'data' => 'QUFB']]]], [], ['tanpa_ulang' => true]);
+            $this->fail('Seharusnya melempar LlmException.');
+        } catch (LlmException $e) {
+            $this->assertSame(LlmException::SIBUK, $e->category);
+            $this->assertSame(429, $e->status);
+        }
+
+        Http::assertSentCount(1);
+
+        // Pembanding: tanpa opsi, retries=1 tetap mengulang sekali (perilaku pesan teks tidak berubah).
+        Http::fakeSequence('llm.test/*')->push(['error' => ['type' => 'rate_limit_error']], 429)->push($ok);
+        $this->assertSame('siap', $client->chat([['role' => 'user', 'content' => 'x']], [])->text);
     }
 
     public function test_tanpa_kunci_tidak_mengirim_permintaan(): void

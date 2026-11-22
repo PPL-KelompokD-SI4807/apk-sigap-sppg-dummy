@@ -20,6 +20,6 @@ class UpdatePengeluaranRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        return $this->aturanPengeluaran(false);
+        return ['versi' => ['required', 'integer', 'min:1']] + $this->aturanPengeluaran(false);
     }
 }

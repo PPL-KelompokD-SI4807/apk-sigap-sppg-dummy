@@ -1,13 +1,21 @@
 <?php
 
 use App\Http\Middleware\ApiSecurityHeaders;
+use App\Http\Middleware\BatasLajuSesiWeb;
+use App\Http\Middleware\EnsureTokenAbility;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\PastikanJalurSesi;
+use App\Http\Middleware\ResolveSppgAktif;
+use App\Http\Middleware\SesiWebCookie;
+use App\Services\Auth\GalatAuth;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -21,6 +29,18 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(ApiSecurityHeaders::class);
         $middleware->alias(['active' => EnsureUserIsActive::class]);
+        // Urutan (R06a-S-03): akun aktif -> ability token (auth:penuh/pra-login) -> SPPG aktif (R-06a)
+        // -> route model binding ber-SppgScope. Token pra-login/nonaktif ditolak SEBELUM header
+        // X-SPPG-Id dievaluasi, sehingga respons tidak membocorkan daftar kepemilikan SPPG.
+        $middleware->prependToPriorityList(SubstituteBindings::class, ResolveSppgAktif::class);
+        $middleware->prependToPriorityList(ResolveSppgAktif::class, EnsureTokenAbility::class);
+        $middleware->prependToPriorityList(EnsureTokenAbility::class, EnsureUserIsActive::class);
+        // R-04: cookie `__Host-sigap_sesi` -> token + CSRF jalur cookie WAJIB sebelum auth:sanctum.
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, SesiWebCookie::class);
+        // R04-4 (#81): batas laju jalur cookie per IP SEBELUM SesiWebCookie (CSRF) dan auth:sanctum.
+        $middleware->prependToPriorityList(SesiWebCookie::class, BatasLajuSesiWeb::class);
+        // R-04: pemeriksaan kedua penolakan silang cookie/Bearer tepat sesudah auth:sanctum (fail closed).
+        $middleware->appendToPriorityList(AuthenticatesRequests::class, PastikanJalurSesi::class);
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -46,9 +66,10 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($e instanceof AuthenticationException) {
-                return response()->json([
-                    'message' => 'Tidak terautentikasi. Silakan buka ulang Mini App.',
-                ], 401);
+                // Token kedaluwarsa: + `alasan: sesi_kedaluwarsa` (GalatAuth::tidakTerautentikasi).
+                [$body, $headers] = GalatAuth::tidakTerautentikasi($request);
+
+                return response()->json($body, 401, $headers);
             }
 
             $status = $e instanceof HttpExceptionInterface ? $e->getStatusCode() : 500;

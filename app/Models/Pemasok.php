@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\JenisPemasok;
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\BelongsToSppg;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,9 +12,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Pemasok extends Model
 {
-    use BelongsToSppg, HasFactory, Searchable, SoftDeletes;
+    use Auditable, BelongsToSppg, HasFactory, Searchable, SoftDeletes;
 
     protected $table = 'pemasoks';
+
+    /**
+     * Kontak pemasok tidak masuk audit (data pribadi).
+     *
+     * @var list<string>
+     */
+    protected array $auditExclude = ['kontak'];
 
     /** @var list<string> */
     protected array $searchable = ['nama', 'jenis_bahan', 'kontak'];

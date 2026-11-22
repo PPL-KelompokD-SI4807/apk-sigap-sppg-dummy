@@ -2,6 +2,8 @@
 
 namespace App\Policies;
 
+use App\Enums\Role;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -12,6 +14,19 @@ use Illuminate\Database\Eloquent\Model;
 class SppgPolicy extends BaseSppgPolicy
 {
     protected string $module = 'sppg';
+
+    /**
+     * Saldo awal (R-07 Q-2): hanya Akuntan pada SPPG-nya sendiri dan Admin. Kepala SPPG, peran lain, dan investor
+     * ditolak walau punya U pada modul `sppg`. Pengguna nonaktif tidak punya hak.
+     */
+    public function ubahSaldoAwal(User $user, Model $model): bool
+    {
+        if (! $user->canAuthenticate()) {
+            return false;
+        }
+
+        return $user->isAdmin() || ($user->hasRole(Role::Akuntan) && $this->sameSppg($user, $model));
+    }
 
     protected function sppgIdOf(Model $model): ?int
     {

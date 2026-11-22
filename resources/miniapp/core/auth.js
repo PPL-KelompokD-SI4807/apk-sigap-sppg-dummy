@@ -1,32 +1,175 @@
-import { api, setToken, getToken, ApiError } from './api.js';
+import { api, setToken, getToken, getJenisToken, hapusTokenTersimpan, ApiError, setPemulihSesi, resetPemulihan, onTokenDihapusLuar } from './api.js';
 import { getTg } from './telegram.js';
+import { hapusSppgAktif } from './sppg-aktif.js';
+import { KUNCI_AKSI } from './permissions.js';
 
 let user = null;
 export const getUser = () => user;
+/** Hanya untuk tes dan pengembangan: set pengguna sesi tanpa login. */
+export function setUserSesi(u) { user = u; }
 export const getRole = () => user?.role ?? null;
 
-/** Tukar Telegram initData ke token Sanctum. */
+/**
+ * Muat ulang peta hak dari GET /auth/me DENGAN header X-SPPG-Id SPPG aktif saat ini (request() menerapkannya). Peta dari login/me awal
+ * dihitung tanpa SPPG aktif, sehingga untuk Investor multi-SPPG `aksi.*` (mis. lihat_laporan_bgn_agregat) masih false. Ganti `user` bila valid.
+ */
+export async function muatUlangPeta() {
+  const res = await api.get('/auth/me', undefined, { silent: true });
+  if (res?.user && typeof res.user === 'object') user = res.user;
+  return user;
+}
+
+const DEVICE_KEY = 'sigap_device_id';
+const DEVICE_RE = /^[A-Za-z0-9_-]{22,128}$/;
+
+// Jenis token ('penuh' | 'pra_login') dipegang api.js bersama tokennya: hanya token penuh yang dipersistenkan (localStorage).
+const getJenis = getJenisToken;
+// Token penuh dihapus dari tab/WebView lain (logout di sana): lupakan pengguna dan pilihan SPPG di tab ini.
+onTokenDihapusLuar(() => { user = null; hapusSppgAktif(); });
+
+let memDeviceId = null;
+/** ID perangkat acak (bukan data pribadi) di localStorage; bila storage tak tersedia dipakai selama sesi halaman. */
+export function deviceId() {
+  try {
+    const v = localStorage.getItem(DEVICE_KEY);
+    if (v && DEVICE_RE.test(v)) return v;
+  } catch { /* abaikan */ }
+  if (memDeviceId) return memDeviceId;
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  const id = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  memDeviceId = id;
+  try { localStorage.setItem(DEVICE_KEY, id); } catch { /* abaikan */ }
+  return id;
+}
+
+export function labelPerangkat() {
+  const p = getTg()?.platform;
+  return `Telegram Mini App${p ? ` (${p})` : ''}`;
+}
+
+function simpanPenuh(res) {
+  resetPemulihan();
+  setToken(res.token, 'penuh');
+  user = res.user;
+}
+
+/**
+ * Tukar Telegram initData. Hasil: {langkah:'sesi_aktif'} | {langkah:'masuk'|'aktivasi', akun}.
+ * Token pra-login hanya di memori klien API (tidak dipersistenkan) untuk melanjutkan alur masuk.
+ */
 export async function login() {
   const tg = getTg();
   const initData = tg?.initData;
   if (!initData) throw new ApiError(0, 'Buka aplikasi ini lewat Telegram.');
+  if (getJenis() !== 'penuh') setToken(null); // Bearer hanya bila punya token penuh
+  const kirim = () => api.post('/auth/telegram', { init_data: initData, device_id: deviceId() }, { silent: true });
+  let res;
   try {
-    const res = await api.post('/auth/telegram', { init_data: initData }, { silent: true });
-    setToken(res.token);
-    user = res.user;
+    try {
+      res = await kirim();
+    } catch (e) {
+      if (e.status === 401 && getToken()) { setToken(null); res = await kirim(); } else throw e;
+    }
   } catch (e) {
+    // Akun nonaktif/tak terdaftar (403): token tersimpan tidak berlaku lagi, buang dari memori dan localStorage.
+    if (e.status === 403) { setToken(null); user = null; }
     // Dev tanpa backend: pengguna tiruan agar cangkang bisa dites. Tidak ada di build produksi.
-    if (import.meta.env.DEV && tg.__shim && (e.offline || e.status === 404 || e.status >= 500)) {
+    if (import.meta.env?.DEV && tg.__shim && (e.offline || e.status === 404 || e.status >= 500)) {
       console.warn('[SiGAP] Backend tidak tersedia, memakai pengguna tiruan dev.');
-      setToken('dev-token');
-      user = { id: 0, name: 'Pengguna Dev', role: tg.initDataUnsafe?.dev_role || 'kepala_sppg', sppg_id: 1, sppg_name: 'SPPG Contoh (dev)' };
-    } else throw e;
+      setToken('dev-token', 'penuh');
+      user = penggunaTiruanDev(tg.initDataUnsafe?.dev_role || 'kepala_sppg');
+      return { langkah: 'sesi_aktif' };
+    }
+    throw e;
   }
-  return user;
+  if (res.langkah === 'sesi_aktif') {
+    user = res.user;
+    resetPemulihan();
+    return { langkah: 'sesi_aktif' };
+  }
+  setToken(res.token, 'pra_login');
+  user = null;
+  return { langkah: res.langkah, akun: res.akun ?? {} };
 }
 
-export function logout() {
+// Pengguna tiruan dev (tanpa backend): SEMUA hak terbuka agar layar dapat dicoba. Bukan salinan matriks hak;
+// di produksi peta selalu dari server (build produksi membuang cabang ini).
+const SLUG_DEV = ['pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal',
+  'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'];
+function penggunaTiruanDev(role) {
+  return {
+    id: 0, name: 'Pengguna Dev', role, unit: null, sppg_id: 1, sppg_name: 'SPPG Contoh (dev)', multi_sppg: false, baca_saja: false,
+    modules: SLUG_DEV, permissions: Object.fromEntries(SLUG_DEV.map((m) => [m, 'CRUD'])), keputusan: [], agregat: [], unit_scope: {},
+    aksi: { ...Object.fromEntries(KUNCI_AKSI.map((k) => [k, true])), lihat_mutasi_stok: true, dashboard: { tersedia: true, profil: role } },
+  };
+}
+
+/**
+ * Pemulihan sesi saat 401 pada token penuh: buang token, satu kali POST /auth/telegram dengan initData Telegram.WebApp
+ * (bukan "segar": sama sejak Mini App dibuka; setelah +-1 jam ditolak -> layar Sesi berakhir).
+ * Tidak ada token baru dari initData saja: hasil `masuk`/`aktivasi` diteruskan ke form. null = tak berlaku (token pra-login).
+ * Galat (mis. 401 initData basi) dilempar ke pemanggil (api.js), yang menampilkan layar sesi berakhir.
+ */
+export async function pulihkanSesi() {
+  setToken(null); // idempoten: api.js sudah membuangnya; pemanggil memastikan token tadinya penuh (token pra-login tak dipulihkan)
+  user = null;
+  return login();
+}
+setPemulihSesi(pulihkanSesi, () => getJenis() === 'penuh');
+
+const opts = { silent: true };
+const dev = () => ({ device_id: deviceId() });
+
+/** Hasil: tantangan (202) atau {selesai:true, user} (200 login penuh langsung). */
+function tangani(res) {
+  if (res?.token_jenis === 'penuh') { simpanPenuh(res); return { selesai: true, user }; }
+  return { selesai: false, tantangan: res.tantangan, message: res.message };
+}
+export const masuk = async ({ identitas, password }) =>
+  tangani(await api.post('/auth/masuk', { identitas, password, label_perangkat: labelPerangkat(), ...dev() }, opts));
+export const aktivasi = async (body) =>
+  tangani(await api.post('/auth/aktivasi', { ...body, label_perangkat: labelPerangkat(), ...dev() }, opts));
+
+// Lupa password = permintaan ke Admin (token pra-login). Status: null | {id, status, ...}.
+export const statusReset = async () => (await api.get('/auth/lupa-password', undefined, opts)).data ?? null;
+export const ajukanReset = async () => (await api.post('/auth/lupa-password', {}, opts)).data;
+export const lanjutReset = async (body) =>
+  tangani(await api.post('/auth/lupa-password/lanjut', { ...body, label_perangkat: labelPerangkat(), ...dev() }, opts));
+export async function verifikasiToken(tantanganId, kode) {
+  const res = await api.post('/auth/token/verifikasi', { tantangan_id: tantanganId, kode, ...dev() }, opts);
+  simpanPenuh(res);
+  return user;
+}
+export const kirimUlangToken = async (tantanganId) =>
+  (await api.post('/auth/token/kirim-ulang', { tantangan_id: tantanganId, ...dev() }, opts)).tantangan;
+
+export const daftarSesi = async () => (await api.get('/auth/sesi')).data ?? [];
+// 401 pada rute ini = sesi sudah hilang di server: bersihkan sesi lokal, tanpa login senyap.
+const bersihBila401 = (p) => p.catch((e) => { if (e?.status === 401) bersihkanSesi(); throw e; });
+// Berhasil = semua token di server dicabut: hapus kunci localStorage tanpa syarat agar tab lain ikut keluar (event storage).
+export const keluarSemua = () => bersihBila401(api.post('/auth/keluar-semua', {}, opts)).then((r) => { hapusTokenTersimpan(); return r; });
+export const hapusSesi = (id) => bersihBila401(api.del(`/auth/sesi/${encodeURIComponent(id)}`, opts));
+export const ubahPassword = (body) => api.put('/auth/password', body, opts);
+
+// Admin (scope ditegakkan server).
+const unwrapData = (r) => r?.data ?? r;
+export const daftarPermintaanReset = async (status = 'menunggu') =>
+  (await api.get('/pengguna/permintaan-reset', { status, per_page: 50 }, opts)).data ?? [];
+export const putuskanReset = async (id, setuju) =>
+  unwrapData(await api.post(`/pengguna/permintaan-reset/${encodeURIComponent(id)}/${setuju ? 'setujui' : 'tolak'}`, {}, opts));
+export const daftarSesiPengguna = async (userId) => (await api.get(`/pengguna/${encodeURIComponent(userId)}/sesi`, undefined, opts)).data ?? [];
+export const cabutSesiPengguna = (userId, sesiId) => api.del(`/pengguna/${encodeURIComponent(userId)}/sesi/${encodeURIComponent(sesiId)}`, opts);
+export const cabutSemuaSesiPengguna = (userId) => api.del(`/pengguna/${encodeURIComponent(userId)}/sesi`, opts);
+
+/** Keluar dari perangkat ini: cabut token di server (kegagalan jaringan diabaikan), lalu bersihkan lokal. */
+export async function logout() {
+  try { await api.post('/auth/logout', {}, opts); } catch { /* token tetap dibuang lokal */ }
+  bersihkanSesi();
+}
+export function bersihkanSesi() {
   setToken(null);
+  hapusSppgAktif();
   user = null;
 }
 export const isLoggedIn = () => !!getToken() && !!user;

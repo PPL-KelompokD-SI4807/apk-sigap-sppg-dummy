@@ -2,7 +2,34 @@ securitySchemes:
   bearerAuth:
     type: http
     scheme: bearer
-    description: Token Sanctum dari POST /auth/telegram (berlaku 480 menit).
+    description: |
+      Token Sanctum. Rute data wajib token LOGIN PENUH (ability auth:penuh) dari
+      POST /auth/masuk atau /auth/token/verifikasi; tidak kedaluwarsa, berakhir hanya karena logout
+      atau pencabutan. Token pra-login dari POST /auth/telegram hanya untuk rute /auth/masuk,
+      /auth/aktivasi, /auth/lupa-password*, /auth/token/*.
+      Token sesi WEB (ability klien:web, R-04) DITOLAK bila dikirim sebagai Bearer (401).
+  webCookie:
+    type: apiKey
+    in: cookie
+    name: __Host-sigap_sesi
+    description: |
+      Sesi web R-04 (ADR 2026-11-09). Token Sanctum ber-ability `auth:penuh` + `klien:web`, HANYA lewat cookie
+      `__Host-sigap_sesi` (HttpOnly, Secure, SameSite=Strict, Path=/, tanpa Domain; Max-Age = expires_at sesi).
+      Klien web tidak pernah membaca/menyimpan token dan TIDAK mengirim header Authorization.
+      - Ada header `Authorization` -> hanya Bearer yang dievaluasi; cookie diabaikan (Bearer tidak sah tetap 401).
+      - SEMUA permintaan jalur cookie (termasuk GET/HEAD/OPTIONS) WAJIB membawa `X-Sigap-Klien: web` (persis).
+        Tanpa header itu cookie diabaikan sepenuhnya: 401 umum TANPA menghapus cookie (agar Mini App satu origin
+        tanpa Authorization tidak memakai maupun menghapus sesi web di browser yang sama).
+      - Token Mini App lewat cookie -> 401 (cookie dihapus). Hanya rute login penuh yang menerima cookie;
+        rute publik dan pra-login tidak.
+      - Metode pengubah (POST/PUT/PATCH/DELETE) juga WAJIB: `Origin` persis origin APP_URL (kosong/`null`
+        ditolak) dan `X-CSRF-Token` = nilai `csrf` dari GET /auth/me (atau dari respons login web).
+        Gagal -> 403 `alasan: csrf_ditolak`. Metode GET/HEAD tidak memerlukan Origin/CSRF.
+      - Semua respons jalur cookie: `Cache-Control: no-store, private` dan `Vary: Cookie`.
+      - Masa: idle 12 jam (sesi web biasa, termasuk semua sesi web Admin), 90 hari bergeser (Admin 30),
+        absolut 180 hari. Pemakaian ditulis paling sering tiap 15 menit; setiap penulisan menerbitkan ulang
+        cookie dengan Max-Age baru. 401 di jalur cookie selalu menghapus cookie (Max-Age=0).
+      - Kuota: maks 3 sesi web per pengguna, terpisah dari 5 sesi Mini App.
 schemas:
   Error:
     type: object
@@ -65,6 +92,67 @@ schemas:
         $ref: '#/components/schemas/PaginationLinks'
       meta:
         $ref: '#/components/schemas/PaginationMeta'
+  IzinUbahHapus:
+    type: object
+    required: [ubah, hapus]
+    description: |
+      Izin PER RECORD untuk pengguna login (hasil Policy yang sama dengan endpoint; lihat docs/api/peta-hak.md).
+      DEFINISI SERAGAM semua `izin`: HAK (Policy) DAN syarat keadaan yang dapat dibaca dari atribut record tanpa query
+      tambahan. `ubah` = PATCH/PUT diizinkan (relawan: hanya record buatannya sendiri pada hari yang sama); `hapus` =
+      DELETE diizinkan; untuk jadwal produksi hanya status direncanakan/dibatalkan, untuk jadwal distribusi hanya
+      menunggu/siap/dibatalkan. Syarat relasional yang butuh query (jadwal sudah punya log/distribusi aktif/bukti
+      distribusi) TIDAK termasuk dan tetap ditegakkan service (422), jadi `hapus=true` masih dapat berujung 422.
+      Klien yang tidak menerima `izin` menyembunyikan tombol aksi.
+    properties:
+      ubah: { type: boolean }
+      hapus: { type: boolean }
+  IzinJadwalDistribusi:
+    type: object
+    required: [ubah, hapus, catat_bukti]
+    description: |
+      Izin per jadwal distribusi. `ubah`/`hapus` = lihat IzinUbahHapus. `catat_bukti` = pengguna boleh `POST /bukti-distribusi`
+      untuk jadwal ini, dihitung dengan aturan SAMA dengan penegakan POST (`AturanCatatBukti`): hak Policy create bukti di
+      SPPG jadwal; relawan: jadwal tidak ditugaskan kepada petugas lain (`petugas_id` kosong atau dirinya) dan
+      `tanggal_distribusi` = hari ini (WIB); status bukan `menunggu`/`dibatalkan`; gerbang mutu batch produksi Layak
+      (dibaca dari relasi yang sudah dimuat, tanpa query per baris; relasi tak dimuat = false, gagal tertutup). `true` = POST bukan 403 (bukan jaminan sukses: jadwal
+      yang sudah punya bukti tetap 422); `false` = POST ditolak (403/422). Klien memakainya untuk memfilter dropdown jadwal
+      pada form Bukti Distribusi.
+    properties:
+      ubah: { type: boolean }
+      hapus: { type: boolean }
+      catat_bukti: { type: boolean }
+  IzinPembelianBahan:
+    type: object
+    required: [ubah, hapus, lampirkan, verifikasi]
+    description: |
+      Izin per pembelian bahan (hak + keadaan atribut). `ubah` dan `lampirkan` false untuk pembelian `terverifikasi` (final); `hapus` selalu
+      false (tidak ada hapus); `verifikasi` true hanya untuk akuntan SPPG yang sama, BUKAN pencatat pembelian itu, dan
+      status `diajukan`.
+    properties:
+      ubah: { type: boolean }
+      hapus: { type: boolean }
+      lampirkan: { type: boolean, description: 'POST /lampiran (nota) ke pembelian ini diizinkan.' }
+      verifikasi: { type: boolean, description: 'POST /pembelian-bahan/{id}/verifikasi diizinkan (hak keputusan).' }
+  IzinPengeluaran:
+    type: object
+    required: [ubah, hapus, lampirkan, putuskan]
+    description: |
+      Izin per pengeluaran. `ubah`/`hapus`/`lampirkan` false untuk pengeluaran hasil verifikasi pembelian
+      (`pembelian_bahan_id` terisi); `lampirkan` juga false saat status `disetujui`; `putuskan` true hanya untuk investor pemilik SPPG aktif pada status
+      `diajukan` (hak keputusan, bukan hak tulis; investor tetap `baca_saja`).
+    properties:
+      ubah: { type: boolean }
+      hapus: { type: boolean }
+      lampirkan: { type: boolean }
+      putuskan: { type: boolean, description: 'POST /keuangan/pengeluaran/{id}/keputusan diizinkan.' }
+  IzinPerjalanan:
+    type: object
+    required: [ubah_status]
+    description: |
+      Izin per notifikasi perjalanan. `ubah_status` = POST /notifikasi-perjalanan/{id}/status diizinkan (hak C modul,
+      SPPG sama, relawan hanya perjalanan yang ia picu) DAN perjalanan belum final (tiba/dibatalkan = false).
+    properties:
+      ubah_status: { type: boolean }
 parameters:
   Page:
     name: page
@@ -88,15 +176,56 @@ parameters:
     name: to
     in: query
     schema: { type: string, format: date }
+  AiDraftIdQuery:
+    name: ai_draft_id
+    in: query
+    required: false
+    description: |
+      Opsional. UUID draf hapus Agen AI (aksi delete, target = id record) yang ditandai confirmed bersama penghapusan.
+      Query string (bukan body) karena body DELETE tidak andal lewat proxy/fetch. Tanpa parameter = perilaku lama.
+      Bukan uuid atau draf tidak cocok (pengguna/modul/aksi/sumber daya/target berbeda, sudah dipakai, kedaluwarsa)
+      -> 422 pada `ai_draft_id` dan data tidak dihapus.
+    schema: { type: string, format: uuid }
 responses:
   Unauthorized:
-    description: Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
+    description: |
+      Token tidak ada/kedaluwarsa/dicabut, atau initData tidak sah.
+      - Token dikenali tetapi masa sesinya habis: 90 hari tidak dipakai (Admin 30), 180 hari sejak login,
+        atau kepercayaan perangkatnya berakhir (180 hari sejak token bot terakhir, atau perangkat dicabut):
+        `alasan: sesi_kedaluwarsa` + header `WWW-Authenticate: Bearer error="invalid_token"`.
+      - Token tidak ada, tidak dikenal, atau dicabut: hanya `message` (tanpa `alasan`).
+      - `alasan: sesi_kedaluwarsa` hanya muncul selama baris token kedaluwarsa masih tersimpan. Token
+        yang expires_at-nya lewat > 24 jam dipangkas harian (`sanctum:prune-expired --hours=24`);
+        setelah itu token yang sama menghasilkan 401 umum tanpa `alasan`. Klien wajib memperlakukan
+        keduanya dengan alur ulang yang sama.
+      Klien: pada 401 dari rute data, buang token lalu POST /auth/telegram SEKALI dengan
+      Telegram.WebApp.initData dan device_id; ikuti `langkah`. initData TIDAK diperbarui selama Mini App
+      terbuka (nilainya tetap sejak Mini App dibuka) dan hanya sah TELEGRAM_INIT_DATA_MAX_AGE detik
+      (bawaan 3600) sejak auth_date. Bila /auth/telegram juga 401 (initData basi), minta pengguna menutup
+      lalu membuka ulang Mini App. Jangan mengulang lebih dari sekali.
+      Jalur cookie web (R-04): 401 selalu disertai Set-Cookie penghapus `__Host-sigap_sesi` (Max-Age=0); sesi
+      web yang berakhir (idle 12 jam/90/30/180 hari) juga dicabut di server. Klien web: tampilkan layar Masuk
+      (tanpa login senyap). Token web lewat Bearer, token Mini App lewat cookie -> 401 umum tanpa `alasan`.
+      Permintaan tanpa Authorization dan tanpa `X-Sigap-Klien: web` -> 401 umum; cookie web TIDAK dihapus.
+    headers:
+      WWW-Authenticate:
+        description: Hanya pada sesi_kedaluwarsa.
+        schema: { type: string, example: 'Bearer error="invalid_token"' }
     content:
       application/json:
-        schema: { $ref: '#/components/schemas/Error' }
-        example: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' }
+        schema:
+          type: object
+          required: [message]
+          properties:
+            message: { type: string }
+            alasan: { type: string, enum: [sesi_kedaluwarsa] }
+        examples:
+          umum: { value: { message: 'Tidak terautentikasi. Silakan buka ulang Mini App.' } }
+          sesi_kedaluwarsa: { value: { message: 'Sesi Anda telah berakhir. Silakan masuk kembali.', alasan: sesi_kedaluwarsa } }
   Forbidden:
-    description: Peran tidak memiliki hak (Tabel 5) atau akun nonaktif.
+    description: |
+      Peran tidak memiliki hak (Tabel 5), akun nonaktif, atau token bukan login penuh
+      (body berisi `alasan: perlu_login_penuh`, lihat AuthForbidden).
     content:
       application/json:
         schema: { $ref: '#/components/schemas/Error' }
@@ -113,7 +242,7 @@ responses:
       application/json:
         schema: { $ref: '#/components/schemas/ValidationError' }
   TooManyRequests:
-    description: Batas laju terlampaui (API 60/menit per pengguna; login 10/menit per IP).
+    description: Batas laju terlampaui (API 60/menit per pengguna; login 10/menit per IP; jalur cookie web 300/menit dan 30 kegagalan/menit per IP sebelum autentikasi).
     headers:
       Retry-After:
         schema: { type: integer }

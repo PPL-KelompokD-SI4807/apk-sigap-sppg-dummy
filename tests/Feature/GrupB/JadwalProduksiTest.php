@@ -12,7 +12,6 @@ use App\Models\JadwalProduksi;
 use App\Models\LogProduksi;
 use App\Models\Menu;
 use Illuminate\Support\Facades\Event;
-use Laravel\Sanctum\Sanctum;
 
 class JadwalProduksiTest extends GrupBTestCase
 {
@@ -143,7 +142,7 @@ class JadwalProduksiTest extends GrupBTestCase
         $milikLain = JadwalProduksi::factory()->create(['sppg_id' => $this->sppgA->id, 'menu_id' => $menu->id, 'dibuat_oleh' => null, 'tanggal_produksi' => now()->addDays(2)->toDateString()]);
         $kemarin = JadwalProduksi::factory()->create(['sppg_id' => $this->sppgA->id, 'menu_id' => $menu->id, 'dibuat_oleh' => $relawan->id, 'tanggal_produksi' => now()->addDays(3)->toDateString()]);
         $kemarin->forceFill(['created_at' => now()->subDay()])->saveQuietly();
-        Sanctum::actingAs($relawan);
+        $this->masukPenuh($relawan);
 
         $this->patchJson("/api/v1/jadwal/{$milikSendiri->id}", ['catatan' => 'diubah'])->assertOk();
         $this->patchJson("/api/v1/jadwal/{$milikLain->id}", ['catatan' => 'diubah'])->assertForbidden();
@@ -303,7 +302,7 @@ class JadwalProduksiTest extends GrupBTestCase
         $menu = $this->menu();
         $user = $this->user(Role::KepalaSppg);
         $draf = AiDraft::factory()->create(['sppg_id' => $this->sppgA->id, 'user_id' => $user->id, 'module' => 'jadwal']);
-        Sanctum::actingAs($user);
+        $this->masukPenuh($user);
 
         $this->postJson('/api/v1/jadwal', $this->payload($menu, ['ai_draft_id' => $draf->uuid]))->assertCreated();
         $this->assertSame('confirmed', $draf->fresh()->status->value);

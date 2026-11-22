@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Enums\StatusKirim;
 use App\Events\RekapHarianDibuat;
 use App\Http\Requests\Rekap\StoreRekapHarianRequest;
 use App\Http\Requests\Rekap\UpdateRekapHarianRequest;
@@ -49,7 +48,7 @@ class RekapHarianController extends ApiController
                 : ['exclude'],
         ]);
 
-        $sppgId = $user->isAdmin() ? (int) $data['sppg_id'] : (int) $user->sppg_id;
+        $sppgId = $user->isAdmin() ? (int) $data['sppg_id'] : (int) $user->sppgAktifId();
         abort_if($sppgId === 0, 403);
 
         return response()->json(['data' => $this->service->hitung($sppgId, $data['tanggal'] ?? null)]);
@@ -115,10 +114,8 @@ class RekapHarianController extends ApiController
     {
         $this->authorize('update', $rekapHarian);
 
-        DB::transaction(function () use ($rekapHarian) {
-            $rekapHarian->forceFill(['status_kirim' => StatusKirim::Menunggu, 'dikirim_pada' => null])->save();
-            event(RekapHarianDibuat::dari($rekapHarian));
-        });
+        // Logika bersama dengan Bot (R-02 PR-3): DailySummaryService::kirimUlang.
+        $this->service->kirimUlang($rekapHarian);
 
         return new RekapHarianResource($rekapHarian->load('penyusun'));
     }

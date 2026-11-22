@@ -1,6 +1,7 @@
 import { h, clear } from './dom.js';
 import { getTg, isNative } from './telegram.js';
-import { hideMainButton } from './ui.js';
+import { hideMainButton, toast } from './ui.js';
+import { bersihkanUrlTerlacak } from './url-objek.js';
 
 const routes = [];
 let outlet = null;
@@ -9,10 +10,31 @@ let renderId = 0;
 let current = { path: '/', query: new URLSearchParams() };
 
 /**
+ * Parameter rute dari hash: didekode lalu WAJIB cocok whitelist (huruf, angka, "_" dan "-", 1-128 karakter: id numerik,
+ * uuid, slug). Parameter dipakai menyusun URL API ber-Bearer, jadi tidak boleh membawa pemisah path/query atau
+ * dot-segment, termasuk yang lolos lewat encode ganda (%252e%252e -> %2e%2e). Pemakai tetap memakai
+ * encodeURIComponent saat menyusun URL (lapis kedua).
+ */
+const PARAM_AMAN = /^[A-Za-z0-9_-]{1,128}$/;
+export function bacaParams(keys, m) {
+  try {
+    const out = {};
+    for (let i = 0; i < keys.length; i++) {
+      const v = decodeURIComponent(m[i + 1]);
+      if (!PARAM_AMAN.test(v)) return null;
+      out[keys[i]] = v;
+    }
+    return out;
+  } catch { return null; }
+}
+
+/**
  * route('/modul/:id', handler, {guard, title})
+ * opts.alihan(params) -> tujuan pengalihan (truthy) bila rute ini hanya mengalihkan; dipakai goBack agar tidak loop.
  * handler(ctx) -> boleh async, boleh mengembalikan fungsi pembersih.
  * ctx = {el, params, query, path, setTitle(t), isStale()}
- * guard() -> false menampilkan "Anda tidak punya hak akses".
+ * guard(params) -> false: pengguna dialihkan ke beranda dengan pesan singkat (bukan layar kosong). Rute yang
+ * bergantung pada izin per record memeriksanya lagi setelah record dimuat (lihat crud-module: alihkanKeBeranda).
  */
 export function route(pattern, handler, opts = {}) {
   const keys = [];
@@ -31,7 +53,27 @@ export function parseHashString(hash = '') {
   return { path: path || '/', query: new URLSearchParams(qs) };
 }
 
-export const parseHash = () => parseHashString(location.hash);
+/**
+ * Cek penjaga rute tanpa merender (untuk tes dan pemeriksaan): -> 'tidak-ada' | 'ditolak' | 'boleh'.
+ * Rute tanpa guard = 'boleh'.
+ */
+export function cekAkses(path) {
+  const hit = routes.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
+  if (!hit) return 'tidak-ada';
+  const params = bacaParams(hit.r.keys, hit.m);
+  if (!params) return 'tidak-ada';
+  return hit.r.guard && !hit.r.guard(params) ? 'ditolak' : 'boleh';
+}
+
+/** Alihkan ke beranda dengan pesan singkat (akses langsung ke rute/record yang bukan hak). */
+export function alihkanKeBeranda(pesan = 'Halaman itu bukan hak akses Anda.') {
+  toast(pesan, 'error', 4000);
+  navigate('/', { replace: true });
+}
+
+export const adaRuteTerdaftar = (path) => path !== '/' && routes.some((r) => r.re.test(path));
+
+export const parseHash = ()=> parseHashString(location.hash);
 
 export const currentRoute = () => current;
 
@@ -47,10 +89,28 @@ export const parentPath = (path) => {
   return '/' + parts.join('/');
 };
 
+/**
+ * Tujuan tombol kembali dari `path`: induk terdekat yang benar-benar bisa ditampilkan. Induk dilewati bila
+ * rutenya tidak ada, ditolak penjaga, atau hanya mengalihkan (opsi `alihan` mengembalikan tujuan, mis. daftar SPPG
+ * -> detail SPPG sendiri, daftar Jadwal -> tab Distribusi). Tanpa ini, kembali dari tujuan pengalihan memantul
+ * ke tujuan yang sama (loop) dan pengguna tidak pernah sampai ke beranda.
+ */
+export function jalurKembali(path) {
+  let p = parentPath(path);
+  while (p !== '/') {
+    const hit = routes.map((r) => ({ r, m: p.match(r.re) })).find((x) => x.m);
+    const params = hit ? bacaParams(hit.r.keys, hit.m) : null;
+    const bisa = hit && !(hit.r.guard && !hit.r.guard(params)) && !(hit.r.alihan && hit.r.alihan(params));
+    if (bisa) return p;
+    p = parentPath(p);
+  }
+  return '/';
+}
+
 export function goBack() {
   const { path } = parseHash();
   if (path === '/') return;
-  navigate(parentPath(path));
+  navigate(jalurKembali(path));
 }
 
 export function forbiddenPanel(el) {
@@ -80,20 +140,22 @@ export async function resolve() {
   const { path, query } = parseHash();
   current = { path, query };
   if (cleanup) { try { cleanup(); } catch { /* abaikan */ } cleanup = null; }
+  bersihkanUrlTerlacak(); // object URL pratinjau/gambar privat render sebelumnya (rute lain atau rute yang sama)
   hideMainButton();
   syncBack(path);
   window.scrollTo(0, 0);
 
-  const hit = routes.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
+  const hitMentah = routes.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
+  const params = hitMentah ? bacaParams(hitMentah.r.keys, hitMentah.m) : null;
+  const hit = params ? hitMentah : null;
   clear(outlet);
   if (!hit) {
     outlet.append(h('div', { class: 'empty' }, h('h2', {}, 'Halaman tidak ditemukan'), h('a', { class: 'btn', href: '#/' }, 'Ke beranda')));
     return setTitle('SiGAP SPPG');
   }
-  const { r, m } = hit;
-  const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
+  const { r } = hit;
   setTitle(typeof r.title === 'function' ? r.title(params) : r.title || 'SiGAP SPPG');
-  if (r.guard && !r.guard(params)) return forbiddenPanel(outlet);
+  if (r.guard && !r.guard(params)) return alihkanKeBeranda();
 
   const ctx = { el: outlet, params, query, path, setTitle, isStale: () => id !== renderId };
   const run = async () => {

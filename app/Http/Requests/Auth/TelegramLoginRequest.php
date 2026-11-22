@@ -5,8 +5,15 @@ namespace App\Http\Requests\Auth;
 use App\Services\Telegram\InitDataValidator;
 use Illuminate\Foundation\Http\FormRequest;
 
+/**
+ * Lapis 1 (setiap Mini App dibuka): initData Telegram + device_id opsional. Bila klien mengirim
+ * token login penuh miliknya di header Authorization, server memeriksa apakah sesi itu masih aktif
+ * untuk akun Telegram yang sama dan perangkat yang sama.
+ */
 class TelegramLoginRequest extends FormRequest
 {
+    use AturanKredensial;
+
     public function authorize(): bool
     {
         return true;
@@ -17,7 +24,7 @@ class TelegramLoginRequest extends FormRequest
     {
         return [
             'init_data' => ['required', 'string', 'max:'.InitDataValidator::MAX_LENGTH],
-            'device' => ['sometimes', 'nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9._-]+$/'],
+            'device_id' => ['sometimes', 'nullable', 'string', 'regex:'.self::DEVICE_ID_REGEX],
         ];
     }
 
@@ -26,7 +33,7 @@ class TelegramLoginRequest extends FormRequest
     {
         return [
             'init_data.required' => 'init_data wajib diisi (Telegram.WebApp.initData).',
-            'device.regex' => 'device hanya boleh huruf, angka, titik, garis bawah, dan tanda hubung.',
+            'device_id.regex' => 'device_id tidak valid.',
         ];
     }
 }

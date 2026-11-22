@@ -1,13 +1,16 @@
 // Data Pemasok (fitur 7, PBI 7). Mockup: Gambar 24.
 import { defineCrudModule } from '../../components/crud-module.js';
 import { rowCard } from '../../components/row-card.js';
+import { hargaPanel } from './harga.js';
+import { getUser } from '../../core/auth.js';
+import { bolehAksi } from '../../core/permissions.js';
 import { pemasokFields, mapPayload, JENIS_PEMASOK, jenisPemasokLabel } from './schema.js';
 
 export default defineCrudModule({
   slug: 'pemasok',
   title: 'Pemasok',
   icon: '🚚',
-  description: 'Petani, peternak, nelayan, dan UMKM pemasok',
+  description: 'Petani, peternak, nelayan, koperasi, dan UMKM pemasok',
   endpoint: '/pemasok',
   columns: [
     { key: 'nama', primary: true },
@@ -20,6 +23,9 @@ export default defineCrudModule({
   mapPayload,
   searchPlaceholder: 'Cari pemasok...',
   filters: { param: 'jenis', label: 'Jenis pemasok', options: [{ value: '', label: 'Semua' }, ...JENIS_PEMASOK] },
+  // Tambah harga = aksi.catat_harga_pemasok (Policy catatHarga), bukan hak C modul.
+  detailExtras: (rec) => hargaPanel(rec, { tambah: bolehAksi(getUser(), 'catat_harga_pemasok') }),
+  detailExtrasWeb: (rec) => hargaPanel(rec, { tambah: false }), // web baca-saja: tanpa tombol catat harga
   renderCard: (r, href) => rowCard({
     href,
     title: r.nama,

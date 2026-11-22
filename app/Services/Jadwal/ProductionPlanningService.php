@@ -4,6 +4,7 @@ namespace App\Services\Jadwal;
 
 use App\Enums\StatusJadwalDistribusi;
 use App\Enums\StatusJadwalProduksi;
+use App\Enums\StatusPersetujuanMenu;
 use App\Events\KekuranganBahan;
 use App\Models\JadwalProduksi;
 use App\Models\Menu;
@@ -11,6 +12,7 @@ use App\Models\Scopes\SppgScope;
 use App\Models\Sppg;
 use App\Models\User;
 use App\Services\Stock\StockService;
+use App\Support\KunciVersi;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
@@ -59,12 +61,14 @@ class ProductionPlanningService
 
     /**
      * @param  array<string, mixed>  $data  subset: menu_id, tanggal_produksi, jam_mulai_masak, target_porsi, status, catatan
+     * @param  int|null  $versi  kunci optimistik (409 bila tidak cocok); null = klien lama tanpa pemeriksaan
      */
-    public function perbarui(JadwalProduksi $jadwal, array $data): JadwalProduksi
+    public function perbarui(JadwalProduksi $jadwal, array $data, ?int $versi = null): JadwalProduksi
     {
-        return DB::transaction(function () use ($jadwal, $data): JadwalProduksi {
+        return DB::transaction(function () use ($jadwal, $data, $versi): JadwalProduksi {
             $sppg = $this->kunciSppg((int) $jadwal->sppg_id);
             $jadwal = JadwalProduksi::withoutGlobalScope(SppgScope::class)->whereKey($jadwal->getKey())->lockForUpdate()->firstOrFail();
+            KunciVersi::periksa($jadwal, $versi, 'Jadwal produksi');
             $berubah = $this->kolomBerubah($jadwal, $data);
 
             if ($jadwal->status !== StatusJadwalProduksi::Direncanakan && $berubah !== []) {
@@ -85,6 +89,12 @@ class ProductionPlanningService
 
             if ($statusBaru !== $jadwal->status) {
                 $this->validasiTransisi($jadwal->status, $statusBaru);
+            }
+
+            // R-06b-2 (S2): menu yang kembali ke draf/diajukan/ditolak setelah dijadwalkan tidak boleh dimasak.
+            // Urutan kunci sppg -> jadwal -> menu (sama dengan pastikanMenuMilikSppg).
+            if ($statusBaru === StatusJadwalProduksi::Dimasak && $jadwal->status !== $statusBaru) {
+                $this->pastikanMenuMasihDisetujui((int) ($data['menu_id'] ?? $jadwal->menu_id), $sppg->id);
             }
 
             if ($statusBaru !== StatusJadwalProduksi::Dibatalkan
@@ -321,12 +331,30 @@ class ProductionPlanningService
         return Sppg::query()->whereKey($sppgId)->lockForUpdate()->firstOrFail();
     }
 
+    private function pastikanMenuMasihDisetujui(int $menuId, int $sppgId): void
+    {
+        $menu = Menu::withoutGlobalScope(SppgScope::class)->where('sppg_id', $sppgId)->whereKey($menuId)->lockForUpdate()->first();
+
+        if ($menu === null || $menu->status_persetujuan !== StatusPersetujuanMenu::Disetujui) {
+            throw ValidationException::withMessages([
+                'status' => ['Menu jadwal ini belum disetujui investor; ajukan ulang menu sebelum memasak.'],
+            ]);
+        }
+    }
+
     private function pastikanMenuMilikSppg(int $menuId, int $sppgId): void
     {
-        $ada = Menu::withoutGlobalScope(SppgScope::class)->where('sppg_id', $sppgId)->whereKey($menuId)->exists();
+        // R3: kunci baris menu selama transaksi pemanggil (urutan kunci: sppg -> menu; PersetujuanMenuService
+        // memakai menu -> pengajuan, tidak pernah mengunci sppg, jadi tidak ada urutan terbalik).
+        $menu = Menu::withoutGlobalScope(SppgScope::class)->where('sppg_id', $sppgId)->whereKey($menuId)->lockForUpdate()->first();
 
-        if (! $ada) {
+        if ($menu === null) {
             throw ValidationException::withMessages(['menu_id' => ['Menu tidak ditemukan.']]);
+        }
+
+        // R-06b-1: hanya menu yang disetujui investor yang boleh dijadwalkan.
+        if ($menu->status_persetujuan !== StatusPersetujuanMenu::Disetujui) {
+            throw ValidationException::withMessages(['menu_id' => ['Menu belum disetujui investor sehingga belum dapat dijadwalkan.']]);
         }
     }
 }

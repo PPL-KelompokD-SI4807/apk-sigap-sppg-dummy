@@ -2,6 +2,7 @@
 
 namespace App\Models\Concerns;
 
+use App\Models\AuditLog;
 use App\Models\Scopes\SppgScope;
 use App\Models\Sppg;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,7 +27,8 @@ trait BelongsToSppg
             $user = SppgScope::currentUser();
 
             if ($user !== null && ! $user->isAdmin()) {
-                $model->setAttribute('sppg_id', $user->sppg_id);
+                // Investor (sppg_id null) hanya menulis jejak audit keputusan: SPPG aktif tervalidasi.
+                $model->setAttribute('sppg_id', $user->sppg_id ?? ($model instanceof AuditLog ? $user->sppgAktifId() : null));
             }
         });
 

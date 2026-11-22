@@ -23,13 +23,20 @@ class KirimNotifikasiDomain
     public function handle(object $event): void
     {
         try {
-            $message = $this->catalog->build($event);
-
-            if ($message !== null) {
-                $this->notifications->send($message);
-            }
+            $messages = $this->catalog->buildAll($event);
         } catch (Throwable $e) {
             report($e);
+
+            return;
+        }
+
+        // Tiap varian dikirim terpisah: kegagalan satu varian tidak membatalkan varian lain.
+        foreach ($messages as $message) {
+            try {
+                $this->notifications->send($message);
+            } catch (Throwable $e) {
+                report($e);
+            }
         }
     }
 }

@@ -55,6 +55,6 @@ class ApiErrorFormatTest extends TestCase
 
     public function test_rute_web_tidak_terpengaruh(): void
     {
-        $this->get('/')->assertOk()->assertHeaderMissing('X-Frame-Options');
+        $this->get('/rute-web-tidak-ada')->assertNotFound()->assertHeaderMissing('X-Frame-Options');
     }
 }

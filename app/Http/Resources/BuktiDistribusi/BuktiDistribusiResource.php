@@ -6,6 +6,7 @@ use App\Http\Resources\Concerns\FormatsWib;
 use App\Http\Resources\LampiranResource;
 use App\Models\BuktiDistribusi;
 use App\Models\Lampiran;
+use App\Support\PetaHak;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -57,6 +58,7 @@ class BuktiDistribusiResource extends JsonResource
             'berita_acara' => $berkas($b->lampiranUntukPath($b->berita_acara_path)),
             'lampiran' => LampiranResource::collection($b->relationLoaded('lampirans') ? $b->lampirans : $b->lampirans()->get()),
             'dicatat_oleh' => $b->pencatat === null ? null : ['id' => $b->pencatat->id, 'name' => $b->pencatat->name],
+            'izin' => PetaHak::izin($request->user(), $b, ['ubah' => 'update', 'hapus' => 'delete']),
             'created_at' => $this->wib($b->created_at),
             'updated_at' => $this->wib($b->updated_at),
         ];

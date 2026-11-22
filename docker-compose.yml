@@ -26,6 +26,9 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8080}:80"
+    environment:
+      # Pengembangan: HTTP tanpa TLS (docker/nginx/entrypoint/40-sigap-config.sh).
+      SIGAP_NGINX_MODE: dev
     depends_on:
       - app
 

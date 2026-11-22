@@ -1,10 +1,42 @@
 schemas:
+  StatusPersetujuanPengeluaran:
+    type: string
+    enum: [diajukan, disetujui, ditolak]
+    description: 'Baris baru default `diajukan` (fail-closed). Pengeluaran lama di-backfill `disetujui` oleh migrasi.'
+  KeputusanPengeluaranInput:
+    type: object
+    required: [keputusan, versi]
+    properties:
+      keputusan: { type: string, enum: [disetujui, ditolak] }
+      catatan: { type: string, minLength: 5, maxLength: 500, description: Wajib bila ditolak. }
+      versi: { type: integer, minimum: 1 }
+  PersetujuanPengeluaran:
+    type: object
+    properties:
+      id: { type: integer }
+      nomor: { type: integer, description: Urutan pengajuan per pengeluaran. }
+      pengeluaran_versi: { type: integer }
+      status: { type: string, enum: [diajukan, disetujui, ditolak, dibatalkan] }
+      status_label: { type: string }
+      kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+      nominal: { type: integer, description: Snapshot saat diajukan. }
+      tanggal: { type: string, format: date }
+      ambang_persetujuan: { type: integer, description: Nilai ambang config saat diajukan. }
+      diajukan_oleh: { type: [string, 'null'] }
+      diajukan_pada: { type: string, format: date-time }
+      diputuskan_oleh: { type: [string, 'null'] }
+      diputuskan_pada: { type: [string, 'null'], format: date-time }
+      catatan_keputusan: { type: [string, 'null'] }
   KategoriPengeluaran:
     type: string
     description: |
       bahan_baku (belanja bahan), insentif_relawan (gaji/upah), energi (utilitas: gas/listrik/air),
-      transportasi (BBM/transport), peralatan, lainnya.
-    enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya]
+      transportasi (BBM/transport), peralatan, lainnya, insentif_fasilitas (R07-1: Insentif Fasilitas SPPG, Lampiran 30b-C).
+    enum: [bahan_baku, insentif_relawan, energi, transportasi, peralatan, lainnya, insentif_fasilitas]
+  SubKategoriPengeluaran:
+    type: string
+    description: '17 baris baku Biaya Operasional Lampiran 30b-B (R07-1). Hanya untuk kategori operasional; bahan_baku dan insentif_fasilitas tidak memakainya (422).'
+    enum: [insentif_relawan, insentif_harian_pj_satuan, insentif_kader, bpjs_ketenagakerjaan, listrik, air_kemasan_galon, air_pdam, air_minum, gas, sewa_kendaraan, bbm, pulsa, internet, atk, alat_kebersihan, apd, lain_lain]
   PencairanDanaInput:
     type: object
     required: [periode, sumber_dana, nominal, tanggal_cair]
@@ -45,10 +77,12 @@ schemas:
     properties:
       tanggal: { type: string, format: date, description: 'Tidak boleh di masa depan; periode = bulan tanggal.' }
       kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
+      sub_kategori: { oneOf: [{ $ref: '#/components/schemas/SubKategoriPengeluaran' }, { type: 'null' }], description: 'Opsional. Data lama kosong.' }
       uraian: { type: string, maxLength: 255 }
       nominal: { type: integer, minimum: 1, maximum: 9999999999999, description: Rupiah bulat (tanpa desimal). }
       pemasok_id: { type: [integer, 'null'], description: Pemasok SPPG sendiri. }
       pencairan_dana_id: { type: [integer, 'null'], description: Pencairan SPPG sendiri (opsional). }
+      versi: { type: integer, minimum: 1, description: 'WAJIB pada PUT/PATCH (kunci optimistik); diabaikan saat POST.' }
       nota: { type: string, format: binary, description: 'Opsional (multipart): foto nota.' }
       ai_draft_id: { type: [string, 'null'], format: uuid }
   Pengeluaran:
@@ -60,24 +94,43 @@ schemas:
       tanggal: { type: string, format: date }
       kategori: { $ref: '#/components/schemas/KategoriPengeluaran' }
       kategori_label: { type: string }
+      sub_kategori: { oneOf: [{ $ref: '#/components/schemas/SubKategoriPengeluaran' }, { type: 'null' }] }
+      sub_kategori_label: { type: [string, 'null'], examples: ['Gas'] }
       uraian: { type: string }
       nominal: { type: integer }
-      melebihi_anggaran: { type: boolean, description: 'Saat dicatat/diubah, nominal melebihi sisa anggaran periode.' }
+      melebihi_anggaran: { type: boolean, description: 'Dihitung SAAT DISETUJUI: nominal melebihi sisa anggaran periode.' }
+      status_persetujuan: { $ref: '#/components/schemas/StatusPersetujuanPengeluaran' }
+      status_persetujuan_label: { type: string }
+      versi: { type: integer, description: 'Naik setiap pengeluaran diubah; kirim sebagai `versi` pada PATCH dan keputusan.' }
+      pembelian_bahan_id: { type: [integer, 'null'], description: 'Terisi bila berasal dari pembelian bahan terverifikasi (tidak dapat diubah/dihapus).' }
+      riwayat_persetujuan:
+        type: array
+        description: 'Hanya pada detail/hasil tulis (bukan daftar).'
+        items: { $ref: '#/components/schemas/PersetujuanPengeluaran' }
       pemasok:
         type: [object, 'null']
         properties:
           id: { type: integer }
           nama: { type: string }
       pencairan_dana_id: { type: [integer, 'null'] }
-      nota: { $ref: '#/components/schemas/BerkasRingkas' }
+      nota:
+        description: 'null untuk investor (foto nota disembunyikan, sama dengan PDF Laporan BGN).'
+        oneOf:
+          - $ref: '#/components/schemas/BerkasRingkas'
+          - type: 'null'
       lampiran:
         type: array
+        description: 'Kosong untuk investor (`lampiran_disembunyikan: true`).'
         items: { $ref: '#/components/schemas/Lampiran' }
+      lampiran_disembunyikan:
+        type: boolean
+        description: 'true = foto nota tidak ditampilkan untuk peran pengguna (investor); teks dan nominal tetap terlihat. GET /lampiran/{id} -> 403 `lampiran_disembunyikan`.'
       dicatat_oleh:
         type: [object, 'null']
         properties:
           id: { type: integer }
           name: { type: string }
+      izin: { $ref: '#/components/schemas/IzinPengeluaran' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
   RingkasanKeuangan:
@@ -86,13 +139,19 @@ schemas:
       sppg_id: { type: integer }
       periode: { type: string, examples: ['2026-11'] }
       anggaran: { type: integer, description: Total pencairan periode. }
-      terpakai: { type: integer, description: Total pengeluaran bertanggal di bulan periode. }
+      terpakai: { type: integer, description: 'Total pengeluaran DISETUJUI bertanggal di bulan periode.' }
       sisa: { type: integer, description: 'anggaran - terpakai (boleh negatif).' }
       persen: { type: [number, 'null'], description: 'Serapan %, null bila belum ada pencairan.' }
       status: { type: string, enum: [belum_ada_anggaran, aman, peringatan, habis, melampaui] }
       jumlah_pencairan: { type: integer }
       jumlah_pengeluaran: { type: integer }
       jumlah_melebihi_anggaran: { type: integer }
+      menunggu_persetujuan:
+        type: object
+        description: 'Pengeluaran berstatus diajukan pada periode (belum dihitung ke terpakai).'
+        properties:
+          jumlah: { type: integer }
+          nominal: { type: integer }
       per_kategori:
         type: array
         items:

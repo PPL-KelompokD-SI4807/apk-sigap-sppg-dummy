@@ -1,15 +1,17 @@
 import { h, clear, formatValue } from '../core/dom.js';
-import { api, submitWithQueue, request, newKey } from '../core/api.js';
+import { api, submitWithQueue, request, newKey } from '../core/transport.js';
 import { getUser } from '../core/auth.js';
-import { userPerms } from '../core/permissions.js';
-import { errorMessage } from '../core/errors.js';
-import { navigate, route } from '../core/router.js';
+import { userPerms, permsDariIzin, PESAN_BUKAN_HAK } from '../core/permissions.js';
+import { tujuanDraf, jalurBersih, draftCocok, pathHapus } from '../core/draf-tujuan.js';
+import { muatDraf, pemberitahuanDraf } from './draf-form.js';
+import { errorMessage, ringkasGalatAksi } from '../core/errors.js';
+import { navigate, route, resolve, alihkanKeBeranda } from '../core/router.js';
 import { toast, showConfirm, setMainButton } from '../core/ui.js';
 import { createListView } from './list-view.js';
+import { createAuthImage } from './photo-upload.js';
 import { createFormView } from './form-view.js';
 
 const unwrap = (res) => (res && res.data !== undefined && !Array.isArray(res) ? res.data : res);
-const NONE = { C: false, R: false, U: false, D: false, selfOnly: false };
 
 // Kirim tanpa antrian offline (aksi yang tidak boleh tertunda, mis. memicu notifikasi). Kunci idempotensi tetap dikirim.
 async function submitDirect(method, path, body) {
@@ -47,24 +49,46 @@ function displayValue(field, rec) {
  *   filters, renderCard, searchPlaceholder  -> diteruskan ke list-view
  *   listTop(perms) -> Node di atas daftar; detailExtras(rec, perms, ctx) -> Node(s) setelah panel detail
  *   listRedirect(user, perms) -> path|null: lewati daftar (mis. Kepala SPPG langsung ke SPPG-nya)
- *   rowPerms(rec, perms) -> perms yang disesuaikan per baris (mis. tak bisa hapus akun sendiri)
+ *   rowPerms(rec, perms) -> perms yang disesuaikan per baris untuk KEADAAN yang terbaca di record (mis. tak bisa hapus akun sendiri)
+ *   izin: true -> resource memuat `izin` dari server ({ubah, hapus, ...}); tombol Ubah/Hapus dan rute /ubah HANYA mengikuti
+ *     izin.ubah/izin.hapus (tanpa izin = tanpa tombol, fail closed). Klien tidak menghitung ulang aturan unit/kepemilikan.
+ *   akses(user) -> boolean: syarat tambahan rute baru/detail/ubah (daftar tetap lewat listRedirect), mis. sub-jenis jadwal sesuai unit_scope
+ *   bolehTambah(user) -> boolean: syarat tambahan Tambah (mis. formulir tak dapat diselesaikan tanpa hak baca dropdown)
+ *   menuInfo(user) -> {title?, description?}: label kartu menu bergantung hak (mis. "Profil Saya" bagi hak R*)
  *   formTop({mode,record,form,collect,values}) -> Node di atas form; onSaved({mode,res}) setelah simpan; prefill(query) -> nilai awal form baru
+ *   prefillDraf(payloadBersih) -> nilai form dari payload draf AI (default: payload apa adanya tanpa kunci berawalan "_")
  *   field.onlyIfPresent: kolom detail disembunyikan bila kuncinya tak ada di respons (mis. no_sim untuk peran R)
- * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register()}
+ *   tambahWeb:false -> web TIDAK menyediakan Tambah (layar tambah belum layak di web); Ubah/Hapus tetap
+ *   formTopWeb({mode,record,form,collect,values}) -> Node info di atas formulir web (hanya baca; tanpa aksi tulis)
+ *   onSavedWeb({mode,res}) -> dipanggil setelah simpan di formulir web (res = {queued:false, data} seperti onSaved Mini App); opt-in per modul
+ *   listTopWeb() / detailExtrasWeb(rec, ctx, perms) -> padanan listTop/detailExtras untuk layar BACA web (registerWeb). Tanpanya web tidak
+ *     menampilkan bagian itu (listTop/detailExtras Mini App memuat aksi tulis, undangan Telegram, dan tautan ke layar yang belum ada di web)
+ * Mengembalikan objek modul untuk registry: {slug,title,icon,description,permissionSlug,register(),registerWeb()}
  */
 export function defineCrudModule(def) {
-  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill } = def;
-  // Opsi tambahan (aditif): extraGuard(user)->bool (penyaring selain matriks, mis. unit relawan), searchable=false,
-  // queueOffline=false (tanpa antrian offline), beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
-  const { extraGuard, searchable = true, queueOffline = true, beforeSave } = def;
-  const me = (s) => (extraGuard && !extraGuard(getUser()) ? NONE : userPerms(getUser(), s));
+  const { slug, title, endpoint, columns, fields: fieldsDef, icon = '📋', description = '', permissionSlug = slug, mapPayload, listQuery = {}, itemTitle, filters, renderCard, searchPlaceholder, createLabel, listTop, detailExtras, rowPerms, formTop, onSaved, prefill, listTopWeb, detailExtrasWeb, formTopWeb, onSavedWeb, tambahWeb = true } = def;
+  // Opsi tambahan (aditif): searchable=false, queueOffline=false (tanpa antrian offline),
+  // beforeSave(values)->Promise<boolean> (konfirmasi sebelum kirim).
+  // sertakanVersi (R-06b-2): kunci optimistik; saat ubah, body memuat `versi` = versi draf AI (dari server) atau versi record yang dimuat.
+  const { searchable = true, queueOffline = true, beforeSave, sertakanVersi = false, izin: berIzin = false, bolehTambah, menuInfo, prefillDraf, akses } = def;
+  const me = (s) => userPerms(getUser(), s);
+  // akses(user) -> boolean: syarat tambahan untuk rute record (baru/detail/ubah), mis. sub-jenis jadwal sesuai unit_scope.
+  const aksesRecord = () => typeof akses !== 'function' || akses(getUser()) === true;
+  const bolehBuat = () => me(permissionSlug).C && aksesRecord() && (typeof bolehTambah !== 'function' || bolehTambah(getUser()) === true);
+  // Hak per record: modul berizin -> dari izin server; lalu penyesuaian keadaan (rowPerms) bila ada.
+  const permsRecord = (rec) => {
+    const dasar = me(permissionSlug);
+    const p = berIzin ? permsDariIzin(dasar, rec) : dasar;
+    return rowPerms ? rowPerms(rec, p) : p;
+  };
   const fieldsFor = (mode, record) => (typeof fieldsDef === 'function' ? fieldsDef({ mode, user: getUser(), record }) : fieldsDef);
   const base = `/${slug}`;
   const recTitle = (rec) => (itemTitle ? itemTitle(rec) : rec[(columns.find((c) => c.primary) || columns[0]).key] ?? `#${rec.id}`);
 
   // Simpan: POST (baru) atau PUT (ubah), sertakan ai_draft_id bila dari draf AI.
-  async function save({ mode, id, values, draftId }) {
+  async function save({ mode, id, values, draftId, versi = null }) {
     const body = { ...(mapPayload ? mapPayload(values, { mode }) : values) };
+    if (sertakanVersi && mode === 'update' && versi != null) body.versi = Math.trunc(Number(versi));
     if (draftId) body.ai_draft_id = draftId;
     if (beforeSave && !(await beforeSave(body, { mode }))) return;
     const res = await (queueOffline ? submitWithQueue : (m, p, b) => submitDirect(m, p, b))(mode === 'create' ? 'POST' : 'PUT', mode === 'create' ? endpoint : `${endpoint}/${id}`, body, { label: title });
@@ -76,36 +100,70 @@ export function defineCrudModule(def) {
   }
 
   async function loadDraft(uuid) {
-    try {
-      const d = await api.get(`/ai-drafts/${encodeURIComponent(uuid)}`, null, { silent: true });
-      const draft = unwrap(d);
-      if (draft.module && draft.module !== slug) toast('Draf ini untuk modul lain.', 'error');
-      return draft;
-    } catch (e) {
-      toast(e.status === 404 ? 'Draf AI tidak ditemukan atau sudah kedaluwarsa.' : 'Draf AI gagal dimuat.', 'error');
-      return null;
-    }
+    const draft = await muatDraf(uuid);
+    if (draft?.module && draft.module !== slug && draft.module !== permissionSlug) toast('Draf ini untuk modul lain.', 'error');
+    return draft;
   }
 
   async function renderForm(ctx, { mode, record }) {
     const draftUuid = ctx.query.get('draft');
     const draft = draftUuid ? await loadDraft(draftUuid) : null;
     if (ctx.isStale()) return;
-    const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}), ...(draft?.payload || {}) };
+    // Draf milik layar lain (mis. mutasi stok, atau lintas sumber daya): alihkan ke layar yang benar, jangan kirim
+    // ai_draft_id dari form yang salah (server menolak dengan 422 karena resource/aksi tidak cocok).
+    if (draft) {
+      const tujuan = tujuanDraf(draft);
+      if (jalurBersih(tujuan) !== jalurBersih(ctx.path)) return navigate(`${tujuan}?draft=${encodeURIComponent(draft.uuid || draftUuid)}`, { replace: true });
+    }
+    // Kunci berawalan "_" pada payload draf (mis. `_resource`, `_peringatan`) adalah penanda server, bukan isian form.
+    const bersih = Object.fromEntries(Object.entries(draft?.payload || {}).filter(([k]) => !k.startsWith('_')));
+    const isianDraf = typeof prefillDraf === 'function' ? prefillDraf(bersih) : bersih; // prefillDraf: petakan payload draf -> nilai form
+    const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}), ...isianDraf };
     clear(ctx.el);
-    if (draft) ctx.el.append(h('div', { class: 'notice' }, 'Diisi otomatis oleh Agen AI. Periksa kolom bertanda "Perlu dicek", lalu simpan.'));
+    const pd = pemberitahuanDraf(draft);
+    if (pd.info) ctx.el.append(pd.info);
+    const konflik = h('div', { 'aria-live': 'assertive' });
+    const draftNotice = pd.alert;
+    const versi = isianDraf.versi ?? record?.versi ?? null;
+    // 409 versi/status: data di layar basi. Draf AI basi tidak boleh dikirim ulang, jadi arahkan ke data terbaru tanpa draf.
+    function tampilkanKonflik(e) {
+      const g = ringkasGalatAksi(e);
+      if (!g.konflik) return;
+      const pesan = draft ? `${g.pesan} Draf AI ini sudah basi.` : g.pesan;
+      konflik.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, pesan, ' ',
+        h('button', { class: 'btn', type: 'button', onclick: () => (draft && record?.id ? navigate(`${base}/${record.id}`, { replace: true }) : resolve()) }, draft ? 'Buka data terbaru' : 'Muat ulang')));
+    }
     const fv = createFormView({
       fields: fieldsFor(mode, record),
       values,
       confidence: draft?.confidence || {},
       submitText: mode === 'create' ? 'Simpan' : 'Simpan perubahan',
-      onSubmit: (v) => save({ mode, id: record?.id, values: v, draftId: draft ? draft.uuid || draftUuid : null }),
+      onSubmit: async (v) => {
+        konflik.replaceChildren();
+        draftNotice.hidden = true; // validasi klien lolos: galat draf lama tidak berlaku lagi
+        try { await save({ mode, id: record?.id, values: v, draftId: draft ? draft.uuid || draftUuid : null, versi }); } catch (e) { tampilkanKonflik(e); throw e; }
+      },
     });
-    ctx.el.append(fv.el);
+    // Draf "perlu diperbaiki" (salah input di bot): galat per kolom/baris + daftar untuk galat tanpa kolom. Semua lewat textContent.
+    pd.pasang(fv);
+    ctx.el.append(konflik, draftNotice, fv.el);
     // formTop({mode, record, form, collect}) -> Node (disisipkan di atas formulir), mis. sisa kapasitas / ringkasan gizi.
     const top = formTop ? formTop({ mode, record, form: fv.el, collect: fv.collect, values }) : null;
     if (top) ctx.el.insertBefore(top, fv.el);
     return fv.destroy;
+  }
+
+  // Panel rincian read-only. Foto privat dimuat lewat kredensial transport (Mini App: Bearer; web: cookie sesi, R04-8 PR5).
+  function panelDetail(rec) {
+    const dl = h('dl', { class: 'detail' });
+    for (const f of fieldsFor('detail', rec)) {
+      if (f.onlyIfPresent && !(f.name in rec)) continue;
+      const dt = h('dt', {}, f.label || f.name);
+      const v = rec[f.name];
+      const dd = f.type === 'photo' && v ? h('dd', {}, createAuthImage(v, { alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
+      dl.append(h('div', { class: 'detail-item' }, dt, dd)); // pasangan label+nilai satu sel grid (web 2/3 kolom)
+    }
+    return h('div', { class: 'panel' }, dl);
   }
 
   function register() {
@@ -115,47 +173,50 @@ export function defineCrudModule(def) {
       if (p.selfOnly) return navigate(`${base}/${getUser().id}`, { replace: true });
       const redirect = def.listRedirect ? def.listRedirect(getUser(), p) : null;
       if (redirect) return navigate(redirect, { replace: true });
-      const top = listTop ? listTop(p) : null;
+      const top = listTop ? listTop({ ...p, C: bolehBuat() }) : null;
       if (top) ctx.el.append(top);
       const lv = createListView({
         endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder, createLabel,
-        createHref: p.C ? `#${base}/baru` : null,
+        createHref: bolehBuat() ? `#${base}/baru` : null,
         itemHref: (r) => `#${base}/${r.id}`,
       });
       ctx.el.append(lv.el);
-    }, { title: title, guard: () => me(permissionSlug).R });
+    }, {
+      title: title,
+      guard: () => me(permissionSlug).R,
+      alihan: () => (me(permissionSlug).selfOnly ? `${base}/${getUser().id}` : (def.listRedirect ? def.listRedirect(getUser(), me(permissionSlug)) : null)),
+    });
 
     // Baru (didaftarkan sebelum :id)
-    route(`${base}/baru`, (ctx) => renderForm(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: () => me(permissionSlug).C });
+    route(`${base}/baru`, (ctx) => renderForm(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: bolehBuat });
 
     // Detail
     route(`${base}/:id`, async (ctx) => {
-      const res = await api.get(`${endpoint}/${ctx.params.id}`);
+      const res = await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`);
       if (ctx.isStale()) return;
       const rec = unwrap(res);
-      const p = rowPerms ? rowPerms(rec, me(permissionSlug)) : me(permissionSlug);
+      const p = permsRecord(rec);
       ctx.setTitle(recTitle(rec));
-      const dl = h('dl', { class: 'detail' });
-      for (const f of fieldsFor('detail', rec)) {
-        if (f.onlyIfPresent && !(f.name in rec)) continue;
-        const dt = h('dt', {}, f.label || f.name);
-        const v = rec[f.name];
-        const dd = f.type === 'photo' && v ? h('dd', {}, h('img', { class: 'photo-preview', src: v, alt: f.label || f.name })) : h('dd', {}, displayValue(f, rec));
-        dl.append(dt, dd);
-      }
-      ctx.el.append(h('div', { class: 'panel' }, dl));
+      ctx.el.append(panelDetail(rec));
       if (detailExtras) {
         const extra = await detailExtras(rec, p, ctx);
         if (ctx.isStale()) return;
         if (extra) ctx.el.append(...[extra].flat().filter(Boolean));
       }
       if (p.D) {
+        // Hapus dari draf AI (?draft=uuid): kirim ai_draft_id pada DELETE bila draf memang aksi hapus untuk record ini.
+        const uuidHapus = ctx.query.get('draft');
+        const drafHapus = uuidHapus ? await muatDraf(uuidHapus) : null;
+        if (ctx.isStale()) return;
+        const dariDraf = draftCocok(drafHapus, { module: drafHapus?.module, marker: drafHapus?.payload?._resource ?? null, aksi: 'delete', targetId: rec.id })
+          && jalurBersih(tujuanDraf(drafHapus)) === jalurBersih(ctx.path);
+        if (dariDraf) ctx.el.append(h('div', { class: 'notice' }, 'Penghapusan ini diminta lewat Agen AI. Tekan Hapus untuk mengonfirmasi.'));
         ctx.el.append(h('button', {
           class: 'btn btn-danger btn-block', type: 'button',
           onclick: async () => {
             if (!(await showConfirm({ title: 'Hapus data', message: `Hapus "${recTitle(rec)}"? Tindakan ini tidak dapat dibatalkan.`, okText: 'Hapus', destructive: true }))) return;
             try {
-              await api.del(`${endpoint}/${rec.id}`, { silent: true });
+              await api.del(pathHapus(`${endpoint}/${rec.id}`, dariDraf ? drafHapus.uuid || uuidHapus : null), { silent: true });
             } catch (e) {
               if (e?.status === 401) throw e;
               return toast(errorMessage(e, 'Gagal menghapus data.'), 'error');
@@ -166,15 +227,135 @@ export function defineCrudModule(def) {
         }, 'Hapus'));
       }
       if (p.U) setMainButton({ text: 'Ubah', onClick: () => navigate(`${base}/${rec.id}/ubah`) });
-    }, { title, guard: () => me(permissionSlug).R });
+    }, { title, guard: () => me(permissionSlug).R && aksesRecord() });
 
     // Ubah
     route(`${base}/:id/ubah`, async (ctx) => {
-      const rec = unwrap(await api.get(`${endpoint}/${ctx.params.id}`));
+      const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
       if (ctx.isStale()) return;
+      // Akses langsung ke /ubah: izin per record dari server menentukan (relawan hari lalu, record terkunci, dst.).
+      if (!permsRecord(rec).U) return alihkanKeBeranda(PESAN_BUKAN_HAK);
       return renderForm(ctx, { mode: 'update', record: rec });
-    }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U });
+    }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U && aksesRecord() });
   }
 
-  return { slug, title, icon, description, permissionSlug, register, visibleFor: extraGuard };
+  // ---- Formulir WEB (R04-8 PR4c, foto PR5) ----
+  // Tanpa draf AI dan antrean offline. Idempotency-Key dibuat SEKALI per formulir dan dipakai ulang pada setiap
+  // pengulangan manual sampai berhasil (server hanya menyimpan respons 2xx, jadi kunci yang sama aman dipakai setelah galat).
+  // Foto (type 'photo') ikut payload multipart lewat klien cookie (CSRF + X-SPPG-Id); kolom lampiran (lampiranField) mengunggah
+  // tiap foto ke POST /lampiran dan Simpan menunggu semua foto selesai. Jenis/ukuran di klien hanya kenyamanan: server memutuskan.
+  async function renderFormWeb(ctx, { mode, record }) {
+    const kunci = newKey();
+    const values = { ...(record || {}), ...(prefill && !record ? prefill(ctx.query) || {} : {}) }; // prefill dari query (mis. ?jadwal=)
+    clear(ctx.el);
+    const konflik = h('div', { 'aria-live': 'assertive' });
+    const tampilkanGalat = (e) => {
+      const g = ringkasGalatAksi(e);
+      // Kunci idempotensi dipakai ulang dengan isian berbeda: permintaan sebelumnya mungkin sudah tersimpan di server.
+      const kunciBentrok = e?.status === 422 && e.errors && 'Idempotency-Key' in e.errors;
+      const pesan = kunciBentrok ? 'Permintaan sebelumnya mungkin sudah tersimpan. Periksa daftar data sebelum mengirim ulang.' : g.pesan;
+      konflik.replaceChildren(h('div', { class: 'alert-danger', role: 'alert' }, pesan, ' ',
+        g.muatUlang ? h('button', { class: 'btn', type: 'button', onclick: () => resolve() }, 'Muat ulang') : null));
+    };
+    const fv = createFormView({
+      fields: fieldsFor(mode, record),
+      values,
+      submitText: mode === 'create' ? 'Simpan' : 'Simpan perubahan',
+      onSubmit: async (v) => {
+        konflik.replaceChildren();
+        const body = { ...(mapPayload ? mapPayload(v, { mode }) : v) };
+        if (sertakanVersi && mode === 'update' && record?.versi != null) body.versi = Math.trunc(Number(record.versi));
+        if (beforeSave && !(await beforeSave(body, { mode }))) return;
+        let res;
+        try {
+          res = await request(mode === 'create' ? 'POST' : 'PUT', mode === 'create' ? endpoint : `${endpoint}/${record.id}`, { body, key: kunci, silent: true });
+        } catch (e) {
+          if (e?.status === 401) throw e;
+          if (e?.status === 422 && e.errors && !('Idempotency-Key' in e.errors)) throw e; // galat per kolom ditampilkan form
+          tampilkanGalat(e);
+          return;
+        }
+        toast('Data tersimpan.', 'success');
+        if (onSavedWeb) { try { onSavedWeb({ mode, res: { queued: false, data: res } }); } catch { /* abaikan */ } }
+        const saved = res && unwrap(res);
+        navigate(saved?.id ? `${base}/${saved.id}` : base, { replace: true });
+      },
+    });
+    ctx.el.append(konflik, fv.el);
+    // formTopWeb: info baca-saja (mis. sisa kapasitas); hanya GET.
+    const top = formTopWeb ? formTopWeb({ mode, record, form: fv.el, collect: fv.collect, values }) : null;
+    if (top) ctx.el.insertBefore(top, fv.el);
+    return fv.destroy;
+  }
+
+  // Rute BACA untuk web (R04-8 PR4): daftar + detail. opsi.tulis (PR4c) menambah Tambah/Ubah/Hapus yang mengikuti hak server
+  // (peta hak / izin per record). Tanpa draf AI dan antrean offline; foto privat lewat cookie sesi (PR5).
+  // Hak tetap dari peta hak server (me(...).R); modul memilih bagian tambahan lewat listTopWeb/detailExtrasWeb.
+  function registerWeb({ tulis = false } = {}) {
+    const redirect = (p) => (p.selfOnly ? `${base}/${getUser().id}` : (def.listRedirect ? def.listRedirect(getUser(), p) : null));
+    route(base, async (ctx) => {
+      const p = me(permissionSlug);
+      const tujuan = redirect(p);
+      if (tujuan) return navigate(tujuan, { replace: true });
+      const top = listTopWeb ? listTopWeb() : null;
+      if (top) ctx.el.append(top);
+      ctx.el.append(createListView({
+        endpoint, columns, searchable, extraQuery: listQuery, filters, renderCard, searchPlaceholder, createLabel, // label tombol sama dengan Mini App
+        createHref: tulis && tambahWeb && bolehBuat() ? `#${base}/baru` : null, itemHref: (r) => `#${base}/${r.id}`,
+      }).el);
+    }, { title, guard: () => me(permissionSlug).R, alihan: () => redirect(me(permissionSlug)) });
+
+    if (tulis && tambahWeb) route(`${base}/baru`, (ctx) => renderFormWeb(ctx, { mode: 'create' }), { title: `Tambah ${title}`, guard: bolehBuat });
+
+    route(`${base}/:id`, async (ctx) => {
+      const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
+      if (ctx.isStale()) return;
+      ctx.setTitle(recTitle(rec));
+      ctx.el.append(panelDetail(rec));
+      const perms = tulis ? permsRecord(rec) : { C: false, U: false, D: false, selfOnly: false }; // aksi tulis hanya bila hak server mengizinkan
+      if (detailExtrasWeb) {
+        const hasil = await detailExtrasWeb(rec, ctx, perms); // Node(s) atau { nodes, destroy } (destroy = pembersih grafik)
+        const extra = hasil && !Array.isArray(hasil) && hasil.nodes !== undefined ? hasil.nodes : hasil;
+        if (ctx.isStale()) { hasil?.destroy?.(); return; }
+        if (extra) ctx.el.append(...[extra].flat().filter(Boolean));
+        akhirDetail(ctx, rec);
+        return hasil?.destroy;
+      }
+      akhirDetail(ctx, rec);
+    }, { title, guard: (params) => params.id !== 'baru' && me(permissionSlug).R && aksesRecord() }); // id 'baru' = layar tambah (belum ada di web tanpa opsi tulis)
+
+    // Tombol Ubah/Hapus menurut hak server (permsRecord: peta hak, atau izin per record bila modul berizin).
+    function akhirDetail(ctx, rec) {
+      if (!tulis) return;
+      const p = permsRecord(rec);
+      if (p.D) {
+        ctx.el.append(h('button', {
+          class: 'btn btn-danger btn-block', type: 'button',
+          onclick: async () => {
+            if (!(await showConfirm({ title: 'Hapus data', message: `Hapus "${recTitle(rec)}"? Tindakan ini tidak dapat dibatalkan.`, okText: 'Hapus', destructive: true }))) return;
+            try {
+              await request('DELETE', `${endpoint}/${rec.id}`, { silent: true });
+            } catch (e) {
+              if (e?.status === 401) throw e;
+              return toast(ringkasGalatAksi(e, 'Gagal menghapus data.').pesan, 'error');
+            }
+            toast('Data dihapus.', 'success');
+            navigate(base, { replace: true });
+          },
+        }, 'Hapus'));
+      }
+      if (p.U) setMainButton({ text: 'Ubah', onClick: () => navigate(`${base}/${rec.id}/ubah`) });
+    }
+
+    if (tulis) {
+      route(`${base}/:id/ubah`, async (ctx) => {
+        const rec = unwrap(await api.get(`${endpoint}/${encodeURIComponent(ctx.params.id)}`));
+        if (ctx.isStale()) return;
+        if (!permsRecord(rec).U) return alihkanKeBeranda(PESAN_BUKAN_HAK);
+        return renderFormWeb(ctx, { mode: 'update', record: rec });
+      }, { title: `Ubah ${title}`, guard: () => me(permissionSlug).U && aksesRecord() });
+    }
+  }
+
+  return { slug, title, icon, description, permissionSlug, register, registerWeb, menuInfo };
 }

@@ -262,16 +262,22 @@ class SchemaTest extends TestCase
         $this->seed(DemoSeeder::class);
         $this->assertSame($pertama, $hitung());
 
-        $this->assertSame(2, $pertama['sppg']);
-        $this->assertSame(1 + 2 * 7, $pertama['users']); // 1 admin lintas + 7 pengguna per SPPG
+        $this->assertSame(3, $pertama['sppg']); // 2 SPPG operasional + 1 SPPG ringkas milik investor lain (R-06a)
+        $this->assertSame(1 + 2 * 7 + 2, $pertama['users']); // 1 admin lintas + 7 pengguna per SPPG + 2 investor
         $this->assertSame(8, $pertama['titik']);
         $this->assertSame(2 * 7, $pertama['jadwal']);
 
-        foreach (Sppg::all() as $sppg) {
+        foreach (Sppg::whereIn('kode', ['SPPG-DEMO-01', 'SPPG-DEMO-02'])->get() as $sppg) {
             $peran = User::withoutGlobalScopes()->where('sppg_id', $sppg->id)->pluck('role')->map->value->unique()->sort()->values()->all();
             $this->assertSame(['admin', 'ahli_gizi', 'akuntan', 'kepala_sppg', 'relawan', 'staf_gudang'], $peran);
             $this->assertLessThanOrEqual($sppg->kapasitas_porsi_harian, JadwalProduksi::where('sppg_id', $sppg->id)->max('target_porsi'));
         }
+
+        // Investor fiktif: sppg_id null, kepemilikan hanya lewat pivot; tidak ada SPPG milik keduanya.
+        $investor = User::withoutGlobalScopes()->where('role', 'investor')->orderBy('telegram_id')->get();
+        $this->assertSame([null, null], $investor->pluck('sppg_id')->all());
+        $this->assertSame(['SPPG-DEMO-01', 'SPPG-DEMO-02'], $investor[0]->sppgDimiliki()->orderBy('kode')->pluck('kode')->all());
+        $this->assertSame(['SPPG-DEMO-03'], $investor[1]->sppgDimiliki()->pluck('kode')->all());
 
         // Pencairan 80% (SPPG 1) dan 100% (SPPG 2).
         $persen = PencairanDana::orderBy('sppg_id')->get()->map(fn ($p) => (float) $p->totalPengeluaran() / (float) $p->nominal * 100)->all();
