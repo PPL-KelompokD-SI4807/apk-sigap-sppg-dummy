@@ -54,16 +54,27 @@ trait Auditable
      */
     public function auditFilter(array $attributes): array
     {
-        $exclude = array_merge(
-            self::AUDIT_NEVER_LOG,
-            $this->getHidden(),
-            property_exists($this, 'auditExclude') ? $this->auditExclude : [],
-        );
+        $exclude = $this->auditKolomTerlarang();
 
         return array_map(
             fn (mixed $nilai) => is_string($nilai) && ! mb_check_encoding($nilai, 'UTF-8') ? mb_convert_encoding($nilai, 'UTF-8', 'UTF-8') : $nilai,
             array_diff_key($attributes, array_flip($exclude)),
         );
+    }
+
+    /**
+     * Kolom yang tidak boleh dicatat maupun ditampilkan lagi di log audit (daftar global, $hidden, $auditExclude).
+     * Dipakai juga oleh penyaring tampilan GET /audit-log (defense in depth untuk log lama).
+     *
+     * @return list<string>
+     */
+    public function auditKolomTerlarang(): array
+    {
+        return array_values(array_unique(array_merge(
+            self::AUDIT_NEVER_LOG,
+            $this->getHidden(),
+            property_exists($this, 'auditExclude') ? $this->auditExclude : [],
+        )));
     }
 
     /**

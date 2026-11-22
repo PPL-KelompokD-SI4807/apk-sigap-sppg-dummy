@@ -347,6 +347,88 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+  /audit-log:
+    get:
+      tags: [Audit Log]
+      summary: Daftar log audit (khusus Admin)
+      description: |
+        HANYA Admin aktif (AuditLogPolicy::viewAny); semua peran lain (kepala_sppg, ahli_gizi, akuntan, staf_gudang,
+        relawan dapur/distribusi, investor) -> 403, juga untuk query yang tidak valid (otorisasi sebelum validasi).
+        Lintas SPPG. Urut terbaru dulu. Paginasi: `per_page` bawaan 25, nilai di atas 100 diturunkan menjadi 100.
+        `from`/`to` inklusif (hari penuh, zona waktu aplikasi), `to` >= `from`.
+      parameters:
+        - name: modul
+          in: query
+          description: Nama modul (lihat /audit-log/opsi), mis. `keluhan`, `bahan-baku`. Nilai tak dikenal -> 422.
+          schema: { type: string }
+        - name: user_id
+          in: query
+          description: Id pelaku.
+          schema: { type: integer, minimum: 1 }
+        - name: aksi
+          in: query
+          description: Mis. created, updated, deleted, restored, atau peristiwa khusus (huruf, angka, titik, garis bawah, strip; maks 50).
+          schema: { type: string, maxLength: 50 }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditLog' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /audit-log/opsi:
+    get:
+      tags: [Audit Log]
+      summary: Opsi filter log audit (modul dan aksi)
+      description: Khusus Admin. `aksi` = aksi bawaan ditambah peristiwa khusus yang ada di data.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuditLogOpsi' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /audit-log/{id}:
+    get:
+      tags: [Audit Log]
+      summary: Detail satu log audit (khusus Admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuditLog' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /auth/telegram:
     post:
       tags: [Auth]
@@ -6024,6 +6106,60 @@ components:
         sim_berlaku_hingga: { type: [string, 'null'], format: date }
         is_active: { type: boolean, default: true }
         ai_draft_id: { type: [string, 'null'], format: uuid }
+    AuditLog:
+      type: object
+      description: |
+        Satu baris log audit (append-only). `nilai_lama`/`nilai_baru` disaring ulang saat ditampilkan: kolom pada
+        `$auditExclude`/`$hidden` model terkait, daftar global (password, remember_token, token, hash, init_data, ...)
+        dan kunci bernuansa sensitif (NIK, telegram hash/id) tidak pernah muncul, termasuk untuk log lama. IP dan
+        user agent tidak ditampilkan.
+      properties:
+        id: { type: integer }
+        waktu: { type: string, format: date-time }
+        pengguna:
+          type: [object, 'null']
+          description: Pelaku. `null` = sistem (job, seeder, perintah konsol).
+          properties:
+            id: { type: integer }
+            nama: { type: [string, 'null'] }
+        sppg_id: { type: [integer, 'null'] }
+        sumber: { type: string, description: 'web, bot, ai, atau sistem.' }
+        modul: { type: string, description: 'Nama modul ramah (mis. keluhan, bahan-baku). Jenis tak dikenal = kebab dari nama kelas.' }
+        modul_label: { type: string }
+        rekaman_id: { type: integer }
+        aksi: { type: string, description: 'created, updated, deleted, restored, atau peristiwa khusus (mis. ai_eksekusi_draf, auth.*).' }
+        nilai_lama: { type: [object, 'null'], additionalProperties: true }
+        nilai_baru: { type: [object, 'null'], additionalProperties: true }
+      example:
+        id: 4021
+        waktu: '2026-11-10T08:00:00+07:00'
+        pengguna: { id: 3, nama: Budi Santoso }
+        sppg_id: 1
+        sumber: web
+        modul: keluhan
+        modul_label: Feedback dan Keluhan
+        rekaman_id: 17
+        aksi: updated
+        nilai_lama: { status: baru }
+        nilai_baru: { status: diproses }
+    AuditLogOpsi:
+      type: object
+      properties:
+        modul:
+          type: array
+          items:
+            type: object
+            properties:
+              kode: { type: string }
+              label: { type: string }
+        aksi:
+          type: array
+          items: { type: string }
+      example:
+        modul:
+          - { kode: keluhan, label: Feedback dan Keluhan }
+          - { kode: bahan-baku, label: Bahan Baku }
+        aksi: [created, updated, deleted, restored, ai_eksekusi_draf]
     Role:
       type: string
       enum: [admin, kepala_sppg, ahli_gizi, akuntan, staf_gudang, relawan, investor]
