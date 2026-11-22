@@ -191,6 +191,12 @@
     description: |
       Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
       mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      Perubahan `status` menyatukan dua jalur (isu #177): ke `berangkat` (dari `siap`) memakai TripNotificationService:
+      gerbang mutu (422 `status`), aturan petugas F-02 (relawan bukan petugas -> 422 `status`), lalu membuat perjalanan
+      (estimasi tiba) dan menjadwalkan pesan ke PIC titik layanan lewat antrean (PIC belum terhubung Telegram -> dialihkan ke
+      Kepala SPPG). Idempoten: bila sudah ada perjalanan aktif untuk jadwal itu, hanya status yang diselaraskan, tanpa
+      perjalanan/pesan baru. Ke `diterima` menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal.
+      Hasil kirim ada di `notifikasi_pic` (respons PATCH mencerminkan keadaan saat commit, biasanya `menunggu`; baca ulang lewat GET).
       Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true
@@ -217,6 +223,12 @@
     description: |
       Hak U (relawan: hanya data buatannya sendiri pada hari yang sama). Perubahan `status` hanya
       mengikuti transisi yang valid; setelah berjalan hanya `status` dan `catatan` yang dapat diubah.
+      Perubahan `status` menyatukan dua jalur (isu #177): ke `berangkat` (dari `siap`) memakai TripNotificationService:
+      gerbang mutu (422 `status`), aturan petugas F-02 (relawan bukan petugas -> 422 `status`), lalu membuat perjalanan
+      (estimasi tiba) dan menjadwalkan pesan ke PIC titik layanan lewat antrean (PIC belum terhubung Telegram -> dialihkan ke
+      Kepala SPPG). Idempoten: bila sudah ada perjalanan aktif untuk jadwal itu, hanya status yang diselaraskan, tanpa
+      perjalanan/pesan baru. Ke `diterima` menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal.
+      Hasil kirim ada di `notifikasi_pic` (respons PATCH mencerminkan keadaan saat commit, biasanya `menunggu`; baca ulang lewat GET).
       Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
     requestBody:
       required: true

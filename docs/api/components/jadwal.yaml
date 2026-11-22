@@ -83,10 +83,39 @@ schemas:
       layak_distribusi: { type: boolean, description: 'Gerbang mutu jadwal produksi terkait' }
       peringatan: { type: [string, 'null'], description: 'PERINGATAN, bukan galat (POST/PATCH tetap 201/200): terisi bila jam_berangkat lebih awal dari jam_mulai_masak jadwal produksi terkait pada hari yang sama (jadwal menunggu/siap). null bila jam kosong, tanggal berbeda, atau sudah berangkat/diterima/dibatalkan. Dihitung ulang pada setiap pembacaan.', examples: ['Jam berangkat 02:00 lebih awal dari jam mulai masak 03:00 pada jadwal produksi terkait (hari yang sama).'] }
       catatan: { type: [string, 'null'] }
+      notifikasi_pic: { $ref: '#/components/schemas/NotifikasiPicJadwal' }
       izin: { $ref: '#/components/schemas/IzinJadwalDistribusi' }
       versi: { type: integer, minimum: 1, description: 'Penanda versi (kunci optimistik); naik setiap perubahan. Kirim kembali sebagai `versi` pada PUT/PATCH.' }
       created_at: { type: string, format: date-time }
       updated_at: { type: string, format: date-time }
+  NotifikasiPicJadwal:
+    type: [object, 'null']
+    description: |
+      Status kirim pesan ke PIC titik layanan pada jadwal distribusi: entri terbaru (`jenis`, `status_kirim`, `waktu`,
+      `dialihkan_ke_kepala`) plus `riwayat` (berangkat lalu diterima). null bila belum ada pesan.
+      `status_kirim`: menunggu | terkirim | gagal | dialihkan_ke_kepala (PIC belum terhubung Telegram, pesan ke Kepala SPPG).
+    properties:
+      jenis: { type: string, enum: [berangkat, diterima] }
+      status_kirim: { type: string, enum: [menunggu, terkirim, gagal, dialihkan_ke_kepala] }
+      waktu: { type: [string, 'null'], format: date-time, description: 'Waktu kirim (atau waktu pencatatan bila belum terkirim), WIB' }
+      dialihkan_ke_kepala: { type: boolean }
+      riwayat:
+        type: array
+        items:
+          type: object
+          properties:
+            jenis: { type: string, enum: [berangkat, diterima] }
+            status_kirim: { type: string, enum: [menunggu, terkirim, gagal, dialihkan_ke_kepala] }
+            waktu: { type: [string, 'null'], format: date-time }
+            dialihkan_ke_kepala: { type: boolean }
+    examples:
+      - jenis: diterima
+        status_kirim: terkirim
+        waktu: '2026-11-02T09:10:04+07:00'
+        dialihkan_ke_kepala: false
+        riwayat:
+          - { jenis: berangkat, status_kirim: terkirim, waktu: '2026-11-02T08:30:03+07:00', dialihkan_ke_kepala: false }
+          - { jenis: diterima, status_kirim: terkirim, waktu: '2026-11-02T09:10:04+07:00', dialihkan_ke_kepala: false }
   JadwalDistribusiInput:
     type: object
     required: [jadwal_produksi_id, titik_layanan_id, jumlah_porsi]

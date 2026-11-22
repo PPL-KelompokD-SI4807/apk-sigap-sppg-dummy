@@ -3,6 +3,7 @@
 namespace App\Services\Notification;
 
 use App\Enums\StatusKirim;
+use App\Models\JadwalDistribusi;
 use App\Models\NotifikasiPerjalanan;
 use App\Models\RekapHarian;
 
@@ -17,6 +18,9 @@ class DeliveryTracker
 
     public const REKAP = 'rekap_harian';
 
+    /** Pesan konfirmasi "diterima" ke PIC; status disimpan di jadwal_distribusis.notif_diterima_status. */
+    public const DISTRIBUSI_DITERIMA = 'distribusi_diterima';
+
     /** @param array{type: string, id: int}|null $track */
     public function sent(?array $track): void
     {
@@ -27,6 +31,7 @@ class DeliveryTracker
             self::REKAP => RekapHarian::query()->withoutGlobalScopes()->whereKey($track['id'])
                 ->where('status_kirim', '!=', StatusKirim::Terkirim->value)
                 ->update(['status_kirim' => StatusKirim::Terkirim->value, 'dikirim_pada' => now()]),
+            self::DISTRIBUSI_DITERIMA => $this->tandaiDiterima($track['id'], StatusKirimPic::TERKIRIM, [StatusKirimPic::MENUNGGU, StatusKirimPic::GAGAL]),
             default => null,
         };
     }
@@ -42,6 +47,7 @@ class DeliveryTracker
             self::REKAP => RekapHarian::query()->withoutGlobalScopes()->whereKey($track['id'])
                 ->where('status_kirim', StatusKirim::Menunggu->value)
                 ->update(['status_kirim' => StatusKirim::Gagal->value]),
+            self::DISTRIBUSI_DITERIMA => $this->tandaiDiterima($track['id'], StatusKirimPic::GAGAL, [StatusKirimPic::MENUNGGU]),
             default => null,
         };
     }
@@ -56,7 +62,18 @@ class DeliveryTracker
             self::REKAP => RekapHarian::query()->withoutGlobalScopes()->whereKey($track['id'])
                 ->where('status_kirim', StatusKirim::Menunggu->value)
                 ->update(['status_kirim' => StatusKirim::TidakTerkirim->value]),
+            self::DISTRIBUSI_DITERIMA => $this->tandaiDiterima($track['id'], StatusKirimPic::GAGAL, [StatusKirimPic::MENUNGGU]),
             default => null,
         };
+    }
+
+    /**
+     * @param  list<string>  $dari  status asal yang boleh ditimpa (hasil akhir "terkirim" tidak pernah diturunkan)
+     */
+    private function tandaiDiterima(int $jadwalId, string $ke, array $dari): void
+    {
+        JadwalDistribusi::query()->withoutGlobalScopes()->whereKey($jadwalId)
+            ->whereIn('notif_diterima_status', $dari)
+            ->update(['notif_diterima_status' => $ke, 'notif_diterima_waktu' => now()]);
     }
 }

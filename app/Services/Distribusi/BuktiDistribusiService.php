@@ -322,6 +322,8 @@ class BuktiDistribusiService
         if ($jadwal->status !== StatusJadwalDistribusi::Diterima) {
             $jadwal->status = StatusJadwalDistribusi::Diterima;
             $jadwal->save();
+            // Konfirmasi singkat ke PIC (sekali per jadwal, lewat antrean).
+            $this->perjalanan->konfirmasiDiterima($jadwal);
         }
 
         // Bukti serah terima = mobil sudah tiba: tutup perjalanan aktif lewat transisi resminya
