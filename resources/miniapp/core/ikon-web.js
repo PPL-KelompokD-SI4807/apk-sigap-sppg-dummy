@@ -39,7 +39,6 @@ export const PETA_IKON = {
   jam: [lingkaran(12, 12, 9), 'M12 7v5l3 2'],
   unduh: ['M12 4v11', 'm7.5 11 4.5 4.5 4.5-4.5', 'M5 20h14'],
   panah: ['M5 12h14', 'm13 6 6 6-6 6'],
-  merek: ['M4 12h16a8 8 0 0 1-8 8 8 8 0 0 1-8-8Z', 'M3 20h18', 'M12 4v4'],
   info: [lingkaran(12, 12, 9), 'M12 8h.01M11 12h1v4h1'],
 };
 
