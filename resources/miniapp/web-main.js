@@ -5,7 +5,9 @@ import '../css/miniapp.css';
 import '../css/web.css';
 import { setPlatform } from './core/platform.js';
 import { h, clear } from './core/dom.js';
-import { initTheme } from './core/theme.js';
+import { initTemaWeb } from './core/theme-web.js'; // web: sakelar siang/malam; core/theme.js (themeParams Telegram) tidak dipakai di sini
+import { buatSakelarTema } from './components/sakelar-tema-web.js';
+import { ikutiTemaGrafik } from './core/charts-tema-web.js';
 import { route, startRouter, navigate } from './core/router.js';
 import { klienWeb } from './core/api-web.js';
 import { tampilkanMasukWeb } from './modules/auth-web/layar.js';
@@ -38,9 +40,17 @@ async function masukAplikasi() {
   if (dimulai) return;
   dimulai = true;
   try {
-    const [{ getModules }, { daftarkanRuteWeb }] = await Promise.all([import('./modules/registry.js'), import('./rute-web.js')]);
+    const [{ getModules, menuFor }, { daftarkanRuteWeb }, { pintasanWeb }, { pasangKerangka }] = await Promise.all([
+      import('./modules/registry.js'), import('./rute-web.js'), import('./beranda-web.js'), import('./shell-web.js'),
+    ]);
     daftarkanRuteWeb(getModules(), () => klienWeb.getUser());
-  } catch { /* menu kosong; beranda tetap tampil */ }
+    const user = klienWeb.getUser();
+    pasangKerangka({ user, menu: menuFor(user), pintasan: pintasanWeb(user), klien: klienWeb, onKeluar: () => ulangiDariAwal() });
+  } catch {
+    // Menu kosong; beranda tetap tampil dan judul/Kembali tetap hidup walau kerangka gagal dimuat.
+    document.body.classList.add('dalam');
+    document.getElementById('appbar').hidden = false;
+  }
   history.replaceState(null, '', location.pathname + location.hash); // buang ?sesi=berakhir
   // Investor multi-SPPG: tentukan SPPG aktif lebih dulu (GET /sppg-saya); bila harus memilih, buka pemilih.
   if (multiSppg(klienWeb.getUser())) {
@@ -60,8 +70,9 @@ function tampilkanMasuk(pesanAwal = '') {
 }
 
 async function mulai() {
-  initTheme();
-  document.getElementById('appbar').hidden = false;
+  initTemaWeb();
+  ikutiTemaGrafik();
+  document.getElementById('aksi-masuk').append(buatSakelarTema());
   klienWeb.onSesiHabis(() => ulangiDariAwal(true));
   let sesi = null;
   try { sesi = await klienWeb.muatSesi(); } catch { /* jaringan/server: tampilkan layar Masuk */ }

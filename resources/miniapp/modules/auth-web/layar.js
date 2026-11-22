@@ -5,6 +5,7 @@ import { h, clear } from '../../core/dom.js';
 import { klienWeb as klienBawaan, statusKirimUlang } from '../../core/api-web.js';
 import { hideMainButton, toast } from '../../core/ui.js';
 import { mapValidationErrors } from '../../core/errors.js';
+import { ikon } from '../../core/ikon-web.js';
 import { formatMenit, kodeValid, sisaDetik } from '../../core/kredensial.js';
 import {
   bacaHasilMasuk, pesanSelesai, klasifikasiGalat,
@@ -24,7 +25,9 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
     stopTimer();
     hideMainButton();
     clear(el);
-    el.append(h('section', { class: 'panel stack login' }, h('h2', { class: 'panel-title' }, judul), ...anak));
+    el.append(h('div', { class: 'login-wrap' },
+      h('div', { class: 'login-brand' }, h('span', { class: 'logo logo-besar', 'aria-hidden': 'true' }, ikon('merek', { ukuran: 26, tebal: 2 })), h('b', {}, 'SiGAP SPPG'), h('span', { class: 'muted small' }, 'Sistem Informasi Dapur MBG')),
+      h('section', { class: 'panel stack login' }, h('h2', { class: 'panel-title' }, judul), ...anak)));
     document.title = judul;
   }
   const field = (label, input, galat) => h('label', { class: 'field' }, h('span', { class: 'label' }, label), input, galat);

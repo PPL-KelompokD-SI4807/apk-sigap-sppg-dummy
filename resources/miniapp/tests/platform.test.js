@@ -39,7 +39,8 @@ test('web.html tanpa skrip Telegram/pihak ketiga; index.html Mini App tetap memu
   const web = readFileSync(fileURLToPath(new URL('../web.html', import.meta.url)), 'utf8');
   const mini = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8');
   assert.doesNotMatch(web, /telegram/i);
-  assert.equal([...web.matchAll(/<script[^>]*src="([^"]+)"/g)].every((m) => m[1].startsWith('./')), true);
+  // Hanya skrip milik sendiri (satu origin): './x' (modul, ditulis ulang Vite) atau '/web/x' (skrip klasik; relatif salah di alamat "/", lihat tema-web.test.js). Bukan http(s):, bukan '//host'.
+  assert.equal([...web.matchAll(/<script[^>]*src="([^"]+)"/g)].every((m) => m[1].startsWith('./') || m[1].startsWith('/web/')), true);
   assert.match(mini, /telegram-web-app\.js/);
 });
 

@@ -3,9 +3,10 @@ import { h } from '../../core/dom.js';
 import { renderChart } from '../../core/charts.js';
 import { kpiCards, distribusiSeries, trendSeries, withAlpha } from './schema.js';
 
-/** Palet dari CSS tema (terang/gelap): --accent, --danger, --hint; hijau/kuning tetap terbaca di kedua mode. */
+/** Palet dari CSS tema (terang/gelap): --accent, --danger, --hint; hijau/kuning tetap terbaca di kedua mode.
+ *  Dibaca dari <body> (sama seperti core/charts.js): di web token tema dipasang pada body.web, bukan :root; di Mini App body mewarisi :root. */
 export function palette() {
-  const css = getComputedStyle(document.documentElement);
+  const css = getComputedStyle(document.body ?? document.documentElement);
   const v = (n, fb) => css.getPropertyValue(n).trim() || fb;
   return { accent: v('--accent', '#2481cc'), danger: v('--danger', '#d32f2f'), ok: '#1f9d6e', warn: '#d9831f', muted: v('--hint', '#707579'), card: v('--bg-section', '#ffffff') };
 }
@@ -40,11 +41,14 @@ export function chartsBlock(r, snapshots = [], { tren = true } = {}) {
 
   (async () => {
     try {
-      const col = palette();
+      // Warna dari token tema saat ini; dipanggil ulang saat tema diganti (web), jadi hasilnya sama dengan memuat langsung.
+      const warnaBatang = () => { const col = palette(); return [{ backgroundColor: trend.values.map((_, i) => (i === trend.aktif ? col.accent : withAlpha(col.accent, 0.4))) }]; };
+      const warnaDonat = () => { const col = palette(); return [{ backgroundColor: dist.items.map((x) => col[x.key]), borderColor: col.card }]; };
       if (trend.values.length) {
         const chart = await renderChart(c1, {
           type: 'bar',
-          data: { labels: trend.labels, datasets: [{ label: 'Capaian (%)', data: trend.values, borderRadius: 6, backgroundColor: trend.values.map((_, i) => (i === trend.aktif ? col.accent : withAlpha(col.accent, 0.4))) }] },
+          warnaTema: warnaBatang,
+          data: { labels: trend.labels, datasets: [{ label: 'Capaian (%)', data: trend.values, borderRadius: 6, ...warnaBatang()[0] }] },
           options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, suggestedMax: 100, ticks: { callback: (x) => `${x}%` } }, x: { grid: { display: false } } } },
         });
         if (dead) chart.destroy(); else instances.push(chart);
@@ -52,7 +56,8 @@ export function chartsBlock(r, snapshots = [], { tren = true } = {}) {
       if (dist.total) {
         const chart = await renderChart(c2, {
           type: 'doughnut',
-          data: { labels: dist.items.map((x) => x.label), datasets: [{ data: dist.items.map((x) => x.value), backgroundColor: dist.items.map((x) => col[x.key]), borderColor: col.card, borderWidth: 2 }] },
+          warnaTema: warnaDonat,
+          data: { labels: dist.items.map((x) => x.label), datasets: [{ data: dist.items.map((x) => x.value), borderWidth: 2, ...warnaDonat()[0] }] },
           options: { cutout: '62%', plugins: { legend: { display: false } } },
         });
         if (dead) chart.destroy(); else instances.push(chart);
