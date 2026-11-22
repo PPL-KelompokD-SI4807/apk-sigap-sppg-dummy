@@ -234,3 +234,23 @@ Catatan: dua build develop berurutan identik byte demi byte untuk web dan Mini A
 8. Fitur CSS baru (`:has()` sudah dipakai di `web.css`, `color-mix`, `oklch`) tidak didukung peramban lama di ponsel pekerja dapur. Mitigasi: 78a.
 9. Mock menutupi kebenaran: uji CSS dengan data kosong tidak menangkap data panjang. Mitigasi: `--fixtures`, uji staging dengan data fiktif.
 10. Pesan galat/labels sakelar dan nav yang berubah teks dapat mematahkan tes yang mencocokkan string. Mitigasi: 77a.
+
+## 11. Hasil eksekusi terhadap `feat/redesain-web-ui` (HEAD 029bc85 + ukuran-bundel.json) — 22 Nov 2026
+
+Metode: build bersih dari `git archive` (tanpa menyentuh working tree), server uji dengan header CSP dibaca dari `headers-webapp.conf`, Chromium, garis dasar `origin/develop` 613a84e. Yang dijalankan: 170 kombinasi layar x lebar x tema pada build baru (galeri, tumpuk, Masuk, beranda 9 peran, 18 layar pasca-login via mock sesi dengan data kosong, dasbor berfixture), 12 skenario Masuk langkah kode/galat/terkunci, toast, rel, menu per peran, guard URL, peta hak rusak, tema (sakelar, storage rusak/diblokir, kedipan, dua tab), grafik saat ganti tema, Mini App (bundel, 10 tangkapan layar), `node --test resources/miniapp/tests/*.test.js` (546 lulus, 0 gagal). `php artisan test`/pint tidak dijalankan (bukan wilayah QA ini).
+
+Terkonfirmasi (dengan bukti skrip): 0 pelanggaran CSP enforced di semua kombinasi; laporan Report-Only Trusted Types sama dengan garis dasar (6 = 6); font dimuat dari `/web/assets/*.woff2` (tanpa `data:`); 0 geseran mendatar, 0 elemen meluber, 0 `[hidden]`/`.sr-only` yang terlihat, 0 teks di bawah AA (garis dasar: 93 + 27 + 27 kegagalan kontras; baru: 0, termasuk teks di atas gradien yang dinilai dari piksel), 0 cincin fokus tidak terlihat/di bawah 3:1, urutan z modal 50 > toast 40 > mainbar 20 > bar atas/rel tanpa tumpang tindih, toast tidak menutupi tombol utama dan terbaca (kontras 6.57:1 terendah), nav/rel/beranda untuk 9 varian peran sama persis dengan tabel bagian 5 (rel dan beranda 22/21/16/11/14/8/11/12/12 tautan; nav atas tidak memuat "Sesi" dengan sengaja), tidak ada tautan di luar hak, 8 URL tanpa hak dialihkan dengan pesan, peta hak rusak menghasilkan rel/nav minimal tanpa patah, relawan tanpa unit (8 tautan) rel utuh, sakelar tiga keadaan bertahan setelah muat ulang dan mengikuti sistem, nilai tersimpan rusak/localStorage diblokir tidak menimbulkan galat, Mini App: CSS identik, hanya chunk JS berubah (+50 B, sesuai `charts.js`), 10 tangkapan layar identik piksel.
+
+Temuan BARU:
+
+| ID | Keparahan | Ringkas |
+|---|---|---|
+| W-01 | Tinggi | `web.html` memuat `./tema-awal.js` (relatif). Di alamat `/` (nginx merewrite internal ke `/web/index.html`) berkas diminta ke `/tema-awal.js`: 404 + diblokir nosniff, galat konsol di tiap muat, anti-kedip mati (kedipan terang-ke-gelap terukur). Di `/web/` normal. Saran: `src="/web/tema-awal.js"`. |
+| W-02 | Sedang | Grafik tidak ikut tema penuh saat tema diganti: warna seri berubah, tetapi garis grid/sumbu hilang dan label sumbu tetap warna tema sebelumnya (`core/charts-tema-web.js`). Muat ulang menormalkan. |
+| W-03 | Sedang | Fokus keyboard pada pil nav di <= 768 px: pil berfokus bisa tersisa sekitar 4 px di tepi kanan `.nav-grup` (browser hanya menggulir bila tak terlihat sama sekali). Saran: `scroll-padding-inline` + `scrollIntoView({inline:'nearest'})` saat fokus. |
+| W-04 | Rendah | `.nav-pil` 38 px untuk pointer halus (>= 1024 px dengan mouse); 44 px hanya `@media (pointer: coarse)`. Menyimpang dari aturan 44 px; keputusan PM. |
+| W-05 | Rendah | Tab kedua tidak mengikuti perubahan tema dari tab pertama (tetap utuh; menyesuaikan saat muat ulang). |
+
+Tercatat LAMA (ada juga di garis dasar, tidak baru): batas input/select/textarea 1.96:1 (terang) dan 2.70:1 (gelap) < 3:1 (WCAG 1.4.11); peringatan konsol "Slug modul ganda dilewati: titik-layanan (./_contoh/index.js)" (Rendah); relawan dapur ke `#/jadwal/distribusi` dialihkan ke `#/jadwal` tanpa pesan.
+
+Belum diuji: keadaan data berisi/data panjang nyata (mock hanya daftar kosong), modal (hapus, undangan, 409) dan toast lewat alur UI (toast diuji dengan DOM identik `core/ui.js`, bukan lewat pemicu JS), unggah foto/kamera, grafik doughnut (kode `charts-tema-web.js` hanya memperbarui warna bertipe string), dasbor 8 profil dengan bentuk widget asli, Laporan BGN/Pengguna/Log Audit dengan data, CSP di nginx staging, RBAC dengan akun nyata, Firefox/Safari/Chrome Android, zoom 200-400%, `forced-colors`, pembaca layar, Telegram Android/iOS/Desktop. Ukuran awal web naik (gzip aset awal 17.3 KB ke 52.5 KB, total web +24%; garis dasar diperbarui di PR).
