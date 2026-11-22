@@ -4,10 +4,12 @@ namespace Tests\Feature\Investor;
 
 use App\Models\FeedbackKeluhan;
 use App\Models\PemeriksaanMutu;
+use App\Models\PenerimaManfaat;
 use App\Models\Pengeluaran;
 use App\Models\Sppg;
 use App\Services\Ai\AiAgentService;
 use App\Services\Ai\AiInput;
+use App\Services\Ai\Catalog\KamusNamaOrang;
 use App\Services\Ai\Catalog\RecordPresenter;
 use App\Services\Ai\Llm\FakeLlmClient;
 use App\Services\Ai\Llm\LlmClient;
@@ -133,6 +135,8 @@ class InvestorPrivasiTest extends InvestorTestCase
             'tindak_lanjut' => 'Sudah dihubungi Bu Sartika Dewi',
         ]);
         $keluhanA = FeedbackKeluhan::factory()->create(['sppg_id' => $this->sppgA, 'deskripsi' => 'Siti Aminah alergi telur']);
+        // Issue #175: nama tanpa penanda (sapaan/peran) disamarkan karena terdaftar sebagai penerima manfaat.
+        PenerimaManfaat::factory()->create(['sppg_id' => $this->sppgA, 'nama' => 'Siti Aminah']);
 
         // Investor (daftar) dan Kepala SPPG (detail per id, memuat tindak_lanjut).
         foreach ([
@@ -158,10 +162,12 @@ class InvestorPrivasiTest extends InvestorTestCase
     public function test_aturan_penyamaran_teks_bebas(): void
     {
         $this->assertSame('A. R. P. muntah setelah makan.', RecordPresenter::redactPersonal('Ananda Rizky Pratama muntah setelah makan.'));
-        $this->assertSame('Nasi basi di SDN F. 2, Ibu S. melapor.', RecordPresenter::redactPersonal('Nasi basi di SDN Fiktif 2, Ibu Sartika melapor.'));
+        // Issue #175: nama lembaga/kata kapital biasa ("Fiktif") tidak lagi disingkat; nama setelah sapaan tetap inisial.
+        $this->assertSame('Nasi basi di SDN Fiktif 2, Ibu S. melapor.', RecordPresenter::redactPersonal('Nasi basi di SDN Fiktif 2, Ibu Sartika melapor.'));
         $this->assertSame('telepon [disamarkan], email [disamarkan]', RecordPresenter::redactPersonal('telepon +62 812 3456 7890, email ortu@contoh.id'));
         $this->assertSame('lihat [disamarkan] jam 07.30', RecordPresenter::redactPersonal('lihat https://contoh.id/x?nama=Budi jam 07.30'));
-        $this->assertSame('B. tidak mau makan', RecordPresenter::redactPersonal('BUDI tidak mau makan'));
+        // Nama terdaftar tetap inisial walau ditulis huruf besar semua dan tanpa penanda.
+        $this->assertSame('B. tidak mau makan', RecordPresenter::redactPersonal('BUDI tidak mau makan', KamusNamaOrang::dari(['Budi Santoso'])));
     }
 
     // ---------------------------------------------------------------- S-07 sapaan bot

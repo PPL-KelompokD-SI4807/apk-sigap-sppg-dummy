@@ -118,7 +118,7 @@ class ToolKatalogTeksBebasDisamarkanTest extends InvestorTestCase
         $uraian = (string) $data['hasil'][0]['uraian'];
 
         $this->assertStringStartsWith('beli beras Rp 1.500.000, antar jam 07.30 - 08.00, kontak B. S. '.RecordPresenter::REDACTED, $uraian);
-        $this->assertStringEndsWith(', N. '.RecordPresenter::REDACTED.', '.RecordPresenter::REDACTED, $uraian);
+        $this->assertStringEndsWith(', NIK '.RecordPresenter::REDACTED.', '.RecordPresenter::REDACTED, $uraian);
         $this->assertSame(1500000, $data['hasil'][0]['nominal']);
         $this->assertTanpaNikHp($konten);
     }
@@ -241,7 +241,8 @@ class ToolKatalogTeksBebasDisamarkanTest extends InvestorTestCase
         $hasil = $data['hasil'][0];
 
         $this->assertStringStartsWith('Diterima Ibu S. jam 07.30 - 08.00, kontak B. S. '.RecordPresenter::REDACTED, (string) $hasil['catatan']);
-        $this->assertSame('kurang 5 porsi, hubungi '.RecordPresenter::REDACTED.' atau N. '.RecordPresenter::REDACTED, $hasil['catatan_selisih']);
+        // Issue #175: label "NIK" bukan nama orang sehingga tetap utuh; angkanya tetap disamarkan.
+        $this->assertSame('kurang 5 porsi, hubungi '.RecordPresenter::REDACTED.' atau NIK '.RecordPresenter::REDACTED, $hasil['catatan_selisih']);
         $this->assertStringNotContainsString('Sartika', $konten);
         $this->assertTanpaNikHp($konten);
     }

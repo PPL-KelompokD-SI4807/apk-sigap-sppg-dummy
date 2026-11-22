@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Policies\DashboardPolicy;
+use App\Services\Ai\Catalog\KamusNamaOrang;
 use App\Services\Auth\MasukWebService;
 use App\Services\Auth\SesiService;
 use App\Services\Auth\SesiWeb;
@@ -30,6 +31,10 @@ class AppServiceProvider extends ServiceProvider
 
         // SPPG aktif (R-06a): satu instance per permintaan/job, tidak terbawa ke permintaan lain.
         $this->app->scoped(SppgAktif::class);
+
+        // Issue #175: kamus nama orang terdaftar untuk penyamaran teks bebas ke LLM; dimuat malas sekali per
+        // permintaan/job agar nama yang baru didaftarkan ikut tersamar pada permintaan berikutnya.
+        $this->app->scoped(KamusNamaOrang::class, fn () => KamusNamaOrang::dariBasisData());
 
         // R07-3: render PDF laporan BGN (setasign/fpdf); dapat ditukar tanpa mengubah agregator/job.
         $this->app->bind(PdfRenderer::class, FpdfRenderer::class);

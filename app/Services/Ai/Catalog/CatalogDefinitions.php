@@ -91,10 +91,11 @@ use BackedEnum;
  * - Nama orang (anak penerima manfaat, PIC, pengemudi) disajikan sebagai inisial + ID ($initials);
  *   penerima manfaat juga tanpa sekolah/kelas. Nama lengkap hanya tampil di Mini App.
  * - Teks bebas yang dapat memuat data pribadi orang lain ($personalText: deskripsi/tindak lanjut keluhan, uraian
- *   pengeluaran, catatan pencairan/bukti distribusi/rekap) disamarkan RecordPresenter::redactPersonal() (nama ->
- *   inisial, NIK/HP/email/URL -> [disamarkan]) lalu dipotong MAX_TEXT_PERSONAL; juga disembunyikan di ringkasan
- *   draf chat. Teks bertema dapur/pangan (catatan menu/jadwal, kendala log produksi, catatan mutu) hanya text():
- *   inisial akan merusak nama bahan/menu; penyamaran kontak saja untuk kolom itu menunggu opsi baru (issue #149).
+ *   pengeluaran, catatan pencairan/bukti distribusi/rekap) disamarkan RecordPresenter::redactPersonal() (NIK/HP/
+ *   email/URL -> [disamarkan]; nama orang terdaftar dan nama sesudah sapaan/peran -> inisial, kata kapital lain
+ *   utuh, issue #175) lalu dipotong MAX_TEXT_PERSONAL; juga disembunyikan di ringkasan draf chat. Teks bertema
+ *   dapur/pangan (catatan menu/jadwal, kendala log produksi, catatan mutu, alamat) hanya disamarkan kontak/NIK-nya
+ *   (RecordPresenter::FREE_TEXT_COLUMN) agar nama bahan/menu tetap utuh.
  * - Kolom form sensitif dikecualikan dari skema tulis ($exclude): pengguna mengisinya sendiri di Mini App.
  * - Ketersediaan tool = matriks Tabel 5 + aturan unit relawan + Policy (BaseAiTool); sppg_id/user_id/role
  *   tidak pernah ditawarkan dan selalu dibuang (config ai.protected_arguments).

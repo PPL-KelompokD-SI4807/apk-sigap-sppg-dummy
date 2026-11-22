@@ -12,6 +12,7 @@ use App\Enums\SubKategoriPengeluaran;
 use App\Models\AiDraft;
 use App\Models\AuditLog;
 use App\Models\Pengeluaran;
+use App\Models\Pengemudi;
 use App\Models\PersetujuanPengeluaran;
 use App\Models\Scopes\SppgScope;
 use App\Models\User;
@@ -587,6 +588,8 @@ class SubKategoriToolAiTest extends LaporanBgnTestCase
     public function test_service_menyamarkan_uraian_nik_dan_hp_bersisipan_tak_terlihat(): void
     {
         $this->forgetActor();
+        // Issue #175: nama tanpa sapaan di teks bebas menjadi inisial karena terdaftar sebagai pengemudi.
+        Pengemudi::factory()->create(['sppg_id' => $this->sppgA, 'nama' => 'Budi Santoso']);
         $p = $this->keluar('2026-11-05', KategoriPengeluaran::Lainnya, 50_000, [
             'uraian' => "gas untuk Budi Santoso hp 0812\u{200B}3456\u{2060}7890 nik 3201\u{FEFF}0123-4567\u{00A0}8901",
         ]);

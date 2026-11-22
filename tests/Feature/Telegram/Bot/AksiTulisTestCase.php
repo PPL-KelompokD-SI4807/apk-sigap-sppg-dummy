@@ -152,14 +152,27 @@ abstract class AksiTulisTestCase extends LayarBacaTestCase
         return BotAksi::query()->where('kode', $kode)->value('status');
     }
 
-    /** Semua pesan/edit bot dan log tidak memuat teks keluhan, nama, atau telepon fiktif. */
+    /**
+     * Semua pesan/edit bot dan log tidak memuat nama atau telepon fiktif; teks keluhan/tindak lanjut tidak muncul di
+     * log maupun pesan bot selain layar daftar "Keluhan Terbuka". Layar daftar itu memang menampilkan deskripsi yang
+     * sudah disamarkan RecordPresenter (nama -> inisial, HP -> [disamarkan]); sejak issue #175 kata non-pribadi seperti
+     * penanda "RAHASIA-KELUHAN" tidak lagi disingkat di sana, sehingga penanda itu hanya diperiksa di luar layar daftar.
+     */
     protected function assertTanpaBocor(): void
     {
-        $keluaran = collect(['sendMessage', 'editMessageText', 'answerCallbackQuery'])
+        $pesan = collect(['sendMessage', 'editMessageText', 'answerCallbackQuery'])
             ->flatMap(fn (string $m) => $this->telegramCalls($m))
-            ->map(fn ($r) => json_encode($r->data()))->implode("\n");
+            ->map(fn ($r) => json_encode($r->data()));
+        $keluaran = $pesan->implode("\n");
+        $selainDaftarKeluhan = $pesan->reject(fn (string $p) => str_contains($p, '<b>Keluhan Terbuka<\/b>'))->implode("\n");
 
-        foreach (['RAHASIA-KELUHAN', 'RAHASIA-TL', '081234567890', 'Budi Santoso', 'Siti Rahma', '0812-0000-9999'] as $t) {
+        foreach (['RAHASIA-KELUHAN', 'RAHASIA-TL'] as $t) {
+            $this->assertStringNotContainsString($t, $selainDaftarKeluhan, "Keluaran bot bocor '{$t}'");
+            $this->assertStringNotContainsString($t, json_encode($this->logBot), "Log bocor '{$t}'");
+        }
+        $this->assertStringNotContainsString('RAHASIA-TL', $keluaran, "Keluaran bot bocor 'RAHASIA-TL'");
+
+        foreach (['081234567890', 'Budi Santoso', 'Siti Rahma', '0812-0000-9999'] as $t) {
             $this->assertStringNotContainsString($t, $keluaran, "Keluaran bot bocor '{$t}'");
             $this->assertStringNotContainsString($t, json_encode($this->logBot), "Log bocor '{$t}'");
         }
