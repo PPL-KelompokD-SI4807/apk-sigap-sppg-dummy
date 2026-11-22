@@ -1,22 +1,21 @@
-// Sakelar tema web: satu tombol ikon (>= 44 px) yang memutar sistem -> siang -> malam. Label ARIA menyebut keadaan sekarang.
+// Sakelar tema web: satu tombol ikon (>= 44 px) dengan DUA keadaan (siang <-> malam). Tombol menampilkan keadaan SEKARANG
+// (matahari + "Siang" / bulan + "Malam"); menekannya membalik ke yang satunya dan menjadikannya pilihan eksplisit.
 import { h } from '../core/dom.js';
 import { ikon } from '../core/ikon-web.js';
-import { pilihanSaatIni, ubahTema, berikutnya, labelPilihan, PERISTIWA } from '../core/theme-web.js';
-
-const IKON = { sistem: 'sistem', terang: 'matahari', gelap: 'bulan' };
+import { temaSaatIni, ubahTema, berikutnya, labelTema, PERISTIWA } from '../core/theme-web.js';
 
 export function buatSakelarTema() {
   const tombol = h('button', { class: 'tema-btn', type: 'button' });
   const gambar = () => {
-    const p = pilihanSaatIni();
-    const nama = labelPilihan(p);
-    const lanjut = labelPilihan(berikutnya(p));
+    const tema = temaSaatIni();
+    const nama = labelTema(tema);
+    const lanjut = labelTema(tema === 'dark' ? 'light' : 'dark');
     tombol.setAttribute('aria-label', `Tema tampilan: ${nama}. Ketuk untuk ganti ke ${lanjut}.`);
     tombol.setAttribute('title', `Tema: ${nama}`);
-    tombol.dataset.pilihan = p;
-    tombol.replaceChildren(ikon(IKON[p], { ukuran: 18 }), h('span', { class: 'tema-teks' }, nama));
+    tombol.dataset.tema = tema;
+    tombol.replaceChildren(ikon(tema === 'dark' ? 'bulan' : 'matahari', { ukuran: 18 }), h('span', { class: 'tema-teks' }, nama));
   };
-  tombol.addEventListener('click', () => { ubahTema(berikutnya(pilihanSaatIni())); });
+  tombol.addEventListener('click', () => { ubahTema(berikutnya(temaSaatIni())); });
   globalThis.addEventListener?.(PERISTIWA, gambar);
   gambar();
   return tombol;

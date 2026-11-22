@@ -1,21 +1,23 @@
-// Tema WEB (siang/malam). Tiga pilihan: 'sistem' (bawaan, mengikuti prefers-color-scheme), 'terang', 'gelap'.
-// Pilihan disimpan di localStorage (kunci khusus tema; BUKAN token/sesi, yang tetap hanya di cookie HttpOnly).
+// Tema WEB (siang/malam). Dua keadaan yang terlihat: 'terang' (Siang) dan 'gelap' (Malam).
+// Pengunjung yang belum memilih (pilihan = null) MENGIKUTI prefers-color-scheme sistem; ini bukan keadaan yang tampil/tersimpan.
+// Begitu pengguna menekan sakelar, pilihannya eksplisit dan disimpan di localStorage (kunci khusus tema; BUKAN token/sesi, yang
+// tetap hanya di cookie HttpOnly). Nilai tersimpan lain ('sistem' dari versi lama, nilai asing/rusak) dianggap belum memilih.
 // Hasil akhir ditulis ke <html data-theme="light|dark"> dan color-scheme agar kontrol bawaan peramban ikut.
 // Hanya dipakai web-main.js. Mini App Telegram tetap memakai core/theme.js (themeParams Telegram): modul ini tidak
 // diimpor di sana, dan core/theme.js tidak dipanggil di web sehingga tidak ada yang menimpa data-theme.
-export const PILIHAN = ['sistem', 'terang', 'gelap'];
+export const PILIHAN = ['terang', 'gelap'];
 export const KUNCI = 'sigap_tema_web';
 export const PERISTIWA = 'sigap:tema';
 
-const label = { sistem: 'Sistem', terang: 'Siang', gelap: 'Malam' };
-export const labelPilihan = (p) => label[normalisasi(p)];
+/** Teks tombol untuk tema yang SEDANG tampil: 'light' -> Siang, 'dark' -> Malam. */
+export const labelTema = (tema) => (tema === 'dark' ? 'Malam' : 'Siang');
 
-/** Nilai asing/rusak -> 'sistem'. */
+/** 'terang' | 'gelap' | null. Nilai lain (termasuk 'sistem' lama) -> null = belum memilih, ikut sistem. */
 export function normalisasi(v) {
-  return PILIHAN.includes(v) ? v : 'sistem';
+  return PILIHAN.includes(v) ? v : null;
 }
 
-/** Pilihan + preferensi sistem -> 'dark' | 'light'. Pilihan eksplisit selalu menang atas sistem. */
+/** Pilihan + preferensi sistem -> 'dark' | 'light'. Pilihan eksplisit menang; tanpa pilihan ikut sistem. */
 export function tentukanTema(pilihan, sistemGelap) {
   const p = normalisasi(pilihan);
   if (p === 'gelap') return 'dark';
@@ -23,19 +25,21 @@ export function tentukanTema(pilihan, sistemGelap) {
   return sistemGelap ? 'dark' : 'light';
 }
 
-/** Pilihan berikutnya dalam putaran sistem -> terang -> gelap -> sistem. */
-export function berikutnya(pilihan) {
-  return PILIHAN[(PILIHAN.indexOf(normalisasi(pilihan)) + 1) % PILIHAN.length];
+/** Pilihan yang dihasilkan menekan sakelar saat tema sekarang `tema` ('dark' -> 'terang', 'light' -> 'gelap'). */
+export function berikutnya(tema) {
+  return tema === 'dark' ? 'terang' : 'gelap';
 }
 
 const gudang = () => { try { return globalThis.localStorage ?? null; } catch { return null; } };
 
 export function bacaPilihan(g = gudang()) {
-  try { return normalisasi(g?.getItem(KUNCI)); } catch { return 'sistem'; }
+  try { return normalisasi(g?.getItem(KUNCI)); } catch { return null; }
 }
 
 export function simpanPilihan(pilihan, g = gudang()) {
-  try { g?.setItem(KUNCI, normalisasi(pilihan)); return true; } catch { return false; }
+  const p = normalisasi(pilihan);
+  if (p === null) return false; // hanya pilihan eksplisit yang disimpan
+  try { g?.setItem(KUNCI, p); return true; } catch { return false; }
 }
 
 const sistemGelap = () => { try { return globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches === true; } catch { return false; } };
@@ -45,19 +49,23 @@ export function terapkanTema(pilihan, { root = globalThis.document?.documentElem
   const tema = tentukanTema(pilihan, gelapSistem);
   if (root) {
     root.dataset.theme = tema;
-    root.dataset.temaPilihan = normalisasi(pilihan);
+    root.dataset.temaPilihan = normalisasi(pilihan) ?? 'otomatis';
     if (root.style) root.style.colorScheme = tema === 'dark' ? 'dark' : 'light'; // CSSOM, bukan atribut style (CSP)
   }
   return tema;
 }
 
-let pilihanAktif = 'sistem';
+let pilihanAktif = null;
+let temaAktif = tentukanTema(null, false);
+/** Pilihan eksplisit sekarang: 'terang' | 'gelap' | null (belum memilih, ikut sistem). */
 export const pilihanSaatIni = () => pilihanAktif;
+/** Tema yang sedang tampil: 'dark' | 'light'. */
+export const temaSaatIni = () => temaAktif;
 
 /**
  * Tab lain mengganti tema (peristiwa `storage` hanya terbit di tab SELAIN penulisnya): baca ulang pilihan dan terapkan.
  * Tidak menulis balik ke penyimpanan (simpan:false), jadi tidak ada putaran penulisan antar tab.
- * key === null berarti penyimpanan dikosongkan (clear()) -> kembali ke 'sistem'.
+ * key === null berarti penyimpanan dikosongkan (clear()) -> kembali ikut sistem (pilihan null).
  */
 export function tanggapiStorage(e) {
   if (!e || (e.key !== null && e.key !== KUNCI)) return false;
@@ -67,13 +75,13 @@ export function tanggapiStorage(e) {
   return true;
 }
 
-/** Pasang tema saat memuat + ikuti perubahan sistem selagi pilihan = 'sistem'. */
+/** Pasang tema saat memuat + ikuti perubahan sistem selagi pengguna belum memilih (pilihan null). */
 export function initTemaWeb() {
   pilihanAktif = bacaPilihan();
-  terapkanTema(pilihanAktif);
+  temaAktif = terapkanTema(pilihanAktif);
   try {
     globalThis.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
-      if (pilihanAktif === 'sistem') ubahTema('sistem', { simpan: false });
+      if (pilihanAktif === null) ubahTema(null, { simpan: false });
     });
   } catch { /* peramban lama */ }
   try { globalThis.addEventListener?.('storage', tanggapiStorage); } catch { /* lingkungan uji */ }
@@ -84,7 +92,7 @@ export function initTemaWeb() {
 export function ubahTema(pilihan, { simpan = true } = {}) {
   pilihanAktif = normalisasi(pilihan);
   if (simpan) simpanPilihan(pilihanAktif);
-  const tema = terapkanTema(pilihanAktif);
+  const tema = temaAktif = terapkanTema(pilihanAktif);
   try { globalThis.dispatchEvent?.(new CustomEvent(PERISTIWA, { detail: { pilihan: pilihanAktif, tema } })); } catch { /* lingkungan uji */ }
   return tema;
 }

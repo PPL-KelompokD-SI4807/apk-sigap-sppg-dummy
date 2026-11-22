@@ -1,19 +1,19 @@
-// Tema web siang/malam: logika pemilihan (sistem/terang/gelap), penyimpanan, dan penulisan ke akar dokumen.
+// Tema web siang/malam: dua keadaan (terang/gelap); tanpa pilihan = ikut sistem. Logika, penyimpanan, penulisan ke akar dokumen.
 // Jalankan: node --test resources/miniapp/tests/*.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  PILIHAN, KUNCI, normalisasi, tentukanTema, berikutnya, bacaPilihan, simpanPilihan, terapkanTema, labelPilihan,
+  PILIHAN, KUNCI, normalisasi, tentukanTema, berikutnya, bacaPilihan, simpanPilihan, terapkanTema, labelTema,
 } from '../core/theme-web.js';
 
 const memori = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), m }; };
 const akar = () => ({ dataset: {}, style: {} });
 
-test('sistem mengikuti prefers-color-scheme: gelap -> dark, terang -> light', () => {
-  assert.equal(tentukanTema('sistem', true), 'dark');
-  assert.equal(tentukanTema('sistem', false), 'light');
+test('tanpa pilihan (null) mengikuti prefers-color-scheme: gelap -> dark, terang -> light', () => {
+  assert.equal(tentukanTema(null, true), 'dark');
+  assert.equal(tentukanTema(null, false), 'light');
 });
 
 test('pilihan eksplisit menang atas sistem', () => {
@@ -21,42 +21,54 @@ test('pilihan eksplisit menang atas sistem', () => {
   assert.equal(tentukanTema('gelap', false), 'dark');
 });
 
-test('nilai asing/rusak dianggap sistem; bawaan tanpa simpanan = sistem', () => {
-  assert.equal(normalisasi('ungu'), 'sistem');
-  assert.equal(normalisasi(null), 'sistem');
-  assert.equal(tentukanTema('ungu', true), 'dark');
-  assert.equal(bacaPilihan(memori()), 'sistem');
-  assert.equal(bacaPilihan(null), 'sistem');
+test("nilai 'sistem' lama, asing, atau rusak = belum memilih (null) dan ikut sistem tanpa galat", () => {
+  for (const v of ['sistem', 'ungu', '', null, undefined, 42, '<script>']) {
+    assert.equal(normalisasi(v), null, String(v));
+    assert.equal(tentukanTema(v, true), 'dark');
+    assert.equal(tentukanTema(v, false), 'light');
+  }
+  assert.equal(bacaPilihan(memori()), null);
+  assert.equal(bacaPilihan(null), null);
 });
 
-test('pilihan tersimpan dibaca kembali; nilai rusak di penyimpanan diabaikan', () => {
+test('pilihan tersimpan dibaca kembali; nilai lama/rusak di penyimpanan dianggap belum memilih', () => {
   const g = memori();
   assert.equal(simpanPilihan('gelap', g), true);
   assert.equal(g.m.get(KUNCI), 'gelap');
   assert.equal(bacaPilihan(g), 'gelap');
+  g.m.set(KUNCI, 'sistem'); // simpanan versi sebelumnya
+  assert.equal(bacaPilihan(g), null);
   g.m.set(KUNCI, '<script>');
-  assert.equal(bacaPilihan(g), 'sistem');
+  assert.equal(bacaPilihan(g), null);
 });
 
-test('penyimpanan yang melempar galat (mode privat) tidak merusak: kembali ke sistem / gagal senyap', () => {
+test("'sistem'/null tidak pernah ditulis ke penyimpanan (hanya terang/gelap)", () => {
+  const g = memori();
+  assert.equal(simpanPilihan('sistem', g), false);
+  assert.equal(simpanPilihan(null, g), false);
+  assert.equal(g.m.size, 0);
+});
+
+test('penyimpanan yang melempar galat (mode privat) tidak merusak: ikut sistem / gagal senyap', () => {
   const rusak = { getItem() { throw new Error('SecurityError'); }, setItem() { throw new Error('QuotaExceededError'); } };
-  assert.equal(bacaPilihan(rusak), 'sistem');
+  assert.equal(bacaPilihan(rusak), null);
   assert.equal(simpanPilihan('terang', rusak), false);
 });
 
-test('putaran sakelar: sistem -> terang -> gelap -> sistem', () => {
-  assert.deepEqual(PILIHAN, ['sistem', 'terang', 'gelap']);
-  assert.equal(berikutnya('sistem'), 'terang');
-  assert.equal(berikutnya('terang'), 'gelap');
-  assert.equal(berikutnya('gelap'), 'sistem');
-  assert.equal(labelPilihan('terang'), 'Siang');
-  assert.equal(labelPilihan('gelap'), 'Malam');
+test('sakelar dua keadaan: dark -> terang, light -> gelap; label Siang/Malam; tanpa kata Sistem', () => {
+  assert.deepEqual(PILIHAN, ['terang', 'gelap']);
+  assert.equal(berikutnya('dark'), 'terang');
+  assert.equal(berikutnya('light'), 'gelap');
+  assert.equal(labelTema('light'), 'Siang');
+  assert.equal(labelTema('dark'), 'Malam');
+  const sumber = ['../components/sakelar-tema-web.js', '../core/theme-web.js'].map((f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''));
+  for (const k of sumber) assert.doesNotMatch(k, /Sistem/, 'kata "Sistem" tidak boleh ada di teks antarmuka');
 });
 
 test('terapkanTema menulis data-theme (light|dark), pilihan, dan color-scheme di akar', () => {
   const a = akar();
-  assert.equal(terapkanTema('sistem', { root: a, gelapSistem: true }), 'dark');
-  assert.deepEqual([a.dataset.theme, a.dataset.temaPilihan, a.style.colorScheme], ['dark', 'sistem', 'dark']);
+  assert.equal(terapkanTema(null, { root: a, gelapSistem: true }), 'dark');
+  assert.deepEqual([a.dataset.theme, a.dataset.temaPilihan, a.style.colorScheme], ['dark', 'otomatis', 'dark']);
   assert.equal(terapkanTema('terang', { root: a, gelapSistem: true }), 'light');
   assert.deepEqual([a.dataset.theme, a.dataset.temaPilihan, a.style.colorScheme], ['light', 'terang', 'light']);
 });
@@ -79,7 +91,7 @@ function jalankanSkrip({ simpanan, gelapSistem, rusak = false }) {
 }
 
 test('tema-awal.js: hasil sama dengan tentukanTema untuk semua kombinasi pilihan x sistem', () => {
-  for (const simpanan of [null, 'sistem', 'terang', 'gelap', 'rusak']) {
+  for (const simpanan of [null, 'sistem', 'terang', 'gelap', 'rusak', '']) {
     for (const gelapSistem of [true, false]) {
       const r = jalankanSkrip({ simpanan, gelapSistem });
       assert.equal(r.attrs['data-theme'], tentukanTema(simpanan, gelapSistem), `${simpanan}/${gelapSistem}`);
@@ -154,7 +166,10 @@ test('storage: perubahan kunci tema dari tab lain diterapkan tanpa menulis balik
     assert.equal(tanggapiStorage({ key: KUNCI, newValue: 'gelap' }), false, 'nilai sama tidak diterapkan ulang');
     g.m.delete(KUNCI); // clear()/removeItem dari tab lain
     assert.equal(tanggapiStorage({ key: null }), true);
-    assert.equal(pilihanSaatIni(), 'sistem');
+    assert.equal(pilihanSaatIni(), null);
+    g.m.set(KUNCI, 'sistem'); // nilai lama dari tab versi sebelumnya: tetap belum memilih, tanpa galat
+    assert.equal(tanggapiStorage({ key: KUNCI, newValue: 'sistem' }), false);
+    assert.equal(pilihanSaatIni(), null);
     assert.equal(tulis, 0, 'tanggapiStorage tidak boleh menulis ke penyimpanan (cegah loop)');
   } finally { delete globalThis.localStorage; }
 });
