@@ -54,6 +54,19 @@ export function terapkanTema(pilihan, { root = globalThis.document?.documentElem
 let pilihanAktif = 'sistem';
 export const pilihanSaatIni = () => pilihanAktif;
 
+/**
+ * Tab lain mengganti tema (peristiwa `storage` hanya terbit di tab SELAIN penulisnya): baca ulang pilihan dan terapkan.
+ * Tidak menulis balik ke penyimpanan (simpan:false), jadi tidak ada putaran penulisan antar tab.
+ * key === null berarti penyimpanan dikosongkan (clear()) -> kembali ke 'sistem'.
+ */
+export function tanggapiStorage(e) {
+  if (!e || (e.key !== null && e.key !== KUNCI)) return false;
+  const baru = bacaPilihan();
+  if (baru === pilihanAktif) return false;
+  ubahTema(baru, { simpan: false });
+  return true;
+}
+
 /** Pasang tema saat memuat + ikuti perubahan sistem selagi pilihan = 'sistem'. */
 export function initTemaWeb() {
   pilihanAktif = bacaPilihan();
@@ -63,6 +76,7 @@ export function initTemaWeb() {
       if (pilihanAktif === 'sistem') ubahTema('sistem', { simpan: false });
     });
   } catch { /* peramban lama */ }
+  try { globalThis.addEventListener?.('storage', tanggapiStorage); } catch { /* lingkungan uji */ }
   return pilihanAktif;
 }
 

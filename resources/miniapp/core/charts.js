@@ -21,9 +21,17 @@ export function terapkanDefault(Chart) {
 
 export const grafikSudahDimuat = () => promise !== undefined;
 
-/** renderChart(canvas, {type, data, options}) -> instance Chart. Warna mengikuti tema. */
+/**
+ * renderChart(canvas, {type, data, options, warnaTema}) -> instance Chart. Warna mengikuti tema.
+ * `warnaTema` (opsional, hanya dipakai web): fungsi tanpa argumen yang mengembalikan larik sifat warna per dataset
+ * ([{backgroundColor, borderColor}, ...]) dihitung dari token tema SAAT INI. Dipanggil ulang saat tema diganti (core/charts-tema-web.js).
+ * Grafik yang warna serinya tetap di kedua tema (mis. palet kategori keuangan) tidak perlu mengisinya.
+ */
 export async function renderChart(canvas, config) {
   const Chart = await loadChart();
   terapkanDefault(Chart);
-  return new Chart(canvas, { ...config, options: { responsive: true, maintainAspectRatio: false, ...config.options } });
+  const { warnaTema, ...cfg } = config;
+  const chart = new Chart(canvas, { ...cfg, options: { responsive: true, maintainAspectRatio: false, ...cfg.options } });
+  if (typeof warnaTema === 'function') chart.warnaTema = warnaTema;
+  return chart;
 }

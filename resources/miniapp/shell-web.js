@@ -40,12 +40,17 @@ export function pasangKerangka({ user, menu = [], pintasan = [], klien, onKeluar
     h('summary', { class: 'nav-pil' }, 'Lainnya'), h('div', { class: 'nav-pop' }, cermin));
   grup.append(...pil, rincian);
   nav.append(grup);
+  // Fokus keyboard: peramban hanya menggulir bila elemen sama sekali tidak terlihat, jadi pil bisa tersisa beberapa px di tepi. Paksa terlihat utuh.
+  grup.addEventListener('focusin', (e) => e.target?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' }));
   const lebar = globalThis.matchMedia?.('(min-width: 1280px)');
+  // Pudar kanan (mask) hanya selagi masih ada pil di kanan; di ujung gulir pil terakhir tampil utuh (CSS: .nav-bergulir:not(.nav-ujung)).
+  const tandaiUjung = () => grup.classList.toggle('nav-ujung', grup.scrollLeft + grup.clientWidth >= grup.scrollWidth - 1);
+  grup.addEventListener('scroll', tandaiUjung, { passive: true });
   function fit() {
     pil.forEach((p) => { p.hidden = false; });
     cermin.forEach((c) => { c.hidden = true; });
     rincian.hidden = true;
-    if (!lebar?.matches) { grup.classList.toggle('nav-bergulir', grup.scrollWidth > grup.clientWidth + 1); return; }
+    if (!lebar?.matches) { grup.classList.toggle('nav-bergulir', grup.scrollWidth > grup.clientWidth + 1); tandaiUjung(); return; }
     grup.classList.remove('nav-bergulir');
     if (grup.offsetWidth <= nav.clientWidth) return;
     rincian.hidden = false;
@@ -85,6 +90,7 @@ export function pasangKerangka({ user, menu = [], pintasan = [], klien, onKeluar
       h('a', { class: 'rail-btn', href: '#/sesi', title: 'Sesi dan Browser', 'aria-label': 'Sesi dan Browser', dataset: { kunci: 'sesi' } }, ikon('sesi', { ukuran: 19 })),
       keluar));
   rail.hidden = false;
+  rail.addEventListener('focusin', (e) => { if (e.target?.closest?.('.rail-gulir')) e.target.scrollIntoView?.({ inline: 'nearest', block: 'nearest' }); }); // rel = baris geser di lebar sempit; masalahnya sama dengan nav
 
   // ---- status aktif ----
   const semua = () => [...topbar.querySelectorAll('[data-kunci]'), ...rail.querySelectorAll('[data-kunci]')];

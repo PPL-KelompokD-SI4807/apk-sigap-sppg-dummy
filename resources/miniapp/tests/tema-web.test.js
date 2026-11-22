@@ -100,3 +100,61 @@ test('web.html memuat tema-awal.js sinkron (tanpa type=module/defer/async) SEBEL
   assert.ok(html.indexOf('tema-awal.js') < html.indexOf('web-main.js'));
   assert.ok(html.indexOf('tema-awal.js') < html.indexOf('<body'));
 });
+
+// ---- W-01: jalur skrip klasik harus absolut (alamat "/" dilayani lewat rewrite ke /web/index.html, jalur relatif -> 404) ----
+const skripKlasik = (html) => [...html.matchAll(/<script\b([^>]*)>/gi)].map((m) => m[1]).filter((a) => !/\btype\s*=\s*["']?module/i.test(a));
+const srcDari = (atribut) => (/\bsrc\s*=\s*["']?([^"'\s>]+)/i.exec(atribut) || [])[1];
+const relatif = (src) => src !== undefined && !/^(\/(?!\/)|https?:)/i.test(src);
+
+test('web.html: skrip klasik (non-module) tidak boleh berjalur relatif', () => {
+  const html = readFileSync(fileURLToPath(new URL('../web.html', import.meta.url)), 'utf8');
+  const klasik = skripKlasik(html).map(srcDari).filter((s) => s !== undefined);
+  assert.ok(klasik.length >= 1, 'tema-awal.js tidak ditemukan sebagai skrip klasik');
+  for (const src of klasik) assert.ok(!relatif(src), `skrip klasik berjalur relatif: ${src} (diminta ke /${src.replace(/^\.\//, '')} saat alamat "/")`);
+  assert.ok(klasik.includes('/web/tema-awal.js'));
+});
+
+test('penjaga jalur relatif mengenali pelanggaran (./x.js, x.js, ../x.js) dan menerima /web/x.js, https://x', () => {
+  for (const s of ['./tema-awal.js', 'tema-awal.js', '../tema-awal.js']) assert.ok(relatif(s), s);
+  for (const s of ['/web/tema-awal.js', 'https://cdn.example/x.js']) assert.ok(!relatif(s), s);
+  assert.deepEqual(skripKlasik('<script type="module" src="./a.js"></script><script src="./b.js"></script>').map(srcDari), ['./b.js']);
+});
+
+test('build web: index.html hasil build tidak memuat skrip klasik berjalur relatif dan tema-awal.js ikut diemit', async () => {
+  const { build } = await import('vite');
+  const REPO = fileURLToPath(new URL('../../../', import.meta.url));
+  const hasil = await build({ configFile: `${REPO}vite.config.js`, root: undefined, mode: 'web', logLevel: 'silent', build: { write: false } });
+  const out = (Array.isArray(hasil) ? hasil : [hasil]).flatMap((r) => r.output);
+  const indeks = out.find((o) => o.fileName === 'index.html');
+  assert.ok(indeks, 'index.html tidak diemit');
+  const src = skripKlasik(String(indeks.source)).map(srcDari).filter((s) => s !== undefined);
+  assert.ok(src.length >= 1);
+  for (const s of src) assert.ok(!relatif(s), `build memuat skrip klasik berjalur relatif: ${s}`);
+  assert.ok(src.includes('/web/tema-awal.js'));
+  assert.ok(out.some((o) => o.fileName === 'tema-awal.js'), 'tema-awal.js tidak diemit');
+});
+
+// ---- W-05: tema sinkron antar tab lewat peristiwa storage ----
+import { tanggapiStorage, initTemaWeb, pilihanSaatIni } from '../core/theme-web.js';
+
+test('storage: perubahan kunci tema dari tab lain diterapkan tanpa menulis balik; kunci lain diabaikan', () => {
+  const g = memori();
+  let tulis = 0;
+  const asli = g.setItem; g.setItem = (...a) => { tulis++; return asli(...a); };
+  globalThis.localStorage = g;
+  try {
+    g.m.set(KUNCI, 'terang');
+    initTemaWeb();
+    assert.equal(pilihanSaatIni(), 'terang');
+    g.m.set(KUNCI, 'gelap'); // tab lain menulis
+    assert.equal(tanggapiStorage({ key: 'kunci_lain', newValue: 'x' }), false);
+    assert.equal(pilihanSaatIni(), 'terang');
+    assert.equal(tanggapiStorage({ key: KUNCI, newValue: 'gelap' }), true);
+    assert.equal(pilihanSaatIni(), 'gelap');
+    assert.equal(tanggapiStorage({ key: KUNCI, newValue: 'gelap' }), false, 'nilai sama tidak diterapkan ulang');
+    g.m.delete(KUNCI); // clear()/removeItem dari tab lain
+    assert.equal(tanggapiStorage({ key: null }), true);
+    assert.equal(pilihanSaatIni(), 'sistem');
+    assert.equal(tulis, 0, 'tanggapiStorage tidak boleh menulis ke penyimpanan (cegah loop)');
+  } finally { delete globalThis.localStorage; }
+});

@@ -172,6 +172,8 @@ body.web .nav { flex: 1 1 0; min-width: 0; display: flex; justify-content: cente
 body.web .nav-grup {
   display: flex; align-items: center; gap: 2px; background: var(--surface-2); border-radius: 999px; padding: 4px;
   min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none;
+  /* Pil yang difokus tidak boleh tersisa separuh di tepi (apalagi di bawah pudar 28px di kanan): beri ruang saat digulirkan ke pandangan. */
+  scroll-padding-inline: 36px;
 }
 body.web .nav-grup::-webkit-scrollbar { display: none; }
 body.web .nav-pil {
@@ -227,7 +229,7 @@ body.web .rail {
   position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow: hidden;
 }
 body.web .rail-gulir, body.web .rail-bawah { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; }
-body.web .rail-gulir { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+body.web .rail-gulir { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; scroll-padding-block: 12px; }
 body.web .rail-gulir::-webkit-scrollbar { display: none; }
 body.web .rail-bawah { flex: none; margin-top: 4px; }
 body.web .rail-btn {
@@ -416,7 +418,7 @@ body.web .login .otp { font-variant-numeric: tabular-nums; }
   body.web .nav-lainnya { display: block; }
 }
 @media (max-width: 1279.98px) {
-  body.web .nav-grup.nav-bergulir { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+  body.web .nav-grup.nav-bergulir:not(.nav-ujung) { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
 }
 
 @media (min-width: 768px) {
@@ -442,7 +444,7 @@ body.web .login .otp { font-variant-numeric: tabular-nums; }
 @media (max-width: 860px) {
   body.web .shell { grid-template-columns: minmax(0, 1fr); }
   body.web .rail { flex-direction: row; justify-content: flex-start; position: static; max-height: none; padding: 8px 10px; }
-  body.web .rail-gulir { flex-direction: row; overflow-x: auto; overflow-y: hidden; width: auto; flex: 1 1 0; justify-content: flex-start; }
+  body.web .rail-gulir { flex-direction: row; overflow-x: auto; overflow-y: hidden; width: auto; flex: 1 1 0; justify-content: flex-start; scroll-padding-inline: 24px; }
   body.web .rail-bawah { flex-direction: row; width: auto; margin: 0 0 0 4px; }
   body.web .rail-pisah { width: 1px; height: 24px; margin: 0 5px; }
   body.web .user-meta { display: none; }

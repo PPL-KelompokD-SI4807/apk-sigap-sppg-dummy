@@ -48,15 +48,18 @@ const toneDari = (pn) => { const p = penandaAnggaran(pn); return !p ? 'ok' : p.k
 function grafik(mgr, w, { nama, jenis = 'bar', judul, rupiah = false, tumpuk = false, nameLabel } = {}) {
   const d = deretGrafik(w, nama);
   if (!d) return kosong('Belum ada data grafik.');
-  const WARNA = paletGrafik();
+  const namaSeri = Object.keys(d.series);
+  // Warna seri dari token tema saat ini; dipanggil ulang saat tema diganti (core/charts-tema-web.js), jadi hasilnya sama dengan memuat langsung.
+  const warnaTema = () => { const W = paletGrafik(); return namaSeri.map((_, i) => ({ borderColor: W[i % W.length], backgroundColor: `${W[i % W.length]}${jenis === 'line' ? '33' : 'cc'}` })); };
   const canvas = h('canvas', { role: 'img', 'aria-label': ringkasanDeret(d, judul || 'Grafik') });
   const box = h('div', { class: 'chart-box' }, canvas);
   mgr.tambah(canvas, {
     type: jenis,
+    warnaTema,
     data: {
       labels: d.labels.map(labelSumbu),
       datasets: Object.entries(d.series).map(([k, v], i) => ({
-        label: nameLabel?.[k] ?? humanisasi(k), data: v, borderColor: WARNA[i % WARNA.length], backgroundColor: `${WARNA[i % WARNA.length]}${jenis === 'line' ? '33' : 'cc'}`, tension: 0.25, pointRadius: 2,
+        label: nameLabel?.[k] ?? humanisasi(k), data: v, ...warnaTema()[i], tension: 0.25, pointRadius: 2,
       })),
     },
     options: {
