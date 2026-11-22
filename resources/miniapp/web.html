@@ -6,17 +6,25 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="referrer" content="no-referrer" />
     <title>SiGAP SPPG</title>
-    <!-- Versi web (R04-6): tanpa skrip eksternal apa pun. -->
+    <!-- Versi web (R04-6): tanpa skrip eksternal apa pun. tema-awal.js: skrip klasik sinkron milik sendiri (cegah kilatan tema), diemit apa adanya oleh vite.config.js. -->
+    <script src="./tema-awal.js"></script>
   </head>
   <body class="web">
-    <div id="app">
-      <header id="appbar" class="appbar" hidden>
-        <button id="back" class="appbar-back" type="button" aria-label="Kembali" hidden>&#8249;</button>
-        <h1 id="apptitle" class="appbar-title">SiGAP SPPG</h1>
-      </header>
-      <main id="view" class="view" aria-live="polite">
-        <p class="muted center pad">Memuat...</p>
-      </main>
+    <div id="app" class="app">
+      <div id="aksi-masuk" class="aksi-masuk"></div>
+      <header id="topbar" class="topbar" hidden></header>
+      <div class="shell">
+        <nav id="rail" class="rail" aria-label="Pintasan" hidden></nav>
+        <div class="content">
+          <div id="appbar" class="page-head" hidden>
+            <button id="back" class="appbar-back" type="button" aria-label="Kembali" hidden>&#8249;</button>
+            <h1 id="apptitle" class="appbar-title">SiGAP SPPG</h1>
+          </div>
+          <main id="view" class="view" aria-live="polite">
+            <p class="muted center pad">Memuat...</p>
+          </main>
+        </div>
+      </div>
     </div>
     <div id="mainbar" class="mainbar" hidden>
       <button id="mainbtn" class="btn btn-primary btn-block" type="button"></button>

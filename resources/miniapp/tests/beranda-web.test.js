@@ -103,3 +103,20 @@ test('Telegram-only tidak ada di beranda/rute web: draf AI, ?r=, share t.me, und
   const web = ['../beranda-web.js', '../rute-web.js', '../web-main.js'].map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
   assert.ok(!/\/draf\/|parseRuteDeepLink|deeplink|buildShareUrl|invite-dialog|offline-queue|pilih-sppg|getTg/.test(web.replace(/\/\/.*$/gm, '')));
 });
+
+test('angkaUtama: hanya dari data dasbor yang ada; tanpa data -> null (kartu sambutan, tidak mengarang angka)', async () => {
+  const { angkaUtama } = await import('../beranda-web.js');
+  assert.equal(angkaUtama(null), null);
+  assert.equal(angkaUtama({ widgets: {} }), null);
+  assert.equal(angkaUtama({ widgets: { porsi_hari_ini: null, stok_kritis: { total_bahan: 3 } } }), null);
+  assert.equal(angkaUtama({ widgets: { porsi_hari_ini: { realisasi: '2850' } } }), null);
+  const p = angkaUtama({ widgets: { porsi_target_vs_realisasi: { target: 3000, realisasi: 2850, capaian_persen: 95 } } });
+  assert.equal(p.label, 'Porsi hari ini');
+  assert.equal(p.angka, (2850).toLocaleString('id-ID'));
+  assert.equal(p.persen, 95);
+  assert.match(p.kiri, /Target/);
+  const k = angkaUtama({ widgets: { pencairan_vs_pengeluaran: { pencairan: 10000000, pengeluaran: 8200000, persen: 82 } } });
+  assert.equal(k.label, 'Pengeluaran bulan ini');
+  assert.match(k.angka, /^Rp /);
+  assert.equal(angkaUtama({ widgets: { porsi_hari_ini: { realisasi: 5, target: 0 } } }).persen, null);
+});

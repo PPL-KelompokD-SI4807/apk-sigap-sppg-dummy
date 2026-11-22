@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 const root = fileURLToPath(new URL('./resources/miniapp', import.meta.url));
 const repo = fileURLToPath(new URL('.', import.meta.url));
@@ -13,6 +14,18 @@ const webIndeks = () => ({
     handler(_, bundle) {
       const html = bundle['web.html'];
       if (html) { html.fileName = 'index.html'; }
+    },
+  },
+});
+
+// Skrip tema klasik (sinkron, bukan modul) harus tetap berkas terpisah: CSP melarang skrip sebaris dan Vite tidak memprosesnya tanpa type=module.
+const temaAwal = () => ({
+  name: 'sigap-tema-awal',
+  generateBundle: {
+    order: 'post',
+    handler(_, bundle) {
+      if (!bundle['web.html'] && !bundle['index.html']) return; // hanya build halaman web (bukan entri uji lain)
+      this.emitFile({ type: 'asset', fileName: 'tema-awal.js', source: readFileSync(fileURLToPath(new URL('./resources/miniapp/tema-awal.js', import.meta.url))) });
     },
   },
 });
@@ -44,13 +57,15 @@ export default defineConfig(({ mode }) => {
     root,
     base: web ? '/web/' : '/miniapp/',
     publicDir: false,
-    plugins: web ? [transportWeb(), webIndeks()] : [],
+    plugins: web ? [transportWeb(), webIndeks(), temaAwal()] : [],
     build: {
       outDir: fileURLToPath(new URL(web ? './public/web' : './public/miniapp', import.meta.url)),
       emptyOutDir: true,
       target: 'es2020',
       // Web: tanpa pembungkus preload (helper + peta dependensi) agar aset awal kecil; chunk lazy dimuat saat dibutuhkan.
       modulePreload: web ? false : undefined,
+      // Web: berkas font (woff2) harus tetap berkas terpisah. CSP web: font-src 'self' tanpa data:, jadi data URI diblokir.
+      assetsInlineLimit: web ? 0 : undefined,
       chunkSizeWarningLimit: 300,
       rollupOptions: web ? { input: fileURLToPath(new URL('./resources/miniapp/web.html', import.meta.url)) } : undefined,
     },

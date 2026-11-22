@@ -73,7 +73,11 @@ test('pindai bundel web: seluruh modul (registry + beranda + komponen) tanpa jej
     const asli = (await bangun('web')).map((b) => b.isi).join('\n'); // bundel web nyata (web.html)
     const lebar = (await bangun('web', { rollupOptions: { input: entri } })).map((b) => b.isi).join('\n');
     for (const [nama, kode] of [['web.html', asli], ['semua-modul', lebar]]) {
-      assert.ok(!/localStorage|sessionStorage/.test(kode), `${nama}: memuat localStorage/sessionStorage`);
+      // Satu-satunya pemakai localStorage di web: pilihan tema (core/theme-web.js, kunci sigap_tema_web; bukan token/sesi).
+      // Akses ditulis sebagai `globalThis.localStorage`: sekali di core/theme-web.js dan sekali di tema-awal.js (skrip klasik anti-kedip); selain itu, localStorage/sessionStorage tetap terlarang.
+      assert.ok((kode.match(/globalThis\.localStorage/g) || []).length <= 2, `${nama}: localStorage dipakai lebih dari pemilihan tema`);
+      if (nama === 'web.html') assert.ok(kode.includes('sigap_tema_web'), `${nama}: kunci tema tidak ditemukan`);
+      assert.ok(!/localStorage|sessionStorage/.test(kode.replace(/globalThis\.localStorage/g, '')), `${nama}: memuat localStorage/sessionStorage`);
       assert.ok(kode.includes('X-SPPG-Id'), `${nama}: header SPPG aktif (memori) tidak terpasang`);
       // PR5: fetchLampiranBlob memakai kredensialBerkas dari transport (web = cookie sesi), jadi bundel web bebas Authorization.
       assert.equal((kode.match(/Authorization/g) || []).length, 0, `${nama}: memuat header Authorization`);
