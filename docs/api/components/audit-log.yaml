@@ -1,0 +1,55 @@
+schemas:
+  AuditLog:
+    type: object
+    description: |
+      Satu baris log audit (append-only). `nilai_lama`/`nilai_baru` disaring ulang saat ditampilkan: kolom pada
+      `$auditExclude`/`$hidden` model terkait, daftar global (password, remember_token, token, hash, init_data, ...)
+      dan kunci bernuansa sensitif (NIK, telegram hash/id) tidak pernah muncul, termasuk untuk log lama. IP dan
+      user agent tidak ditampilkan.
+    properties:
+      id: { type: integer }
+      waktu: { type: string, format: date-time }
+      pengguna:
+        type: [object, 'null']
+        description: Pelaku. `null` = sistem (job, seeder, perintah konsol).
+        properties:
+          id: { type: integer }
+          nama: { type: [string, 'null'] }
+      sppg_id: { type: [integer, 'null'] }
+      sumber: { type: string, description: 'web, bot, ai, atau sistem.' }
+      modul: { type: string, description: 'Nama modul ramah (mis. keluhan, bahan-baku). Jenis tak dikenal = kebab dari nama kelas.' }
+      modul_label: { type: string }
+      rekaman_id: { type: integer }
+      aksi: { type: string, description: 'created, updated, deleted, restored, atau peristiwa khusus (mis. ai_eksekusi_draf, auth.*).' }
+      nilai_lama: { type: [object, 'null'], additionalProperties: true }
+      nilai_baru: { type: [object, 'null'], additionalProperties: true }
+    example:
+      id: 4021
+      waktu: '2026-11-10T08:00:00+07:00'
+      pengguna: { id: 3, nama: Budi Santoso }
+      sppg_id: 1
+      sumber: web
+      modul: keluhan
+      modul_label: Feedback dan Keluhan
+      rekaman_id: 17
+      aksi: updated
+      nilai_lama: { status: baru }
+      nilai_baru: { status: diproses }
+  AuditLogOpsi:
+    type: object
+    properties:
+      modul:
+        type: array
+        items:
+          type: object
+          properties:
+            kode: { type: string }
+            label: { type: string }
+      aksi:
+        type: array
+        items: { type: string }
+    example:
+      modul:
+        - { kode: keluhan, label: Feedback dan Keluhan }
+        - { kode: bahan-baku, label: Bahan Baku }
+      aksi: [created, updated, deleted, restored, ai_eksekusi_draf]

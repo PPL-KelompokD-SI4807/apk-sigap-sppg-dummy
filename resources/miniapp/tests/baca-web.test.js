@@ -85,7 +85,7 @@ const izinBaca = (user, slug) => userPerms(user, slug === 'pengemudi' ? 'armada'
 
 test('layar baca web: modul data master terdaftar dan guard mengikuti peta hak server per profil', () => {
   assert.deepEqual([...BACA_WEB].sort(), [
-    'armada', 'bahan-baku', 'bukti-distribusi', 'dashboard', 'jadwal', 'jadwal/distribusi', 'keluhan', 'keuangan', 'keuangan/pencairan', 'keuangan/pengeluaran', 'laporan-bgn', 'log-produksi', 'menu-gizi', 'menu-gizi/standar-gizi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'pembelian-bahan', 'penerima-manfaat', 'pengemudi', 'pengguna', 'persetujuan-menu', 'rekap-harian', 'sppg', 'titik-layanan',
+    'armada', 'audit-log', 'bahan-baku', 'bukti-distribusi', 'dashboard', 'jadwal', 'jadwal/distribusi', 'keluhan', 'keuangan', 'keuangan/pencairan', 'keuangan/pengeluaran', 'laporan-bgn', 'log-produksi', 'menu-gizi', 'menu-gizi/standar-gizi', 'mutu', 'notifikasi-perjalanan', 'pemasok', 'pembelian-bahan', 'penerima-manfaat', 'pengemudi', 'pengguna', 'persetujuan-menu', 'rekap-harian', 'sppg', 'titik-layanan',
   ]);
   for (const nama of Object.keys(PROFIL)) {
     setUserSesi(salin(nama));
@@ -189,6 +189,7 @@ test('rute tulis: hanya modul TULIS_WEB (PR4c) yang punya /baru dan /ubah, mengi
     for (const slug of BACA_WEB) {
       const perm = slug === 'pengemudi' ? 'armada' : slug;
       if (slug === 'laporan-bgn') { assert.equal(cekAkses('/laporan-bgn/baru'), 'tidak-ada'); continue; }
+      if (slug === 'audit-log') { assert.equal(cekAkses('/audit-log/1/ubah'), 'tidak-ada'); continue; } // hanya baca; /audit-log/:id = detail
       if (TULIS_WEB.has(slug)) {
         assert.equal(cekAkses(`/${slug}/baru`), userPerms(user, perm).C ? 'boleh' : 'ditolak', `${nama} ${slug}/baru`);
         // Persetujuan menu: /baru = layar Ajukan (aksi.ajukan_menu); tidak ada layar ubah (keputusan lewat POST di detail).

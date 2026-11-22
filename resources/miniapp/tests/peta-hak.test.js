@@ -112,7 +112,7 @@ test('fail closed: record tanpa izin / izin rusak => tanpa tombol Ubah dan Hapus
 // ---------------------------------------------------------------------------------------------
 test('menu beranda per profil mengikuti peta server (dan tidak lebih)', () => {
   const harap = {
-    admin: ['laporan-bgn', 'pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'],
+    admin: ['audit-log', 'laporan-bgn', 'pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'],
     kepala_sppg: ['laporan-bgn', 'pengguna', 'notifikasi-perjalanan', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'armada', 'bukti-distribusi', 'keuangan', 'keluhan', 'rekap-harian', 'persetujuan-menu', 'pembelian-bahan'],
     ahli_gizi: ['pengguna', 'sppg', 'titik-layanan', 'penerima-manfaat', 'bahan-baku', 'pemasok', 'menu-gizi', 'jadwal', 'log-produksi', 'mutu', 'bukti-distribusi', 'keluhan', 'rekap-harian', 'persetujuan-menu'],
     akuntan: ['laporan-bgn', 'pengguna', 'sppg', 'titik-layanan', 'bahan-baku', 'pemasok', 'log-produksi', 'armada', 'bukti-distribusi', 'keuangan', 'rekap-harian', 'pembelian-bahan'],
