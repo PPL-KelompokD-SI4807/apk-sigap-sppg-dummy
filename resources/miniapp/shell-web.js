@@ -3,6 +3,7 @@
 // lewat susunButir(); tombol Kembali (#back) dan judul (#apptitle) tetap dipegang router (core/router.js).
 import { h } from './core/dom.js';
 import { ikon, ikonAtauEmoji } from './core/ikon-web.js';
+import { logoBgn, penandaAkademik } from './core/merek-web.js';
 import { roleLabel } from './core/permissions.js';
 import { showConfirm, toast } from './core/ui.js';
 import { susunButir, butirAktif, pathDariHash, inisial } from './core/navigasi-web.js';
@@ -12,7 +13,7 @@ const kosongkan = (el) => el.replaceChildren();
 
 function lencanaMerek() {
   return h('a', { class: 'brand', href: '#/', 'aria-label': 'SiGAP SPPG, ke beranda' },
-    h('span', { class: 'logo', 'aria-hidden': 'true' }, ikon('merek', { ukuran: 16, tebal: 2 })),
+    logoBgn({ ukuran: 32 }),
     h('b', {}, 'SiGAP SPPG'));
 }
 
@@ -90,7 +91,13 @@ export function pasangKerangka({ user, menu = [], pintasan = [], klien, onKeluar
       h('a', { class: 'rail-btn', href: '#/sesi', title: 'Sesi dan Browser', 'aria-label': 'Sesi dan Browser', dataset: { kunci: 'sesi' } }, ikon('sesi', { ukuran: 19 })),
       keluar));
   rail.hidden = false;
-  rail.addEventListener('focusin', (e) => { if (e.target?.closest?.('.rail-gulir')) e.target.scrollIntoView?.({ inline: 'nearest', block: 'nearest' }); }); // rel = baris geser di lebar sempit; masalahnya sama dengan nav
+
+  // ---- penanda akademik (puncak kolom isi, semua halaman) ----
+  // Rel hanya selebar 64px (atau satu baris ikon di layar sempit), terlalu sempit untuk teks. Puncak kolom isi tampil di SEMUA halaman
+  // tepat di layar pertama (tanpa menggulir; kaki halaman beranda bisa 2.600px ke bawah di 360px), tidak menimpa tombol aksi bawah,
+  // dan tidak menambah lebar di 360px (teks membungkus bila perlu).
+  const isi = document.querySelector('.content');
+  if (isi && !isi.querySelector('.penanda-dalam')) isi.prepend(penandaAkademik({ dalam: true }));
 
   // ---- status aktif ----
   const semua = () => [...topbar.querySelectorAll('[data-kunci]'), ...rail.querySelectorAll('[data-kunci]')];
