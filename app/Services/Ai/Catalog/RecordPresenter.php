@@ -4,9 +4,11 @@ namespace App\Services\Ai\Catalog;
 
 use BackedEnum;
 use Carbon\CarbonInterface;
+use Illuminate\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
+use Throwable;
 use UnitEnum;
 
 /**
@@ -31,6 +33,31 @@ final class RecordPresenter
 
     /** Penanda pengganti data kontak/angka panjang pada teks bebas yang disamarkan. */
     public const REDACTED = '[disamarkan]';
+
+    /**
+     * Kolom yang jelas berisi nama orang dan SELALU menjadi inisial walau tidak dideklarasikan di ResourceSpec::$initials
+     * (fail-closed, issue #175). Kolom `nama`/`name` generik tidak termasuk karena juga dipakai untuk nama
+     * bahan/menu/lembaga; untuk sumber daya data orang, kolom itu dideklarasikan lewat $initials.
+     */
+    private const PERSON_COLUMN = '/^(pic_nama|nama_pic|pic|pengemudi|nama_pengemudi|penerima|nama_penerima|nama_pengguna|pelapor|nama_pelapor|wali|nama_wali|nama_siswa|nama_anak|nama_lengkap)$/';
+
+    /** Kolom teks bebas di luar $personalText: hanya kontak/NIK yang disamarkan (nama menu/bahan tetap utuh). */
+    private const FREE_TEXT_COLUMN = '/^(alamat|mitra_yayasan|jenis_bahan|deskripsi|uraian|keterangan|kendala|tindakan_korektif|tindak_lanjut|ringkasan|catatan(_[a-z_]+)?)$/';
+
+    /**
+     * Penanda bahwa deret kata berhuruf awal kapital sesudahnya adalah nama orang (sapaan, peran, kontak), mis.
+     * "Bu Sartika", "kontak Budi", "a.n. Rina". Dicocokkan tanpa membedakan huruf besar/kecil.
+     */
+    private const PENANDA_ORANG = [
+        'ibu', 'bu', 'bapak', 'pak', 'bpk', 'kak', 'kakak', 'adik', 'adek', 'dik', 'dek', 'saudara', 'saudari', 'sdr', 'sdri',
+        'sdra', 'mas', 'mbak', 'mba', 'teh', 'kang', 'bang', 'abang', 'om', 'tante', 'nenek', 'kakek', 'ustadz', 'ustaz',
+        'ustadzah', 'ustazah', 'bunda', 'ayah', 'mama', 'papa', 'wali', 'siswa', 'siswi', 'murid', 'anak', 'ananda', 'guru',
+        'pengemudi', 'sopir', 'supir', 'driver', 'petugas', 'relawan', 'pic', 'kontak', 'hubungi', 'yth', 'kepada', 'dr', 'drg',
+        'bidan', 'perawat', 'pelapor', 'penerima', 'namanya', 'atas nama', 'a.n', 'an',
+    ];
+
+    /** Penanda yang juga lazim sebagai nama depan: ikut menjadi inisial bila berhuruf awal kapital ("Ananda Rizky"). */
+    private const PENANDA_NAMA = ['ananda'];
 
     /**
      * Kata berhuruf awal kapital yang BUKAN nama orang dan tetap ditampilkan utuh (huruf kecil dibandingkan):
@@ -99,7 +126,9 @@ final class RecordPresenter
             $value = str_contains($path, '.') ? data_get($model, $path) : $model->getAttribute($path);
             $column = str_contains($path, '.') ? null : $path;
 
-            if (in_array($name, $initials, true)) {
+            // Kolom data orang: yang dideklarasikan ($initials) ATAU yang namanya jelas kolom orang (fail-closed bila
+            // spesifikasi lupa mendeklarasikannya).
+            if (in_array($name, $initials, true) || preg_match(self::PERSON_COLUMN, $name) === 1) {
                 $out[$name] = is_string($value) ? self::initials($value) : null;
 
                 continue;
@@ -107,6 +136,14 @@ final class RecordPresenter
 
             if (in_array($name, $personalText, true)) {
                 $out[$name] = is_string($value) ? self::text(self::redactPersonal($value), min($maxText, self::MAX_TEXT_PERSONAL)) : null;
+
+                continue;
+            }
+
+            // Teks bebas lain (catatan menu/jadwal, kendala, alamat, dst.): NIK/HP/email/URL tetap disamarkan, kata
+            // berhuruf kapital (nama menu/bahan/lembaga) tetap utuh.
+            if (is_string($value) && preg_match(self::FREE_TEXT_COLUMN, $name) === 1) {
+                $out[$name] = self::text(self::redactContact($value), $maxText);
 
                 continue;
             }
@@ -178,21 +215,113 @@ final class RecordPresenter
 
     /**
      * Samarkan data pribadi pada teks bebas sebelum dikirim ke LLM (R06a-S-05, mis. deskripsi keluhan yang
-     * ditulis wali/guru dan dapat memuat nama anak): email, URL, dan deret angka >= 6 digit (telepon/NIK)
-     * menjadi REDACTED; kata berhuruf awal kapital yang bukan kata umum (kemungkinan nama orang) menjadi
-     * inisial, mis. "Budi Santoso muntah" -> "B. S. muntah". Upaya terbaik: teks lengkap hanya di Mini App.
+     * ditulis wali/guru dan dapat memuat nama anak). Email, URL, dan deret angka >= 6 digit (telepon/NIK) SELALU
+     * menjadi REDACTED. Nama orang menjadi inisial hanya pada konteks yang tepat (issue #175), sehingga teks
+     * seperti "Kemasan Uji Bocor" tetap utuh:
+     * 1. deret kata berhuruf awal kapital tepat setelah penanda orang (PENANDA_ORANG: sapaan/peran/kontak), mis.
+     *    "Bu Sartika Dewi" -> "Bu S. D.", "kontak Budi Santoso" -> "kontak B. S.";
+     * 2. kata berhuruf awal kapital yang merupakan bagian nama orang TERDAFTAR (KamusNamaOrang: penerima manfaat,
+     *    pengemudi, PIC, pengguna) di mana pun dalam teks, mis. anak terdaftar "Siti Aminah" -> "S. A.".
+     * Fail-closed: bila kamus tidak tersedia (gagal dimuat / di luar aplikasi), setiap kata berhuruf awal kapital
+     * yang bukan kata umum menjadi inisial (perilaku lama); bila PCRE gagal, seluruh teks menjadi REDACTED.
+     * Upaya terbaik: nama tak terdaftar tanpa penanda dapat lolos; teks lengkap hanya di Mini App.
      */
-    public static function redactPersonal(string $value): string
+    public static function redactPersonal(string $value, ?KamusNamaOrang $kamus = null): string
     {
+        $kamus ??= self::kamusAktif();
         // Fail-closed: bila satu langkah PCRE gagal (null), seluruh teks diganti REDACTED, bukan diteruskan utuh.
         $teks = self::redactContactOrNull($value);
-        $teks = $teks === null ? null : preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
+
+        if ($kamus === null || ! $kamus->tersedia()) {
+            $teks = $teks === null ? null : preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m): string {
+                $kata = $m[0];
+
+                return in_array(mb_strtolower($kata), self::KATA_UMUM, true) ? $kata : mb_substr($kata, 0, 1).'.';
+            }, $teks);
+
+            return $teks ?? self::REDACTED;
+        }
+
+        // 1. Nama sesudah penanda orang.
+        $teks = $teks === null ? null : preg_replace_callback(
+            self::polaPenanda(),
+            fn (array $m): string => self::samarkanPenanda($m['penanda']).$m['pemisah'].self::samarkanDeret($m['deret']),
+            $teks,
+        );
+        // 2. Bagian nama orang terdaftar di mana pun dalam teks.
+        $teks = $teks === null ? null : preg_replace_callback('/\b\p{Lu}[\p{L}\'’]*/u', function (array $m) use ($kamus): string {
             $kata = $m[0];
 
-            return in_array(mb_strtolower($kata), self::KATA_UMUM, true) ? $kata : mb_substr($kata, 0, 1).'.';
+            return ! in_array(mb_strtolower($kata), self::KATA_UMUM, true) && $kamus->memuat($kata) ? mb_substr($kata, 0, 1).'.' : $kata;
         }, $teks);
 
         return $teks ?? self::REDACTED;
+    }
+
+    /** Apakah kata (huruf kecil) termasuk kata umum yang bukan nama orang (dipakai juga oleh KamusNamaOrang). */
+    public static function kataUmum(string $kata): bool
+    {
+        return in_array(mb_strtolower($kata), self::KATA_UMUM, true);
+    }
+
+    /** Kamus nama orang dari container; null di luar aplikasi atau bila gagal (pemanggil fail-closed). */
+    private static function kamusAktif(): ?KamusNamaOrang
+    {
+        try {
+            $app = Container::getInstance();
+
+            return $app->bound(KamusNamaOrang::class) ? $app->make(KamusNamaOrang::class) : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /** Penanda dibiarkan utuh, kecuali penanda yang juga lazim sebagai nama (PENANDA_NAMA) berhuruf awal kapital. */
+    private static function samarkanPenanda(string $penanda): string
+    {
+        return in_array(mb_strtolower($penanda), self::PENANDA_NAMA, true) && preg_match('/^\p{Lu}/u', $penanda) === 1
+            ? mb_substr($penanda, 0, 1).'.'
+            : $penanda;
+    }
+
+    /** Pola: penanda orang (tanpa beda huruf besar/kecil) lalu deret kata berhuruf awal kapital sesudahnya. */
+    private static function polaPenanda(): string
+    {
+        $penanda = self::PENANDA_ORANG;
+        usort($penanda, fn (string $a, string $b) => strlen($b) <=> strlen($a));
+        $alternatif = implode('|', array_map(fn (string $p) => str_replace(' ', '\s', preg_quote($p, '/')), $penanda));
+
+        return '/(?<![\p{L}\p{N}.])(?<penanda>(?i:'.$alternatif.'))(?<pemisah>\.?\s)(?<deret>\p{Lu}[\p{L}\'’]*(?:\.?\s\p{Lu}[\p{L}\'’]*){0,5})/u';
+    }
+
+    /**
+     * Samarkan deret kata kapital sesudah penanda: penanda berantai ("hubungi Pak Budi") dilewati, kata umum
+     * ("Ibu Kepala Sekolah") menghentikan penyamaran, kata lain menjadi inisial. Penanda yang juga lazim sebagai
+     * nama (PENANDA_NAMA, mis. "Ananda Rizky") ikut menjadi inisial bila ditulis berhuruf awal kapital.
+     */
+    private static function samarkanDeret(string $deret): string
+    {
+        $bagian = preg_split('/(\.?\s)/u', $deret, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$deret];
+
+        foreach ($bagian as $i => $kata) {
+            if ($i % 2 === 1) {
+                continue;
+            }
+
+            $kecil = mb_strtolower($kata);
+            if (in_array($kecil, self::PENANDA_ORANG, true)) {
+                $bagian[$i] = self::samarkanPenanda($kata);
+
+                continue;
+            }
+            if (in_array($kecil, self::KATA_UMUM, true)) {
+                break;
+            }
+
+            $bagian[$i] = mb_substr($kata, 0, 1).'.';
+        }
+
+        return implode('', $bagian);
     }
 
     /**
