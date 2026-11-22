@@ -38,6 +38,8 @@ export const BACA_WEB = new Set([
   'laporan-bgn',
   // PR-W3 Data Pengguna: daftar/detail Admin & Kepala SPPG, Profil Saya (R*), undangan salin tautan, reset password, sesi
   'pengguna',
+  // Log Audit Admin (hanya baca; bolehMenu = peran admin)
+  'audit-log',
 ]);
 
 /** modules: getModules() dari registry. getUser: () => pengguna sesi. */
