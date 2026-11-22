@@ -4,7 +4,7 @@ Skrip: `scripts/k6/beban.js`. Skenario:
 
 | Skenario | Eksekutor | Isi | Ambang |
 |---|---|---|---|
-| `baca` | 50 VU konstan, 5 menit, `sleep(1)` | GET `/api/v1/jadwal`, `/api/v1/jadwal/distribusi`, `/api/v1/bahan-baku`, `/api/v1/dashboard` | p(95) < 500 ms |
+| `baca` | 50 VU konstan, 5 menit, jeda acak 5-10 dtk per iterasi | 1 GET acak per iterasi dari `/api/v1/jadwal`, `/api/v1/jadwal/distribusi`, `/api/v1/bahan-baku`, `/api/v1/dashboard` | p(95) < 500 ms |
 | `tulis` | 50 VU x 1 iterasi | POST `/api/v1/keluhan` (deskripsi berpenanda `UJI-BEBAN`, data fiktif) | p(95) < 1000 ms |
 
 Ambang global: `http_req_failed` rate < 1%. Check status 200 (baca) dan 200/201 (tulis).
@@ -12,10 +12,9 @@ Ambang global: `http_req_failed` rate < 1%. Check status 200 (baca) dan 200/201 
 ## Peringatan
 
 - Jalankan HANYA di staging atau lokal, jangan produksi. Skrip menulis 50 keluhan uji dan memberi beban tinggi.
-- Rate limit: grup rute `/api/v1/*` memakai `throttle:api` = 60 permintaan/menit per pengguna (`AppServiceProvider`, limiter `api`, kunci per ID pengguna). Skenario `baca` mengirim sekitar 4 permintaan per VU per detik, jadi satu token akan cepat menerima HTTP 429 dan ambang gagal. Pilihan:
-  1. Kirim banyak token akun uji lewat `K6_TOKENS` (dipisah koma); skrip memakai token bergilir per VU. Tetap perlu cukup token agar tiap pengguna di bawah 60/menit (tidak realistis untuk 50 VU), atau
-  2. Di staging saja, naikkan sementara limiter `api` (mis. lewat penyesuaian lokal di `AppServiceProvider`, jangan di-commit) lalu kembalikan sesudah uji, atau jalankan dengan beberapa token dan kurangi VU.
-  Hasil uji dengan 429 tidak mewakili kinerja aplikasi; catat dalam laporan bila throttle sengaja dibiarkan aktif.
+- Rate limit: grup rute `/api/v1/*` memakai `throttle:api` = 60 permintaan/menit per pengguna (`AppServiceProvider`, limiter `api`, kunci per ID pengguna). Throttle TIDAK dilonggarkan. Karena kuncinya ID pengguna, beban dibagi ke 10 akun uji berbeda, masing-masing satu token, lewat `K6_TOKENS` (dipisah koma). VU dibagi rata: `token = TOKENS[(__VU - 1) % jumlah_token]`.
+- Hitungan laju per token: 50 VU / 10 token = 5 VU per token. Tiap iterasi `baca` = 1 GET + jeda acak 5-10 dtk (rata-rata 7,5 dtk) = ~8 iterasi/menit/VU. Jadi 5 VU x ~8 = ~40 permintaan/menit per token (< 60). Skenario `tulis` menambah 5 POST per token sekali di awal, total ~45 pada menit pertama. (Bila memakai 4 GET per iterasi: 5 x 4 x 8 = ~160/menit per token, melebihi 60, karena itu hanya 1 GET per iterasi.) Pada jeda minimum 5 dtk bisa sesaat mendekati 60/menit, tetapi rata-rata aman.
+- `K6_TOKEN` tunggal hanya fallback; skrip memberi peringatan karena throttle pasti kena (429) dan hasil tidak mewakili kinerja aplikasi.
 - Limiter `unggah` tidak berlaku pada `POST /keluhan` (tanpa lampiran).
 
 ## Memasang k6 (Windows)
@@ -31,19 +30,41 @@ choco install k6
 
 Tutup lalu buka ulang PowerShell, lalu cek `k6 version`.
 
-## Mendapatkan token uji
+## Mendapatkan 10 token uji
 
-Gunakan akun uji khusus (bukan akun pribadi). Token harus berkemampuan `auth:penuh`.
+Perlu 10 akun uji BERBEDA (throttle per pengguna, bukan per token). Akun harus fiktif, ada di staging, berperan yang boleh membaca keempat endpoint dan `create` keluhan, dan berada di SPPG staging yang sama (mis. `uji01` sampai `uji10`; buat lewat fitur Data Pengguna atau seeder staging). Akun Admin wajib `K6_SPPG_ID`; akun non-Admin memakai SPPG-nya sendiri.
 
-- Cara resmi: masuk lewat Mini App/web dengan akun uji; token Sanctum sesi didapat dari respons login (jangan dibagikan atau disimpan di repo).
-- Cara cepat di staging (tinker, dijalankan di server staging):
+Token dibuat langsung via Sanctum `createToken` di server staging (jalur login normal terikat perangkat tepercaya dan batas sesi, kurang cocok untuk 10 token otomatis). Ability: `auth:penuh` + ability peran (`Rbac::abilities`), kedaluwarsa singkat. Token hanya dicetak ke terminal, jangan ditulis ke berkas repo.
 
 ```bash
-docker compose exec app php artisan tinker --execute="echo \App\Models\User::where('username','AKUN_UJI')->firstOrFail()->createToken('k6','[auth:penuh]')->plainTextToken;"
+docker compose exec app php artisan tinker --execute="foreach (range(1,10) as \$i) { \$u = \App\Models\User::where('username', sprintf('uji%02d', \$i))->firstOrFail(); echo \$u->createToken('k6', ['auth:penuh', ...\App\Support\Rbac::abilities(\$u)], now()->addHours(3))->plainTextToken, PHP_EOL; }"
 ```
 
-  Sesuaikan kolom pencarian (`username`/`email`) dengan skema `users`. Cabut token sesudah uji: `User::find(ID)->tokens()->where('name','k6')->delete()`.
-- Akun Admin wajib menyertakan `sppg_id` pada POST keluhan: set `K6_SPPG_ID`. Akun non-Admin (mis. petugas SPPG yang berhak membuat keluhan) memakai SPPG-nya sendiri. Pastikan peran akun uji boleh `create` keluhan dan membaca keempat endpoint.
+Sesuaikan pola `username` dengan akun uji. Keluaran: 10 baris token.
+
+Menyusun `K6_TOKENS` (tempel 10 token dari keluaran di atas, tanpa menyimpannya di berkas):
+
+```powershell
+$env:K6_TOKENS = "tok1,tok2,tok3,tok4,tok5,tok6,tok7,tok8,tok9,tok10"
+```
+
+```bash
+export K6_TOKENS='tok1,tok2,tok3,tok4,tok5,tok6,tok7,tok8,tok9,tok10'
+```
+
+Atau dari keluaran perintah (bash, token tidak menyentuh berkas):
+
+```bash
+export K6_TOKENS=$(docker compose exec -T app php artisan tinker --execute="..." | tr -d '\r' | paste -sd, -)
+```
+
+Mencabut token sesudah uji (wajib):
+
+```bash
+docker compose exec app php artisan tinker --execute="\App\Models\User::where('username','like','uji%')->get()->each(fn (\$u) => \$u->tokens()->where('name','k6')->delete());"
+```
+
+Lalu kosongkan variabel: PowerShell `Remove-Item Env:K6_TOKENS`, bash `unset K6_TOKENS`. Token juga kedaluwarsa otomatis dalam 3 jam.
 
 ## Menjalankan
 
@@ -51,7 +72,7 @@ PowerShell:
 
 ```powershell
 $env:BASE_URL = "https://staging.example.test"
-$env:K6_TOKEN = "<token>"
+# K6_TOKENS sudah di-set (lihat atas)
 $env:K6_SPPG_ID = "1"   # hanya bila Admin
 k6 run scripts/k6/beban.js
 ```
@@ -59,7 +80,7 @@ k6 run scripts/k6/beban.js
 Bash:
 
 ```bash
-BASE_URL=https://staging.example.test K6_TOKEN='<token>' K6_SPPG_ID=1 k6 run scripts/k6/beban.js
+BASE_URL=https://staging.example.test K6_TOKENS="$K6_TOKENS" K6_SPPG_ID=1 k6 run scripts/k6/beban.js
 ```
 
 Bila `BASE_URL` atau token kosong, skrip berhenti dengan pesan jelas pada tahap `setup`.
