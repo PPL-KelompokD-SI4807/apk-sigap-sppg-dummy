@@ -15,17 +15,20 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Tests\Feature\Telegram\FakesTelegram;
+use Tests\Support\GambarUji;
 use Tests\Support\SkenarioOperasional;
 use Tests\TestCase;
 
 /**
  * Isu #177 (kasus uji 40 / P8): PATCH status jadwal distribusi dan notifikasi perjalanan tidak lagi dua jalur
- * terpisah. Berangkat -> estimasi tiba + pesan ke PIC; diterima -> konfirmasi ke PIC; status kirim tampil di detail.
+ * terpisah. Berangkat -> estimasi tiba + pesan ke PIC; diterima (PATCH langsung) -> konfirmasi ke PIC; status kirim tampil di detail.
+ * Pencatatan bukti distribusi TIDAK memicu pesan "diterima" (PIC cukup menerima "tercatat tiba").
  */
 class JadwalDistribusiPesanPicTest extends TestCase
 {
-    use FakesTelegram, RefreshDatabase, SkenarioOperasional;
+    use FakesTelegram, GambarUji, RefreshDatabase, SkenarioOperasional;
 
     private const PIC = 900000555;
 
@@ -233,6 +236,114 @@ class JadwalDistribusiPesanPicTest extends TestCase
         $this->getJson($this->url($jadwalB))->assertNotFound();
 
         $this->assertSame(0, NotifikasiPerjalanan::query()->withoutGlobalScopes()->count());
+        Queue::assertNothingPushed();
+    }
+
+    /** @return array<string, mixed> */
+    private function payloadBukti(JadwalDistribusi $jadwal): array
+    {
+        return [
+            'jadwal_distribusi_id' => $jadwal->id,
+            'porsi_diterima' => (int) $jadwal->jumlah_porsi,
+            'nama_pic' => 'Ibu Contoh',
+            'foto' => $this->fotoJpeg(),
+        ];
+    }
+
+    public function test_bukti_distribusi_tidak_memicu_pesan_diterima_hanya_tercatat_tiba_ke_pic(): void
+    {
+        Storage::fake('uploads');
+        $this->fakeTelegram();
+        $this->masukPenuh($this->pengguna(Role::KepalaSppg, $this->sppgA));
+        $jadwal = $this->jadwalSiap($this->sppgA, ['pic_telegram_chat_id' => self::PIC, 'nama' => 'SDN Contoh 4'], ['tanggal_distribusi' => '2026-11-02']);
+
+        $this->patchJson($this->url($jadwal), ['status' => 'berangkat'])->assertOk();
+
+        Event::fake([DistribusiDiterima::class]);
+        Carbon::setTestNow(Carbon::parse('2026-11-02 09:10:00', 'Asia/Jakarta'));
+        $this->post('/api/v1/bukti-distribusi', $this->payloadBukti($jadwal), ['Accept' => 'application/json'])
+            ->assertCreated()->assertJsonPath('data.jadwal_distribusi.status', 'diterima');
+
+        Event::assertNotDispatched(DistribusiDiterima::class);
+        $jadwal->refresh();
+        $this->assertSame(StatusJadwalDistribusi::Diterima, $jadwal->status);
+        $this->assertNull($jadwal->notif_diterima_status);
+
+        $teks = $this->messagesTo(self::PIC)->map(fn ($r) => $r['text'])->all();
+        $this->assertCount(2, $teks);
+        $this->assertStringContainsString('berangkat menuju SDN Contoh 4', $teks[0]);
+        $this->assertStringContainsString('tercatat tiba di SDN Contoh 4', $teks[1]);
+        $this->assertStringNotContainsString('diterima pukul', implode("\n", $teks));
+
+        // notifikasi_pic: hanya entri "berangkat" (terkirim), tanpa entri "diterima" palsu dan tanpa "menunggu" menggantung.
+        $this->getJson($this->url($jadwal))->assertOk()
+            ->assertJsonPath('data.status', 'diterima')
+            ->assertJsonPath('data.notifikasi_pic.jenis', 'berangkat')
+            ->assertJsonPath('data.notifikasi_pic.status_kirim', 'terkirim')
+            ->assertJsonCount(1, 'data.notifikasi_pic.riwayat');
+
+        // PATCH diterima sesudah bukti = tanpa perubahan status, tetap tidak ada pesan "diterima".
+        $this->patchJson($this->url($jadwal), ['status' => 'diterima']);
+        $this->assertNull($jadwal->fresh()->notif_diterima_status);
+    }
+
+    public function test_bukti_distribusi_tanpa_perjalanan_tidak_mengirim_pesan_dan_notifikasi_pic_null(): void
+    {
+        Storage::fake('uploads');
+        Queue::fake();
+        $this->masukPenuh($this->pengguna(Role::KepalaSppg, $this->sppgA));
+        $jadwal = $this->jadwalSiap($this->sppgA, ['pic_telegram_chat_id' => self::PIC], ['tanggal_distribusi' => '2026-11-02']);
+
+        $this->post('/api/v1/bukti-distribusi', $this->payloadBukti($jadwal), ['Accept' => 'application/json'])->assertCreated();
+
+        $this->assertNull($jadwal->fresh()->notif_diterima_status);
+        $this->assertCount(0, $this->pesanKe(self::PIC, 'DistribusiDiterima'));
+        $this->getJson($this->url($jadwal))->assertOk()
+            ->assertJsonPath('data.status', 'diterima')
+            ->assertJsonPath('data.notifikasi_pic', null);
+    }
+
+    public function test_patch_diterima_langsung_mengantre_pesan_diterima_tetapi_bukti_tidak(): void
+    {
+        Queue::fake();
+        $this->masukPenuh($this->pengguna(Role::KepalaSppg, $this->sppgA));
+        $jadwal = $this->jadwalSiap($this->sppgA, ['pic_telegram_chat_id' => self::PIC]);
+        $this->patchJson($this->url($jadwal), ['status' => 'berangkat'])->assertOk();
+
+        $this->patchJson($this->url($jadwal), ['status' => 'diterima'])->assertOk();
+
+        $this->assertCount(1, $this->pesanKe(self::PIC, 'DistribusiDiterima'));
+    }
+
+    public function test_berangkat_ditolak_422_bila_titik_layanan_terhapus_lunak_tanpa_perubahan_dan_pesan(): void
+    {
+        Queue::fake();
+        $this->masukPenuh($this->pengguna(Role::KepalaSppg, $this->sppgA));
+        $jadwal = $this->jadwalSiap($this->sppgA, ['pic_telegram_chat_id' => self::PIC]);
+        $jadwal->titikLayanan()->first()->delete();
+
+        $this->patchJson($this->url($jadwal), ['status' => 'berangkat'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['jadwal_distribusi_id']);
+        $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id])->assertUnprocessable();
+
+        $this->assertSame(StatusJadwalDistribusi::Siap, $jadwal->fresh()->status);
+        $this->assertSame(0, NotifikasiPerjalanan::query()->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_berangkat_ditolak_422_bila_batch_produksi_terhapus_lunak_tanpa_perubahan_dan_pesan(): void
+    {
+        Queue::fake();
+        $this->masukPenuh($this->pengguna(Role::KepalaSppg, $this->sppgA));
+        $jadwal = $this->jadwalSiap($this->sppgA, ['pic_telegram_chat_id' => self::PIC]);
+        $jadwal->jadwalProduksi()->first()->delete();
+
+        $this->patchJson($this->url($jadwal), ['status' => 'berangkat'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['jadwal_produksi_id']);
+        $this->postJson('/api/v1/notifikasi-perjalanan', ['jadwal_distribusi_id' => $jadwal->id])->assertUnprocessable();
+
+        $this->assertSame(StatusJadwalDistribusi::Siap, $jadwal->fresh()->status);
+        $this->assertSame(0, NotifikasiPerjalanan::query()->count());
         Queue::assertNothingPushed();
     }
 

@@ -1746,7 +1746,7 @@ paths:
         gerbang mutu (422 `status`), aturan petugas F-02 (relawan bukan petugas -> 422 `status`), lalu membuat perjalanan
         (estimasi tiba) dan menjadwalkan pesan ke PIC titik layanan lewat antrean (PIC belum terhubung Telegram -> dialihkan ke
         Kepala SPPG). Idempoten: bila sudah ada perjalanan aktif untuk jadwal itu, hanya status yang diselaraskan, tanpa
-        perjalanan/pesan baru. Ke `diterima` menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal.
+        perjalanan/pesan baru. Ke `diterima` lewat PATCH menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal; pencatatan bukti distribusi TIDAK mengirim pesan ini (PIC hanya menerima "tercatat tiba").
         Hasil kirim ada di `notifikasi_pic` (respons PATCH mencerminkan keadaan saat commit, biasanya `menunggu`; baca ulang lewat GET).
         Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:
@@ -1778,7 +1778,7 @@ paths:
         gerbang mutu (422 `status`), aturan petugas F-02 (relawan bukan petugas -> 422 `status`), lalu membuat perjalanan
         (estimasi tiba) dan menjadwalkan pesan ke PIC titik layanan lewat antrean (PIC belum terhubung Telegram -> dialihkan ke
         Kepala SPPG). Idempoten: bila sudah ada perjalanan aktif untuk jadwal itu, hanya status yang diselaraskan, tanpa
-        perjalanan/pesan baru. Ke `diterima` menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal.
+        perjalanan/pesan baru. Ke `diterima` lewat PATCH menjadwalkan pesan konfirmasi singkat ke PIC (nama titik + waktu terima), sekali per jadwal; pencatatan bukti distribusi TIDAK mengirim pesan ini (PIC hanya menerima "tercatat tiba").
         Hasil kirim ada di `notifikasi_pic` (respons PATCH mencerminkan keadaan saat commit, biasanya `menunggu`; baca ulang lewat GET).
         Kunci optimistik: kirim `versi` dari respons terakhir. Bila beda dengan versi di server -> 409 `versi_tidak_cocok` + `versi_server` (muat ulang lalu ubah kembali). `versi` OPSIONAL pada tahap ini: tanpa `versi` (klien lama) perubahan diterima tanpa pemeriksaan konflik. Setiap perubahan atribut (termasuk status oleh alur lain) menaikkan `versi`.
       requestBody:

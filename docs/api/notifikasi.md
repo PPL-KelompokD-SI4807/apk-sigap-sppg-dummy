@@ -17,6 +17,7 @@ Listener tunggal `App\Listeners\KirimNotifikasiDomain` didaftarkan oleh `SigapIn
 | `PerjalananDimulai` | PIC titik layanan (`pic_telegram_chat_id`); bila belum terhubung / `dialihkan_ke_kepala` -> kepala_sppg | terhubung; `status_kirim` diperbarui (terkirim/gagal); dialihkan tetap `tidak_terkirim` (FR-12) |
 | `PerjalananTiba` | PIC; bila tidak ada -> kepala_sppg | terhubung |
 | `PerjalananTerlambat` | PIC (bila ada) **dan** kepala_sppg | terhubung |
+| `DistribusiDiterima` | Pemicu: PATCH status jadwal distribusi ke `diterima` (tidak dikirim lewat pencatatan bukti distribusi; di jalur itu PIC cukup menerima `PerjalananTiba`). Penerima: PIC titik layanan; bila belum terhubung -> kepala_sppg. Isi: nama titik layanan dan jam terima (WIB). Lewat antrean, sekali per jadwal (penanda `jadwal_distribusis.notif_diterima_status`) | terhubung; status kirim (menunggu/terkirim/gagal/dialihkan_ke_kepala) tampil di `notifikasi_pic` detail jadwal distribusi |
 | `RekapHarianDibuat` | kepala_sppg, ahli_gizi, akuntan | terhubung; `rekap_harians.status_kirim/dikirim_pada` diperbarui (tanpa penerima -> `tidak_terkirim`) |
 | `BuktiDistribusiDicatat` | kepala_sppg | terhubung |
 | `DistribusiTerlambat` (bukti dicatat terlambat) | kepala_sppg | terhubung |
@@ -53,6 +54,7 @@ Properti publik event dibaca berdasarkan nama (camelCase, dengan cadangan snake_
 | KeluhanKritis | id, sppgId, kategori, titikLayananNama, deskripsi (varian investor tidak memakai `deskripsi`) |
 | Perjalanan* | id, sppgId, titikLayananNama, picTelegramChatId, dialihkanKeKepala, estimasiTiba (+ `notifikasi_perjalanans.pesan`) |
 | RekapHarianDibuat | id, sppgId, tanggal, ringkasan (porsi, mutu, distribusi, keluhan, stok, keuangan, sisa_makanan_kg) |
+| DistribusiDiterima | sppgId, jadwalDistribusiId, titikLayananNama, picTelegramChatId, dialihkanKeKepala, waktuTerima |
 | BuktiDistribusiDicatat / DistribusiTerlambat | id, sppgId, jadwalDistribusiId, titikLayananNama, porsiDikirim, porsiDiterima, waktuTiba, acuanTiba, terlambat, menitKeterlambatan |
 | MenuDiajukan | id (pengajuan), sppgId, menuId, namaMenu, biayaPerPorsi, jumlahPorsi, totalBiaya |
 | MenuDiputuskan | id (pengajuan), sppgId, menuId, namaMenu, keputusan, catatan, biayaPerPorsi, jumlahPorsi, totalBiaya |
