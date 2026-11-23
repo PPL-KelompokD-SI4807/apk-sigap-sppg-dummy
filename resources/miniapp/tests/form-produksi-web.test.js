@@ -188,7 +188,8 @@ test('beranda web: nama SPPG aktif investor dari GET /sppg-saya (tanpa perubahan
   setSppgAktif(2);
   const el = buatEl('div');
   renderBerandaWeb(el, { user: getUser(), menu: [] });
-  assert.ok(teks(el).includes('SPPG aktif: #2'), 'nomor langsung tampil');
+  assert.ok(!/SPPG aktif: #/.test(teks(el)), 'nomor id tidak pernah ditampilkan ke pengguna');
+  assert.ok(/SPPG aktif: \S/.test(teks(el)), 'nama langsung tampil dari /auth/me');
   await new Promise((r) => setTimeout(r, 15));
   assert.ok(teks(el).includes('SPPG aktif: SPPG Dua (S-2).'), teks(el));
   assert.ok(teks(el).includes('Ganti SPPG'));
