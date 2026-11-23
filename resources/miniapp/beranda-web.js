@@ -110,9 +110,10 @@ export function renderBerandaWeb(el, { user, menu }) {
   // Investor multi-SPPG: SPPG aktif dan tautan ganti (pilihan hanya di memori; server tetap memvalidasi header).
   if (multiSppg(user)) {
     const id = getSppgAktif();
-    const nama = h('span', {}, id ? `SPPG aktif: #${id}. ` : 'Belum memilih SPPG. ');
+    // Nama, bukan nomor: user.sppg_name sudah ada dari /auth/me, jadi tidak perlu menampilkan "#id" ke pengguna.
+    const nama = h('span', {}, id ? `SPPG aktif: ${u.sppg_name || 'belum diketahui'}. ` : 'Belum memilih SPPG. ');
     el.append(h('div', { class: 'notice' }, nama, h('a', { class: 'link', href: '#/ganti-sppg' }, id ? 'Ganti SPPG' : 'Pilih SPPG')));
-    // Nama SPPG aktif dari GET /sppg-saya (SppgPilihan: id, kode, nama); gagal memuat = tetap menampilkan nomor.
+    // GET /sppg-saya melengkapi dengan kode SPPG; gagal memuat = nama dari /auth/me tetap tampil (tanpa nomor).
     if (id) {
       api.get('/sppg-saya', undefined, { silent: true }).then((res) => {
         const s = (res?.data ?? []).find((x) => x.id === id);
