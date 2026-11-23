@@ -82,7 +82,7 @@
                 - { $ref: '#/components/schemas/WebLoginResponse' }
             example:
               langkah: kode
-              message: 'Bila data benar, kode telah dikirim ke Telegram Anda. Tidak menerima kode dalam 1 menit? Periksa kembali sandi.'
+              message: 'Bila data benar, kode telah dikirim ke Telegram Anda.'
               tantangan:
                 id: 01jcz8w3q4m5n6p7r8s9t0v1w2
                 kedaluwarsa_pada: '2026-11-13T08:05:00+07:00'

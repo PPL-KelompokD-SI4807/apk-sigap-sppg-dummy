@@ -26,7 +26,7 @@ use Symfony\Component\HttpFoundation\Cookie;
  */
 class WebAuthController extends ApiController
 {
-    public const PESAN_KODE_DIKIRIM = 'Bila data benar, kode telah dikirim ke Telegram Anda. Tidak menerima kode dalam 1 menit? Periksa kembali sandi.';
+    public const PESAN_KODE_DIKIRIM = 'Bila data benar, kode telah dikirim ke Telegram Anda.';
 
     public function __construct(private readonly MasukWebService $masuk) {}
 

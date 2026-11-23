@@ -8,6 +8,43 @@ export const PETUNJUK_LUPA_SANDI = 'Lupa sandi? Buka Mini App SiGAP SPPG di Tele
 export const PESAN_KREDENSIAL_SALAH = 'Username/no telepon atau sandi salah.';
 export const PESAN_KODE_TIDAK_VALID = 'Kode salah atau kedaluwarsa. Periksa kode terbaru di chat bot, atau kirim ulang kode.';
 
+// Panduan "kode tidak datang" (R04 anti-enumerasi): tiga sebab nyata, kalimat netral yang sama untuk semua orang.
+// JANGAN menyiratkan mana yang berlaku; sistem sengaja tidak memberi tahu apakah username/sandi salah.
+export const JUDUL_PANDUAN_KODE = 'Kode tidak datang?';
+export const PENGANTAR_PANDUAN_KODE = 'Ada tiga sebab yang mungkin. Demi keamanan akun, sistem tidak menyebut mana yang berlaku untuk Anda.';
+export const SEBAB_KODE_TIDAK_DATANG = [
+  'Sandi yang dimasukkan mungkin salah. Pilih Mulai dari awal, lalu masukkan username dan sandi dengan teliti.',
+  'Akun mungkin belum tertaut dengan Telegram. Hubungi Admin SPPG untuk memeriksa penautan akun.',
+  'Anda mungkin belum pernah menekan Start di bot SiGAP. Buka bot di Telegram, tekan Start, lalu kirim ulang kode.',
+];
+export const PESAN_KUOTA_HABIS = 'Jatah kirim ulang habis. Bila kode belum datang, mulai dari awal.';
+export const PESAN_TANTANGAN_MATI = 'Kode untuk percobaan masuk ini sudah tidak berlaku. Mulai dari awal untuk meminta kode baru.';
+export const PESAN_PERCOBAAN_HABIS = 'Percobaan memasukkan kode sudah habis. Mulai dari awal untuk meminta kode baru.';
+
+/**
+ * Tantangan sudah mati (kode tidak bisa dipakai lagi): server menandainya `kedaluwarsa_pada` = waktu respons =
+ * `kirim_ulang_tersedia_pada`, jadi kedaluwarsa <= tersedia dibaca tanpa bergantung pada jam perangkat. Selain itu mati
+ * bila `kedaluwarsa_pada` <= jam server sekarang (masa 5 menit habis saat layar terbuka). Waktu tak terbaca -> belum mati.
+ */
+export function tantanganMati(t, sekarangMs = Date.now()) {
+  const exp = Date.parse(t?.kedaluwarsa_pada);
+  if (!Number.isFinite(exp)) return false;
+  const tersedia = Date.parse(t?.kirim_ulang_tersedia_pada);
+  return (Number.isFinite(tersedia) && exp <= tersedia) || exp <= sekarangMs;
+}
+
+/** `sisa_percobaan` dari badan 422 kode_tidak_valid -> bilangan bulat >= 0, atau null bila tidak ada. */
+export function bacaSisaPercobaan(e) {
+  const n = e?.data?.sisa_percobaan;
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/** "Sisa percobaan: 4 dari 5." (tanpa "dari" bila batas tidak diketahui). */
+export const teksSisaPercobaan = (sisa, maks) => `Sisa percobaan: ${sisa}${Number.isInteger(maks) && maks >= sisa ? ` dari ${maks}` : ''}.`;
+
+/** Tantangan baru dari respons kirim ulang -> objek tantangan atau null bila bentuknya tak dikenal. */
+export const bacaTantangan = (data) => (data?.tantangan?.id ? data.tantangan : null);
+
 /** Hasil POST /web/auth/masuk -> {langkah: 'kode', tantangan, pesan} | {langkah: 'selesai', data}. */
 export function bacaHasilMasuk(data) {
   if (data?.langkah === 'selesai') return { langkah: 'selesai', data };

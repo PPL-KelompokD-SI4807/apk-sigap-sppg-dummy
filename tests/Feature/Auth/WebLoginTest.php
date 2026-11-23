@@ -278,7 +278,7 @@ class WebLoginTest extends TestCase
 
         $masuk = $this->masuk($pra, $csrfPra, 'siti.dapur', self::SANDI)->assertOk()
             ->assertJsonPath('langkah', 'kode')
-            ->assertJsonPath('message', 'Bila data benar, kode telah dikirim ke Telegram Anda. Tidak menerima kode dalam 1 menit? Periksa kembali sandi.')
+            ->assertJsonPath('message', 'Bila data benar, kode telah dikirim ke Telegram Anda.')
             ->assertJsonPath('tantangan.kedaluwarsa_pada', now()->addMinutes(5)->toIso8601String())
             ->assertJsonPath('tantangan.kirim_ulang_tersedia_pada', now()->addSeconds(60)->toIso8601String())
             ->assertJsonPath('tantangan.sisa_kirim_ulang', 3)

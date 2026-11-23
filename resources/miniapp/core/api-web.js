@@ -14,8 +14,7 @@ import { terapkanHeaderSppg, hapusSppgAktif, perluPilihUlangSppg, PESAN_PILIH_UL
 const BASE = '/api/v1';
 export const HEADER_KLIEN = 'X-Sigap-Klien';
 export const NILAI_KLIEN = 'web';
-const JEDA_KIRIM_ULANG_DETIK = 60;
-const MAKS_KIRIM_ULANG = 3;
+const AMBANG_SELISIH_JAM_MS = 2000;
 const PESAN_SESI_HABIS = 'Sesi Anda telah berakhir. Silakan masuk kembali.';
 const PESAN_CSRF = 'Permintaan ditolak. Muat ulang halaman lalu coba lagi.';
 const PESAN_OFFLINE = 'Tidak ada koneksi internet.';
@@ -58,11 +57,17 @@ export function bacaRetryAfter(res) {
   return Number.isFinite(n) && n > 0 ? Math.ceil(n) : null;
 }
 
-/** Hitung mundur kirim ulang kode: klien menghitung sendiri (jeda 60 detik, maks 3 kali). Murni, mudah diuji. */
-export function statusKirimUlang({ terkirimSebanyak = 0, terakhirMs, sekarangMs = Date.now() } = {}) {
-  const sisa = Math.max(0, MAKS_KIRIM_ULANG - terkirimSebanyak);
-  const tunggu = terakhirMs == null ? 0 : Math.max(0, Math.ceil((terakhirMs + JEDA_KIRIM_ULANG_DETIK * 1000 - sekarangMs) / 1000));
-  return { sisa, tungguDetik: tunggu, boleh: sisa > 0 && tunggu === 0 };
+/**
+ * Keadaan tombol kirim ulang kode. SEMUA nilai berasal dari server: `tersediaPada` = `kirim_ulang_tersedia_pada`
+ * (kode terakhir dikirim + jeda, dipakai apa adanya; klien TIDAK menghitung "sekarang + 60") dan `sisaKirimUlang` =
+ * `sisa_kirim_ulang`. `sekarangMs` sebaiknya jam server (lihat `waktuServer` pada klien). Murni, mudah diuji.
+ * -> {sisa, tungguDetik, boleh, habis}
+ */
+export function statusKirimUlang({ tersediaPada, sisaKirimUlang, sekarangMs = Date.now() } = {}) {
+  const sisa = Number.isInteger(sisaKirimUlang) ? Math.max(0, sisaKirimUlang) : 0;
+  const t = Date.parse(tersediaPada);
+  const tunggu = Number.isFinite(t) ? Math.max(0, Math.ceil((t - sekarangMs) / 1000)) : 0;
+  return { sisa, tungguDetik: tunggu, boleh: sisa > 0 && tunggu === 0, habis: sisa === 0 };
 }
 
 /**
@@ -104,6 +109,7 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), xhrFactory = xhr
   let csrf = null;
   let csrfBerlakuSampai = null; // ms epoch; hanya untuk CSRF pra-login
   let user = null;
+  let selisihJamServerMs = 0; // jam server - jam klien, dari header Date respons terakhir (resolusi 1 detik)
   let muatCsrfJalan = null; // dedup: satu GET /web/auth/csrf sekaligus (tiap panggilan membatalkan yang lama di server)
   const bus = new EventTarget();
 
@@ -143,6 +149,13 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), xhrFactory = xhr
         : await fetchFn(url, { method: verb, headers, body: payload, credentials: 'same-origin', cache: 'no-store' });
     } catch {
       throw new ApiError(0, PESAN_OFFLINE);
+    }
+    const jamServer = Date.parse(res.headers?.get?.('Date'));
+    if (Number.isFinite(jamServer)) {
+      // Header Date hanya beresolusi 1 detik: selisih di bawah AMBANG dianggap jam yang sudah selaras (bukan koreksi),
+      // agar hitung mundur tidak menampilkan "61 detik" pada jeda 60 detik. Perangkat yang meleset jauh tetap dikoreksi.
+      const d = jamServer - sekarang();
+      selisihJamServerMs = Math.abs(d) < AMBANG_SELISIH_JAM_MS ? 0 : d;
     }
     let data = null;
     if (res.status !== 204) { try { data = await res.json(); } catch { data = null; } }
@@ -289,6 +302,8 @@ export function buatKlienWeb({ fetchFn = (...a) => fetch(...a), xhrFactory = xhr
   return {
     request, api, masuk, kirimKode, kirimUlangKode, muatCsrf: muatCsrfPra, muatSesi, logout, daftarSesi, cabutSesi, daftarBrowserTepercaya, cabutBrowserTepercaya, keluarSemua,
     getUser: () => user,
+    /** Jam server (ms epoch) = jam klien + selisih dari header `Date`; tanpa header sama dengan jam klien. */
+    waktuServer: () => sekarang() + selisihJamServerMs,
     /** 401 dari pemuat berkas privat (fetch langsung, di luar request()): perlakuan sama dengan 401 rute sesi. */
     sesiHabisDariBerkas: () => { if (mode === 'sesi') sesiHabis(); },
     adaSesi: () => mode === 'sesi',
