@@ -35,6 +35,9 @@ test('klasifikasiGalat: kredensial_salah, kode_tidak_valid, 429, 403, offline, v
   const e = (status, data, extra = {}) => Object.assign(new ApiError(status, data?.message || 'm', data?.errors ?? null, data), extra);
   assert.equal(masukLogika.klasifikasiGalat(e(422, { alasan: 'kredensial_salah' })).tipe, 'kredensial');
   assert.equal(masukLogika.klasifikasiGalat(e(422, { alasan: 'kode_tidak_valid' })).tipe, 'kode');
+  assert.equal(masukLogika.klasifikasiGalat(e(422, { message: 'Identitas atau sandi salah.', errors: { password: ['Identitas atau sandi salah.'] }, alasan: 'kredensial_salah' })).pesan, 'Identitas atau sandi salah.');
+  assert.equal(masukLogika.klasifikasiGalat(e(422, { message: 'Buka Mini App.', alasan: 'telegram_belum_terhubung' })).tipe, 'form');
+  assert.equal(masukLogika.klasifikasiGalat(e(422, { message: 'Tunggu.', alasan: 'terlalu_sering' })).tipe, 'form');
   assert.equal(masukLogika.klasifikasiGalat(e(422, { message: 'x', errors: { identitas: ['Wajib'] } })).tipe, 'validasi');
   assert.equal(masukLogika.klasifikasiGalat(e(403, { alasan: 'csrf_ditolak' })).tipe, 'csrf');
   assert.equal(masukLogika.klasifikasiGalat(new ApiError(0, 'x')).tipe, 'offline');
