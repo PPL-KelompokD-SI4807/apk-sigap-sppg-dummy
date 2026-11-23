@@ -26,7 +26,11 @@ use Symfony\Component\HttpFoundation\Cookie;
  */
 class WebAuthController extends ApiController
 {
-    public const PESAN_KODE_DIKIRIM = 'Bila data benar, kode telah dikirim ke Telegram Anda.';
+    /**
+     * Langkah kode hanya tercapai bila sandi benar (revisi 2026-11-23), jadi pesannya tidak lagi perlu berpagar
+     * "bila data benar": kredensial yang salah dijawab 422 `kredensial_salah` dan pengguna tetap di halaman sandi.
+     */
+    public const PESAN_KODE_DIKIRIM = 'Kode 6 digit telah dikirim ke Telegram Anda.';
 
     public function __construct(private readonly MasukWebService $masuk) {}
 
@@ -42,9 +46,11 @@ class WebAuthController extends ApiController
     }
 
     /**
-     * POST /api/v1/web/auth/masuk — 200 `langkah: kode` (seragam, anti-enumerasi). Browser tepercaya (R04-3) yang
-     * sah untuk akun ini + sandi benar: 200 `langkah: selesai` + Set-Cookie sesi (kode dilewati); sandi salah pada
-     * browser tepercaya sah: 422 `alasan: kredensial_salah`. Cookie `__Host-sigap_tb` yang tidak berlaku lagi dihapus.
+     * POST /api/v1/web/auth/masuk — sandi benar: 200 `langkah: kode` (kode dikirim bot). Kredensial salah (lima
+     * sebab digabung, anti-enumerasi): 422 `alasan: kredensial_salah` dan pengguna tetap di halaman sandi. Sandi
+     * benar tetapi belum dapat lanjut: 422 `telegram_belum_terhubung` atau `terlalu_sering`. Browser tepercaya
+     * (R04-3) yang sah untuk akun ini + sandi benar: 200 `langkah: selesai` + Set-Cookie sesi (kode dilewati).
+     * Cookie `__Host-sigap_tb` yang tidak berlaku lagi dihapus (hanya pada respons 200).
      */
     public function masuk(MasukWebRequest $request): JsonResponse
     {
@@ -67,7 +73,7 @@ class WebAuthController extends ApiController
         return $hasil['lupakan_tb'] ? $respons->withCookie(BrowserTepercayaService::lupakanCookie()) : $respons;
     }
 
-    /** POST /api/v1/web/auth/kode/kirim-ulang — respons seragam (tantangan tiruan pun 200). */
+    /** POST /api/v1/web/auth/kode/kirim-ulang — selalu 200; tantangan mati/tidak dikenal dijawab deskriptor mati. */
     public function kirimUlang(KirimUlangKodeWebRequest $request): JsonResponse
     {
         $tantangan = $this->masuk->kirimUlang(
@@ -135,8 +141,7 @@ class WebAuthController extends ApiController
 
     /**
      * Deskriptor tantangan: nilai `kedaluwarsa_pada`, `kirim_ulang_tersedia_pada`, dan `sisa_kirim_ulang` selalu
-     * keadaan nyata tantangan (sungguhan maupun tiruan), sehingga hitung mundur dan kuota kirim ulang di peramban
-     * jujur tanpa membocorkan apakah akun/sandi benar.
+     * keadaan nyata tantangan, sehingga hitung mundur dan kuota kirim ulang di peramban jujur.
      *
      * @param  array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}  $tantangan
      */
