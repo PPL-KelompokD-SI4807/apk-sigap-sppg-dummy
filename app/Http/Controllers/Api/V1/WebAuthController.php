@@ -26,7 +26,7 @@ use Symfony\Component\HttpFoundation\Cookie;
  */
 class WebAuthController extends ApiController
 {
-    public const PESAN_KODE_DIKIRIM = 'Bila data benar, kode telah dikirim ke Telegram Anda. Tidak menerima kode dalam 1 menit? Periksa kembali sandi.';
+    public const PESAN_KODE_DIKIRIM = 'Bila data benar, kode telah dikirim ke Telegram Anda.';
 
     public function __construct(private readonly MasukWebService $masuk) {}
 
@@ -133,7 +133,13 @@ class WebAuthController extends ApiController
         return $pra;
     }
 
-    /** @param array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon} $tantangan */
+    /**
+     * Deskriptor tantangan: nilai `kedaluwarsa_pada`, `kirim_ulang_tersedia_pada`, dan `sisa_kirim_ulang` selalu
+     * keadaan nyata tantangan (sungguhan maupun tiruan), sehingga hitung mundur dan kuota kirim ulang di peramban
+     * jujur tanpa membocorkan apakah akun/sandi benar.
+     *
+     * @param  array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}  $tantangan
+     */
     private function tantangan(array $tantangan): JsonResponse
     {
         return response()->json([
@@ -143,6 +149,7 @@ class WebAuthController extends ApiController
                 'id' => $tantangan['id'],
                 'kedaluwarsa_pada' => $tantangan['kedaluwarsa_pada']->toIso8601String(),
                 'kirim_ulang_tersedia_pada' => $tantangan['kirim_ulang_tersedia_pada']->toIso8601String(),
+                'sisa_kirim_ulang' => $tantangan['sisa_kirim_ulang'],
                 'maks_kirim_ulang' => (int) config('kredensial.token.maks_kirim_ulang', 3),
                 'maks_percobaan' => (int) config('kredensial.token.maks_percobaan', 5),
             ],

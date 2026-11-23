@@ -27,7 +27,7 @@ const resp = (status, body, headers = {}) => ({ ok: status >= 200 && status < 30
 const TANTANGAN = { langkah: 'kode', message: 'ok', tantangan: { id: '01jc', maks_kirim_ulang: 3, maks_percobaan: 5 } };
 
 /** Fetch skrip: "METHOD /path" -> antrean respons (elemen terakhir diulang). Mencatat semua panggilan. */
-function pasang(skrip) {
+function pasang(skrip, sekarang) {
   const calls = [];
   const fetchFn = async (url, init) => {
     const path = url.replace('/api/v1', '');
@@ -39,7 +39,7 @@ function pasang(skrip) {
     if (r instanceof Error) throw r;
     return r;
   };
-  return { calls, klien: buatKlienWeb({ fetchFn }) };
+  return { calls, klien: buatKlienWeb(sekarang ? { fetchFn, sekarang } : { fetchFn }) };
 }
 const csrfOk = (c = HEX1, sampai = '2099-01-01T00:00:00Z') => resp(200, { csrf: c, berlaku_sampai: sampai });
 const selesai = (c) => resp(200, { langkah: 'selesai', jenis_sesi: 'web', csrf: c, user: USER });
@@ -219,12 +219,34 @@ test('cabutSesi sesi_ini membersihkan memori; sesi lain tidak', async () => {
   assert.equal(klien.adaSesi(), false);
 });
 
-test('statusKirimUlang: jeda 60 detik dan maks 3 kali dihitung klien', () => {
-  const t0 = 1_000_000;
-  assert.deepEqual(statusKirimUlang({ terkirimSebanyak: 0, terakhirMs: undefined, sekarangMs: t0 }), { sisa: 3, tungguDetik: 0, boleh: true });
-  assert.deepEqual(statusKirimUlang({ terkirimSebanyak: 1, terakhirMs: t0, sekarangMs: t0 + 10_000 }), { sisa: 2, tungguDetik: 50, boleh: false });
-  assert.equal(statusKirimUlang({ terkirimSebanyak: 1, terakhirMs: t0, sekarangMs: t0 + 60_000 }).boleh, true);
-  assert.equal(statusKirimUlang({ terkirimSebanyak: 3, terakhirMs: t0, sekarangMs: t0 + 999_000 }).boleh, false);
+test('statusKirimUlang: jeda dan jatah dibaca dari server, bukan dihitung klien', () => {
+  const t0 = Date.parse('2026-11-13T08:00:00+07:00');
+  const tersedia = '2026-11-13T08:01:00+07:00'; // nilai server apa adanya
+  assert.deepEqual(statusKirimUlang({ tersediaPada: tersedia, sisaKirimUlang: 3, sekarangMs: t0 }), { sisa: 3, tungguDetik: 60, boleh: false, habis: false });
+  assert.deepEqual(statusKirimUlang({ tersediaPada: tersedia, sisaKirimUlang: 3, sekarangMs: t0 + 10_000 }), { sisa: 3, tungguDetik: 50, boleh: false, habis: false });
+  assert.equal(statusKirimUlang({ tersediaPada: tersedia, sisaKirimUlang: 2, sekarangMs: t0 + 60_000 }).boleh, true);
+  assert.equal(statusKirimUlang({ tersediaPada: tersedia, sisaKirimUlang: 2, sekarangMs: t0 + 61_500 }).tungguDetik, 0);
+  const habis = statusKirimUlang({ tersediaPada: tersedia, sisaKirimUlang: 0, sekarangMs: t0 + 999_000 });
+  assert.deepEqual(habis, { sisa: 0, tungguDetik: 0, boleh: false, habis: true });
+  assert.equal(statusKirimUlang({ tersediaPada: undefined, sisaKirimUlang: undefined }).boleh, false, 'jatah tak dikenal = tertutup');
+});
+
+test('waktuServer: selisih jam dari header Date respons dipakai untuk hitung mundur', async () => {
+  const serverMs = Date.parse('Fri, 13 Nov 2026 01:00:00 GMT');
+  let jamKlien = serverMs - 5 * 60_000; // jam perangkat tertinggal 5 menit
+  const { klien } = pasang({ 'GET /web/auth/csrf': [resp(200, { csrf: HEX1, berlaku_sampai: '2026-11-13T08:15:00+07:00' }, { Date: 'Fri, 13 Nov 2026 01:00:00 GMT' })] }, () => jamKlien);
+  assert.equal(klien.waktuServer(), jamKlien, 'sebelum ada respons: jam klien');
+  await klien.muatCsrf();
+  assert.equal(klien.waktuServer(), serverMs);
+  jamKlien += 30_000;
+  assert.equal(klien.waktuServer(), serverMs + 30_000);
+});
+
+test('waktuServer: selisih < 2 detik (pembulatan header Date) tidak dikoreksi', async () => {
+  const jamKlien = Date.parse('2026-11-13T01:00:00.700Z'); // Date header membulatkan ke bawah: 01:00:00
+  const { klien } = pasang({ 'GET /web/auth/csrf': [resp(200, { csrf: HEX1, berlaku_sampai: '2026-11-13T08:15:00+07:00' }, { Date: 'Fri, 13 Nov 2026 01:00:00 GMT' })] }, () => jamKlien);
+  await klien.muatCsrf();
+  assert.equal(klien.waktuServer(), jamKlien);
 });
 
 test('kirim ulang kode memakai CSRF pra dan badan {tantangan_id}', async () => {

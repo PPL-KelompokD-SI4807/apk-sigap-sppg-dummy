@@ -135,7 +135,7 @@ schemas:
           - dev_bypass
           - csrf_ditolak
           - kode_tidak_valid
-      sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah' }
+      sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah / kode_tidak_valid (login web R04-2: sisa percobaan kode pada tantangan ini, 0 = tantangan sudah mati)' }
       terkunci_sampai: { type: string, format: date-time, description: 'terkunci' }
       langkah: { type: string, enum: [aktivasi, masuk], description: 'perlu_aktivasi / sudah_aktivasi' }
   PraLoginResponse:
@@ -264,20 +264,29 @@ schemas:
     type: object
     required: [langkah, message, tantangan]
     description: |
-      Respons SERAGAM langkah masuk dan kirim ulang (anti-enumerasi): status, bentuk, dan header sama untuk akun
-      tidak ada, sandi salah, akun nonaktif/belum aktivasi/tanpa Telegram, kanal web terkunci, dan sandi benar.
-      Waktu dihitung dari jam server saat respons. Kode hanya benar-benar dikirim bot bila sandi benar.
+      Respons SERAGAM langkah masuk dan kirim ulang (anti-enumerasi): status, bentuk, header, DAN nilai sama untuk
+      akun tidak ada, sandi salah, akun nonaktif/belum aktivasi/tanpa Telegram, kanal web terkunci, dan sandi benar
+      pada titik waktu yang sama. Kode hanya benar-benar dikirim bot bila sandi benar; untuk kasus lain server
+      menyimpan keadaan tantangan tiruan (percobaan, kirim ulang, jeda, masa berlaku) agar `sisa_kirim_ulang`,
+      `kirim_ulang_tersedia_pada`, dan `sisa_percobaan` di POST /web/auth/kode bergerak persis sama.
     properties:
       langkah: { type: string, const: kode }
       message: { type: string }
       tantangan:
         type: object
-        required: [id, kedaluwarsa_pada, kirim_ulang_tersedia_pada, maks_kirim_ulang, maks_percobaan]
+        required: [id, kedaluwarsa_pada, kirim_ulang_tersedia_pada, sisa_kirim_ulang, maks_kirim_ulang, maks_percobaan]
+        description: |
+          Nilai waktu dan kuota di bawah SELALU keadaan nyata tantangan, juga untuk tantangan tiruan (yang
+          keadaannya disimpan server di luar basis data): tidak ada bentuk "berhasil" palsu. Tantangan yang sudah
+          mati (dipakai, hangus, kedaluwarsa, tidak dikenal, milik browser lain, atau kanal web terkunci) selalu
+          dijawab `kedaluwarsa_pada` = `kirim_ulang_tersedia_pada` = waktu respons dan `sisa_kirim_ulang: 0`;
+          UI menampilkan "kode tidak berlaku lagi, silakan masuk ulang".
         properties:
           id: { type: string, pattern: '^[0-9a-z]{26}$', description: 'ULID huruf kecil. Bisa tiruan; klien tidak dapat membedakannya.' }
-          kedaluwarsa_pada: { type: string, format: date-time, description: 'Sekarang + 5 menit.' }
-          kirim_ulang_tersedia_pada: { type: string, format: date-time, description: 'Sekarang + 60 detik (jeda kirim ulang).' }
-          maks_kirim_ulang: { type: integer, examples: [3], description: 'Klien menghitung sendiri sisa kirim ulang.' }
+          kedaluwarsa_pada: { type: string, format: date-time, description: 'Masa berlaku NYATA tantangan ini (umumnya terkirim + 5 menit), bukan sekadar sekarang + 5 menit.' }
+          kirim_ulang_tersedia_pada: { type: string, format: date-time, description: 'Saat kirim ulang berikutnya boleh. Dihitung dari pengiriman terakhir + 60 detik; kirim ulang yang ditolak TIDAK menggeser nilai ini.' }
+          sisa_kirim_ulang: { type: integer, minimum: 0, examples: [3], description: 'Sisa jatah kirim ulang (maks_kirim_ulang - yang terpakai). 0 = tombol "Kirim ulang" dimatikan.' }
+          maks_kirim_ulang: { type: integer, examples: [3] }
           maks_percobaan: { type: integer, examples: [5] }
   WebLoginResponse:
     type: object

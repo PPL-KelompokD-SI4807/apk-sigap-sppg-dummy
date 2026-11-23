@@ -6,10 +6,11 @@ import { klienWeb as klienBawaan, statusKirimUlang } from '../../core/api-web.js
 import { hideMainButton, toast } from '../../core/ui.js';
 import { mapValidationErrors } from '../../core/errors.js';
 import { logoBgn, penandaAkademik } from '../../core/merek-web.js';
-import { formatMenit, kodeValid, sisaDetik } from '../../core/kredensial.js';
+import { formatMenit, kodeValid } from '../../core/kredensial.js';
 import {
-  bacaHasilMasuk, pesanSelesai, klasifikasiGalat,
+  bacaHasilMasuk, pesanSelesai, klasifikasiGalat, tantanganMati, bacaSisaPercobaan, teksSisaPercobaan, bacaTantangan,
   PERINGATAN_INGAT, CATATAN_ADMIN, CATATAN_IDLE, PETUNJUK_LUPA_SANDI,
+  JUDUL_PANDUAN_KODE, PENGANTAR_PANDUAN_KODE, SEBAB_KODE_TIDAK_DATANG, PESAN_KUOTA_HABIS, PESAN_TANTANGAN_MATI, PESAN_PERCOBAAN_HABIS,
 } from './logika.js';
 
 /**
@@ -18,11 +19,14 @@ import {
  */
 export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klienBawaan } = {}) {
   let timer = null;
+  let generasi = 0; // naik tiap layar diganti; tick() tidak memasang interval bila fn() sendiri mengganti layar
   const stopTimer = () => { if (timer) { clearInterval(timer); timer = null; } };
-  const tick = (fn) => { stopTimer(); fn(); timer = setInterval(fn, 1000); };
+  const tick = (fn) => { stopTimer(); const g = generasi; fn(); if (g === generasi) timer = setInterval(fn, 1000); };
+  const selesai = (data) => { stopTimer(); return onSelesai?.(data); }; // hitung mundur berhenti sebelum layar ditinggalkan
 
   function layar(judul, ...anak) {
     stopTimer();
+    generasi += 1;
     hideMainButton();
     clear(el);
     el.append(h('div', { class: 'login-wrap' },
@@ -63,7 +67,7 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
         try {
           const hasil = bacaHasilMasuk(await klien.masuk(identitas, pwEl.value));
           pwEl.value = '';
-          if (hasil.langkah === 'selesai') { toast(pesanSelesai(hasil.data) || 'Berhasil masuk.', 'success'); return onSelesai?.(hasil.data); }
+          if (hasil.langkah === 'selesai') { toast(pesanSelesai(hasil.data) || 'Berhasil masuk.', 'success'); return selesai(hasil.data); }
           if (hasil.langkah === 'kode') return layarKode(hasil.tantangan, hasil.pesan);
           setForm(fe, 'Respons server tidak dikenali. Coba lagi.');
         } catch (e) {
@@ -84,45 +88,85 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
     idEl.focus();
   }
 
+
+  // ---------- Panduan "kode tidak datang": tampil menonjol, tiga sebab, netral untuk semua orang ----------
+  function panduanKode() {
+    return h('section', { class: 'panduan-kode', 'aria-labelledby': 'panduan-kode-judul' },
+      h('h3', { class: 'panduan-kode-judul', id: 'panduan-kode-judul' }, JUDUL_PANDUAN_KODE),
+      h('p', { class: 'panduan-kode-teks' }, PENGANTAR_PANDUAN_KODE),
+      h('ul', { class: 'panduan-kode-daftar' }, ...SEBAB_KODE_TIDAK_DATANG.map((t) => h('li', {}, t))));
+  }
+
+  // ---------- Tantangan mati (kedaluwarsa / tidak berlaku): jangan biarkan pengguna mengetik kode sia-sia ----------
+  function layarKodeMati(pesan = PESAN_TANTANGAN_MATI) {
+    const mulai = h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: () => layarMasuk() }, 'Mulai dari awal');
+    const kotak = h('p', { class: 'notice', role: 'alert', tabindex: '-1' }, pesan);
+    layar('Kode tidak berlaku lagi', kotak, mulai, panduanKode());
+    mulai.focus();
+  }
+
   // ---------- Langkah 2: kode sekali pakai ----------
-  function layarKode(tantangan, pesanServer) {
-    let terkirimUlang = 0;
-    let terakhirMs = Date.now(); // kode pertama baru dikirim; jeda 60 detik dihitung dari jam klien
-    let kedaluwarsaMs = Date.parse(tantangan.kedaluwarsa_pada);
-    if (Number.isNaN(kedaluwarsaMs)) kedaluwarsaMs = null;
-    const maksKirim = Number.isInteger(tantangan.maks_kirim_ulang) ? tantangan.maks_kirim_ulang : 3;
+  function layarKode(tantanganAwal, pesanServer) {
+    let tantangan = tantanganAwal;
+    const jam = () => (typeof klien.waktuServer === 'function' ? klien.waktuServer() : Date.now()); // jam server (header Date), bukan jam perangkat
+    if (tantanganMati(tantangan, jam())) return layarKodeMati();
+
+    const maksKirim = Number.isInteger(tantangan.maks_kirim_ulang) ? tantangan.maks_kirim_ulang : null;
+    const maksPercobaan = Number.isInteger(tantangan.maks_percobaan) ? tantangan.maks_percobaan : null;
+    let percobaanHabis = false;
+    let terakhir = { boleh: null, habis: null }; // untuk mengumumkan perubahan keadaan penting, bukan tiap detik
 
     const kodeEl = h('input', { type: 'text', name: 'kode', required: true, inputmode: 'numeric', pattern: '[0-9]*', maxlength: 6, autocomplete: 'one-time-code', placeholder: '000000', class: 'otp' });
     const ingatEl = h('input', { type: 'checkbox', name: 'ingat_browser', id: 'ingat-browser' }); // bawaan mati
     const eKode = kotakGalat(); const fe = kotakForm();
-    const info = h('p', { class: 'muted small' }, pesanServer || 'Kami mengirim kode 6 digit ke chat bot SiGAP di Telegram. Masukkan kode tersebut di sini.');
-    const sisaWaktu = h('p', { class: 'muted small' });
+    const infoPercobaan = h('p', { class: 'muted small', role: 'status', hidden: true });
+    const info = h('p', { class: 'muted small' }, pesanServer || 'Bila data benar, kode 6 digit dikirim ke chat bot SiGAP di Telegram. Masukkan kode tersebut di sini.');
+    // #view memakai aria-live="polite" (pergantian layar diumumkan). Elemen yang berubah tiap detik dikecualikan dengan aria-live="off".
+    const sisaWaktu = h('p', { class: 'muted small', 'aria-live': 'off' });
     const btn = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Verifikasi');
-    const ulang = h('button', { class: 'link', type: 'button' }, 'Kirim ulang kode');
-    const kembali = h('button', { class: 'link', type: 'button', onclick: () => layarMasuk() }, 'Kembali ke awal');
+    const ulang = h('button', { class: 'btn btn-block', type: 'button', 'aria-live': 'off' }, 'Kirim ulang kode');
+    const kuota = h('p', { class: 'muted small', 'aria-live': 'off' });
+    const kembali = h('button', { class: 'link', type: 'button', onclick: () => layarMasuk() }, 'Mulai dari awal');
+    const habisKotak = h('p', { class: 'notice', role: 'alert', hidden: true }, PESAN_PERCOBAAN_HABIS);
+    // Perubahan keadaan penting diumumkan lewat wilayah status sopan; hitung mundur per detik TIDAK pernah ke sini.
+    const umum = h('p', { class: 'sr-only', role: 'status' });
+    const umumkan = (teks) => { umum.textContent = teks; };
 
     const form = h('form', { class: 'form', novalidate: true },
-      field('Kode 6 digit', kodeEl, eKode),
+      field('Kode 6 digit', kodeEl, eKode), infoPercobaan,
       h('label', { class: 'check-row', for: 'ingat-browser' }, ingatEl, h('span', {}, 'Ingat browser ini 30 hari')),
       h('p', { class: 'notice' }, PERINGATAN_INGAT),
       h('p', { class: 'muted small' }, CATATAN_ADMIN),
-      fe, btn, sisaWaktu, ulang, kembali);
+      fe, habisKotak, btn, sisaWaktu, ulang, kuota, panduanKode(), kembali, umum);
 
     function perbarui() {
-      const st = statusKirimUlang({ terkirimSebanyak: terkirimUlang, terakhirMs, sekarangMs: Date.now() });
-      const sisa = Math.max(0, maksKirim - terkirimUlang);
-      ulang.disabled = !(sisa > 0 && st.tungguDetik === 0);
-      ulang.textContent = sisa === 0 ? 'Batas kirim ulang tercapai'
-        : st.tungguDetik > 0 ? `Kirim ulang kode (${formatMenit(st.tungguDetik)})` : 'Kirim ulang kode';
-      if (kedaluwarsaMs != null) {
-        const s = sisaDetik(new Date(kedaluwarsaMs).toISOString());
-        sisaWaktu.textContent = s > 0 ? `Kode berlaku ${formatMenit(s)} lagi.` : 'Kode sudah kedaluwarsa. Kirim ulang kode atau mulai dari awal.';
-      }
+      if (form.isConnected === false) return stopTimer(); // layar sudah ditinggalkan tanpa destroy()
+      const sekarang = jam();
+      if (tantanganMati(tantangan, sekarang)) return layarKodeMati();
+      const st = statusKirimUlang({ tersediaPada: tantangan.kirim_ulang_tersedia_pada, sisaKirimUlang: tantangan.sisa_kirim_ulang, sekarangMs: sekarang });
+      ulang.disabled = percobaanHabis || !st.boleh;
+      ulang.textContent = st.habis ? 'Jatah kirim ulang habis'
+        : st.tungguDetik > 0 ? `Kirim ulang kode dalam ${st.tungguDetik} detik` : 'Kirim ulang kode';
+      kuota.textContent = st.habis ? PESAN_KUOTA_HABIS : `Sisa jatah kirim ulang: ${st.sisa}${maksKirim != null && maksKirim >= st.sisa ? ` dari ${maksKirim}` : ''}.`;
+      const s = Math.max(0, Math.ceil((Date.parse(tantangan.kedaluwarsa_pada) - sekarang) / 1000));
+      sisaWaktu.textContent = `Kode berlaku ${formatMenit(s)} lagi.`;
+      if (terakhir.habis === false && st.habis) umumkan(PESAN_KUOTA_HABIS);
+      else if (terakhir.boleh === false && st.boleh) umumkan('Tombol kirim ulang kode sudah aktif.');
+      terakhir = { boleh: st.boleh, habis: st.habis };
+    }
+
+    function hentikanPercobaan() {
+      percobaanHabis = true;
+      stopTimer();
+      kodeEl.disabled = true; btn.disabled = true; ulang.disabled = true; ingatEl.disabled = true;
+      habisKotak.hidden = false;
+      kembali.focus();
     }
 
     kodeEl.addEventListener('input', () => { kodeEl.value = kodeEl.value.replace(/\D/g, '').slice(0, 6); });
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
+      if (percobaanHabis) return;
       setForm(fe, '');
       const kode = kodeEl.value.trim();
       if (!kodeValid(kode)) { eKode.textContent = 'Kode harus 6 digit angka.'; return; }
@@ -134,25 +178,32 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
           if (data?.langkah !== 'selesai') { setForm(fe, 'Respons server tidak dikenali. Coba lagi.'); return; }
           const catatan = pesanSelesai(data, { ingatDiminta: ingat });
           if (catatan) toast(catatan, 'info', 5200);
-          onSelesai?.(data);
+          selesai(data);
         } catch (e) {
           kodeEl.value = '';
           if (e?.perluMasukUlang) return layarMasuk('Pemeriksaan keamanan berakhir. Masukkan sandi lagi.');
           const g = klasifikasiGalat(e);
-          if (g.tipe === 'kode') { eKode.textContent = g.pesan; return kodeEl.focus(); }
+          if (g.tipe === 'kode') {
+            eKode.textContent = g.pesan; // teks seragam: tidak menyiratkan sandi benar atau salah
+            const sisa = bacaSisaPercobaan(e);
+            infoPercobaan.hidden = sisa == null;
+            infoPercobaan.textContent = sisa == null ? '' : teksSisaPercobaan(sisa, maksPercobaan);
+            if (sisa === 0) return hentikanPercobaan();
+            return kodeEl.focus();
+          }
           setForm(fe, g.pesan);
         }
       });
+      if (percobaanHabis) btn.disabled = true; // terjaga() menyalakan lagi tombol di akhir
     });
     ulang.addEventListener('click', async () => {
       ulang.disabled = true;
       try {
-        const data = await klien.kirimUlangKode(tantangan.id);
-        terkirimUlang += 1;
-        terakhirMs = Date.now();
-        const baru = Date.parse(data?.tantangan?.kedaluwarsa_pada);
-        if (!Number.isNaN(baru)) kedaluwarsaMs = baru;
-        toast('Bila data benar, kode baru dikirim ke Telegram Anda.', 'info');
+        const sebelum = tantangan.sisa_kirim_ulang;
+        const baru = bacaTantangan(await klien.kirimUlangKode(tantangan.id));
+        if (baru) tantangan = { ...tantangan, ...baru }; // nilai waktu dan kuota dipakai apa adanya dari server
+        const terkirim = baru && Number.isInteger(baru.sisa_kirim_ulang) && baru.sisa_kirim_ulang < sebelum;
+        toast(terkirim ? 'Bila data benar, kode baru dikirim ke Telegram Anda.' : 'Kirim ulang belum bisa dilakukan sekarang. Tunggu hitung mundur selesai.', 'info');
       } catch (e) {
         if (e?.perluMasukUlang) return layarMasuk('Pemeriksaan keamanan berakhir. Masukkan sandi lagi.');
         setForm(fe, klasifikasiGalat(e).pesan);
@@ -162,7 +213,7 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
 
     layar('Masukkan kode', info, form);
     tick(perbarui);
-    kodeEl.focus();
+    if (!percobaanHabis) kodeEl.focus();
   }
 
   layarMasuk(pesanAwal);

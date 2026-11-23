@@ -413,6 +413,13 @@ body.web:not(.dalam) .penanda-dalam { display: none; }
 body.web .login { padding: 26px 22px; width: 100%; }
 body.web .login .panel-title { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
 body.web .login .otp { font-variant-numeric: tabular-nums; }
+/* Panduan "kode tidak datang": kotak menonjol (bukan catatan kecil), kontras AA lewat pasangan --info-bg/--info-fg di kedua tema. */
+body.web .panduan-kode { background: var(--info-bg); color: var(--info-fg); border: 1px solid var(--line-2); border-left: 4px solid var(--info-fg); border-radius: var(--r-md); padding: 14px 16px; overflow-wrap: anywhere; }
+body.web .panduan-kode-judul { margin: 0 0 6px; font-size: 1.05rem; font-weight: 800; }
+body.web .panduan-kode-teks { margin: 0 0 8px; font-size: 0.92rem; }
+body.web .panduan-kode-daftar { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; line-height: 1.45; }
+/* Tombol kirim ulang yang mati tetap terbaca: label memuat sisa detik hitung mundur. */
+body.web .login .btn:disabled { opacity: 0.7; }
 
 /* ============================ RESPONSIF ============================ */
 @media (min-width: 480px) { body.web .menu-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
