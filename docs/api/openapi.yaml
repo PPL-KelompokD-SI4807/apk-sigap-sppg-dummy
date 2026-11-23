@@ -5730,7 +5730,11 @@ paths:
         Bot mengirim notifikasi "Login web SiGAP SPPG berhasil" ke pemilik akun.
         Selanjutnya klien web memakai rute login penuh dengan cookie + `X-Sigap-Klien: web` (+ `Origin` dan
         `X-CSRF-Token` = `csrf` ini untuk metode pengubah); setelah muat ulang halaman, ambil `csrf` dari GET /auth/me.
-        Gagal apa pun -> 422 `kode_tidak_valid` (seragam). Kode salah ikut menghitung penguncian kanal web.
+        Gagal apa pun -> 422 `kode_tidak_valid` (pesan seragam untuk semua sebab) + `sisa_percobaan`: percobaan yang
+        masih boleh dipakai pada tantangan ini (4, 3, 2, 1, 0). `sisa_percobaan: 0` = tantangan hangus/kedaluwarsa/
+        tidak dikenal atau kanal web terkunci -> UI meminta pengguna masuk ulang. Angka ini bergerak sama persis pada
+        tantangan tiruan, jadi tidak membocorkan apakah akun ada atau sandi benar.
+        Kode salah ikut menghitung penguncian kanal web.
         Batas laju 10/menit per IP (bersama kirim ulang).
 
         `ingat_browser: true` (R04-3, sukarela, bawaan false): browser ini menjadi browser tepercaya 30 hari TETAP
@@ -5784,31 +5788,21 @@ paths:
                 user: { id: 12, name: Siti Rahayu, username: siti.dapur, role: kepala_sppg, role_label: Kepala SPPG, unit: null, sppg_id: 3, sppg_name: SPPG Sukamaju, modules: [], permissions: {}, unit_scope: {}, aksi: {} }
         '403': { $ref: '#/components/responses/WebCsrfDitolak' }
         '422':
-          description: |
-            Format salah (ValidationError) atau kode tidak valid (`alasan: kode_tidak_valid`, pesan seragam untuk
-            semua sebab) + `sisa_percobaan`: percobaan yang masih boleh dipakai pada tantangan ini (5, 4, 3, 2, 1, 0).
-            `sisa_percobaan: 0` = tantangan hangus/kedaluwarsa/tidak dikenal atau kanal web terkunci -> minta kode
-            baru lewat halaman masuk. Angka ini identik untuk tantangan sungguhan dan tiruan, jadi tidak
-            membocorkan apakah akun ada atau sandi benar.
+          description: Format salah (ValidationError) atau kode tidak valid (`alasan: kode_tidak_valid`, seragam).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AuthError' }
-              example: { message: 'Kode salah atau kedaluwarsa.', errors: { kode: ['Kode salah atau kedaluwarsa.'] }, alasan: kode_tidak_valid, sisa_percobaan: 4 }
+              example: { message: 'Kode salah atau kedaluwarsa.', errors: { kode: ['Kode salah atau kedaluwarsa.'] }, alasan: kode_tidak_valid }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /web/auth/kode/kirim-ulang:
     post:
       tags: [Auth]
       summary: Login web (R04-2) - kirim ulang kode (respons seragam)
       description: |
-        Selalu `200` dengan bentuk sama seperti langkah masuk, DAN dengan nilai yang jujur: `sisa_kirim_ulang`
-        (jatah tersisa) serta `kirim_ulang_tersedia_pada` (hitung mundur) selalu mencerminkan keadaan nyata
-        tantangan, baik sungguhan maupun tiruan. Bila berlaku, kode BARU dikirim (kode lama tidak berlaku), masa 5
-        menit dan jeda 60 detik diperbarui, `sisa_kirim_ulang` berkurang; jumlah percobaan salah tidak di-reset.
-        Jeda 60 detik belum lewat atau jatah habis -> tidak ada pesan DAN hitung mundur/jatah tidak bergeser.
-        Tantangan mati (dipakai, hangus, kedaluwarsa, tidak dikenal, milik browser lain) atau kanal web terkunci ->
-        `kedaluwarsa_pada` = `kirim_ulang_tersedia_pada` = waktu respons dan `sisa_kirim_ulang: 0`.
-        Keadaan tantangan tiruan bergerak persis seperti yang sungguhan (jatah, jeda, masa berlaku, hangus setelah
-        5 percobaan) tanpa pernah mengirim pesan, sehingga klien tidak dapat membedakan keduanya.
+        Selalu `200` dengan bentuk sama seperti langkah masuk (tantangan tiruan, milik browser lain, hangus, jeda
+        60 detik belum lewat, atau sudah 3 kali kirim ulang -> tidak ada pesan, respons tetap sama). Bila berlaku,
+        kode BARU dikirim (kode lama tidak berlaku) dan masa 5 menit diperbarui; jumlah percobaan salah tidak di-reset.
+        Klien menghitung sendiri jeda (`kirim_ulang_tersedia_pada`) dan sisa kirim ulang (`maks_kirim_ulang`).
       security: []
       parameters:
         - { $ref: '#/components/parameters/WebKlien' }
@@ -5827,7 +5821,13 @@ paths:
             example: { tantangan_id: 01jcz8w3q4m5n6p7r8s9t0v1w2 }
       responses:
         '200':
-          description: Selalu (lihat deskripsi).
+          description: |
+            Selalu `200` dengan bentuk sama seperti langkah masuk, DAN dengan nilai yang jujur: `sisa_kirim_ulang`
+            dan `kirim_ulang_tersedia_pada` mencerminkan keadaan nyata. Bila kirim ulang benar-benar terjadi, masa
+            berlaku 5 menit dan jeda 60 detik diperbarui dan `sisa_kirim_ulang` berkurang; jumlah percobaan salah
+            tidak di-reset. Bila ditolak (jeda belum lewat, jatah habis, tantangan mati, kanal terkunci) nilai-nilai
+            itu TIDAK bergeser, sehingga klien tidak lagi mengira pengiriman berhasil. Tantangan mati dijawab
+            `kedaluwarsa_pada` = `kirim_ulang_tersedia_pada` = waktu respons dan `sisa_kirim_ulang: 0`.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WebTantanganResponse' }
@@ -6469,8 +6469,8 @@ components:
             UI menampilkan "kode tidak berlaku lagi, silakan masuk ulang".
           properties:
             id: { type: string, pattern: '^[0-9a-z]{26}$', description: 'ULID huruf kecil. Bisa tiruan; klien tidak dapat membedakannya.' }
-            kedaluwarsa_pada: { type: string, format: date-time, description: 'Akhir masa berlaku kode (biasanya sekarang + 5 menit; = waktu respons bila tantangan sudah mati).' }
-            kirim_ulang_tersedia_pada: { type: string, format: date-time, description: 'Kode terakhir dikirim + 60 detik. TIDAK bergeser bila permintaan kirim ulang ditolak jeda (tidak ada kode baru yang dikirim).' }
+            kedaluwarsa_pada: { type: string, format: date-time, description: 'Masa berlaku NYATA tantangan ini (umumnya terkirim + 5 menit), bukan sekadar sekarang + 5 menit.' }
+            kirim_ulang_tersedia_pada: { type: string, format: date-time, description: 'Saat kirim ulang berikutnya boleh. Dihitung dari pengiriman terakhir + 60 detik; kirim ulang yang ditolak TIDAK menggeser nilai ini.' }
             sisa_kirim_ulang: { type: integer, minimum: 0, examples: [3], description: 'Sisa jatah kirim ulang (maks_kirim_ulang - yang terpakai). 0 = tombol "Kirim ulang" dimatikan.' }
             maks_kirim_ulang: { type: integer, examples: [3] }
             maks_percobaan: { type: integer, examples: [5] }
@@ -9482,14 +9482,11 @@ components:
     WebKodeTidakValid:
       description: |
         Kode salah, kedaluwarsa (5 menit), sudah dipakai, tantangan hangus (5 kali salah, tombol "Bukan saya", sandi
-        diubah), tantangan tiruan atau milik browser lain, atau kanal web terkunci. SATU galat seragam: pesan dan
-        `alasan` tidak pernah menyebut sebabnya. `sisa_percobaan` = percobaan yang masih boleh dipakai pada
-        tantangan ini (0 = tantangan sudah mati -> minta kode baru lewat halaman masuk); angkanya sama untuk
-        tantangan sungguhan maupun tiruan.
+        diubah), tantangan tiruan atau milik browser lain, atau kanal web terkunci. SATU galat seragam tanpa sisa percobaan.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/AuthError' }
-          example: { message: 'Kode salah atau kedaluwarsa.', errors: { kode: ['Kode salah atau kedaluwarsa.'] }, alasan: kode_tidak_valid, sisa_percobaan: 4 }
+          example: { message: 'Kode salah atau kedaluwarsa.', errors: { kode: ['Kode salah atau kedaluwarsa.'] }, alasan: kode_tidak_valid }
     AuthForbidden:
       description: |
         Token tidak memegang ability yang diwajibkan rute (`alasan: perlu_login_penuh` untuk token
