@@ -10,6 +10,7 @@ import { formatMenit, kodeValid } from '../../core/kredensial.js';
 import {
   bacaHasilMasuk, pesanSelesai, klasifikasiGalat, tantanganMati, bacaSisaPercobaan, teksSisaPercobaan, bacaTantangan,
   PERINGATAN_INGAT, CATATAN_ADMIN, CATATAN_IDLE, PETUNJUK_LUPA_SANDI,
+  PESAN_KODE_DIKIRIM, PESAN_KODE_BARU_DIKIRIM, PESAN_KIRIM_ULANG_BELUM,
   JUDUL_PANDUAN_KODE, PENGANTAR_PANDUAN_KODE, SEBAB_KODE_TIDAK_DATANG, PESAN_KUOTA_HABIS, PESAN_TANTANGAN_MATI, PESAN_PERCOBAAN_HABIS,
 } from './logika.js';
 
@@ -36,7 +37,8 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
   }
   const field = (label, input, galat) => h('label', { class: 'field' }, h('span', { class: 'label' }, label), input, galat);
   const kotakGalat = () => h('p', { class: 'field-error', role: 'alert' });
-  const kotakForm = () => h('p', { class: 'notice', role: 'alert', hidden: true });
+  // Galat tingkat form (mis. 422 tanpa `errors`): kotak menonjol, bukan teks kecil di bawah kolom.
+  const kotakForm = () => h('p', { class: 'notice notice-tegas', role: 'alert', hidden: true });
   const setForm = (box, teks) => { box.textContent = teks || ''; box.hidden = !teks; };
 
   async function terjaga(btn, label, fn) {
@@ -47,22 +49,27 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
 
   // ---------- Langkah 1: identitas + sandi ----------
   function layarMasuk(pesan = '') {
-    const idEl = h('input', { type: 'text', name: 'identitas', required: true, maxlength: 32, autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off', placeholder: 'Username atau no telepon' });
-    const pwEl = h('input', { type: 'password', name: 'password', required: true, maxlength: 64, autocomplete: 'current-password' });
+    // aria-label: nama kolom tidak ikut memuat teks galat yang berada di dalam <label>, sehingga galat diumumkan sekali (role=alert).
+    const idEl = h('input', { type: 'text', name: 'identitas', required: true, maxlength: 32, autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off', placeholder: 'Username atau no telepon', 'aria-label': 'Username atau no telepon' });
+    const pwEl = h('input', { type: 'password', name: 'password', required: true, maxlength: 64, autocomplete: 'current-password', 'aria-label': 'Sandi' });
     const e1 = kotakGalat(); const e2 = kotakGalat(); const fe = kotakForm();
     setForm(fe, pesan);
     const btn = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Masuk');
+    const fPw = field('Sandi', pwEl, e2);
+    const tandaiSandi = (salah) => { fPw.className = salah ? 'field invalid' : 'field'; if (salah) pwEl.setAttribute('aria-invalid', 'true'); else pwEl.removeAttribute?.('aria-invalid'); };
     const form = h('form', { class: 'form', novalidate: true },
-      field('Username atau no telepon', idEl, e1), field('Sandi', pwEl, e2), fe, btn,
+      field('Username atau no telepon', idEl, e1), fPw, fe, btn,
       h('p', { class: 'muted small' }, PETUNJUK_LUPA_SANDI),
       h('p', { class: 'muted small' }, CATATAN_IDLE));
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       setForm(fe, '');
+      tandaiSandi(false);
       const identitas = idEl.value.trim();
       e1.textContent = identitas ? '' : 'Wajib diisi.';
       e2.textContent = pwEl.value ? '' : 'Wajib diisi.';
       if (!identitas || !pwEl.value) return;
+      let fokusTombol = false;
       await terjaga(btn, 'Masuk', async () => {
         try {
           const hasil = bacaHasilMasuk(await klien.masuk(identitas, pwEl.value));
@@ -73,6 +80,14 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
         } catch (e) {
           pwEl.value = '';
           const g = klasifikasiGalat(e);
+          if (g.tipe === 'kredensial') {
+            // Kredensial salah (lima sebab, satu pesan): tetap di layar ini, username dipertahankan, sandi dikosongkan dan difokuskan.
+            e1.textContent = '';
+            e2.textContent = g.pesan;
+            tandaiSandi(true);
+            pwEl.focus();
+            return;
+          }
           if (g.tipe === 'validasi') {
             const m = mapValidationErrors(e.errors);
             e1.textContent = m.identitas || '';
@@ -80,9 +95,11 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
             if (!m.identitas && !m.password) setForm(fe, g.pesan);
             return;
           }
-          setForm(fe, g.pesan);
+          setForm(fe, g.pesan); // galat tingkat form: telegram_belum_terhubung, terlalu_sering, laju, offline, dll.
+          fokusTombol = true;
         }
       });
+      if (fokusTombol) btn.focus(); // tombol sempat nonaktif (fokus lepas); kembalikan agar pengguna dapat mencoba lagi dari keyboard
     });
     layar('Masuk SiGAP SPPG', h('p', { class: 'muted small' }, 'Masukkan username atau no telepon dan sandi. Kode verifikasi dikirim lewat bot Telegram.'), form);
     idEl.focus();
@@ -120,7 +137,7 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
     const ingatEl = h('input', { type: 'checkbox', name: 'ingat_browser', id: 'ingat-browser' }); // bawaan mati
     const eKode = kotakGalat(); const fe = kotakForm();
     const infoPercobaan = h('p', { class: 'muted small', role: 'status', hidden: true });
-    const info = h('p', { class: 'muted small' }, pesanServer || 'Bila data benar, kode 6 digit dikirim ke chat bot SiGAP di Telegram. Masukkan kode tersebut di sini.');
+    const info = h('p', { class: 'muted small' }, pesanServer || PESAN_KODE_DIKIRIM);
     // #view memakai aria-live="polite" (pergantian layar diumumkan). Elemen yang berubah tiap detik dikecualikan dengan aria-live="off".
     const sisaWaktu = h('p', { class: 'muted small', 'aria-live': 'off' });
     const btn = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Verifikasi');
@@ -200,10 +217,12 @@ export function tampilkanMasukWeb(el, { onSelesai, pesanAwal = '', klien = klien
       ulang.disabled = true;
       try {
         const sebelum = tantangan.sisa_kirim_ulang;
-        const baru = bacaTantangan(await klien.kirimUlangKode(tantangan.id));
+        const jawab = await klien.kirimUlangKode(tantangan.id);
+        const baru = bacaTantangan(jawab);
         if (baru) tantangan = { ...tantangan, ...baru }; // nilai waktu dan kuota dipakai apa adanya dari server
         const terkirim = baru && Number.isInteger(baru.sisa_kirim_ulang) && baru.sisa_kirim_ulang < sebelum;
-        toast(terkirim ? 'Bila data benar, kode baru dikirim ke Telegram Anda.' : 'Kirim ulang belum bisa dilakukan sekarang. Tunggu hitung mundur selesai.', 'info');
+        // Server menjawab pesan yang sama untuk kirim ulang yang ditolak, jadi pesan server hanya dipakai bila pengiriman benar terjadi.
+        toast(terkirim ? (jawab?.message || PESAN_KODE_BARU_DIKIRIM) : PESAN_KIRIM_ULANG_BELUM, 'info');
       } catch (e) {
         if (e?.perluMasukUlang) return layarMasuk('Pemeriksaan keamanan berakhir. Masukkan sandi lagi.');
         setForm(fe, klasifikasiGalat(e).pesan);

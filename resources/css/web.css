@@ -288,6 +288,7 @@ body.web .section-title { margin: 6px 4px 0; font-size: 0.78rem; font-weight: 70
 body.web .panel-title { margin-bottom: 10px; font-size: 1.02rem; }
 body.web .empty { padding: 36px 20px; }
 body.web .notice { border: 1px solid var(--warn-line); border-radius: var(--r-md); padding: 11px 14px; }
+body.web .notice-tegas { border-left-width: 4px; font-size: 0.95rem; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
 body.web .pager .btn { padding: 0 16px; }
 
 /* beranda: kartu menu */
@@ -413,6 +414,7 @@ body.web:not(.dalam) .penanda-dalam { display: none; }
 body.web .login { padding: 26px 22px; width: 100%; }
 body.web .login .panel-title { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
 body.web .login .otp { font-variant-numeric: tabular-nums; }
+body.web .login .field-error { font-size: 0.92rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 /* Panduan "kode tidak datang": kotak menonjol (bukan catatan kecil), kontras AA lewat pasangan --info-bg/--info-fg di kedua tema. */
 body.web .panduan-kode { background: var(--info-bg); color: var(--info-fg); border: 1px solid var(--line-2); border-left: 4px solid var(--info-fg); border-radius: var(--r-md); padding: 14px 16px; overflow-wrap: anywhere; }
 body.web .panduan-kode-judul { margin: 0 0 6px; font-size: 1.05rem; font-weight: 800; }

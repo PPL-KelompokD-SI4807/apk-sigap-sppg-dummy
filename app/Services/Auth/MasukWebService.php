@@ -25,13 +25,23 @@ use function Illuminate\Support\defer;
 /**
  * Alur login web R04-2 (ADR `docs/decisions/2026-11-09-akses-web.md` Keputusan 4, 5, 7; A4, A5, A6, A7, A12).
  *
- * Langkah 1 (masuk): identitas + sandi. Respons SELALU seragam (bentuk + header sama, tepat satu Hash::check):
- * tantangan sungguhan dibuat dan kode 6 digit dikirim bot ke users.telegram_id dari basis data HANYA bila akun ada,
- * aktif, sudah aktivasi, terhubung Telegram, kanal web tidak terkunci, jatah tantangan web tersisa, DAN sandi
- * benar. Selain itu tantangan TIRUAN: id ULID acak dengan keadaan di cache (tanpa baris basis data, karena identitas
- * tak dikenal tidak punya user_id) dan tidak ada pesan terkirim. Keadaan tiruan itu bergerak persis seperti yang
- * sungguhan (percobaan, kirim ulang, jeda, masa berlaku, hangus), sehingga `sisa_percobaan` dan `sisa_kirim_ulang`
- * yang dikirim ke peramban jujur tanpa pernah membedakan akun ada/tidak atau sandi benar/salah (lihat keadaanTiruan).
+ * Langkah 1 (masuk): identitas + sandi, tepat satu Hash::check di setiap cabang. Hasilnya tiga bentuk saja
+ * (revisi keputusan respons seragam, 2026-11-23: pengguna yang salah sandi WAJIB diberi tahu dan tetap di halaman
+ * sandi; tantangan tiruan dihapus):
+ *
+ * 1. EMBER SERAGAM -> 422 `kredensial_salah` + pesan GABUNGAN 'Identitas atau sandi salah.' pada field `password`,
+ *    tanpa tantangan apa pun. Lima sebab dijawab dengan respons yang identik (status, badan, header, nama cookie):
+ *    akun tidak dikenal, sandi salah, akun nonaktif, belum aktivasi, dan kanal web terkunci. Karena pesannya
+ *    digabung dan tidak ada `sisa_percobaan`/`terkunci_sampai`, pihak luar tetap tidak dapat menebak akun mana yang
+ *    terdaftar, maupun apakah sebuah akun sedang terkunci atau belum aktivasi.
+ * 2. Sandi BENAR tetapi belum dapat lanjut -> 422 dengan `alasan` tersendiri dan pesan yang membantu:
+ *    `telegram_belum_terhubung` (hubungkan Telegram lewat Mini App) dan `terlalu_sering` (jatah tantangan habis).
+ *    Kedua jalur ini hanya tercapai oleh pihak yang sudah tahu sandi, jadi jujur tanpa memberi jalan enumerasi.
+ * 3. Sandi benar dan semua syarat siap -> tantangan sungguhan dibuat, kode 6 digit dikirim bot ke users.telegram_id
+ *    dari basis data, respons `langkah: kode` dengan deskriptor keadaan nyata tantangan itu.
+ *
+ * Yang digabung hanyalah yang dikirim ke peramban: audit tetap mencatat sebab sebenarnya (`sandi_salah`,
+ * `akun_tidak_dikenal`, `terkunci`, `akun_nonaktif`, `belum_aktivasi`, ...) untuk penyelidikan.
  *
  * Langkah 2 (verifikasi): kode dicocokkan dengan hash_equals atas HMAC (kode mentah tidak pernah disimpan), sekali
  * pakai (klaim atomik), kedaluwarsa 5 menit, maks 5 percobaan per tantangan, terikat ke browser yang memintanya
@@ -66,16 +76,14 @@ class MasukWebService
 
     public const PESAN_KODE_TIDAK_VALID = 'Kode salah atau kedaluwarsa.';
 
+    /** Pesan GABUNGAN ember seragam langkah 1: tidak pernah menyebut mana yang salah (identitas atau sandi). */
     public const PESAN_SANDI_SALAH = 'Identitas atau sandi salah.';
 
-    /**
-     * Prefiks kunci cache keadaan tantangan TIRUAN (lihat keadaanTiruan). Kunci = id tiruan yang sudah dipegang
-     * peramban; isinya hanya angka + HMAC pengikat browser, tanpa identitas/user_id/kode. TTL = masa berlaku kode.
-     */
-    private const CACHE_TIRUAN = 'sigap:masuk-web:tiruan:';
+    /** Sandi benar tetapi akun belum punya telegram_id: aman untuk jujur (hanya pemilik sandi yang sampai sini). */
+    public const PESAN_TELEGRAM_BELUM_TERHUBUNG = 'Sandi benar, tetapi akun ini belum terhubung ke Telegram sehingga kode tidak dapat dikirim. Buka Mini App SiGAP di Telegram untuk menghubungkan akun, lalu masuk lagi.';
 
-    /** Penunjuk tantangan tiruan terakhir per (browser, identitas ter-HMAC): yang lama dihanguskan saat ada yang baru. */
-    private const CACHE_TIRUAN_AKTIF = 'sigap:masuk-web:tiruan-aktif:';
+    /** Sandi benar tetapi jatah tantangan web akun ini habis untuk sementara. */
+    public const PESAN_TANTANGAN_HABIS = 'Terlalu banyak permintaan kode untuk akun ini. Tunggu beberapa menit, lalu coba masuk lagi.';
 
     public function __construct(
         private readonly SesiService $sesi,
@@ -86,11 +94,17 @@ class MasukWebService
     // ------------------------------------------------------------------ langkah 1
 
     /**
-     * Langkah 1. Bawaan: `langkah: kode` dengan deskriptor tantangan seragam. Browser tepercaya (R04-3, cookie
-     * `__Host-sigap_tb`): HANYA bila cookie sah, milik akun yang sama, akun bukan Admin, DAN sandi benar -> sesi web
-     * langsung (`langkah: selesai`, kode dilewati). Sandi salah dengan browser tepercaya sah -> 422 kredensial_salah
-     * (dihitung gagal; pemegang cookie sudah terikat ke akun ini, jadi tidak ada enumerasi baru). `lupakan_tb` = cookie
-     * yang dibawa tidak dapat berlaku lagi (dinilai dari cookie saja, tidak bergantung pada identitas yang diketik).
+     * Langkah 1. Sandi benar: `langkah: kode` dengan deskriptor tantangan sungguhan. Lima sebab kegagalan kredensial
+     * (akun tidak dikenal, sandi salah, akun nonaktif, belum aktivasi, kanal web terkunci) -> satu ember seragam
+     * 422 `kredensial_salah` tanpa tantangan (kredensialSalah()); sandi benar tetapi belum dapat lanjut -> 422
+     * `telegram_belum_terhubung` / `terlalu_sering` (langkahKode()).
+     *
+     * Browser tepercaya (R04-3, cookie `__Host-sigap_tb`): HANYA bila cookie sah, milik akun yang sama, akun bukan
+     * Admin, DAN sandi benar -> sesi web langsung (`langkah: selesai`, kode dilewati). Sandi salah dengan browser
+     * tepercaya sah tetap masuk ember seragam yang sama (dihitung gagal; hanya catatan auditnya menyebut jalur itu),
+     * sehingga tidak ada bentuk respons tambahan yang bisa dipakai membedakan keadaan akun. `lupakan_tb` = cookie
+     * yang dibawa tidak dapat berlaku lagi (dinilai dari cookie saja, tidak bergantung pada identitas yang diketik);
+     * respons galat tidak pernah membawa cookie, jadi ember seragam selalu bernama-cookie sama (yaitu kosong).
      *
      * @return array{langkah: 'kode', tantangan: array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}, lupakan_tb: bool}|array{langkah: 'selesai', sesi: array{cookie: Cookie, csrf: string, user: User, expires_at: Carbon, sesi_id: int}, browser_sampai: Carbon, lupakan_tb: bool}
      */
@@ -105,10 +119,10 @@ class MasukWebService
         // Cookie tidak dikenal/kedaluwarsa/dicabut (termasuk baru dicabut karena pemiliknya Admin): hapus di browser.
         $lupakanTb = $cookieTb !== null && ($browser === null || $browser->dicabut_at !== null);
 
-        if ($tepercaya && $hasil === 'sandi_salah') {
-            AuditAuth::catat($user, AuditAuth::WEB_MASUK_LANGKAH1, ['hasil' => $hasil, 'metode' => self::metode($identitas), 'jalur' => 'browser_tepercaya']);
+        if ($hasil !== 'sandi_benar') {
+            $this->catatGagalKredensial($user, $hasil, $identitas, $tepercaya);
 
-            throw GalatAuth::respons(422, GalatAuth::KREDENSIAL_SALAH, self::PESAN_SANDI_SALAH, ['password' => [self::PESAN_SANDI_SALAH]]);
+            throw self::kredensialSalah();
         }
 
         if ($tepercaya) {
@@ -119,7 +133,37 @@ class MasukWebService
             }
         }
 
-        return ['langkah' => 'kode', 'tantangan' => $this->langkahKode($user, $hasil, $identitas, $idPraLogin, $label), 'lupakan_tb' => $lupakanTb];
+        return ['langkah' => 'kode', 'tantangan' => $this->langkahKode($user, $identitas, $idPraLogin, $label), 'lupakan_tb' => $lupakanTb];
+    }
+
+    /**
+     * Ember seragam langkah 1: SATU respons untuk akun tidak dikenal, sandi salah, akun nonaktif, belum aktivasi,
+     * dan kanal web terkunci. Sengaja tanpa `sisa_percobaan` (akun tak dikenal tidak punya penghitung) dan tanpa
+     * `terkunci_sampai` (itu akan menandai akun yang ada dan sedang terkunci), serta tanpa cookie apa pun, sehingga
+     * status, badan, dan header kelima sebab itu identik.
+     */
+    public static function kredensialSalah(): HttpResponseException
+    {
+        return GalatAuth::respons(422, GalatAuth::KREDENSIAL_SALAH, self::PESAN_SANDI_SALAH, ['password' => [self::PESAN_SANDI_SALAH]]);
+    }
+
+    /**
+     * Audit sebab SEBENARNYA kegagalan kredensial (yang digabung hanya pesan ke peramban). Akun tidak dikenal tidak
+     * punya subjek audit: hanya log aplikasi dengan identitas ter-HMAC (tidak pernah identitas mentah).
+     */
+    private function catatGagalKredensial(?User $user, string $hasil, string $identitas, bool $tepercaya): void
+    {
+        if ($user === null) {
+            Log::info('auth.web.masuk_langkah1', ['hasil' => $hasil, 'identitas' => substr(self::hashIdentitas($identitas), 0, 12)]);
+
+            return;
+        }
+
+        AuditAuth::catat($user, AuditAuth::WEB_MASUK_LANGKAH1, array_filter([
+            'hasil' => $hasil,
+            'metode' => self::metode($identitas),
+            'jalur' => $tepercaya ? 'browser_tepercaya' : null,
+        ], fn ($v) => $v !== null));
     }
 
     /**
@@ -158,36 +202,24 @@ class MasukWebService
     }
 
     /**
-     * Jalur kode (R04-2): tantangan sungguhan + kode lewat bot hanya bila sandi benar dan syarat lain terpenuhi;
-     * selain itu tantangan tiruan yang berbentuk DAN berperilaku sama (keadaan di cache, tanpa pesan apa pun).
+     * Jalur kode (R04-2), hanya untuk sandi yang BENAR: tantangan sungguhan + kode lewat bot. Dua syarat yang masih
+     * bisa menghalangi dijawab jujur dengan `alasan` masing-masing, karena jalur ini hanya tercapai oleh pihak yang
+     * sudah memasukkan sandi yang benar sehingga tidak ada informasi enumerasi yang bocor.
      *
      * @return array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}
      */
-    private function langkahKode(?User $user, string $hasil, string $identitas, string $idPraLogin, ?string $label): array
+    private function langkahKode(User $user, string $identitas, string $idPraLogin, ?string $label): array
     {
-        if ($user === null) {
-            // Tanpa subjek audit: hanya log aplikasi ber-hash (tanpa identitas mentah).
-            Log::info('auth.web.masuk_langkah1', ['hasil' => 'akun_tidak_dikenal', 'identitas' => substr(self::hashIdentitas($identitas), 0, 12)]);
-
-            return $this->tantanganTiruan($identitas, $idPraLogin);
-        }
-
-        if ($hasil !== 'sandi_benar') {
-            AuditAuth::catat($user, AuditAuth::WEB_MASUK_LANGKAH1, ['hasil' => $hasil, 'metode' => self::metode($identitas)]);
-
-            return $this->tantanganTiruan($identitas, $idPraLogin);
-        }
-
         if ($user->telegram_id === null) {
             AuditAuth::catat($user, AuditAuth::WEB_MASUK_LANGKAH1, ['hasil' => 'telegram_belum_terhubung', 'metode' => self::metode($identitas)]);
 
-            return $this->tantanganTiruan($identitas, $idPraLogin);
+            throw GalatAuth::respons(422, GalatAuth::TELEGRAM_BELUM_TERHUBUNG, self::PESAN_TELEGRAM_BELUM_TERHUBUNG);
         }
 
         if (! $this->jatahTantangan($user)) {
             AuditAuth::catat($user, AuditAuth::WEB_MASUK_LANGKAH1, ['hasil' => 'terlalu_sering', 'metode' => self::metode($identitas)]);
 
-            return $this->tantanganTiruan($identitas, $idPraLogin);
+            throw GalatAuth::respons(422, GalatAuth::TERLALU_SERING, self::PESAN_TANTANGAN_HABIS);
         }
 
         $kode = self::kodeAcak();
@@ -225,8 +257,11 @@ class MasukWebService
     }
 
     /**
-     * Tepat SATU Hash::check di setiap cabang (sandi asli atau hash tiruan) agar waktu respons seragam.
+     * Tepat SATU Hash::check di setiap cabang (sandi asli atau hash tiruan) agar waktu respons seragam: kelima sebab
+     * ember seragam tidak boleh dapat dibedakan satu sama lain dari waktu respons.
      * Penguncian dipesan atomik SEBELUM pemeriksaan sandi (request paralel tidak melampaui maks_gagal).
+     *
+     * @return 'akun_tidak_dikenal'|'akun_nonaktif'|'belum_aktivasi'|'terkunci'|'sandi_salah'|'sandi_benar'
      */
     private function periksaLangkah1(?User $user, string $password): string
     {
@@ -262,12 +297,11 @@ class MasukWebService
     // ------------------------------------------------------------------ kirim ulang
 
     /**
-     * Kirim ulang kode (kode baru; kode lama tidak berlaku). Respons seragam DAN jujur: yang dikirim selalu keadaan
-     * tantangan yang sebenarnya (`kedaluwarsa_pada`, `kirim_ulang_tersedia_pada`, `sisa_kirim_ulang`), baik untuk
-     * tantangan sungguhan maupun tiruan. Jeda 60 detik belum lewat atau jatah kirim ulang habis -> keadaan tidak
-     * bergerak dan tidak ada pesan (peramban melihat hitung mundur yang sama, bukan bentuk "berhasil" palsu).
-     * Tantangan mati (dipakai/hangus/kedaluwarsa/tidak dikenal/milik browser lain) dan kanal terkunci -> deskriptor
-     * mati yang sama untuk kedua jalur.
+     * Kirim ulang kode (kode baru; kode lama tidak berlaku). Respons jujur: yang dikirim selalu keadaan tantangan
+     * yang sebenarnya (`kedaluwarsa_pada`, `kirim_ulang_tersedia_pada`, `sisa_kirim_ulang`). Jeda 60 detik belum
+     * lewat atau jatah kirim ulang habis -> keadaan tidak bergerak dan tidak ada pesan (peramban melihat hitung
+     * mundur yang sama, bukan bentuk "berhasil" palsu). Tantangan mati (dipakai/hangus/kedaluwarsa/tidak
+     * dikenal/milik browser lain) dan kanal terkunci -> satu deskriptor mati yang sama.
      *
      * @return array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}
      */
@@ -276,7 +310,7 @@ class MasukWebService
         $tantangan = $this->milikBrowser($tantanganId, $idPraLogin);
 
         if ($tantangan === null) {
-            return $this->kirimUlangTiruan($tantanganId, $idPraLogin);
+            return $this->deskriptorMati($tantanganId);
         }
 
         $user = $this->penggunaSah($tantangan);
@@ -317,41 +351,13 @@ class MasukWebService
         return $this->deskriptorTantangan($tantangan);
     }
 
-    /**
-     * Kirim ulang pada tantangan TIRUAN: tidak ada pesan apa pun, tetapi keadaan bergerak persis seperti jalur
-     * sungguhan (kirim ulang naik, jeda 60 detik dan masa berlaku 5 menit diset ulang, `sisa_kirim_ulang` turun).
-     *
-     * @return array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}
-     */
-    private function kirimUlangTiruan(string $tantanganId, string $idPraLogin): array
-    {
-        $keadaan = $this->keadaanTiruan($tantanganId, $idPraLogin);
-
-        if ($keadaan === null) {
-            return $this->deskriptorMati($tantanganId);
-        }
-
-        $bolehPada = now()->setTimestamp($keadaan['t'])->addSeconds(self::jedaKirimUlang());
-
-        if ($keadaan['u'] >= self::maksKirimUlang() || $bolehPada->isFuture()) {
-            return $this->deskriptor($tantanganId, $keadaan['k'], $keadaan['t'], $keadaan['u']);
-        }
-
-        $keadaan['u']++;
-        $keadaan['t'] = now()->getTimestamp();
-        $keadaan['k'] = self::kedaluwarsa()->getTimestamp();
-        $this->simpanTiruan($tantanganId, $keadaan);
-
-        return $this->deskriptor($tantanganId, $keadaan['k'], $keadaan['t'], $keadaan['u']);
-    }
-
     // ------------------------------------------------------------------ langkah 2
 
     /**
      * Verifikasi kode lalu terbitkan sesi web dalam transaksi yang sama dengan klaim sekali pakai.
      * Gagal apa pun -> 422 `alasan: kode_tidak_valid` + `sisa_percobaan` (pesan tetap seragam, tidak dibedakan per
-     * sebab). Tantangan tiruan selalu gagal dengan `sisa_percobaan` yang menurun dan hangus setelah maks_percobaan,
-     * sama seperti tantangan sungguhan. $cookieSesiLama = cookie `__Host-sigap_sesi`
+     * sebab); tantangan yang tidak dikenal/mati/milik browser lain dijawab `sisa_percobaan: 0`.
+     * $cookieSesiLama = cookie `__Host-sigap_sesi`
      * yang masih dibawa browser ini; bila itu sesi web, dicabut (browser ini mendapat sesi baru).
      *
      * $ingatBrowser (R04-3, sukarela): bila benar dan pengguna BUKAN Admin, browser ini dijadikan browser tepercaya
@@ -368,8 +374,8 @@ class MasukWebService
             $tantangan = $this->milikBrowser($tantanganId, $idPraLogin, kunci: true);
 
             if ($tantangan === null) {
-                // Mungkin tantangan tiruan milik browser ini: ditangani di luar transaksi (tanpa baris basis data).
-                return ['galat' => 'tidak_ada', 'tiruan' => true];
+                // Tidak dikenal atau milik browser lain: dijawab seperti tantangan mati (sisa_percobaan 0).
+                return ['galat' => 'tidak_ada'];
             }
 
             $user = $this->penggunaSah($tantangan);
@@ -435,12 +441,6 @@ class MasukWebService
         });
 
         if (! array_key_exists('ok', $hasil)) {
-            if (isset($hasil['tiruan'])) {
-                // Tantangan tiruan: SELALU gagal, tetapi percobaan dihitung dan tantangan hangus setelah maks,
-                // persis seperti jalur sungguhan. Tidak ada subjek audit (tidak ada akun).
-                $hasil['sisa'] = $this->gagalKodeTiruan($tantanganId, $idPraLogin, $maks);
-            }
-
             if (isset($hasil['user'])) {
                 AuditAuth::catat($hasil['user'], AuditAuth::WEB_KODE_GAGAL, array_filter([
                     'alasan' => $hasil['galat'],
@@ -464,7 +464,7 @@ class MasukWebService
     /**
      * Satu galat seragam untuk SEMUA kegagalan langkah 2 (pesan teks tidak pernah dibedakan per sebab, Keputusan
      * R04 dipertahankan), ditambah `sisa_percobaan`: percobaan yang masih boleh dipakai pada tantangan ini. 0 =
-     * tantangan sudah mati/tidak dikenal/kanal terkunci. Angkanya identik untuk tantangan sungguhan dan tiruan.
+     * tantangan sudah mati/tidak dikenal/kanal terkunci.
      */
     public static function kodeTidakValid(int $sisa = 0): HttpResponseException
     {
@@ -475,26 +475,6 @@ class MasukWebService
             ['kode' => [self::PESAN_KODE_TIDAK_VALID]],
             ['sisa_percobaan' => max(0, $sisa)],
         );
-    }
-
-    /**
-     * Percobaan kode pada tantangan TIRUAN: selalu gagal, menaikkan `percobaan`, menghanguskan tantangan setelah
-     * maks_percobaan, dan mengembalikan sisa percobaan yang menurun seperti jalur sungguhan. Tidak dikenal/bukan
-     * milik browser ini/sudah mati -> 0 (sama dengan jalur sungguhan untuk tantangan yang sama keadaannya).
-     */
-    private function gagalKodeTiruan(string $tantanganId, string $idPraLogin, int $maks): int
-    {
-        $keadaan = $this->keadaanTiruan($tantanganId, $idPraLogin);
-
-        if ($keadaan === null) {
-            return 0;
-        }
-
-        $keadaan['p']++;
-        $keadaan['h'] = $keadaan['p'] >= $maks;
-        $this->simpanTiruan($tantanganId, $keadaan);
-
-        return max(0, $maks - $keadaan['p']);
     }
 
     // ------------------------------------------------------------------ tombol bot "Bukan saya"
@@ -797,8 +777,7 @@ class MasukWebService
     }
 
     /**
-     * Bentuk tantangan seragam. Nilainya dihitung dari keadaan nyata tantangan (sungguhan: baris tantangan_tokens,
-     * tiruan: keadaan di cache) sehingga identik untuk kedua jalur pada riwayat yang sama.
+     * Bentuk deskriptor tantangan. Nilainya selalu dihitung dari keadaan nyata baris tantangan_tokens.
      *
      * @param  int  $kedaluwarsa  unix, akhir masa berlaku kode
      * @param  int  $terkirim  unix, kode terakhir dikirim (dasar jeda kirim ulang)
@@ -836,9 +815,8 @@ class MasukWebService
 
     /**
      * Tantangan mati: sudah dipakai, hangus, kedaluwarsa, tidak dikenal, milik browser lain, atau kanal web
-     * terkunci. SATU bentuk tetap untuk jalur sungguhan maupun tiruan (keadaan tiruan hilang bersama kodenya saat
-     * TTL habis, jadi angka riwayat tidak boleh ikut dikirim): tidak ada masa berlaku dan tidak ada jatah kirim
-     * ulang -> peramban menampilkan "minta kode baru lewat halaman masuk".
+     * terkunci. SATU bentuk tetap untuk semua sebab itu (angka riwayat tidak ikut dikirim): tidak ada masa berlaku
+     * dan tidak ada jatah kirim ulang -> peramban menampilkan "minta kode baru lewat halaman masuk".
      *
      * @return array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}
      */
@@ -850,94 +828,6 @@ class MasukWebService
             'kirim_ulang_tersedia_pada' => now()->copy(),
             'sisa_kirim_ulang' => 0,
         ];
-    }
-
-    // ------------------------------------------------------------------ keadaan tantangan tiruan
-
-    /**
-     * Tantangan TIRUAN: id ULID acak + keadaan di cache. Identitas yang tidak dikenal tidak punya user_id, jadi
-     * baris tantangan_tokens tidak mungkin dibuat; keadaan itulah yang membuat verifikasi dan kirim ulang
-     * berperilaku sama dengan tantangan sungguhan tanpa pernah mengirim pesan.
-     *
-     * @return array{id: string, kedaluwarsa_pada: Carbon, kirim_ulang_tersedia_pada: Carbon, sisa_kirim_ulang: int}
-     */
-    private function tantanganTiruan(string $identitas, string $idPraLogin): array
-    {
-        $device = SesiWeb::hashPraLogin($idPraLogin);
-        $keadaan = [
-            'd' => $device,
-            'p' => 0,
-            'u' => 0,
-            't' => now()->getTimestamp(),
-            'k' => self::kedaluwarsa()->getTimestamp(),
-            'h' => false,
-        ];
-
-        // Satu tantangan terbuka per identitas per browser (jalur sungguhan menghanguskan yang lama di basis data).
-        $aktif = self::CACHE_TIRUAN_AKTIF.hash_hmac('sha256', 'tiruan-aktif|'.$device.'|'.self::hashIdentitas($identitas), (string) config('app.key'));
-        $lamaId = Cache::get($aktif);
-
-        if (is_string($lamaId)) {
-            $lama = $this->keadaanTiruan($lamaId, $idPraLogin);
-
-            if ($lama !== null) {
-                $lama['h'] = true;
-                $this->simpanTiruan($lamaId, $lama);
-            }
-        }
-
-        $id = strtolower((string) Str::ulid());
-        $this->simpanTiruan($id, $keadaan);
-        Cache::put($aktif, $id, self::ttlTiruan($keadaan['k']));
-
-        return $this->deskriptor($id, $keadaan['k'], $keadaan['t'], $keadaan['u']);
-    }
-
-    /**
-     * Keadaan tantangan tiruan dari cache. Isinya hanya angka + HMAC pengikat browser (`d` = HMAC id pra-login,
-     * sama perannya dengan tantangan_tokens.device_hash): tidak ada identitas, user_id, maupun kode.
-     *
-     * Null untuk semua keadaan yang pada jalur sungguhan dijawab deskriptorMati: tidak ada/TTL habis, bukan milik
-     * browser ini, hangus, atau kedaluwarsa.
-     *
-     * @return array{d: string, p: int, u: int, t: int, k: int, h: bool}|null
-     */
-    private function keadaanTiruan(string $id, string $idPraLogin): ?array
-    {
-        $keadaan = Cache::get(self::CACHE_TIRUAN.strtolower($id));
-
-        if (! is_array($keadaan) || ! isset($keadaan['d'], $keadaan['p'], $keadaan['u'], $keadaan['t'], $keadaan['k'])) {
-            return null;
-        }
-
-        if (! hash_equals((string) $keadaan['d'], SesiWeb::hashPraLogin($idPraLogin))) {
-            return null;
-        }
-
-        if (($keadaan['h'] ?? false) === true || now()->getTimestamp() >= (int) $keadaan['k']) {
-            return null;
-        }
-
-        return [
-            'd' => (string) $keadaan['d'],
-            'p' => (int) $keadaan['p'],
-            'u' => (int) $keadaan['u'],
-            't' => (int) $keadaan['t'],
-            'k' => (int) $keadaan['k'],
-            'h' => false,
-        ];
-    }
-
-    /** @param array{d: string, p: int, u: int, t: int, k: int, h: bool} $keadaan */
-    private function simpanTiruan(string $id, array $keadaan): void
-    {
-        Cache::put(self::CACHE_TIRUAN.strtolower($id), $keadaan, self::ttlTiruan($keadaan['k']));
-    }
-
-    /** TTL keadaan tiruan = sisa masa berlaku kode (+10 detik agar pembulatan tidak memotong di detik terakhir). */
-    private static function ttlTiruan(int $kedaluwarsa): int
-    {
-        return max(10, $kedaluwarsa - now()->getTimestamp() + 10);
     }
 
     private static function kedaluwarsa(): Carbon

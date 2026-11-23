@@ -334,9 +334,13 @@ class WebBrowserTepercayaTest extends TestCase
             $this->masuk('siti.dapur', 'Tebakan'.$i.'xx', $awal['tb'])->assertStatus(422);
         }
 
-        // Terkunci: bahkan sandi benar tidak menerbitkan sesi (respons seragam langkah kode, tanpa kode terkirim).
+        // Terkunci: bahkan sandi benar tidak menerbitkan sesi. Jawabannya ember seragam kredensial salah, jadi
+        // pemegang cookie curian pun tidak diberi tahu bahwa kanal web akun ini sedang terkunci.
         $kode = count($this->pesanKode(self::CHAT));
-        $this->masuk('siti.dapur', self::SANDI, $awal['tb'])->assertOk()->assertJsonPath('langkah', 'kode');
+        $this->masuk('siti.dapur', self::SANDI, $awal['tb'])->assertStatus(422)
+            ->assertJsonPath('alasan', 'kredensial_salah')
+            ->assertJsonPath('message', 'Identitas atau sandi salah.')
+            ->assertJsonMissingPath('terkunci_sampai');
         $this->assertCount($kode, $this->pesanKode(self::CHAT));
         $this->assertSame($sebelum, PersonalAccessToken::query()->count());
         $this->assertTrue($this->auditAda(AuditAuth::WEB_TERKUNCI));
@@ -357,8 +361,9 @@ class WebBrowserTepercayaTest extends TestCase
         $this->assertCount(1, $this->pesanKode(self::CHAT_BUDI));
         $this->assertNull(BrowserTepercaya::query()->sole()->dicabut_at);
 
-        // Sandi salah untuk akun B dengan cookie A: respons seragam (bukan 422 khusus browser tepercaya).
-        $this->masuk('budi.dapur', 'SalahSekali9', $siti['tb'])->assertOk()->assertJsonPath('langkah', 'kode');
+        // Sandi salah untuk akun B dengan cookie A: ember seragam yang sama seperti tanpa cookie sama sekali.
+        $this->masuk('budi.dapur', 'SalahSekali9', $siti['tb'])->assertStatus(422)
+            ->assertJsonPath('alasan', 'kredensial_salah');
     }
 
     public function test_lewat_30_hari_kembali_ke_langkah_kode_dan_cookie_dihapus(): void

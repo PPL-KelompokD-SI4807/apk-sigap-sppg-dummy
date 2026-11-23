@@ -5,17 +5,26 @@ export const PERINGATAN_INGAT = 'Jangan centang di komputer bersama atau warnet.
 export const CATATAN_ADMIN = 'Akun Admin selalu memakai kode Telegram; pilihan ini diabaikan untuk Admin.';
 export const CATATAN_IDLE = 'Demi keamanan, sesi web berakhir setelah 12 jam tidak aktif (kecuali di browser yang Anda ingat).';
 export const PETUNJUK_LUPA_SANDI = 'Lupa sandi? Buka Mini App SiGAP SPPG di Telegram, lalu pilih Lupa password.';
-export const PESAN_KREDENSIAL_SALAH = 'Username/no telepon atau sandi salah.';
+// Cadangan bila server tidak mengirim pesan; teks sama dengan pesan server (ember `kredensial_salah`, lima sebab digabung).
+export const PESAN_KREDENSIAL_SALAH = 'Identitas atau sandi salah.';
+// Cadangan untuk 422 "sandi benar tetapi belum bisa lanjut"; pesan server selalu dipakai lebih dulu.
+export const PESAN_TELEGRAM_BELUM_TERHUBUNG = 'Sandi benar, tetapi akun ini belum terhubung ke Telegram sehingga kode tidak dapat dikirim. Buka Mini App SiGAP di Telegram untuk menghubungkan akun, lalu masuk lagi.';
+export const PESAN_TERLALU_SERING = 'Terlalu banyak permintaan kode untuk akun ini. Tunggu beberapa menit, lalu coba masuk lagi.';
+// Cadangan layar kode. Layar kode hanya tercapai bila sandi BENAR, jadi pesannya tidak berpagar.
+export const PESAN_KODE_DIKIRIM = 'Kode 6 digit telah dikirim ke Telegram Anda.';
+export const PESAN_KODE_BARU_DIKIRIM = 'Kode baru telah dikirim ke Telegram Anda.';
+export const PESAN_KIRIM_ULANG_BELUM = 'Kirim ulang belum bisa dilakukan sekarang. Tunggu hitung mundur selesai.';
 export const PESAN_KODE_TIDAK_VALID = 'Kode salah atau kedaluwarsa. Periksa kode terbaru di chat bot, atau kirim ulang kode.';
 
-// Panduan "kode tidak datang" (R04 anti-enumerasi): tiga sebab nyata, kalimat netral yang sama untuk semua orang.
-// JANGAN menyiratkan mana yang berlaku; sistem sengaja tidak memberi tahu apakah username/sandi salah.
+// Panduan "kode tidak datang". Layar kode hanya tercapai bila sandi benar DAN akun sudah terhubung ke Telegram
+// (sandi salah dan akun belum terhubung dijawab server di layar masuk), jadi tidak ada butir tentang sandi atau
+// penautan. Hanya sebab yang masih mungkin: bot terblokir/belum Start, pesan tertunda, atau salah akun Telegram.
 export const JUDUL_PANDUAN_KODE = 'Kode tidak datang?';
-export const PENGANTAR_PANDUAN_KODE = 'Ada tiga sebab yang mungkin. Demi keamanan akun, sistem tidak menyebut mana yang berlaku untuk Anda.';
+export const PENGANTAR_PANDUAN_KODE = 'Kode dikirim ke chat bot SiGAP di akun Telegram yang tertaut dengan akun Anda. Bila belum muncul, periksa hal berikut.';
 export const SEBAB_KODE_TIDAK_DATANG = [
-  'Sandi yang dimasukkan mungkin salah. Pilih Mulai dari awal, lalu masukkan username dan sandi dengan teliti.',
-  'Akun mungkin belum tertaut dengan Telegram. Hubungi Admin SPPG untuk memeriksa penautan akun.',
-  'Anda mungkin belum pernah menekan Start di bot SiGAP. Buka bot di Telegram, tekan Start, lalu kirim ulang kode.',
+  'Anda mungkin belum menekan Start di bot SiGAP, atau pernah memblokirnya. Buka bot di Telegram, tekan Start, lalu kirim ulang kode.',
+  'Telegram sedang lambat atau bermasalah. Tunggu sebentar, lalu periksa chat bot lagi sebelum meminta kode baru.',
+  'Anda membuka Telegram di akun yang berbeda. Periksa chat bot di akun Telegram yang tertaut dengan SiGAP, termasuk chat yang dibisukan atau diarsipkan.',
 ];
 export const PESAN_KUOTA_HABIS = 'Jatah kirim ulang habis. Bila kode belum datang, mulai dari awal.';
 export const PESAN_TANTANGAN_MATI = 'Kode untuk percobaan masuk ini sudah tidak berlaku. Mulai dari awal untuk meminta kode baru.';
@@ -74,13 +83,26 @@ export function pesanSelesai(data, { ingatDiminta = false } = {}) {
   return null;
 }
 
-/** Galat masuk/kode -> {pesan, tipe, sisaDetik?}. tipe: 'kredensial' | 'kode' | 'validasi' | 'laju' | 'csrf' | 'offline' | 'lain'. */
+/** Pesan pertama pada errors.password dari badan 422 (kontrak: sama dengan `message`), atau '' bila tidak ada. */
+const pesanPassword = (e) => {
+  const m = e?.errors?.password;
+  const t = Array.isArray(m) ? m[0] : m;
+  return typeof t === 'string' ? t : '';
+};
+
+/**
+ * Galat masuk/kode -> {pesan, tipe, sisaDetik?}.
+ * tipe: 'kredensial' (di field sandi) | 'form' (galat tingkat form, mis. 422 tanpa `errors`) | 'kode' | 'validasi' | 'laju' | 'csrf' | 'offline' | 'lain'.
+ * Pesan server selalu didahulukan; konstanta hanya cadangan bila badan tidak memuat pesan.
+ */
 export function klasifikasiGalat(e) {
   if (!e) return { tipe: 'lain', pesan: 'Terjadi kesalahan.' };
   if (e.status === 0) return { tipe: 'offline', pesan: 'Tidak ada koneksi internet.' };
   const alasan = e.data?.alasan ?? null;
   if (e.status === 403) return { tipe: 'csrf', pesan: e.message };
-  if (e.status === 422 && alasan === 'kredensial_salah') return { tipe: 'kredensial', pesan: PESAN_KREDENSIAL_SALAH };
+  if (e.status === 422 && alasan === 'kredensial_salah') return { tipe: 'kredensial', pesan: pesanPassword(e) || e.data?.message || PESAN_KREDENSIAL_SALAH };
+  if (e.status === 422 && alasan === 'telegram_belum_terhubung') return { tipe: 'form', pesan: e.data?.message || PESAN_TELEGRAM_BELUM_TERHUBUNG };
+  if (e.status === 422 && alasan === 'terlalu_sering') return { tipe: 'form', pesan: e.data?.message || PESAN_TERLALU_SERING };
   if (e.status === 422 && alasan === 'kode_tidak_valid') return { tipe: 'kode', pesan: PESAN_KODE_TIDAK_VALID };
   if (e.status === 422) return { tipe: 'validasi', pesan: e.message };
   if (e.status === 429) {

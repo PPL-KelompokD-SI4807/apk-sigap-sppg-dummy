@@ -135,7 +135,7 @@ schemas:
           - dev_bypass
           - csrf_ditolak
           - kode_tidak_valid
-      sisa_percobaan: { type: integer, description: 'kredensial_salah / token_salah / kode_tidak_valid (login web R04-2: sisa percobaan kode pada tantangan ini, 0 = tantangan sudah mati)' }
+      sisa_percobaan: { type: integer, description: 'kredensial_salah (Mini App) / token_salah / kode_tidak_valid (login web R04-2: sisa percobaan kode pada tantangan ini, 0 = tantangan sudah mati). TIDAK ADA pada kredensial_salah login web: ember seragam langkah 1 tidak memuat angka apa pun.' }
       terkunci_sampai: { type: string, format: date-time, description: 'terkunci' }
       langkah: { type: string, enum: [aktivasi, masuk], description: 'perlu_aktivasi / sudah_aktivasi' }
   PraLoginResponse:
@@ -264,11 +264,9 @@ schemas:
     type: object
     required: [langkah, message, tantangan]
     description: |
-      Respons SERAGAM langkah masuk dan kirim ulang (anti-enumerasi): status, bentuk, header, DAN nilai sama untuk
-      akun tidak ada, sandi salah, akun nonaktif/belum aktivasi/tanpa Telegram, kanal web terkunci, dan sandi benar
-      pada titik waktu yang sama. Kode hanya benar-benar dikirim bot bila sandi benar; untuk kasus lain server
-      menyimpan keadaan tantangan tiruan (percobaan, kirim ulang, jeda, masa berlaku) agar `sisa_kirim_ulang`,
-      `kirim_ulang_tersedia_pada`, dan `sisa_percobaan` di POST /web/auth/kode bergerak persis sama.
+      Respons langkah masuk dan kirim ulang. Sejak revisi 2026-11-23 bentuk ini HANYA muncul bila sandi benar dan
+      akun boleh masuk (kode 6 digit benar-benar dikirim bot); kredensial yang salah dijawab 422 `kredensial_salah`
+      dan tidak ada lagi tantangan tiruan. Nilai waktu dan kuota di bawah selalu keadaan nyata tantangan itu.
     properties:
       langkah: { type: string, const: kode }
       message: { type: string }
@@ -276,13 +274,12 @@ schemas:
         type: object
         required: [id, kedaluwarsa_pada, kirim_ulang_tersedia_pada, sisa_kirim_ulang, maks_kirim_ulang, maks_percobaan]
         description: |
-          Nilai waktu dan kuota di bawah SELALU keadaan nyata tantangan, juga untuk tantangan tiruan (yang
-          keadaannya disimpan server di luar basis data): tidak ada bentuk "berhasil" palsu. Tantangan yang sudah
-          mati (dipakai, hangus, kedaluwarsa, tidak dikenal, milik browser lain, atau kanal web terkunci) selalu
-          dijawab `kedaluwarsa_pada` = `kirim_ulang_tersedia_pada` = waktu respons dan `sisa_kirim_ulang: 0`;
-          UI menampilkan "kode tidak berlaku lagi, silakan masuk ulang".
+          Nilai waktu dan kuota di bawah SELALU keadaan nyata tantangan: tidak ada bentuk "berhasil" palsu.
+          Tantangan yang sudah mati (dipakai, hangus, kedaluwarsa, tidak dikenal, milik browser lain, atau kanal
+          web terkunci) selalu dijawab `kedaluwarsa_pada` = `kirim_ulang_tersedia_pada` = waktu respons dan
+          `sisa_kirim_ulang: 0`; UI menampilkan "kode tidak berlaku lagi, silakan masuk ulang".
         properties:
-          id: { type: string, pattern: '^[0-9a-z]{26}$', description: 'ULID huruf kecil. Bisa tiruan; klien tidak dapat membedakannya.' }
+          id: { type: string, pattern: '^[0-9a-z]{26}$', description: 'ULID huruf kecil baris tantangan_tokens.' }
           kedaluwarsa_pada: { type: string, format: date-time, description: 'Masa berlaku NYATA tantangan ini (umumnya terkirim + 5 menit), bukan sekadar sekarang + 5 menit.' }
           kirim_ulang_tersedia_pada: { type: string, format: date-time, description: 'Saat kirim ulang berikutnya boleh. Dihitung dari pengiriman terakhir + 60 detik; kirim ulang yang ditolak TIDAK menggeser nilai ini.' }
           sisa_kirim_ulang: { type: integer, minimum: 0, examples: [3], description: 'Sisa jatah kirim ulang (maks_kirim_ulang - yang terpakai). 0 = tombol "Kirim ulang" dimatikan.' }
@@ -326,7 +323,7 @@ responses:
   WebKodeTidakValid:
     description: |
       Kode salah, kedaluwarsa (5 menit), sudah dipakai, tantangan hangus (5 kali salah, tombol "Bukan saya", sandi
-      diubah), tantangan tiruan atau milik browser lain, atau kanal web terkunci. SATU galat seragam tanpa sisa percobaan.
+      diubah), tantangan tidak dikenal atau milik browser lain, atau kanal web terkunci. SATU galat seragam.
     content:
       application/json:
         schema: { $ref: '#/components/schemas/AuthError' }

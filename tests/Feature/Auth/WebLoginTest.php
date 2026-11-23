@@ -30,10 +30,11 @@ use Tests\Support\CreatesSppg;
 use Tests\TestCase;
 
 /**
- * R04-2 alur login web (ADR 2026-11-09 Keputusan 4, 5, 7; rencana S-04..S-07, S-15, S-19, S-21; issue #76):
- * CSRF pra-login, respons langkah 1 seragam (anti-enumerasi), kode hanya terkirim bila sandi benar, kode ter-hash
- * sekali pakai + kedaluwarsa + batas percobaan, penguncian kanal web terpisah dari Mini App, tombol "Bukan saya",
- * dan respons login yang tidak pernah memuat token.
+ * R04-2 alur login web (ADR 2026-11-09 Keputusan 4, 5, 7 + revisi respons seragam 2026-11-23; rencana
+ * S-04..S-07, S-15, S-19, S-21; issue #76): CSRF pra-login, satu ember seragam untuk kelima sebab kredensial salah
+ * (pengguna diberi tahu, enumerasi tetap tertutup), jalur sandi benar yang jujur (telegram belum terhubung / jatah
+ * habis), kode ter-hash sekali pakai + kedaluwarsa + batas percobaan, penguncian kanal web terpisah dari Mini App,
+ * tombol "Bukan saya", dan respons login yang tidak pernah memuat token.
  */
 class WebLoginTest extends TestCase
 {
@@ -278,7 +279,7 @@ class WebLoginTest extends TestCase
 
         $masuk = $this->masuk($pra, $csrfPra, 'siti.dapur', self::SANDI)->assertOk()
             ->assertJsonPath('langkah', 'kode')
-            ->assertJsonPath('message', 'Bila data benar, kode telah dikirim ke Telegram Anda.')
+            ->assertJsonPath('message', 'Kode 6 digit telah dikirim ke Telegram Anda.')
             ->assertJsonPath('tantangan.kedaluwarsa_pada', now()->addMinutes(5)->toIso8601String())
             ->assertJsonPath('tantangan.kirim_ulang_tersedia_pada', now()->addSeconds(60)->toIso8601String())
             ->assertJsonPath('tantangan.sisa_kirim_ulang', 3)
@@ -421,51 +422,118 @@ class WebLoginTest extends TestCase
         ];
     }
 
-    public function test_respons_langkah_masuk_identik_untuk_semua_kasus_dan_kode_hanya_dikirim_bila_sandi_benar(): void
+    /** Rekaman PENUH respons galat langkah 1: status, badan, header, dan nama cookie yang ikut dikirim. */
+    private function sidikMasukGagal(TestResponse $res): array
+    {
+        return [
+            'status' => $res->getStatusCode(),
+            'json' => (array) $res->json(),
+            'cache' => $res->headers->get('Cache-Control'),
+            'vary' => $res->headers->get('Vary'),
+            'type' => $res->headers->get('Content-Type'),
+            'cookies' => array_map(fn (Cookie $c) => $c->getName(), $res->headers->getCookies()),
+        ];
+    }
+
+    /**
+     * Inti anti-enumerasi setelah revisi 2026-11-23 (pengguna yang salah sandi WAJIB diberi tahu): kelima sebab
+     * kegagalan kredensial dijawab satu respons yang IDENTIK (status, badan, header, nama cookie), tanpa tantangan
+     * apa pun dan tanpa pesan bot. Pesannya digabung ('Identitas atau sandi salah.') dan tidak membawa
+     * `sisa_percobaan` maupun `terkunci_sampai`, sehingga pihak luar tetap tidak dapat menebak akun mana yang
+     * terdaftar, maupun apakah sebuah akun nonaktif, belum aktivasi, atau sedang terkunci.
+     */
+    public function test_lima_sebab_kredensial_salah_memberi_respons_identik_tanpa_tantangan(): void
     {
         $sppg = $this->siti->sppg_id;
-        User::factory()->role(Role::AhliGizi)->denganKredensial('budi.nonaktif', self::SANDI)->create(['sppg_id' => $sppg, 'telegram_id' => 7000000001, 'is_active' => false]);
-        User::factory()->role(Role::AhliGizi)->create(['sppg_id' => $sppg, 'telegram_id' => 7000000002, 'username' => 'belum.aktif']);
-        User::factory()->role(Role::AhliGizi)->denganKredensial('tanpa.telegram', self::SANDI)->withoutTelegram()->create(['sppg_id' => $sppg]);
+        $nonaktif = User::factory()->role(Role::AhliGizi)->denganKredensial('budi.nonaktif', self::SANDI)->create(['sppg_id' => $sppg, 'telegram_id' => 7000000001, 'is_active' => false]);
+        $belum = User::factory()->role(Role::AhliGizi)->create(['sppg_id' => $sppg, 'telegram_id' => 7000000002, 'username' => 'belum.aktif']);
         $terkunci = User::factory()->role(Role::AhliGizi)->denganKredensial('rina.kunci', self::SANDI)->create(['sppg_id' => $sppg, 'telegram_id' => 7000000003]);
         DB::table('users')->where('id', $terkunci->id)->update(['web_gagal_login' => 5, 'web_terkunci_sampai' => now()->addMinutes(10)]);
         $hapus = User::factory()->role(Role::AhliGizi)->denganKredensial('dewi.hapus', self::SANDI)->create(['sppg_id' => $sppg, 'telegram_id' => 7000000004]);
         $hapus->delete();
 
         $kasus = [
-            'username tidak ada' => ['tidak.ada', self::SANDI],
-            'telepon tidak ada' => ['081299998888', self::SANDI],
+            'akun tidak dikenal (username)' => ['tidak.ada', self::SANDI],
+            'akun tidak dikenal (telepon)' => ['081299998888', self::SANDI],
             'identitas aneh' => ['%%%', self::SANDI],
+            'akun terhapus' => ['dewi.hapus', self::SANDI],
             'sandi salah' => ['siti.dapur', 'SalahSekali9'],
             'akun nonaktif' => ['budi.nonaktif', self::SANDI],
             'belum aktivasi' => ['belum.aktif', self::SANDI],
-            'tanpa telegram' => ['tanpa.telegram', self::SANDI],
             'kanal web terkunci' => ['rina.kunci', self::SANDI],
-            'akun terhapus' => ['dewi.hapus', self::SANDI],
-            'sandi benar' => ['siti.dapur', self::SANDI],
         ];
 
         $sidik = [];
 
         foreach ($kasus as $nama => [$identitas, $sandi]) {
             [$pra, $csrf] = $this->praLoginWeb();
-            $sidik[$nama] = $this->sidikRespons($this->masuk($pra, $csrf, $identitas, $sandi)->assertOk());
+            $sidik[$nama] = $this->sidikMasukGagal($this->masuk($pra, $csrf, $identitas, $sandi)->assertStatus(422));
         }
 
-        $acuan = $sidik['sandi benar'];
+        $acuan = $sidik['sandi salah'];
 
         foreach ($sidik as $nama => $s) {
-            $this->assertSame($acuan, $s, "Respons '{$nama}' berbeda dari 'sandi benar'.");
+            $this->assertSame($acuan, $s, "Respons '{$nama}' berbeda dari 'sandi salah'.");
         }
 
-        // Hanya satu pesan kode, hanya ke pemilik sandi benar; tantangan tersimpan hanya satu.
-        $this->assertCount(1, $this->telegramCalls('sendMessage'));
-        $this->assertCount(1, $this->pesanKode());
-        $this->assertSame(1, TantanganToken::query()->count());
+        // Badan dan header ember seragam, apa adanya: tidak ada alasan selain kredensial_salah, tidak ada angka.
+        $this->assertSame([
+            'message' => 'Identitas atau sandi salah.',
+            'errors' => ['password' => ['Identitas atau sandi salah.']],
+            'alasan' => 'kredensial_salah',
+        ], $acuan['json']);
+        $this->assertSame('no-store, private', $acuan['cache']);
+        $this->assertSame([], $acuan['cookies']);
 
-        // Setiap cabang benar-benar dilalui (alasan internal hanya di audit, tidak pernah di respons).
-        $hasil = AuditLog::query()->where('event', AuditAuth::WEB_MASUK_LANGKAH1)->get()->map(fn (AuditLog $l) => $l->new_values['hasil'])->sort()->values()->all();
-        $this->assertSame(['akun_nonaktif', 'belum_aktivasi', 'kode_dibuat', 'sandi_salah', 'telegram_belum_terhubung', 'terkunci'], $hasil);
+        // Tidak satu pun membuat baris tantangan_tokens atau mengirim pesan bot.
+        $this->assertSame(0, TantanganToken::query()->count());
+        $this->assertCount(0, $this->telegramCalls('sendMessage'));
+
+        // Audit tetap mencatat sebab SEBENARNYA (yang digabung hanya yang dikirim ke peramban).
+        $hasil = AuditLog::query()->where('event', AuditAuth::WEB_MASUK_LANGKAH1)->get()
+            ->map(fn (AuditLog $l) => $l->new_values['hasil'])->sort()->values()->all();
+        $this->assertSame(['akun_nonaktif', 'belum_aktivasi', 'sandi_salah', 'terkunci'], $hasil);
+        $this->assertSame('akun_nonaktif', AuditLog::query()->where('event', AuditAuth::WEB_MASUK_LANGKAH1)
+            ->where('auditable_id', $nonaktif->id)->sole()->new_values['hasil']);
+        $this->assertSame('belum_aktivasi', AuditLog::query()->where('event', AuditAuth::WEB_MASUK_LANGKAH1)
+            ->where('auditable_id', $belum->id)->sole()->new_values['hasil']);
+    }
+
+    /**
+     * Sandi BENAR tetapi belum dapat lanjut: dijawab jujur dengan `alasan` sendiri + pesan yang membantu. Jalur ini
+     * hanya tercapai oleh pihak yang sudah memasukkan sandi yang benar, jadi tidak memberi informasi enumerasi.
+     */
+    public function test_sandi_benar_tanpa_telegram_atau_jatah_habis_dijawab_jujur_dengan_alasan_sendiri(): void
+    {
+        $tanpaTg = User::factory()->role(Role::AhliGizi)->denganKredensial('tanpa.telegram', self::SANDI)
+            ->withoutTelegram()->create(['sppg_id' => $this->siti->sppg_id]);
+
+        [$pra, $csrf] = $this->praLoginWeb();
+        $this->masuk($pra, $csrf, 'tanpa.telegram', self::SANDI)->assertStatus(422)
+            ->assertJsonPath('alasan', 'telegram_belum_terhubung')
+            ->assertJsonPath('message', MasukWebService::PESAN_TELEGRAM_BELUM_TERHUBUNG);
+
+        $this->assertSame(0, TantanganToken::query()->count());
+        $this->assertCount(0, $this->telegramCalls('sendMessage'));
+        $this->assertSame('telegram_belum_terhubung', AuditLog::query()->where('event', AuditAuth::WEB_MASUK_LANGKAH1)
+            ->where('auditable_id', $tanpaTg->id)->sole()->new_values['hasil']);
+
+        // Jatah tantangan web per akun (5 per 30 menit) habis: juga jujur, tanpa tantangan baru dan tanpa pesan.
+        config(['kredensial.token.maks_tantangan' => 5]);
+
+        for ($i = 0; $i < 5; $i++) {
+            [$pra, $csrf] = $this->praLoginWeb();
+            $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->assertOk()->assertJsonPath('langkah', 'kode');
+        }
+
+        [$pra, $csrf] = $this->praLoginWeb();
+        $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->assertStatus(422)
+            ->assertJsonPath('alasan', 'terlalu_sering')
+            ->assertJsonPath('message', MasukWebService::PESAN_TANTANGAN_HABIS);
+
+        $this->assertCount(5, $this->pesanKode());
+        $this->assertSame('terlalu_sering', AuditLog::query()->where('event', AuditAuth::WEB_MASUK_LANGKAH1)
+            ->where('auditable_id', $this->siti->id)->latest('id')->first()->new_values['hasil']);
     }
 
     /** @return array<string, array{0: string, 1: string}> */
@@ -504,12 +572,14 @@ class WebLoginTest extends TestCase
         };
         Hash::swap($hitung);
 
-        $this->masuk($pra, $csrf, $identitas, $sandi)->assertOk();
+        // Status berbeda per cabang (422 ember seragam vs 200 langkah kode), biaya hash-nya WAJIB sama.
+        $res = $this->masuk($pra, $csrf, $identitas, $sandi);
 
+        $this->assertContains($res->getStatusCode(), [200, 422]);
         $this->assertSame(1, $hitung->cek);
     }
 
-    // ---------------------------------------------------------------- keseragaman tantangan tiruan vs sungguhan
+    // ---------------------------------------------------------------- kejujuran keadaan tantangan
 
     /** Badan + header galat langkah 2 (termasuk `sisa_percobaan`). */
     private function sidikGalat(TestResponse $res): array
@@ -523,9 +593,8 @@ class WebLoginTest extends TestCase
     }
 
     /**
-     * Rangkaian langkah yang sama untuk satu skenario, dijalankan pada jam virtual yang sama persis ($t0) agar
-     * seluruh cap waktu absolut dapat dibandingkan apa adanya. Dua skenario berbeda WAJIB menghasilkan rekaman
-     * identik; jumlah pesan bot dikembalikan terpisah karena itu bukan sesuatu yang dilihat peramban.
+     * Rangkaian penuh satu tantangan (masuk, 6 kode salah, 6 kirim ulang) pada jam virtual yang diketahui ($t0)
+     * agar seluruh cap waktu absolut dapat diperiksa apa adanya. Jumlah pesan bot dikembalikan terpisah.
      *
      * @return array{0: array<string, array<string, mixed>>, 1: int}
      */
@@ -554,7 +623,7 @@ class WebLoginTest extends TestCase
             $rekam['kode.'.($i + 1)] = $this->sidikGalat($this->kode($pra, $csrf, $id, '000000')->assertStatus(422));
         }
 
-        // Percobaan ke-6: tantangan sudah hangus karena 5 percobaan (jalur sungguhan maupun tiruan).
+        // Percobaan ke-6: tantangan sudah hangus karena 5 percobaan.
         $rekam['kode.hangus'] = $this->sidikGalat($this->kode($pra, $csrf, $id, '000000')->assertStatus(422));
         $rekam['kirim_ulang.hangus'] = $this->sidikRespons($this->kirimUlang($pra, $csrf, $id)->assertOk());
 
@@ -582,113 +651,36 @@ class WebLoginTest extends TestCase
     }
 
     /**
-     * Inti R04: tantangan tiruan harus punya keadaan nyata. Untuk akun tidak dikenal, sandi salah, telegram belum
-     * terhubung, dan sandi benar, SELURUH rangkaian (masuk, 6 kode salah, 6 kirim ulang) harus memberi badan dan
-     * header yang identik pada titik waktu yang sama, termasuk pola turun `sisa_percobaan` dan `sisa_kirim_ulang`.
-     * Pesan bot tetap hanya terkirim pada jalur sungguhan.
+     * Keadaan yang dikirim ke peramban harus JUJUR dan benar-benar bergerak: `sisa_percobaan` 4..0 lalu tantangan
+     * hangus, `sisa_kirim_ulang` 3..0 dengan kirim ulang dini yang tidak menggeser apa pun. Pesan bot hanya
+     * terkirim untuk kirim ulang yang benar-benar dijalankan.
      */
-    public function test_empat_skenario_masuk_memberi_bentuk_dan_pola_turun_yang_sama(): void
+    public function test_rangkaian_kode_dan_kirim_ulang_bergerak_jujur(): void
     {
-        User::factory()->role(Role::AhliGizi)->denganKredensial('tanpa.telegram', self::SANDI)->withoutTelegram()->create(['sppg_id' => $this->siti->sppg_id]);
-
-        $kasus = [
-            'akun tidak dikenal' => ['tidak.ada', self::SANDI],
-            'sandi salah' => ['siti.dapur', 'SalahSekali9'],
-            'telegram belum terhubung' => ['tanpa.telegram', self::SANDI],
-            'sandi benar' => ['siti.dapur', self::SANDI],
-        ];
-
-        $t0 = now()->copy();
-        $hasil = [];
-
-        foreach ($kasus as $nama => [$identitas, $sandi]) {
-            $hasil[$nama] = $this->rekamRangkaian($t0, $identitas, $sandi);
-        }
-
-        [$acuan, $pesanAsli] = $hasil['sandi benar'];
-
-        foreach ($hasil as $nama => [$rekam, $pesan]) {
-            $this->assertSame($acuan, $rekam, "Rangkaian '{$nama}' berbeda dari 'sandi benar'.");
-        }
+        [$rekam, $pesan] = $this->rekamRangkaian(now()->copy(), 'siti.dapur', self::SANDI);
 
         // Pola benar-benar menurun (bukan konstanta yang sama-sama salah).
-        $this->assertSame([4, 3, 2, 1, 0, 0], $this->angka($acuan, 'kode.', 'sisa_percobaan'));
+        $this->assertSame([4, 3, 2, 1, 0, 0], $this->angka($rekam, 'kode.', 'sisa_percobaan'));
         // dini (belum mengirim, tidak bergeser), 3 kirim ulang yang benar-benar terkirim, jatah habis, lalu hangus.
-        $this->assertSame([3, 2, 1, 0, 0, 0], $this->angka($acuan, 'kirim_ulang.', 'sisa_kirim_ulang'));
-
-        // Hanya jalur sungguhan yang benar-benar mengirim kode (1 saat masuk + 3 kirim ulang).
-        $this->assertSame(4, $pesanAsli);
-        $this->assertSame(0, $hasil['akun tidak dikenal'][1]);
-        $this->assertSame(0, $hasil['sandi salah'][1]);
-        $this->assertSame(0, $hasil['telegram belum terhubung'][1]);
-        // Satu tantangan tersimpan: hanya jalur sungguhan punya baris basis data.
+        $this->assertSame([3, 2, 1, 0, 0, 0], $this->angka($rekam, 'kirim_ulang.', 'sisa_kirim_ulang'));
+        // 1 pesan saat masuk + 3 kirim ulang yang benar-benar dijalankan.
+        $this->assertSame(4, $pesan);
         $this->assertSame(1, TantanganToken::query()->where('tujuan', TantanganToken::TUJUAN_MASUK_WEB)->count());
     }
 
-    /** Tantangan tiruan hangus setelah maks 5 percobaan, sama seperti yang sungguhan, tanpa baris basis data. */
-    public function test_tantangan_tiruan_hangus_setelah_lima_percobaan(): void
+    /** Masuk ulang di browser yang sama menghanguskan tantangan sebelumnya (kode lamanya tidak berlaku lagi). */
+    public function test_masuk_ulang_menghanguskan_tantangan_sebelumnya(): void
     {
         [$pra, $csrf] = $this->praLoginWeb();
-        $tiruan = (string) $this->masuk($pra, $csrf, 'tidak.ada', self::SANDI)->assertOk()->json('tantangan.id');
+        $pertama = (string) $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->json('tantangan.id');
+        $kodePertama = $this->kodeWebTerakhir();
 
-        $sisa = [];
+        $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->assertOk();
 
-        for ($i = 0; $i < 5; $i++) {
-            $sisa[] = $this->kode($pra, $csrf, $tiruan, '000000')->assertStatus(422)
-                ->assertJsonPath('alasan', 'kode_tidak_valid')->json('sisa_percobaan');
-        }
-
-        $this->assertSame([4, 3, 2, 1, 0], $sisa);
-
-        // Hangus: percobaan berikutnya tetap 0 dan kirim ulang tidak lagi berbentuk hidup.
-        $this->kode($pra, $csrf, $tiruan, '000000')->assertStatus(422)->assertJsonPath('sisa_percobaan', 0);
-        $this->travel(61)->seconds();
-        $this->kirimUlang($pra, $csrf, $tiruan)->assertOk()
-            ->assertJsonPath('tantangan.sisa_kirim_ulang', 0)
-            ->assertJsonPath('tantangan.kedaluwarsa_pada', now()->toIso8601String());
-
-        $this->assertSame([], $this->pesanKodeSemua());
-        $this->assertSame(0, TantanganToken::query()->count());
-    }
-
-    /** Keadaan tiruan kedaluwarsa bersama masa berlaku kode (5 menit), seperti tantangan sungguhan. */
-    public function test_tantangan_tiruan_kedaluwarsa_setelah_lima_menit(): void
-    {
-        [$pra, $csrf] = $this->praLoginWeb();
-        $tiruan = (string) $this->masuk($pra, $csrf, 'tidak.ada', self::SANDI)->json('tantangan.id');
-
-        $this->kode($pra, $csrf, $tiruan, '000000')->assertStatus(422)->assertJsonPath('sisa_percobaan', 4);
-
-        $this->travel(5)->minutes();
-        $this->travel(1)->seconds();
-
-        $this->kode($pra, $csrf, $tiruan, '000000')->assertStatus(422)->assertJsonPath('sisa_percobaan', 0);
-        $this->kirimUlang($pra, $csrf, $tiruan)->assertOk()
-            ->assertJsonPath('tantangan.sisa_kirim_ulang', 0)
-            ->assertJsonPath('tantangan.kedaluwarsa_pada', now()->toIso8601String());
-        $this->assertSame([], $this->pesanKodeSemua());
-    }
-
-    /** Masuk ulang di browser yang sama menghanguskan tantangan sebelumnya pada kedua jalur. */
-    public function test_masuk_ulang_menghanguskan_tantangan_sebelumnya_pada_kedua_jalur(): void
-    {
-        $t0 = now()->copy();
-
-        [$praA, $csrfA] = $this->praLoginWeb();
-        $tiruan1 = (string) $this->masuk($praA, $csrfA, 'tidak.ada', self::SANDI)->json('tantangan.id');
-        $this->masuk($praA, $csrfA, 'tidak.ada', self::SANDI)->assertOk();
-        $tiruanLama = $this->sidikGalat($this->kode($praA, $csrfA, $tiruan1, '000000')->assertStatus(422));
-
-        $this->travelTo($t0->copy());
-        [$praB, $csrfB] = $this->praLoginWeb();
-        $asli1 = (string) $this->masuk($praB, $csrfB, 'siti.dapur', self::SANDI)->json('tantangan.id');
-        $kode1 = $this->kodeWebTerakhir();
-        $this->masuk($praB, $csrfB, 'siti.dapur', self::SANDI)->assertOk();
-        $asliLama = $this->sidikGalat($this->kode($praB, $csrfB, $asli1, $kode1)->assertStatus(422));
-
-        $this->assertSame($asliLama, $tiruanLama);
-        $this->assertSame(0, $asliLama['json']['sisa_percobaan']);
-        $this->assertNotNull(TantanganToken::query()->find($asli1)->hangus_pada);
+        $this->kode($pra, $csrf, $pertama, $kodePertama)->assertStatus(422)
+            ->assertJsonPath('alasan', 'kode_tidak_valid')
+            ->assertJsonPath('sisa_percobaan', 0);
+        $this->assertNotNull(TantanganToken::query()->find($pertama)->hangus_pada);
     }
 
     // ---------------------------------------------------------------- kode (S-06)
@@ -707,10 +699,9 @@ class WebLoginTest extends TestCase
     }
 
     /**
-     * Pesan + `alasan` tetap seragam untuk semua sebab. `sisa_percobaan` yang ikut dikirim bukan pembeda jalur:
-     * nilainya hanya bergantung pada percobaan yang sudah terpakai pada tantangan yang dikirim peramban, sehingga
-     * tantangan sungguhan dan tiruan pada posisi yang sama memberi angka yang sama (percobaan pertama = 4), dan
-     * tantangan yang bukan milik browser ini / tidak dikenal sama-sama 0 pada kedua jalur.
+     * Pesan + `alasan` langkah 2 tetap seragam untuk semua sebab (Keputusan R04 yang TIDAK direvisi).
+     * `sisa_percobaan` hanya bergantung pada percobaan yang sudah terpakai pada tantangan yang dikirim peramban;
+     * tantangan yang bukan milik browser ini, tidak dikenal, atau milik Mini App sama-sama 0.
      */
     public function test_semua_kegagalan_kode_memberi_galat_yang_sama(): void
     {
@@ -720,17 +711,13 @@ class WebLoginTest extends TestCase
         $id = (string) $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->json('tantangan.id');
         $kode = $this->kodeWebTerakhir();
 
-        // Kode salah (percobaan pertama pada tantangan sungguhan).
+        // Kode salah (percobaan pertama pada tantangan ini).
         $this->kode($pra, $csrf, $id, $this->salahKan($id, $kode))->assertStatus(422)->assertExactJson($galat(4));
-        // Tantangan tiruan (dari sandi salah): percobaan pertama memberi angka yang sama persis.
-        [$pra2, $csrf2] = $this->praLoginWeb();
-        $tiruan = (string) $this->masuk($pra2, $csrf2, 'siti.dapur', 'SalahSekali9')->json('tantangan.id');
-        $this->kode($pra2, $csrf2, $tiruan, $kode)->assertStatus(422)->assertExactJson($galat(4));
+        // Tantangan yang tidak dikenal.
         $this->kode($pra, $csrf, (string) str()->ulid(), $kode)->assertStatus(422)->assertExactJson($galat(0));
         // Tantangan milik browser lain (cookie pra-login lain), walau kode benar.
+        [$pra2, $csrf2] = $this->praLoginWeb();
         $this->kode($pra2, $csrf2, $id, $kode)->assertStatus(422)->assertExactJson($galat(0));
-        // Tantangan tiruan milik browser lain: sama-sama 0 (keadaan tiruan terikat HMAC id pra-login).
-        $this->kode($pra, $csrf, $tiruan, $kode)->assertStatus(422)->assertExactJson($galat(0));
         // Tantangan Mini App tidak dapat dipakai di web.
         $praMini = $this->praLogin($this->siti, self::HP);
         $idMini = (string) $this->kirim($praMini, '/api/v1/auth/masuk', ['identitas' => 'siti.dapur', 'password' => self::SANDI, 'device_id' => self::HP])->assertStatus(202)->json('tantangan.id');
@@ -804,35 +791,27 @@ class WebLoginTest extends TestCase
     }
 
     /**
-     * Pasangan yang harus identik: tantangan TIRUAN milik browser ini vs tantangan SUNGGUHAN milik browser ini
-     * (keduanya bergerak), dan tantangan milik browser LAIN, tiruan maupun sungguhan (keduanya mati). Pesan bot
-     * hanya terkirim pada jalur sungguhan.
+     * Kirim ulang untuk tantangan yang bukan milik browser ini dan untuk id yang tidak dikenal: satu deskriptor
+     * MATI yang sama (tanpa hitung mundur, tanpa jatah), tanpa pesan bot dan tanpa menyentuh tantangan aslinya.
      */
-    public function test_kirim_ulang_tiruan_bergerak_seperti_sungguhan_dan_milik_browser_lain_sama_matinya(): void
+    public function test_kirim_ulang_milik_browser_lain_atau_tidak_dikenal_sama_matinya(): void
     {
-        $t0 = now()->copy();
-
         [$praA, $csrfA] = $this->praLoginWeb();
-        $tiruan = (string) $this->masuk($praA, $csrfA, 'tidak.ada', self::SANDI)->json('tantangan.id');
-        $this->travel(61)->seconds();
-        $kirimTiruan = $this->kirimUlang($praA, $csrfA, $tiruan)->assertOk()->assertJsonPath('tantangan.id', $tiruan);
-        $this->assertSame([], $this->pesanKode());
+        $id = (string) $this->masuk($praA, $csrfA, 'siti.dapur', self::SANDI)->json('tantangan.id');
+        $this->assertCount(1, $this->pesanKode());
 
-        // Jalur sungguhan pada jam virtual yang sama persis.
-        $this->travelTo($t0->copy());
+        $this->travel(61)->seconds();
         [$praB, $csrfB] = $this->praLoginWeb();
-        $id = (string) $this->masuk($praB, $csrfB, 'siti.dapur', self::SANDI)->json('tantangan.id');
-        $this->travel(61)->seconds();
-        $kirimAsli = $this->kirimUlang($praB, $csrfB, $id)->assertOk()->assertJsonPath('tantangan.id', $id);
+        $mati = $this->sidikRespons($this->kirimUlang($praB, $csrfB, $id)->assertOk());
 
-        $this->assertSame($this->sidikRespons($kirimAsli), $this->sidikRespons($kirimTiruan));
-        $this->assertCount(2, $this->pesanKode());
-
-        // Dari browser lain: tiruan dan sungguhan sama-sama "mati" (tanpa hitung mundur, tanpa jatah, tanpa pesan).
-        $mati = $this->sidikRespons($this->kirimUlang($praB, $csrfB, $tiruan)->assertOk());
-        $this->assertSame($mati, $this->sidikRespons($this->kirimUlang($praA, $csrfA, $id)->assertOk()));
+        $this->assertSame($mati, $this->sidikRespons($this->kirimUlang($praB, $csrfB, (string) str()->ulid())->assertOk()));
         $this->assertSame(0, $mati['json']['tantangan']['sisa_kirim_ulang']);
         $this->assertSame(now()->toIso8601String(), $mati['json']['tantangan']['kedaluwarsa_pada']);
+        $this->assertSame(now()->toIso8601String(), $mati['json']['tantangan']['kirim_ulang_tersedia_pada']);
+        $this->assertCount(1, $this->pesanKode());
+
+        // Tantangan aslinya tidak bergeser: pemiliknya masih punya 3 jatah kirim ulang.
+        $this->kirimUlang($praA, $csrfA, $id)->assertOk()->assertJsonPath('tantangan.sisa_kirim_ulang', 2);
         $this->assertCount(2, $this->pesanKode());
     }
 
@@ -903,7 +882,7 @@ class WebLoginTest extends TestCase
     {
         for ($i = 0; $i < 5; $i++) {
             [$pra, $csrf] = $this->praLoginWeb();
-            $this->masuk($pra, $csrf, 'siti.dapur', 'SalahSekali9')->assertOk();
+            $this->masuk($pra, $csrf, 'siti.dapur', 'SalahSekali9')->assertStatus(422);
         }
 
         $segar = $this->siti->fresh();
@@ -914,9 +893,11 @@ class WebLoginTest extends TestCase
         $this->assertSame(0, (int) $segar->failed_login_attempts);
         $this->assertNull($segar->locked_until);
 
-        // Sandi benar saat terkunci: respons sama, kode tidak dikirim.
+        // Sandi benar saat terkunci: ember seragam yang sama (tanpa membocorkan bahwa akun terkunci), tanpa kode.
         [$pra, $csrf] = $this->praLoginWeb();
-        $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->assertOk()->assertJsonPath('langkah', 'kode');
+        $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->assertStatus(422)
+            ->assertJsonPath('alasan', 'kredensial_salah')
+            ->assertJsonMissingPath('terkunci_sampai');
         $this->assertSame([], $this->pesanKode());
 
         // Mini App tetap bisa login penuh (initData + sandi + token bot).
@@ -930,12 +911,47 @@ class WebLoginTest extends TestCase
         $this->assertSame(0, (int) $this->siti->fresh()->web_gagal_login);
     }
 
+    /**
+     * Penguncian kanal web tetap persis seperti sebelumnya (maks 5 gagal -> 15 menit) DAN tetap masuk ember
+     * seragam: keenam respons (5 sandi salah + 1 sandi benar saat terkunci) harus identik, tanpa `alasan: terkunci`,
+     * tanpa `terkunci_sampai`, dan tanpa `Retry-After`, sehingga penyerang tidak tahu bahwa akun ini kini terkunci.
+     */
+    public function test_penguncian_lima_gagal_tetap_berlaku_dan_tetap_masuk_ember_seragam(): void
+    {
+        $sidik = [];
+
+        for ($i = 0; $i < 5; $i++) {
+            [$pra, $csrf] = $this->praLoginWeb();
+            $sidik[] = $this->sidikMasukGagal($this->masuk($pra, $csrf, 'siti.dapur', 'SalahSekali9')->assertStatus(422));
+        }
+
+        $this->assertTrue($this->siti->fresh()->web_terkunci_sampai->equalTo(now()->addMinutes(15)));
+
+        // Percobaan ke-6 dengan sandi BENAR, kanal terkunci: rekaman penuh tetap sama dengan kelima sebelumnya.
+        [$pra, $csrf] = $this->praLoginWeb();
+        $res = $this->masuk($pra, $csrf, 'siti.dapur', self::SANDI)->assertStatus(422);
+        $this->assertNull($res->headers->get('Retry-After'));
+        $sidik[] = $this->sidikMasukGagal($res);
+
+        foreach ($sidik as $i => $s) {
+            $this->assertSame($sidik[0], $s, 'Respons percobaan ke-'.($i + 1).' berbeda.');
+        }
+
+        $this->assertSame([], $this->pesanKode());
+        $this->assertSame(0, TantanganToken::query()->count());
+        $this->assertSame(1, AuditLog::query()->where('event', AuditAuth::WEB_TERKUNCI)->count());
+        // Sebab sebenarnya tetap terbaca di audit: 5 sandi_salah lalu 1 terkunci.
+        $hasil = AuditLog::query()->where('event', AuditAuth::WEB_MASUK_LANGKAH1)->orderBy('id')->get()
+            ->map(fn (AuditLog $l) => $l->new_values['hasil'])->all();
+        $this->assertSame(['sandi_salah', 'sandi_salah', 'sandi_salah', 'sandi_salah', 'sandi_salah', 'terkunci'], $hasil);
+    }
+
     public function test_terkunci_lagi_dalam_24_jam_menjadi_60_menit(): void
     {
         $gagal5 = function (): void {
             for ($i = 0; $i < 5; $i++) {
                 [$pra, $csrf] = $this->praLoginWeb();
-                $this->masuk($pra, $csrf, 'siti.dapur', 'SalahSekali9')->assertOk();
+                $this->masuk($pra, $csrf, 'siti.dapur', 'SalahSekali9')->assertStatus(422);
             }
         };
 
@@ -960,7 +976,7 @@ class WebLoginTest extends TestCase
         }
 
         [$pra2, $csrf2] = $this->praLoginWeb();
-        $this->masuk($pra2, $csrf2, 'siti.dapur', 'SalahSekali9')->assertOk();
+        $this->masuk($pra2, $csrf2, 'siti.dapur', 'SalahSekali9')->assertStatus(422);
         $this->assertNotNull($this->siti->fresh()->web_terkunci_sampai);
 
         // Kode benar pada tantangan yang masih terbuka -> ditolak seragam selama terkunci.
@@ -979,15 +995,16 @@ class WebLoginTest extends TestCase
         [$pra, $csrf] = $this->praLoginWeb();
 
         for ($i = 0; $i < 5; $i++) {
-            $this->masuk($pra, $csrf, 'Siti.Dapur', 'SalahSekali9')->assertOk();
+            $this->masuk($pra, $csrf, 'Siti.Dapur', 'SalahSekali9')->assertStatus(422);
         }
 
-        // Identitas sama (ter-normalisasi: huruf besar/kecil, @) -> 429; identitas lain dari IP sama masih boleh.
+        // Identitas sama (ter-normalisasi: huruf besar/kecil, @) -> 429; identitas lain dari IP sama masih boleh
+        // (sampai batas IP; akun yang tidak ada dijawab 422 ember seragam, bukan 429).
         $this->masuk($pra, $csrf, '@siti.dapur', self::SANDI)->assertStatus(429)->assertHeader('Retry-After');
-        $this->masuk($pra, $csrf, 'tidak.ada', self::SANDI)->assertOk();
+        $this->masuk($pra, $csrf, 'tidak.ada', self::SANDI)->assertStatus(422);
 
         for ($i = 0; $i < 4; $i++) {
-            $this->masuk($pra, $csrf, 'lain'.$i, self::SANDI)->assertOk();
+            $this->masuk($pra, $csrf, 'lain'.$i, self::SANDI)->assertStatus(422);
         }
 
         // 10 per menit per IP.
