@@ -31,6 +31,11 @@ storage/app/*
 storage/*.key
 storage/pail
 tests
+# Kecuali kumpulan kasus evaluasi Agen AI: sigap:ai-evaluasi dirancang dijalankan manual di
+# staging, jadi berkas ini harus ikut ke image. Tanpa pengecualian ini perintahnya mustahil
+# dijalankan di server (terbukti 24 Nov 2026).
+!tests/ai-eval
+!tests/ai-eval/**
 resources/miniapp/tests
 docs
 scripts
