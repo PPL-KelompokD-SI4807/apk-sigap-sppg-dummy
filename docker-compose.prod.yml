@@ -21,6 +21,7 @@ x-app-env: &app-env
   APP_ENV: production
   APP_DEBUG: "false"
   TELEGRAM_DEV_BYPASS: "false"
+  TELEGRAM_MINIAPP_URL: ${TELEGRAM_MINIAPP_URL:-}
   DB_CONNECTION: mysql
   DB_HOST: mysql
   DB_PORT: "3306"
@@ -64,6 +65,8 @@ services:
       - "0.0.0.0:443:443"
     environment:
       DOMAIN: ${DOMAIN:?isi DOMAIN di .env}
+      MINIAPP_DOMAIN: ${MINIAPP_DOMAIN:-}
+      MINIAPP_CUTOVER: ${MINIAPP_CUTOVER:-off}
       TELEGRAM_WEBHOOK_IP_FILTER: ${TELEGRAM_WEBHOOK_IP_FILTER:-on}
     volumes:
       - certbot_etc:/etc/letsencrypt:ro

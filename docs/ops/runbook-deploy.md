@@ -258,7 +258,9 @@ Edit sisanya dengan `nano .env`:
 |---|---|
 | `DOMAIN` | nama host publik tanpa `https://` (mis. `sigap.contoh.id` atau `203-0-113-10.sslip.io`) |
 | `APP_URL` | `https://<DOMAIN>` |
-| `TELEGRAM_MINIAPP_URL` | `https://<DOMAIN>/miniapp/` |
+| `MINIAPP_DOMAIN` | nama host kedua, mis. `miniapp.sigapsppg.app`. Kosong untuk instalasi satu host. |
+| `MINIAPP_CUTOVER` | `off` untuk instalasi awal dan persiapan TLS. Ubah ke `on` hanya setelah probe host kedua lulus. |
+| `TELEGRAM_MINIAPP_URL` | `https://<DOMAIN>/miniapp/` saat `off`, lalu `https://<MINIAPP_DOMAIN>/miniapp/` saat `on`. |
 | `CERTBOT_EMAIL` | email Anda (pemberitahuan Let's Encrypt) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` | dari @BotFather (username tanpa `@`) |
 | `LLM_API_KEY`, `STT_API_KEY` | kunci API Groq (dua variabel terpisah, isi keduanya) |
@@ -368,16 +370,16 @@ Bila gagal:
 
 ### Langkah 12. Sertifikat HTTPS (staging dulu, lalu produksi)
 
-Syarat: DNS sudah menunjuk ke IP (langkah 5) dan port 80 terbuka di Security Group.
+Syarat: DNS `DOMAIN` dan `MINIAPP_DOMAIN` jika diisi sudah menunjuk ke IP (langkah 5). Port 80 terbuka di Security Group.
 
 ```bash
 cd /opt/sigap/app
 scripts/bootstrap-cert.sh --staging
 ```
 
-Skrip menyalakan nginx (HTTP :80), meminta sertifikat dari CA staging Let's Encrypt lewat kontainer `certbot` sesaat (metode webroot, volume `certbot_www`/`certbot_etc`), mengaktifkan konfigurasi TLS nginx, lalu menguji `https://<DOMAIN>/up` secara lokal dengan `--insecure` (sertifikat staging tidak dipercaya browser).
+Skrip menyalakan nginx (HTTP :80), meminta sertifikat per host dari CA staging Let's Encrypt lewat kontainer `certbot` sesaat (metode webroot, volume `certbot_www`/`certbot_etc`), mengaktifkan konfigurasi TLS nginx, lalu menguji `/up` setiap host secara lokal dengan `--insecure` (sertifikat staging tidak dipercaya browser).
 
-Hasil yang diharapkan: `[ok] HTTPS aktif: https://<DOMAIN>`.
+Hasil yang diharapkan adalah `[ok] HTTPS aktif: https://<DOMAIN>/up` dan status keluar 0. Jika host kedua dikonfigurasi, periksa hasil probe kedua host.
 
 Bila lolos, terbitkan sertifikat produksi:
 
@@ -385,12 +387,12 @@ Bila lolos, terbitkan sertifikat produksi:
 scripts/bootstrap-cert.sh --force
 ```
 
-Hasil yang diharapkan: `[ok] HTTPS aktif: ...` tanpa `--insecure`. Verifikasi dari laptop: `curl -I https://<DOMAIN>/up` menampilkan `HTTP/2 200`.
+Hasil yang diharapkan adalah `[ok] HTTPS aktif: ...` untuk setiap host tanpa `--insecure`. Dari laptop, pastikan `curl -I https://<DOMAIN>/up` dan padanannya untuk host Mini App menampilkan `HTTP/2 200`.
 
-Bila `--force` dari lineage staging menolak atau tetap menghasilkan sertifikat staging: hapus lineage lalu ulangi (perilaku ini belum diuji):
+Bila `--force` menolak lineage staging atau tetap menghasilkan sertifikat staging, periksa `certbot certificates`. Di lingkungan gladi, hapus hanya lineage staging yang gagal lalu ulangi. Ganti `<HOST>` dengan nama lineage yang dikonfirmasi.
 
 ```bash
-dcp --profile tools run --rm certbot delete --cert-name <DOMAIN>
+dcp --profile tools run --rm certbot delete --cert-name <HOST>
 scripts/bootstrap-cert.sh
 ```
 
@@ -425,10 +427,13 @@ Bila gagal: `telegram_id sudah terdaftar sebagai akun lain` -> ubah lewat Admin 
 
 ### Langkah 15. Uji dasar
 
+Untuk mode satu host, gunakan `DOMAIN` pada pemeriksaan Mini App yang mengharapkan 200.
+
 ```bash
 curl -fsS -o /dev/null -w "%{http_code}\n" https://<DOMAIN>/up                 # 200
 curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" http://<DOMAIN>/      # 301 https://<DOMAIN>/
-curl -sI https://<DOMAIN>/miniapp/ | head -20                                  # 200, ada Content-Security-Policy
+curl -sI https://<MINIAPP_DOMAIN>/miniapp/ | head -20                          # 200, ada Content-Security-Policy
+curl -sI https://<DOMAIN>/miniapp/ | head -1                                  # 404 bila host dipisah
 nc -vz -w 3 <IP> 3306                                                           # dari laptop: harus gagal/timeout
 ```
 
@@ -713,7 +718,22 @@ dcp up -d --force-recreate app queue scheduler
 
 **Disk dan image**: `docker system df`, `df -h /`. `deploy.sh` mempertahankan image rilis saat ini dan sebelumnya. Pantau ruang bebas (deploy menolak bila < 5 GB; ubah `DEPLOY_MIN_FREE_GB`).
 
-**Pemantauan cepat harian**: `dcp ps`, `curl -fsS https://<DOMAIN>/up`, `dcp exec app php artisan sigap:telegram-set-webhook --info` (Pending harus ~0, galat kosong), `systemctl list-timers 'sigap-*'`.
+**Pemantauan cepat harian**: `dcp ps`, `curl -fsS https://<DOMAIN>/up`, `curl -fsS https://<MINIAPP_DOMAIN>/up` bila aktif, `dcp exec app php artisan sigap:telegram-set-webhook --info` (Pending harus ~0, galat kosong), `systemctl list-timers 'sigap-*'`.
+
+### Pemisahan host web dan Mini App
+
+1. Gladi dengan dua nama staging dan bot staging. Buat DNS A untuk keduanya ke IPv4 ingress nginx. Jika memakai AAAA, pastikan jalur IPv6 benar-benar melayani nginx. Biarkan port 80 tersedia untuk ACME HTTP-01 dan port 443 untuk kedua klien.
+2. Simpan ref atau image, pengaturan host dan URL, serta pengaturan tombol Telegram sebelum perubahan. Pertahankan `DOMAIN=sigapsppg.app` dan `APP_URL=https://sigapsppg.app`. Isi `MINIAPP_DOMAIN=miniapp.sigapsppg.app`, `MINIAPP_CUTOVER=off`, dan pertahankan `TELEGRAM_MINIAPP_URL=https://sigapsppg.app/miniapp/`. Deploy image yang mendukung persiapan. Verifikasi URL lama tetap 200 ketika host kedua masih melayani ACME lewat HTTP.
+3. Jalankan `bash scripts/bootstrap-cert.sh` selama flag masih `off`. Skrip menerbitkan sertifikat per host, memeriksa dan memuat ulang nginx, lalu mewajibkan status 200 untuk `/up` dan `/miniapp/` di kedua host. Exit gagal berarti tahap persiapan belum selesai. Opsi `--staging` hanya untuk gladi CA dengan verifikasi trust dinonaktifkan pada probe bootstrap. Cutover memerlukan sertifikat tepercaya. `--force` menerbitkan ulang semua lineage yang dikonfigurasi.
+4. Verifikasi `/miniapp/` masih 200 di host lama dan 200 lewat TLS tepercaya di host baru. Jalankan `dcp --profile tools run --rm certbot renew --dry-run` setelah kedua lineage tersedia. Lalu ubah `MINIAPP_CUTOVER=on` dan `TELEGRAM_MINIAPP_URL=https://miniapp.sigapsppg.app/miniapp/` bersamaan dan jalankan deploy lagi. Deploy memeriksa host baru sebelum maintenance dan memeriksa ulang status 200 pada `/up` dan `/miniapp/` di host baru sebelum mencatat sukses. Setelah cutover, gunakan `renew-cert.sh` untuk perpanjangan. Pastikan URL lama kini 404.
+5. Periksa webhook dengan `dcp exec app php artisan sigap:telegram-set-webhook --info`. URL tetap `https://<DOMAIN>/api/v1/telegram/webhook`. Menu bot bertipe **commands**. Jalankan `/start` atau `/menu` untuk memperoleh tombol baru yang memakai `TELEGRAM_MINIAPP_URL`. Jika tombol peluncur terpisah pernah disetel di BotFather, sesuaikan URL-nya juga. Tombol pada pesan lama tetap menyimpan URL lama dan perlu diganti dengan pesan baru. Terbitkan ulang tautan draf lewat bot bila diperlukan.
+6. Ikuti uji pemisahan host, TG-12, dan TG-13 di [daftar uji staging](uji-staging.md). Login ulang Mini App mungkin diperlukan karena penyimpanan browser terikat origin.
+
+**Kembali ke mode persiapan.** Setel `MINIAPP_CUTOVER=off` dan `TELEGRAM_MINIAPP_URL=https://<DOMAIN>/miniapp/`. Pertahankan `MINIAPP_DOMAIN` agar vhost kedua dan jalur ACME tetap aktif. Deploy ulang dengan SHA dan tag image yang sama. Jika cutover gagal dan pemulihan otomatis sudah mengembalikan mode persiapan, cukup samakan kembali pengaturan tersebut sebelum menjalankan Compose lagi.
+
+**Kembali ke image satu host.** Deploy ulang dengan pasangan SHA dan tag yang sama mempertahankan isi `.deploy/previous`. Jika urutannya A (satu host) → B (persiapan) → B (cutover), file itu masih menunjuk A. Periksa targetnya, setel `MINIAPP_CUTOVER=off`, kembalikan `TELEGRAM_MINIAPP_URL=https://<DOMAIN>/miniapp/`, kosongkan `MINIAPP_DOMAIN`, lalu jalankan `bash scripts/deploy.sh --rollback`. Probe mengikuti konfigurasi nginx yang dipulihkan. Periksa timer sertifikat jika checkout kembali ke skrip lama yang memproses semua lineage, termasuk host yang jalur ACME-nya sudah ditutup.
+
+Setelah salah satu pemulihan, kembalikan tombol BotFather jika diubah, ambil tombol baru lewat `/start`, lalu ulangi uji login, webhook, tautan draf, dan lampiran.
 
 ### Keamanan operasional
 

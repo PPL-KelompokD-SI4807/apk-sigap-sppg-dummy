@@ -227,7 +227,7 @@ export async function request(method, path, { query, body, key, silent = false }
 
   let res;
   try {
-    // credentials 'omit': klien Mini App hanya memakai Bearer. Cookie sesi web (__Host-sigap_sesi, satu origin) tidak
+    // credentials 'omit': klien Mini App hanya memakai Bearer. Cookie sesi web (__Host-sigap_sesi) tidak
     // boleh ikut terkirim; jalur cookie hanya milik api-web.js (R04-5).
     res = await fetch(url, { method: verb, headers, body: payload, credentials: 'omit' });
   } catch {

@@ -26,7 +26,7 @@ return [
     'dev_bypass' => (bool) env('TELEGRAM_DEV_BYPASS', false),
 
     // URL HTTPS Mini App (tombol web_app & menu bot). Default: APP_URL/miniapp/.
-    'miniapp_url' => env('TELEGRAM_MINIAPP_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/miniapp/'),
+    'miniapp_url' => env('TELEGRAM_MINIAPP_URL') ?: rtrim((string) env('APP_URL', 'http://localhost'), '/').'/miniapp/',
 
     // Bot API (tanpa SDK pihak ketiga, KT-04). Token tidak pernah di-log.
     'api_base_url' => env('TELEGRAM_API_BASE_URL', 'https://api.telegram.org'),

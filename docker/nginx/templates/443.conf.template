@@ -24,4 +24,6 @@ server {
     limit_conn sigap_conn 40;
 
     include /etc/nginx/snippets/sigap-app.conf;
+    include /etc/nginx/snippets/sigap-web.conf;
+    include /etc/nginx/snippets/${SIGAP_WEB_MINIAPP_SNIPPET};
 }

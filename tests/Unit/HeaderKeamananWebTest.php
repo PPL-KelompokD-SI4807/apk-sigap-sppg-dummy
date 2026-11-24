@@ -20,7 +20,7 @@ class HeaderKeamananWebTest extends TestCase
 
     private function blok(string $pola): string
     {
-        $app = file_get_contents(base_path('docker/nginx/snippets/sigap-app.conf'));
+        $app = file_get_contents(base_path('docker/nginx/snippets/sigap-web.conf'));
         $this->assertSame(1, preg_match('/'.$pola.'\s*\{(.*?)\n\}/s', $app, $m), $pola);
 
         return $m[1];

@@ -18,9 +18,8 @@ use Symfony\Component\HttpFoundation\Response;
  * - Ada header Authorization -> middleware ini tidak melakukan apa pun (jalur Bearer Mini App tidak tersentuh;
  *   cookie diabaikan, Bearer tidak sah tetap 401).
  * - Tanpa Authorization, jalur cookie HANYA aktif bila `X-Sigap-Klien: web` (semua metode, termasuk GET/HEAD/
- *   OPTIONS). Tanpa header itu cookie diabaikan dan TIDAK dihapus: Mini App satu origin yang belum/tidak lagi
- *   memasang Authorization (sebelum login senyap, setelah logout/401) tidak ikut memakai sesi web di browser
- *   yang sama dan tidak menghapusnya.
+ *   OPTIONS) dan host cocok dengan APP_URL. Tanpa header itu cookie diabaikan dan TIDAK dihapus, misalnya
+ *   saat Mini App belum memasang Authorization atau sesudah logout.
  * - Jalur cookie aktif: nilai cookie diserahkan ke guard Sanctum (SesiWeb::tokenDariRequest). Metode pengubah
  *   (selain GET/HEAD/OPTIONS) WAJIB lolos CSRF tiga lapis SEBELUM autentikasi (SesiWeb::wajibCsrf), sehingga
  *   permintaan palsu tidak memperpanjang sesi.
@@ -45,6 +44,8 @@ class SesiWebCookie
         if (! is_string($nilai) || $nilai === '' || $request->headers->get(SesiWeb::HEADER_KLIEN) !== SesiWeb::NILAI_KLIEN) {
             return $next($request);
         }
+
+        abort_unless(BatasiHost::sesuai($request, 'app.url'), 403);
 
         $request->attributes->set(SesiWeb::ATRIBUT_COOKIE, $nilai);
 

@@ -1,0 +1,15 @@
+server {
+    listen 80;
+    server_name ${MINIAPP_DOMAIN};
+    access_log /var/log/nginx/access.log sigap;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://${MINIAPP_DOMAIN}$request_uri;
+    }
+}

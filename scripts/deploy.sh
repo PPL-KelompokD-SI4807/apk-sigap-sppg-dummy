@@ -20,7 +20,7 @@
 #
 # Urutan: kunci -> preflight (.env, nilai berbahaya, disk, compose, git bersih, DB siap) -> checkout ->
 #   build/pull (gagal = rilis lama tetap jalan) -> nginx -t pada image web -> dump pra-migrasi -> maintenance + hentikan queue/scheduler ->
-#   migrate --force -> up (entrypoint membuat cache config/route/event/view) -> artisan up -> health /up ->
+#   migrate --force -> up (entrypoint membuat cache config/route/event/view) -> artisan up -> probe HTTP/TLS ->
 #   catat rilis -> bersihkan image lama (simpan rilis ini dan sebelumnya).
 # Aman dijalankan ulang. Tidak mencetak nilai .env.
 #
@@ -45,6 +45,9 @@ NEW_SHA=""
 NEW_TAG=""
 MIGRATED=0
 DOMAIN=""
+MINIAPP_DOMAIN=""
+MINIAPP_CUTOVER=off
+PREV_CUTOVER=off
 IMAGE_REGISTRY=""
 
 # to_bytes 448m|1g|512k|1024 -> byte
@@ -70,7 +73,7 @@ preflight() {
   mode="$(file_mode "$SIGAP_ENV_FILE")"
   ((8#$mode & 8#077)) && die ".env dapat dibaca grup/lainnya (mode $mode). Jalankan: chmod 600 .env"
 
-  local v key
+  local v key miniapp_url miniapp_host
   v="$(env_get APP_ENV)"
   [[ "$v" == "production" ]] || die "APP_ENV harus production."
   v="$(env_get APP_DEBUG)"
@@ -84,7 +87,26 @@ preflight() {
     die "DOMAIN kosong/tidak valid."
   v="$(env_get APP_URL)"
   [[ "$v" == https://* ]] || die "APP_URL harus https://."
-  [[ "${v%/}" == "https://$DOMAIN" ]] || warn "APP_URL tidak sama dengan https://DOMAIN (periksa)."
+  [[ "${v%/}" == "https://$DOMAIN" ]] || die "APP_URL harus sama dengan https://DOMAIN."
+  MINIAPP_DOMAIN="$(env_get MINIAPP_DOMAIN)"
+  MINIAPP_CUTOVER="$(env_get MINIAPP_CUTOVER)"
+  MINIAPP_CUTOVER="${MINIAPP_CUTOVER:-off}"
+  [[ "$MINIAPP_CUTOVER" == on || "$MINIAPP_CUTOVER" == off ]] || die "MINIAPP_CUTOVER harus on atau off."
+  miniapp_url="$(env_get TELEGRAM_MINIAPP_URL)"
+  miniapp_host="$DOMAIN"
+  if [[ -n "$MINIAPP_DOMAIN" ]]; then
+    [[ "$MINIAPP_DOMAIN" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ && "$MINIAPP_DOMAIN" != "${DOMAIN,,}" ]] ||
+      die "MINIAPP_DOMAIN harus berupa nama host huruf kecil yang berbeda dari DOMAIN."
+  fi
+  if [[ "$MINIAPP_CUTOVER" == on ]]; then
+    [[ -n "$MINIAPP_DOMAIN" ]] || die "MINIAPP_CUTOVER=on memerlukan MINIAPP_DOMAIN."
+    [[ -n "$miniapp_url" ]] || die "TELEGRAM_MINIAPP_URL wajib diisi saat cutover aktif."
+    miniapp_host="$MINIAPP_DOMAIN"
+  fi
+  [[ -z "$miniapp_url" || "$miniapp_url" == "https://$miniapp_host/miniapp/" ]] ||
+    die "TELEGRAM_MINIAPP_URL harus https://$miniapp_host/miniapp/."
+  export DOMAIN MINIAPP_DOMAIN MINIAPP_CUTOVER
+  export TELEGRAM_MINIAPP_URL="$miniapp_url"
 
   v="$(env_get APP_KEY)"
   [[ "$v" == base64:* && ${#v} -ge 40 ]] || die "APP_KEY kosong/tidak valid (php artisan key:generate --show)."
@@ -212,13 +234,35 @@ pending_migrations() {
   esac
 }
 
+cutover_running() {
+  dc exec -T nginx grep -Fq 'include /etc/nginx/snippets/sigap-tolak-miniapp.conf;' \
+    /etc/nginx/conf.d/20-sigap-443.conf 2>/dev/null
+}
+
 health_check() {
-  local i url tls=0
+  local mode="$1" i url tls=0
+  if [[ "$mode" == restored ]]; then
+    mode=off
+    if cutover_running; then mode=on; fi
+  elif [[ "$mode" == on ]] && ! cutover_running; then
+    err "Host web belum menutup jalur Mini App lama."
+    return 1
+  fi
   if dc exec -T nginx test -f /etc/nginx/conf.d/20-sigap-443.conf 2>/dev/null; then tls=1; fi
   for i in $(seq 1 20); do
-    if [[ "$tls" == "1" ]]; then
-      url="https://$DOMAIN/up"
-      curl -fsS -o /dev/null --max-time 5 --resolve "$DOMAIN:443:127.0.0.1" "$url" && return 0
+    if [[ "$tls" == "1" || "$mode" == on ]]; then
+      if ! https_probe "$DOMAIN" /up; then
+        url="https://$DOMAIN/up"
+      elif [[ "$mode" == off ]]; then
+        url="https://$DOMAIN/miniapp/"
+        https_probe "$DOMAIN" /miniapp/ && return 0
+      elif ! https_probe "$MINIAPP_DOMAIN" /up; then
+        url="https://$MINIAPP_DOMAIN/up"
+      elif ! https_probe "$MINIAPP_DOMAIN" /miniapp/; then
+        url="https://$MINIAPP_DOMAIN/miniapp/"
+      else
+        return 0
+      fi
     else
       url="http://$DOMAIN/up (lokal, TLS belum aktif)"
       curl -fsS -o /dev/null --max-time 5 -H "Host: $DOMAIN" "http://127.0.0.1/up" && return 0
@@ -262,10 +306,13 @@ get_images() {
 }
 
 write_state() {
+  local active_sha="$1" active_tag="$2" previous_sha="$3" previous_tag="$4"
   mkdir -p "$SIGAP_STATE_DIR"
-  printf 'IMAGE_TAG=%s\n' "$1" >"$SIGAP_IMAGE_ENV"
-  if [[ -n "$2" && -n "$3" ]]; then
-    printf '%s %s\n' "$2" "$3" >"$SIGAP_STATE_DIR/previous"
+  printf 'IMAGE_TAG=%s\n' "$active_tag" >"$SIGAP_IMAGE_ENV"
+  # Deploy konfigurasi dengan image yang sama mempertahankan target rollback terakhir.
+  if [[ -n "$previous_sha" && -n "$previous_tag" ]] &&
+    [[ "$active_sha" != "$previous_sha" || "$active_tag" != "$previous_tag" ]]; then
+    printf '%s %s\n' "$previous_sha" "$previous_tag" >"$SIGAP_STATE_DIR/previous"
   fi
 }
 
@@ -301,10 +348,15 @@ revert_to_previous() {
     return 1
   }
   warn "Mengembalikan rilis sebelumnya ($PREV_TAG) ..."
+  if [[ "$MINIAPP_CUTOVER" == on && "$PREV_CUTOVER" == off ]]; then
+    # Prasyarat cutover memastikan image sebelumnya sudah melayani vhost persiapan.
+    local -x MINIAPP_CUTOVER=off
+    local -x TELEGRAM_MINIAPP_URL="https://$DOMAIN/miniapp/"
+  fi
   git -C "$SIGAP_REPO_DIR" checkout --quiet --detach "$PREV_SHA" || true
   export IMAGE_TAG="$PREV_TAG"
   dc up -d --no-deps --remove-orphans --pull never --wait --wait-timeout 240 app queue scheduler nginx &&
-    maintenance_off && health_check
+    maintenance_off && health_check restored
 }
 
 print_recovery() {
@@ -353,6 +405,10 @@ do_rollback() {
   local cur_tag cur_sha
   read -r PREV_SHA PREV_TAG <"$SIGAP_STATE_DIR/previous"
   [[ "$PREV_SHA" =~ ^[0-9a-f]{40}$ && -n "$PREV_TAG" ]] || die ".deploy/previous rusak."
+  if [[ "$MINIAPP_CUTOVER" == on ]] &&
+    ! git -C "$SIGAP_REPO_DIR" cat-file -e "$PREV_SHA:docker/nginx/templates/miniapp-443.conf.template" 2>/dev/null; then
+    die "Rilis tujuan hanya mendukung satu host. Setel MINIAPP_CUTOVER=off dan TELEGRAM_MINIAPP_URL=https://$DOMAIN/miniapp/ terlebih dahulu."
+  fi
   cur_sha="$(git -C "$SIGAP_REPO_DIR" rev-parse HEAD)"
   cur_tag="$(env_get IMAGE_TAG "$SIGAP_IMAGE_ENV")"
 
@@ -368,19 +424,27 @@ do_rollback() {
   export IMAGE_TAG="$PREV_TAG"
   dc up -d --no-deps --remove-orphans --pull never --wait --wait-timeout 240 app queue scheduler nginx
   maintenance_off
-  health_check
-  write_state "$PREV_TAG" "$cur_sha" "$cur_tag"
+  health_check restored
+  write_state "$PREV_SHA" "$PREV_TAG" "$cur_sha" "$cur_tag"
   log_history "$PREV_SHA" "$PREV_TAG" "rollback"
   ok "Rollback selesai ke $PREV_TAG."
 }
 
 prune_images() {
-  local repo ref tag
+  local repo ref tag rollback_tag="" rollback_sha
+  # write_state dapat mempertahankan target rollback yang lebih lama dari PREV_TAG.
+  if [[ -e "$SIGAP_STATE_DIR/previous" ]]; then
+    if ! read -r rollback_sha rollback_tag <"$SIGAP_STATE_DIR/previous" ||
+      [[ ! "$rollback_sha" =~ ^[0-9a-f]{40}$ || ! "$rollback_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+      warn "Metadata rollback tidak dapat dibaca atau tidak valid. Pembersihan image dilewati."
+      return 0
+    fi
+  fi
   for repo in app web; do
     while IFS= read -r ref; do
       [[ -n "$ref" ]] || continue
       tag="${ref##*:}"
-      [[ "$tag" == "$NEW_TAG" || "$tag" == "$PREV_TAG" || "$tag" == "<none>" ]] && continue
+      [[ "$tag" == "$NEW_TAG" || "$tag" == "$rollback_tag" || "$tag" == "<none>" ]] && continue
       docker image rm "$ref" >/dev/null 2>&1 || true
     done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' "$IMAGE_REGISTRY/sigap-sppg-$repo")
   done
@@ -437,6 +501,17 @@ main() {
     db_ready
     do_rollback
     return 0
+  fi
+
+  if cutover_running; then PREV_CUTOVER=on; fi
+  if [[ "$MINIAPP_CUTOVER" == on ]]; then
+    # Uji vhost yang sedang berjalan sebelum checkout/build/maintenance.
+    dc exec -T nginx test -f /etc/nginx/conf.d/21-sigap-miniapp-443.conf &&
+      https_probe "$MINIAPP_DOMAIN" /up && https_probe "$MINIAPP_DOMAIN" /miniapp/ ||
+      die "Cutover memerlukan HTTPS tepercaya pada /up dan /miniapp/ di $MINIAPP_DOMAIN. Jalankan tahap persiapan TLS."
+    if [[ "$PREV_CUTOVER" == off ]]; then
+      https_probe "$DOMAIN" /miniapp/ || die "Jalur Mini App lama harus sehat sebelum cutover."
+    fi
   fi
 
   # --- kode ---
@@ -512,7 +587,7 @@ main() {
   # --- layanan baru ---
   info "Menjalankan layanan rilis $NEW_TAG ..."
   if ! dc up -d --no-deps --remove-orphans --pull never --wait --wait-timeout 240 app queue scheduler nginx ||
-    ! maintenance_off || ! health_check; then
+    ! maintenance_off || ! health_check "$MINIAPP_CUTOVER"; then
     STAGE="handled"
     dc ps >&2 || true
     if [[ "$MIGRATED" == "0" ]] && revert_to_previous; then
@@ -530,9 +605,12 @@ main() {
     warn "migrate:status melaporkan migrasi tertunda/galat; periksa manual."
   fi
   ok "Sehat: https://$DOMAIN/up"
+  if [[ "$MINIAPP_CUTOVER" == on ]]; then
+    ok "Sehat: https://$MINIAPP_DOMAIN/up dan https://$MINIAPP_DOMAIN/miniapp/"
+  fi
 
   # --- catat ---
-  write_state "$NEW_TAG" "$PREV_SHA" "$PREV_TAG"
+  write_state "$NEW_SHA" "$NEW_TAG" "$PREV_SHA" "$PREV_TAG"
   log_history "$NEW_SHA" "$NEW_TAG" "ok"
   STAGE="done"
 

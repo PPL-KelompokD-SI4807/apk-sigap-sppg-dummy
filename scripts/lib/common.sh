@@ -68,6 +68,16 @@ is_true() {
   esac
 }
 
+# ---------- Probe HTTPS lokal ----------
+# Periksa TLS/SNI dan status tepat 200. Redirect (termasuk ke host lama) tidak lulus.
+https_probe() {
+  local host="$1" path="$2" status
+  shift 2
+  status="$(curl --disable --noproxy '*' -fsS -o /dev/null -w '%{http_code}' --max-time 5 \
+    --resolve "$host:443:127.0.0.1" "$@" "https://$host$path")" &&
+    [[ "$status" == 200 ]]
+}
+
 # ---------- Docker Compose ----------
 dc() {
   local args=(-f "$SIGAP_COMPOSE_FILE" --project-directory "$SIGAP_REPO_DIR" --env-file "$SIGAP_ENV_FILE")

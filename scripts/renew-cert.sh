@@ -25,10 +25,21 @@ main() {
   take_lock
   service_running nginx || die "Kontainer nginx tidak berjalan."
 
-  dc --profile tools run --rm certbot renew --webroot -w /var/www/certbot --quiet --no-random-sleep-on-renew
+  local domain miniapp_domain host hasil=0
+  domain="$(env_get DOMAIN)"
+  miniapp_domain="$(env_get MINIAPP_DOMAIN)"
+  local hosts=("${domain:?DOMAIN wajib diisi}")
+  [[ -z "$miniapp_domain" ]] || hosts+=("$miniapp_domain")
+  # Hanya lineage yang aktif. Setelah rollback satu host, cert Mini App tetap tersedia
+  # untuk aktivasi ulang meski vhost ACME-nya sedang tidak dilayani.
+  for host in "${hosts[@]}"; do
+    dc --profile tools run --rm certbot renew --cert-name "$host" --webroot -w /var/www/certbot --quiet --no-random-sleep-on-renew ||
+      hasil=1
+  done
   dc exec -T nginx /docker-entrypoint.d/40-sigap-config.sh >/dev/null
   dc exec -T nginx nginx -t -q
   dc exec -T nginx nginx -s reload
+  [[ "$hasil" == 0 ]] || die "Pembaruan salah satu sertifikat gagal. Periksa log Certbot."
   ok "Pembaruan sertifikat diperiksa; nginx di-reload."
 }
 

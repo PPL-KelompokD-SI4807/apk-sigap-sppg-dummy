@@ -48,7 +48,7 @@ class Lampiran extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
-    /** URL relatif API (butuh token Bearer); bukan URL publik. */
+    /** URL API privat, relatif terhadap origin klien. */
     public function url(): string
     {
         return '/api/v1/lampiran/'.$this->getKey();
