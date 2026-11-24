@@ -85,7 +85,7 @@ Jujur dicatat agar tidak dianggap selesai:
 
 - **NFR-01 kinerja API**: skrip k6 ada, belum pernah dijalankan. Tidak ada angka p95.
 - **NFR-11 akurasi Agen AI**: 100 kasus uji tersedia, evaluasi belum dijalankan terhadap LLM sungguhan.
-- **NFR-08 skor SUS**: lembar UAT dan SUS sudah disiapkan, responden lapangan belum ada.
+- **NFR-08 skor SUS**: lembar UAT dan SUS sudah disiapkan, belum diisi. Proyek ini **tidak memiliki akses ke pengguna lapangan SPPG**, sehingga UAT dan SUS akan dijalankan secara internal oleh lima anggota tim (N = 5). Angka dari responden yang juga pengembang bersifat terbatas dan harus dilaporkan apa adanya, bukan sebagai hasil pengujian lapangan.
 - **Pemeriksaan manual lintas peramban dan Telegram ponsel**: belum dijalankan.
 
-Keempatnya memerlukan eksekusi di server atau responden manusia, dan tidak dapat dipenuhi dengan data buatan.
+Keempatnya memerlukan eksekusi di server atau responden manusia, dan **tidak dapat dipenuhi dengan data buatan**. Mengarang skor SUS atau responden UAT akan membuat seluruh bagian pengujian tidak dapat dipertahankan saat sidang.
