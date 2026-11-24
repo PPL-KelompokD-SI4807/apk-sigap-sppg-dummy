@@ -2,6 +2,7 @@
 // 409 versi_tidak_cocok menampilkan pesan + tombol Muat ulang tanpa menimpa isian pengguna.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { todayISO } from '../core/validators.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +39,7 @@ globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
 const panggilan = [];
 let skrip = [];
 const resp = (status, body) => ({ ok: status < 300, status, headers: { get: () => null }, json: async () => body });
-const hariIni = new Date().toISOString().slice(0, 10);
+const hariIni = todayISO(); // sama dengan yang dipakai aplikasi (core/validators.js), bukan tanggal UTC
 let jadwalRec = { id: 1, status: 'direncanakan', tanggal_produksi: hariIni, target_porsi: 100, menu_id: 3, menu: { id: 3, nama_menu: 'Menu Fiktif', status_persetujuan: 'disetujui' }, izin: { ubah: true, hapus: true } };
 const khusus = {};
 globalThis.fetch = async (url, init) => {
