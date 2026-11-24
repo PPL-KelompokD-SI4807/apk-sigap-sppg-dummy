@@ -39,7 +39,8 @@ class AiEvaluasi extends Command
         {--mulai=1 : Nomor urut kasus pertama (mulai dari 1) untuk dicicil}
         {--batas= : Jumlah kasus maksimum yang dijalankan (kosong = sampai akhir)}
         {--berkas=tests/ai-eval/kasus.json : Berkas kasus (JSON)}
-        {--jeda= : Jeda antar-kasus dalam milidetik (bawaan config ai.evaluasi.jeda_ms) untuk menjaga kuota penyedia}';
+        {--jeda= : Jeda antar-kasus dalam milidetik (bawaan config ai.evaluasi.jeda_ms) untuk menjaga kuota penyedia}
+        {--ulang=3 : Berapa kali satu kasus diulang saat penyedia menolak 429 (sibuk); 0 = tidak mengulang}';
 
     protected $description = 'Evaluasi akurasi Agen AI (tool + kolom) terhadap kasus teks fiktif. Memanggil LLM sungguhan; hanya manual.';
 
@@ -59,9 +60,10 @@ class AiEvaluasi extends Command
         $batas = ($batas === null || $batas === '') ? null : filter_var($batas, FILTER_VALIDATE_INT);
         $jeda = $this->option('jeda');
         $jeda = ($jeda === null || $jeda === '') ? max(0, (int) config('ai.evaluasi.jeda_ms', 3000)) : filter_var($jeda, FILTER_VALIDATE_INT);
+        $ulang = filter_var($this->option('ulang'), FILTER_VALIDATE_INT);
 
-        if ($mulai === false || $mulai < 1 || $batas === false || ($batas !== null && $batas < 1) || $jeda === false || $jeda < 0) {
-            $this->error('Opsi tidak valid: --mulai dan --batas harus bilangan bulat >= 1, --jeda >= 0 (milidetik).');
+        if ($mulai === false || $mulai < 1 || $batas === false || ($batas !== null && $batas < 1) || $jeda === false || $jeda < 0 || $ulang === false || $ulang < 0) {
+            $this->error('Opsi tidak valid: --mulai dan --batas harus bilangan bulat >= 1, --jeda >= 0 (milidetik), --ulang >= 0.');
 
             return self::FAILURE;
         }
@@ -84,15 +86,32 @@ class AiEvaluasi extends Command
         $llm = app(LlmClient::class);
         $hasil = [];
 
-        $this->warn('Memanggil LLM sungguhan ('.$llm->modelName().'): '.count($terpilih).' kasus, jeda '.$jeda.' ms. Semua data uji di-rollback.');
+        $this->warn('Memanggil LLM sungguhan ('.$llm->modelName().'): '.count($terpilih).' kasus, jeda '.$jeda.' ms, ulang maks '.$ulang.'x saat 429. Semua data uji di-rollback.');
+
+        $totalUlang = 0;
 
         foreach (array_values($terpilih) as $i => $satu) {
             if ($i > 0 && $jeda > 0) {
                 usleep($jeda * 1000);
             }
 
-            $hasil[] = $this->jalankanKasus($llm, $satu);
-            $r = end($hasil);
+            // 429 = penyedia menolak karena batas laju, BUKAN kesalahan model. Tanpa pengulangan, kasusnya
+            // tercatat 'galat' dan hilang dari penyebut akurasi, sehingga angka akhir dihitung atas sampel
+            // yang jauh lebih kecil tanpa terlihat. Ulangi dengan tunggu mundur eksponensial.
+            $r = $this->jalankanKasus($llm, $satu);
+
+            for ($p = 1; $p <= $ulang && ($r['sibuk'] ?? false); $p++) {
+                $tunggu = max(
+                    (int) round(((float) ($r['retry_after'] ?? 0)) * 1000),
+                    max($jeda, 1000) * (2 ** $p),
+                );
+                $this->line(sprintf('[%s] 429, menunggu %.1f detik lalu mengulang (%d/%d)', $satu['id'], $tunggu / 1000, $p, $ulang));
+                usleep($tunggu * 1000);
+                $totalUlang++;
+                $r = $this->jalankanKasus($llm, $satu);
+            }
+
+            $hasil[] = $r;
             $this->line(sprintf('[%s] %-8s %-34s %s', $r['id'], $r['status'], (string) ($r['tool_dipilih'] ?? '-'), $r['tool_benar'] ? 'benar' : 'salah'));
         }
 
@@ -221,6 +240,8 @@ class AiEvaluasi extends Command
         // Tool yang dipilih: utamakan panggilan bertool yang diharapkan (model boleh memanggil beberapa), lalu yang pertama.
         $panggilan = null;
         $status = 'ok';
+        $sibuk = false;          // 429 penyedia: layak diulang, bukan kesalahan model
+        $retryAfter = null;      // saran tunggu dari header Retry-After, bila penyedia mengirimkannya
 
         if ($perekam->toolCalls !== []) {
             $panggilan = collect($perekam->toolCalls)->first(fn ($c) => $c->name === $kasus['tool']) ?? $perekam->toolCalls[0];
@@ -231,6 +252,8 @@ class AiEvaluasi extends Command
         } elseif ($perekam->galat !== null) {
             $status = 'galat';
             $galat = $perekam->galat->logLabel();
+            $sibuk = $perekam->galat->status === 429;
+            $retryAfter = $perekam->galat->retryAfter;
         } elseif ($perekam->panggilan === 0) {
             $status = 'ditolak_server';
         } else {
@@ -247,6 +270,8 @@ class AiEvaluasi extends Command
             'peran' => $kasus['peran'],
             'status' => $status,
             'galat' => $galat,
+            'sibuk' => $sibuk,
+            'retry_after' => $retryAfter,
             'tool_diharapkan' => $kasus['tool'],
             'tool_dipilih' => $toolDipilih,
             'tool_benar' => $nilai['tool_benar'],

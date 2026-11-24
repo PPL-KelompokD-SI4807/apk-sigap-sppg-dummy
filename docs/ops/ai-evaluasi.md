@@ -22,6 +22,9 @@ php artisan sigap:ai-evaluasi --mulai=26 --batas=25 --jeda=5000
 
 # berkas kasus lain
 php artisan sigap:ai-evaluasi --berkas=tests/ai-eval/kasus.json
+
+# Di staging (berkas kasus ikut ke image sejak 24 Nov 2026):
+docker compose exec app php artisan sigap:ai-evaluasi --batas 25 --jeda 20000
 ```
 
 | Opsi | Arti |
@@ -55,3 +58,19 @@ Jumlah baris `ai_drafts`, `ai_interactions`, `users`, `sppgs` dibandingkan sebel
 - Kasus hanya berisi data fiktif (tanpa NIK, tanpa nama atau HP sungguhan). Pesan kasus dikirim ke penyedia LLM.
 - Kunci API tidak pernah dicetak atau disimpan di berkas hasil. Auto-increment MySQL dapat naik walau baris di-rollback.
 - Jangan menambah kasus berisi data sungguhan atau NIK.
+
+## Batas laju penyedia (429)
+
+Kuota gratis Groq menolak permintaan yang terlalu rapat dengan HTTP 429. Pada run 24 November 2026
+dengan jeda bawaan 3 detik, **30 dari 50 kasus** ditolak 429. Akurasi yang dilaporkan saat itu (90%)
+ternyata dihitung hanya atas 20 kasus yang lolos, tanpa hal itu terlihat pada tabel ringkasan.
+
+Dua hal yang mencegahnya terulang:
+
+- `--ulang` (bawaan 3) mengulang kasus yang ditolak 429, dengan tunggu mundur eksponensial dan
+  menghormati header `Retry-After` bila penyedia mengirimkannya. `--ulang=0` mematikannya.
+- `--jeda` sebaiknya dinaikkan untuk model besar. Untuk `openai/gpt-oss-120b` di kuota gratis,
+  20000 ms terbukti cukup; 3000 ms tidak.
+
+**Saat membaca hasil, periksa kolom Galat lebih dulu.** Akurasi dihitung atas kasus yang tidak galat,
+jadi angka akurasi tinggi dengan galat banyak berarti sampelnya kecil, bukan modelnya bagus.

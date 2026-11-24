@@ -100,7 +100,8 @@ class AiEvaluasiTest extends TestCase
     {
         $this->skripUji();
 
-        [$kode, $output, $isi] = $this->jalankan(['--berkas' => $this->berkasKasus()]);
+        // --ulang=0: tes ini menguji perhitungan saat ADA kasus galat, jadi 429 pada K004 tidak diulang.
+        [$kode, $output, $isi] = $this->jalankan(['--berkas' => $this->berkasKasus(), '--ulang' => 0]);
 
         $this->assertSame(0, $kode, $output);
         $this->assertNotSame([], $isi, 'Berkas hasil harus tersimpan di storage/app/ai-eval.');
@@ -168,11 +169,12 @@ class AiEvaluasiTest extends TestCase
 
     public function test_429_dicatat_sebagai_galat_tanpa_menghentikan_run(): void
     {
+        // --ulang=0 mematikan pengulangan, sehingga 429 tetap tercatat sebagai galat dan run berlanjut.
         $this->llm
             ->push(LlmException::fromStatus(429))
             ->push(LlmResponse::toolCall('cari_keluhan', ['status' => 'baru']));
 
-        [$kode, , $isi] = $this->jalankan(['--berkas' => $this->berkasKasus(), '--mulai' => 1, '--batas' => 3]);
+        [$kode, , $isi] = $this->jalankan(['--berkas' => $this->berkasKasus(), '--mulai' => 1, '--batas' => 3, '--ulang' => 0]);
 
         $this->assertSame(0, $kode);
         $hasil = collect($isi['hasil'])->keyBy('id');
@@ -182,6 +184,25 @@ class AiEvaluasiTest extends TestCase
         $this->assertFalse($hasil['K001']['tool_benar']);
         $this->assertSame('ok', $hasil['K002']['status'], 'Run berlanjut ke kasus berikutnya setelah galat.');
         $this->assertSame(1, $isi['ringkasan']['total']['galat']);
+    }
+
+    public function test_429_diulang_sehingga_kasus_tidak_hilang_dari_penyebut(): void
+    {
+        // 429 adalah penolakan batas laju penyedia, bukan kesalahan model. Tanpa pengulangan, kasusnya
+        // hilang dari penyebut akurasi tanpa terlihat: pada 24 Nov 2026 run 50 kasus menghasilkan 30 galat
+        // 429, dan akurasi 90% ternyata dihitung hanya atas 20 kasus.
+        $this->llm
+            ->push(LlmException::fromStatus(429))
+            ->push(LlmResponse::toolCall('cari_pengguna', ['q' => 'budi']));
+
+        [$kode, , $isi] = $this->jalankan([
+            '--berkas' => $this->berkasKasus(), '--mulai' => 1, '--batas' => 1, '--ulang' => 2, '--jeda' => 0,
+        ]);
+
+        $this->assertSame(0, $kode);
+        $hasil = collect($isi['hasil'])->keyBy('id');
+        $this->assertSame('ok', $hasil['K001']['status'], 'Setelah diulang, kasus dinilai dan tidak hilang dari penyebut.');
+        $this->assertSame(0, $isi['ringkasan']['total']['galat']);
     }
 
     public function test_menolak_bila_llm_tidak_dikonfigurasi(): void
