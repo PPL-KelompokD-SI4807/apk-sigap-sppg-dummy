@@ -2,6 +2,7 @@
 // Idempotency-Key sekali per formulir; aksi status hanya bila izin server; bukti: Tambah + foto sejak PR5 (multipart jalur cookie).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { todayISO } from '../core/validators.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +39,7 @@ globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
 const panggilan = [];
 let skrip = [];
 const resp = (status, body) => ({ ok: status < 300, status, headers: { get: () => null }, json: async () => body });
-const hariIni = new Date().toISOString().slice(0, 10);
+const hariIni = todayISO(); // sama dengan yang dipakai aplikasi (core/validators.js), bukan tanggal UTC
 const dist = { id: 5, status: 'siap', layak_distribusi: true, tanggal_distribusi: hariIni, jumlah_porsi: 80, jadwal_produksi_id: 1, titik_layanan_id: 2, titik_layanan: { id: 2, nama: 'Titik Fiktif' }, izin: { ubah: true, hapus: true } };
 let distRec = dist;
 let perjRec = { id: 7, status: 'berangkat', titik_layanan: { id: 2, nama: 'Titik Fiktif' }, izin: { ubah_status: true }, waktu_berangkat: new Date().toISOString(), estimasi_tiba: new Date().toISOString() };

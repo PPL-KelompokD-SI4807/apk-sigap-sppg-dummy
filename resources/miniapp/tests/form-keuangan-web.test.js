@@ -3,6 +3,7 @@
 // dan panel keputusan investor (izin.putuskan).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { todayISO } from '../core/validators.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -39,7 +40,7 @@ globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
 const panggilan = [];
 let skrip = [];
 const resp = (status, body) => ({ ok: status < 300, status, headers: { get: () => null }, json: async () => body });
-const hariIni = new Date().toISOString().slice(0, 10);
+const hariIni = todayISO(); // sama dengan yang dipakai aplikasi (core/validators.js), bukan tanggal UTC
 const periode = hariIni.slice(0, 7);
 let pengRec = { id: 11, tanggal: hariIni, kategori: 'bahan_baku', uraian: 'Beli beras fiktif', nominal: 500000, versi: 3, status_persetujuan: 'diajukan', riwayat_persetujuan: [], izin: { ubah: true, hapus: true, lampirkan: true, putuskan: false } };
 const pencRec = { id: 21, periode, sumber_dana: 'Dana Fiktif', nominal: 1000000, tanggal_cair: hariIni };

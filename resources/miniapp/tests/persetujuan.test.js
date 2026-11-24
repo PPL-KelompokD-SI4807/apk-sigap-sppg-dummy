@@ -1,6 +1,7 @@
 // Tes unit R-06b-1 (persetujuan menu): node --test resources/miniapp/tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { todayISO } from '../core/validators.js';
 import {
   bolehAjukan, bolehMemutuskan, tombolKeputusanTampil, validasiCatatan, payloadKeputusan, payloadAjukan,
   filterMenuDisetujui, labelPilihanMenu, parseSppgHint, ringkasGalat, bahanBermasalah,
@@ -82,7 +83,7 @@ test('harga pemasok: koperasi tersedia, konversi satuan, validasi, payload, peng
   assert.ok(JENIS_PEMASOK.some((j) => j.value === 'koperasi'));
   assert.equal(perluGramPerSatuan('kg'), false);
   assert.equal(perluGramPerSatuan('Butir'), true);
-  const hari = new Date().toISOString().slice(0, 10);
+  const hari = todayISO(); // sama dengan yang dipakai aplikasi (core/validators.js), bukan tanggal UTC
   assert.deepEqual(validasiHarga({ bahan_baku_id: '3', harga: '12500', berlaku_mulai: hari }, 'kg'), {});
   assert.ok(validasiHarga({ bahan_baku_id: '3', harga: '0', berlaku_mulai: hari }, 'kg').harga);
   assert.ok(validasiHarga({ bahan_baku_id: '3', harga: '10', berlaku_mulai: hari }, 'butir').gram_per_satuan);
