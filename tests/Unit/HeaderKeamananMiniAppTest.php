@@ -71,7 +71,7 @@ class HeaderKeamananMiniAppTest extends TestCase
 
     public function test_location_miniapp_meng_include_snippet_header(): void
     {
-        $app = file_get_contents(base_path('docker/nginx/snippets/sigap-app.conf'));
+        $app = file_get_contents(base_path('docker/nginx/snippets/sigap-miniapp.conf'));
 
         // Ambil isi blok location ^~ /miniapp/ (bukan /miniapp/assets/).
         $this->assertSame(1, preg_match('/location\s+\^~\s+\/miniapp\/\s*\{(.*?)
@@ -81,10 +81,10 @@ class HeaderKeamananMiniAppTest extends TestCase
         $this->assertStringNotContainsString('headers-web.conf', $blok[1]);
         $this->assertDoesNotMatchRegularExpression('/add_header\s+(Content-Security-Policy|Referrer-Policy|Permissions-Policy|X-Frame-Options)/i', $blok[1], 'Header keamanan hanya dari snippet (add_header di location menimpa tingkat atas).');
 
-        // Snippet itu benar-benar disalin ke image dan sigap-app.conf dipakai server produksi dan dev.
+        // Snippet dipakai server Mini App produksi dan server dev.
         $this->assertFileExists(base_path('docker/nginx/snippets/headers-miniapp.conf'));
-        foreach (['443.conf.template', 'dev.conf.template'] as $tpl) {
-            $this->assertStringContainsString('snippets/sigap-app.conf', file_get_contents(base_path('docker/nginx/templates/'.$tpl)), $tpl);
+        foreach (['miniapp-443.conf.template', 'dev.conf.template'] as $tpl) {
+            $this->assertStringContainsString('snippets/sigap-miniapp.conf', file_get_contents(base_path('docker/nginx/templates/'.$tpl)), $tpl);
         }
         $this->assertStringContainsString('COPY docker/nginx/snippets/', file_get_contents(base_path('Dockerfile')));
     }

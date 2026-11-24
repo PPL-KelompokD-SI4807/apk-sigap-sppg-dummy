@@ -259,15 +259,38 @@ class WebSesiCookieTest extends TestCase
         config(['app.url' => 'https://sigapsppg.app']);
         $sesi = $this->sesiWeb();
         $header = ['Origin' => 'https://sigapsppg.app'] + $this->headerWeb($sesi);
+        $url = 'https://sigapsppg.app/api/v1/auth/sesi/999999';
 
-        $this->web('DELETE', '/api/v1/auth/sesi/999999', $sesi, $header)->assertNotFound();
-        $this->web('DELETE', '/api/v1/auth/sesi/999999', $sesi, ['Origin' => 'http://sigapsppg.app'] + $header)->assertForbidden();
-        $this->web('DELETE', '/api/v1/auth/sesi/999999', $sesi, ['Origin' => 'https://sigapsppg.app.evil.example', 'Host' => 'sigapsppg.app.evil.example'] + $header)->assertForbidden();
+        $this->web('DELETE', $url, $sesi, $header)->assertNotFound();
+        $this->web('DELETE', $url, $sesi, ['Origin' => 'http://sigapsppg.app'] + $header)->assertForbidden();
+        $this->web('DELETE', $url, $sesi, ['Origin' => 'https://sigapsppg.app.evil.example'] + $header)->assertForbidden();
         $this->assertSame('https://sigapsppg.app', SesiWeb::originDiizinkan());
 
         config(['app.url' => 'bukan-url']);
         $this->assertNull(SesiWeb::originDiizinkan());
-        $this->web('DELETE', '/api/v1/auth/sesi/999999', $sesi, $header)->assertForbidden();
+        $this->web('DELETE', $url, $sesi, $header)->assertForbidden();
+    }
+
+    public function test_host_miniapp_menolak_sesi_cookie_meski_cookie_dan_csrf_sah(): void
+    {
+        config(['app.url' => 'https://sigapsppg.app']);
+        $sesi = $this->sesiWeb();
+        $hostMiniApp = 'https://miniapp.sigapsppg.app';
+        $header = ['Origin' => 'https://sigapsppg.app'] + $this->headerWeb($sesi);
+
+        $baca = $this->web('GET', $hostMiniApp.'/api/v1/auth/me', $sesi, $header)->assertForbidden();
+        $baca->assertJsonMissingPath('csrf');
+        $this->assertNull($this->cookieDiRespons($baca));
+        $this->web('POST', $hostMiniApp.'/api/v1/auth/logout', $sesi, $header)->assertForbidden();
+        $this->web('POST', 'https://sigapsppg.app/api/v1/auth/logout', $sesi, ['Origin' => $hostMiniApp] + $header)
+            ->assertForbidden()->assertJsonPath('alasan', 'csrf_ditolak');
+        $this->assertNotNull(PersonalAccessToken::findToken($sesi));
+
+        $this->web('GET', 'https://sigapsppg.app/api/v1/auth/me', $sesi, $header)
+            ->assertOk()->assertJsonPath('csrf', SesiWeb::csrfSesi($sesi));
+        $this->web('GET', $hostMiniApp.'/api/v1/auth/me', null, [
+            'Authorization' => 'Bearer '.$this->sesiMiniApp(),
+        ])->assertOk()->assertJsonMissingPath('csrf');
     }
 
     public function test_logout_jalur_cookie_mencabut_token_dan_menghapus_cookie(): void

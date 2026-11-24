@@ -10,6 +10,8 @@ use App\Models\JadwalProduksi;
 use App\Models\Lampiran;
 use App\Models\LogProduksi;
 use App\Models\PemeriksaanMutu;
+use App\Services\Auth\SesiService;
+use App\Services\Auth\SesiWeb;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
@@ -299,6 +301,27 @@ class LampiranTertundaTest extends GrupBTestCase
 
         $this->masukPenuh($relawanB);
         $this->get("/api/v1/lampiran/{$id}")->assertNotFound();
+    }
+
+    public function test_url_lampiran_relatif_bekerja_di_kedua_host_dengan_kredensial_klien(): void
+    {
+        $web = 'https://sigapsppg.app';
+        $miniApp = 'https://miniapp.sigapsppg.app';
+        config(['app.url' => $web, 'telegram.miniapp_url' => $miniApp.'/miniapp/']);
+        $pengunggah = $this->login(Role::Relawan, null, RelawanUnit::Dapur);
+        $res = $this->unggah('keluhan')->assertCreated();
+        $id = $res->json('data.id');
+        $url = "/api/v1/lampiran/{$id}";
+        $res->assertJsonPath('data.url', $url);
+
+        $cookie = app(SesiService::class)->terbitkanWeb($pengunggah, 'Firefox')['cookie'];
+        $this->app['auth']->forgetGuards();
+        $this->call('GET', $web.$url, [], [SesiWeb::namaCookieSesi() => $cookie->getValue()], [], [
+            'HTTP_X_SIGAP_KLIEN' => 'web',
+        ])->assertOk();
+
+        $this->app['auth']->forgetGuards();
+        $this->get($miniApp.$url, ['Authorization' => 'Bearer '.$this->beriSesiPenuh($pengunggah)])->assertOk();
     }
 
     public function test_lampiran_terikat_mengikuti_policy_record_induk(): void

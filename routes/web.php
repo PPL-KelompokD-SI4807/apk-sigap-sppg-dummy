@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\BatasiHost;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -22,4 +23,7 @@ Route::get('/miniapp/{path?}', function () {
         'Cache-Control' => 'no-cache',
         'X-Content-Type-Options' => 'nosniff',
     ]);
-})->where('path', '(?!assets/).*')->name('miniapp');
+})->where('path', '(?!assets/).*')
+    ->withoutMiddleware('web')
+    ->middleware(BatasiHost::class.':telegram.miniapp_url')
+    ->name('miniapp');

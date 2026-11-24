@@ -7,4 +7,6 @@ server {
     access_log /var/log/nginx/access.log sigap;
 
     include /etc/nginx/snippets/sigap-app.conf;
+    include /etc/nginx/snippets/sigap-web.conf;
+    include /etc/nginx/snippets/sigap-miniapp.conf;
 }

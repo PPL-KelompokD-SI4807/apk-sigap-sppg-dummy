@@ -61,6 +61,17 @@ class TelegramBotServiceTest extends TestCase
         app(TelegramBotService::class)->downloadFile('f', 1000);
     }
 
+    public function test_tombol_draf_dan_formulir_memakai_host_miniapp_yang_dikonfigurasi(): void
+    {
+        $url = 'https://miniapp.sigapsppg.app/miniapp/';
+        config(['app.url' => 'https://sigapsppg.app', 'telegram.miniapp_url' => $url]);
+        $bot = app(TelegramBotService::class);
+
+        $this->assertSame($url, $bot->miniAppUrl());
+        $this->assertSame($url.'?draft=draf-fiktif', $bot->miniAppUrl(['draft' => 'draf-fiktif']));
+        $this->assertSame($url.'?r=%2Fpassword#/password', $bot->miniAppUrl(['r' => '/password'], '/password'));
+    }
+
     public function test_command_set_webhook_memakai_secret_dan_https_tanpa_mencetak_rahasia(): void
     {
         $this->fakeTelegram();

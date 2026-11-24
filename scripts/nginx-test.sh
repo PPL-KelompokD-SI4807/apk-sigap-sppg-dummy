@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# SiGAP SPPG - uji sintaks nginx (nginx -t) pada image web untuk tiga mode, tanpa menyalakan layanan:
-#   1) produksi tanpa sertifikat (HTTP :80), 2) produksi dengan sertifikat tiruan (HTTP+HTTPS), 3) dev.
+# SiGAP SPPG - uji sintaks nginx pada image web: produksi satu host, dua host, dan dev.
 # Memakai entrypoint image yang sama dengan produksi, sehingga bentrok dengan nginx.conf bawaan image
 # (mis. direktif ganda di konteks http) tertangkap sebelum rilis.
 #
@@ -14,6 +13,7 @@ require_cmd docker openssl mktemp
 
 image="${1:-${IMAGE_REGISTRY:-localhost}/sigap-sppg-web:${IMAGE_TAG:-latest}}"
 domain="uji.sigap.invalid"
+miniapp_domain="miniapp.$domain"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -46,6 +46,11 @@ t() { # t NAMA [opsi docker ...]
 
 t "HTTP saja" -e "DOMAIN=$domain"
 t "HTTP+HTTPS (sertifikat tiruan)" -e "DOMAIN=$domain" -v "$tmp_native/live:/etc/letsencrypt/live:ro"
+t "Persiapan (menunggu sertifikat Mini App)" -e "DOMAIN=$domain" -e "MINIAPP_DOMAIN=$miniapp_domain" -v "$tmp_native/live:/etc/letsencrypt/live:ro"
+mkdir -p "$tmp/live/$miniapp_domain"
+cp "$tmp/live/$domain/"*.pem "$tmp/live/$miniapp_domain/"
+t "Persiapan dengan TLS" -e "DOMAIN=$domain" -e "MINIAPP_DOMAIN=$miniapp_domain" -v "$tmp_native/live:/etc/letsencrypt/live:ro"
+t "Cutover dua host HTTP+HTTPS (sertifikat tiruan)" -e "DOMAIN=$domain" -e "MINIAPP_DOMAIN=$miniapp_domain" -e MINIAPP_CUTOVER=on -v "$tmp_native/live:/etc/letsencrypt/live:ro"
 t "dev" -e DOMAIN= -e SIGAP_NGINX_MODE=dev
 
 # --- Uji perilaku klien web ("/" dan /web/): nginx dijalankan (mode dev) dengan snippet dari repo dan docroot palsu. ---

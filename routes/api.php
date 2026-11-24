@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\BatasiHost;
 use App\Http\Middleware\BatasLajuSesiWeb;
 use App\Http\Middleware\EnsureTokenAbility;
 use App\Http\Middleware\PastikanJalurSesi;
@@ -37,7 +38,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     });
 
     // Login web (R04-2): glob tingkat atas di bawah TIDAK memuat subfolder _web/.
-    Route::prefix('web')->name('web.')->middleware(['throttle:auth-web', PraLoginWeb::class])->group(function () {
+    Route::prefix('web')->name('web.')->middleware([BatasiHost::class.':app.url', 'throttle:auth-web', PraLoginWeb::class])->group(function () {
         foreach (glob(__DIR__.'/api/v1/_web/*.php') ?: [] as $file) {
             require $file;
         }
